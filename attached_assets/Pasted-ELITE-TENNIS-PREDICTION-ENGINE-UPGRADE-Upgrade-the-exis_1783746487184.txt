@@ -1,0 +1,1116 @@
+ELITE TENNIS PREDICTION ENGINE UPGRADE
+
+Upgrade the existing tennis prediction engine into a multi-model, surface-aware, matchup-aware, fatigue-aware prediction system.
+
+This upgrade must improve analysis quality without changing or breaking:
+
+* Screenshot import
+* Manual player search
+* Manual match entry
+* Existing navigation
+* Existing saved matches
+* Existing prediction history
+* Existing mobile layout
+
+Do not create a second disconnected prediction engine.
+
+Upgrade the current analysis engine through separate modules and combine their outputs through one controlled ensemble.
+
+The goal is not to force unrealistic confidence.
+
+The goal is to produce the most accurate, well-calibrated prediction possible using current verified data.
+
+⸻
+
+CORE ENGINE STRUCTURE
+
+Use this processing order:
+
+Confirmed Match
+→ Data Validation
+→ Player Data Retrieval
+→ Surface Rating Engine
+→ Serve/Return Engine
+→ Recent Form Engine
+→ Fatigue and Travel Engine
+→ Style Matchup Engine
+→ Injury and Availability Engine
+→ Tournament Conditions Engine
+→ Head-to-Head Context Engine
+→ Model Ensemble
+→ Probability Calibration
+→ Risk Classification
+→ Final Prediction
+
+Each module must return:
+
+* A score
+* A confidence level
+* The data used
+* Missing-data warnings
+* A short explanation
+* A reliability weight
+
+The final prediction must never be based on only one factor.
+
+⸻
+
+1. SURFACE-SPECIFIC ELO ENGINE
+
+Build separate Elo ratings for:
+
+* Hard court
+* Clay
+* Grass
+* Indoor hard court
+* Outdoor hard court
+
+Do not rely only on overall world ranking.
+
+For each player calculate:
+
+* Overall Elo
+* Surface Elo
+* Recent surface Elo
+* Opponent-adjusted surface Elo
+* Tournament-level Elo
+* Best-of-three Elo
+* Best-of-five Elo, when applicable
+
+Update Elo after every completed match.
+
+Use stronger weight for:
+
+* Recent matches
+* Same surface
+* Similar opponent level
+* Same match format
+* Same tournament level
+
+Use lower weight for:
+
+* Matches from several years ago
+* Different surfaces
+* Retirement-shortened matches
+* Walkovers
+* Low-quality or incomplete records
+
+The surface Elo engine should produce:
+
+{
+  "player1SurfaceElo": 0,
+  "player2SurfaceElo": 0,
+  "eloDifference": 0,
+  "surfaceAdvantage": "",
+  "eloWinProbability": 0,
+  "reliability": 0
+}
+
+Do not treat Elo as the final prediction.
+
+It is one major model inside the ensemble.
+
+⸻
+
+2. SERVE AND RETURN ENGINE
+
+Calculate serve and return strength by surface.
+
+Serve metrics:
+
+* First-serve percentage
+* First-serve points won
+* Second-serve points won
+* Ace rate
+* Double-fault rate
+* Service games held
+* Break points saved
+* Unreturned serve rate
+* Tiebreak serve performance
+
+Return metrics:
+
+* First-serve return points won
+* Second-serve return points won
+* Return games won
+* Break-point conversion
+* Break opportunities created
+* Return performance against strong servers
+* Return performance against weak second serves
+
+Adjust every statistic for opponent quality.
+
+Do not reward a player excessively for dominating very weak opponents.
+
+Create:
+
+* Surface serve rating
+* Surface return rating
+* Combined serve-return rating
+* Pressure-point rating
+* Tiebreak rating
+
+Example output:
+
+{
+  "player1ServeRating": 0,
+  "player2ServeRating": 0,
+  "player1ReturnRating": 0,
+  "player2ReturnRating": 0,
+  "serveMatchupEdge": "",
+  "returnMatchupEdge": "",
+  "reliability": 0
+}
+
+⸻
+
+3. RECENT FORM ENGINE
+
+Measure current form using multiple time windows:
+
+* Last 5 matches
+* Last 10 matches
+* Last 20 matches
+* Last 30 days
+* Last 90 days
+* Current surface season
+* Current tournament
+
+Do not use simple win-loss record alone.
+
+Consider:
+
+* Opponent strength
+* Surface
+* Match score
+* Sets won and lost
+* Games won percentage
+* Break-point performance
+* Tiebreak performance
+* Straight-set wins
+* Three-set or five-set struggles
+* Retirements
+* Quality of losses
+* Quality of wins
+
+Weight the form windows like this:
+
+* Last 5 matches: strongest short-term signal
+* Last 10 matches: strong signal
+* Last 20 matches: stability signal
+* Older matches: lower weight
+
+Do not allow one unusual win or one bad loss to dominate the model.
+
+Use outlier controls.
+
+Create:
+
+{
+  "player1RecentForm": 0,
+  "player2RecentForm": 0,
+  "player1FormTrend": "improving, stable, or declining",
+  "player2FormTrend": "improving, stable, or declining",
+  "qualityAdjustedFormEdge": "",
+  "reliability": 0
+}
+
+⸻
+
+4. FATIGUE, REST, AND TRAVEL ENGINE
+
+Calculate physical burden using:
+
+* Matches played in the last 3 days
+* Matches played in the last 7 days
+* Matches played in the last 14 days
+* Total sets played
+* Total games played
+* Total court time
+* Number of three-set matches
+* Number of five-set matches
+* Back-to-back match days
+* Previous-match finish time
+* Rest hours before current match
+* Recent doubles participation
+* Travel distance
+* Time-zone changes
+* Change in country or continent
+* Change in altitude
+* Change in surface
+
+Add special fatigue penalties for:
+
+* Long match the previous day
+* Late-night finish
+* Multiple deciding-set matches
+* Recent medical timeout
+* Consecutive tournaments without rest
+* Deep run followed by immediate travel
+* Qualifying matches before main draw
+
+Reduce fatigue penalties when:
+
+* The player has a strong history of handling heavy workloads
+* The previous matches were short
+* The player had sufficient rest
+* Travel was local
+* Tournament conditions are familiar
+
+Create:
+
+{
+  "player1FatigueScore": 0,
+  "player2FatigueScore": 0,
+  "player1RestHours": 0,
+  "player2RestHours": 0,
+  "travelDisadvantage": "",
+  "fatigueEdge": "",
+  "reliability": 0
+}
+
+Do not invent travel or rest data.
+
+When exact information is unavailable, lower reliability.
+
+⸻
+
+5. STYLE MATCHUP ENGINE
+
+Classify each player using multiple style traits.
+
+Possible traits:
+
+* Big server
+* Serve-and-volley player
+* Aggressive baseliner
+* Counterpuncher
+* Defensive retriever
+* Flat hitter
+* Heavy topspin player
+* Strong returner
+* Weak second-serve defender
+* Net attacker
+* Long-rally specialist
+* Short-point specialist
+* Left-handed player
+* Strong backhand returner
+* Forehand-dominant player
+
+Do not force each player into only one category.
+
+Use a multi-trait profile.
+
+Compare:
+
+* Player serve pattern vs opponent return strength
+* Forehand pattern vs opponent backhand weakness
+* Left-handed serve advantage
+* Rally tolerance
+* Net-point effectiveness
+* Second-serve vulnerability
+* Ability to handle pace
+* Ability to generate pace
+* Movement on the current surface
+* Performance against similar styles
+
+Create:
+
+{
+  "player1StyleProfile": [],
+  "player2StyleProfile": [],
+  "player1KeyAdvantages": [],
+  "player2KeyAdvantages": [],
+  "matchupEdge": "",
+  "matchupRisk": "",
+  "reliability": 0
+}
+
+The style engine must explain why one player’s game may trouble the other.
+
+Do not use vague statements such as “better player overall.”
+
+⸻
+
+6. INJURY, WITHDRAWAL, AND AVAILABILITY ENGINE
+
+Search for current information regarding:
+
+* Injuries
+* Illness
+* Medical timeouts
+* Recent retirements
+* Withdrawals
+* Protected ranking returns
+* Long injury layoffs
+* Limited movement
+* Strapping or visible discomfort
+* Press-conference comments
+* Tournament participation uncertainty
+
+Classify evidence:
+
+confirmed
+strongly reported
+possible
+unverified
+outdated
+
+Only confirmed or strongly supported information may meaningfully affect the prediction.
+
+Do not reduce a player’s probability because of rumors alone.
+
+Create:
+
+{
+  "player1AvailabilityStatus": "",
+  "player2AvailabilityStatus": "",
+  "player1InjuryRisk": 0,
+  "player2InjuryRisk": 0,
+  "evidenceQuality": "",
+  "availabilityEdge": "",
+  "reliability": 0
+}
+
+When injury information is uncertain, show:
+
+INJURY STATUS UNCERTAIN
+
+Never present an unverified injury as a fact.
+
+⸻
+
+7. TOURNAMENT CONDITIONS ENGINE
+
+Consider:
+
+* Surface
+* Indoor or outdoor
+* Court speed
+* Ball type
+* Altitude
+* Temperature
+* Humidity
+* Wind
+* Rain delays
+* Roof status
+* Match time
+* Day-session or night-session conditions
+* Tournament level
+* Best-of-three or best-of-five format
+
+Evaluate which player benefits from the conditions.
+
+Examples:
+
+* Faster courts may favor strong servers and first-strike players.
+* Slow clay may favor endurance and rally tolerance.
+* Wind may reduce the advantage of aggressive low-margin hitters.
+* Altitude may increase serve effectiveness.
+* Extreme heat may increase fatigue risk.
+
+Create:
+
+{
+  "courtSpeed": "",
+  "weatherImpact": "",
+  "formatImpact": "",
+  "player1ConditionsFit": 0,
+  "player2ConditionsFit": 0,
+  "conditionsEdge": "",
+  "reliability": 0
+}
+
+Do not invent court-speed or weather data.
+
+⸻
+
+8. HEAD-TO-HEAD CONTEXT ENGINE
+
+Use head-to-head carefully.
+
+Consider:
+
+* Surface
+* Match date
+* Player age at the time
+* Current player level
+* Match format
+* Injury context
+* Score competitiveness
+* Style consistency
+
+Do not heavily weight old head-to-head matches when the players have changed significantly.
+
+Do not treat a 1–0 head-to-head as strong evidence.
+
+Use stronger weight when:
+
+* There are several meetings
+* The meetings are recent
+* The surface is the same
+* The matchup pattern is consistent
+* The players are at similar career stages
+
+Create:
+
+{
+  "overallHeadToHead": "",
+  "surfaceHeadToHead": "",
+  "recentHeadToHead": "",
+  "headToHeadEdge": "",
+  "sampleQuality": "",
+  "reliability": 0
+}
+
+⸻
+
+9. OPPONENT-QUALITY ADJUSTMENT
+
+Every performance metric must be adjusted for opponent strength.
+
+A player should receive more credit for:
+
+* Beating high-ranked opponents
+* Playing close matches against elite opponents
+* Winning on an unfavorable surface
+* Holding serve against elite returners
+* Breaking elite servers
+
+A player should receive less credit for:
+
+* Dominating very weak opponents
+* Inflated records from low-level events
+* Wins caused by opponent retirement
+* Walkovers
+* Small, unrepresentative samples
+
+Use:
+
+* Opponent Elo
+* Opponent surface Elo
+* Opponent ranking
+* Tournament level
+* Match competitiveness
+
+⸻
+
+10. DATA QUALITY ENGINE
+
+Score the completeness and reliability of the data.
+
+Check:
+
+* Current rankings available
+* Surface results available
+* Serve statistics available
+* Return statistics available
+* Recent matches available
+* Injury information available
+* Schedule and workload available
+* Event and surface confirmed
+* Match format confirmed
+* Player identities confirmed
+
+Create a data-quality score from 0 to 100.
+
+Use these levels:
+
+* 90–100: Excellent data
+* 75–89: Strong data
+* 60–74: Acceptable data
+* 40–59: Limited data
+* Below 40: Poor data
+
+Prediction confidence must not exceed the quality supported by the available data.
+
+For example:
+
+* High model agreement with poor data must not produce “Elite” confidence.
+* Missing surface statistics must lower confidence.
+* Unknown event conditions must lower confidence.
+* Junior and low-level ITF matches may require stronger warnings due to limited data.
+
+⸻
+
+11. MULTI-MODEL ENSEMBLE
+
+Build several independent models.
+
+Recommended models:
+
+1. Surface Elo model
+2. Serve-return strength model
+3. Recent form model
+4. Gradient-boosted decision-tree model
+5. Logistic regression model
+6. Bayesian model
+7. Style-matchup model
+8. Fatigue and travel model
+9. Tournament-conditions model
+10. Historical similar-match model
+
+Do not simply average every model equally.
+
+Use dynamic weighting based on:
+
+* Surface
+* Tour level
+* Match format
+* Data completeness
+* Sample size
+* Model historical performance
+* Player type
+* Match type
+* Whether the match is pre-match or live
+
+Example:
+
+* Surface Elo receives more weight when both players have large surface samples.
+* Serve-return receives more weight on fast courts.
+* Fatigue receives more weight during congested scheduling.
+* Style matchup receives lower weight when style data is incomplete.
+* Head-to-head receives low weight unless the sample is strong and relevant.
+
+Each model must output:
+
+{
+  "modelName": "",
+  "player1Probability": 0,
+  "player2Probability": 0,
+  "reliability": 0,
+  "historicalCalibration": 0,
+  "weightUsed": 0
+}
+
+The ensemble must show:
+
+* Individual model predictions
+* Model agreement
+* Model disagreement
+* Final weighted probability
+* Main reasons for the final result
+
+⸻
+
+12. MODEL DISAGREEMENT HANDLING
+
+Do not hide disagreement between models.
+
+Measure:
+
+* Probability spread
+* Number of models favoring each player
+* Strength of disagreement
+* Which models disagree
+* Why they disagree
+
+Classify:
+
+* Strong agreement
+* Moderate agreement
+* Mixed signals
+* High disagreement
+
+When disagreement is high:
+
+* Lower confidence
+* Increase upset risk
+* Avoid strong recommendations
+* Explain the conflict
+
+Example:
+
+Surface Elo favors Player 1.
+Recent form favors Player 2.
+Fatigue favors Player 1.
+Serve-return model is nearly even.
+Final result: Moderate lean, not a strong recommendation.
+
+⸻
+
+13. PROBABILITY CALIBRATION
+
+The displayed win probability must be calibrated using historical predictions.
+
+Do not display raw model scores as probabilities.
+
+Use calibration methods such as:
+
+* Isotonic regression
+* Platt scaling
+* Bayesian calibration
+* Reliability bins
+
+Track whether:
+
+* 60% predictions win approximately 60% of the time
+* 70% predictions win approximately 70% of the time
+* 80% predictions win approximately 80% of the time
+
+Calculate:
+
+* Brier score
+* Log loss
+* Calibration error
+* Accuracy by confidence band
+* Accuracy by surface
+* Accuracy by tour
+* Accuracy by tournament level
+* Accuracy by model
+* Accuracy by match type
+
+Do not increase displayed confidence merely to make predictions look stronger.
+
+Accurate probabilities are more important than impressive probabilities.
+
+⸻
+
+14. PREDICTED SET SCORE ENGINE
+
+Predict:
+
+* Straight-set probability
+* Deciding-set probability
+* Most likely set score
+* Tiebreak probability
+* Estimated number of sets
+* Estimated games, when supported
+
+For best-of-three:
+
+* 2–0
+* 2–1
+
+For best-of-five:
+
+* 3–0
+* 3–1
+* 3–2
+
+Do not automatically assign 2–0 to every favorite.
+
+Use:
+
+* Serve-hold probability
+* Return strength
+* Set-level variance
+* Tiebreak likelihood
+* Fatigue
+* Surface
+* Match format
+* Player consistency
+
+⸻
+
+15. UPSET-RISK ENGINE
+
+Calculate upset risk separately from win probability.
+
+Upset-risk factors:
+
+* Model disagreement
+* Favorite’s weak second serve
+* Underdog’s strong surface fit
+* Fatigue
+* Injury uncertainty
+* Small data sample
+* Volatile playing style
+* Strong underdog serve
+* High tiebreak probability
+* Unstable recent form
+* Poor favorite record against similar styles
+* Lower-tour data uncertainty
+
+Display:
+
+* Low upset risk
+* Moderate upset risk
+* High upset risk
+* Extreme uncertainty
+
+A player may have a 67% win probability but still carry meaningful upset risk.
+
+⸻
+
+16. RECOMMENDATION ENGINE
+
+Use four categories:
+
+STRONG RECOMMENDATION
+
+Requirements:
+
+* Calibrated probability is strong
+* Data quality is strong
+* Model agreement is strong
+* Injury status is clear
+* Event and surface are confirmed
+* Upset risk is low
+
+MODERATE LEAN
+
+Requirements:
+
+* One player has a real edge
+* Some uncertainty remains
+* Model agreement is acceptable
+* Data quality is usable
+
+HIGH-RISK MATCH
+
+Use when:
+
+* Models disagree
+* Data is limited
+* Injury status is unclear
+* Matchup is highly volatile
+* Live-score data is incomplete
+* Event or surface is uncertain
+
+DO NOT RECOMMEND
+
+Use when:
+
+* Player identity is uncertain
+* Data quality is poor
+* Injury information is unresolved
+* Models strongly conflict
+* Key statistics are missing
+* The match is too close to justify a useful edge
+
+Do not force every match into a positive recommendation.
+
+⸻
+
+17. FINAL ANALYSIS DISPLAY
+
+For every match display:
+
+* Predicted winner
+* Calibrated win probability
+* Predicted set score
+* Upset risk
+* Surface advantage
+* Serve advantage
+* Return advantage
+* Recent-form advantage
+* Fatigue advantage
+* Style-matchup advantage
+* Injury or availability warning
+* Model agreement
+* Data-quality score
+* Recommendation
+* Main reasons
+* Main risks
+
+Use a compact summary first.
+
+Example:
+
+PREDICTED WINNER: Player 1
+WIN PROBABILITY: 68%
+PREDICTED SCORE: 2–1
+RECOMMENDATION: Moderate Lean
+UPSET RISK: Moderate
+DATA QUALITY: 86/100
+MODEL AGREEMENT: 7 of 10 models
+
+Then show:
+
+Why Player 1 is favored
+
+* Stronger surface Elo
+* Better second-serve return numbers
+* Lower recent workload
+* Better record against similar styles
+
+Main risks
+
+* Opponent has a strong first serve
+* High tiebreak probability
+* Head-to-head sample is limited
+
+Do not overwhelm the user with raw statistics unless they open Full Analysis.
+
+⸻
+
+18. FULL ANALYSIS SCREEN
+
+The Full Analysis screen should include expandable sections:
+
+* Surface ratings
+* Serve comparison
+* Return comparison
+* Recent form
+* Opponent quality
+* Fatigue and travel
+* Style matchup
+* Injury and availability
+* Head-to-head
+* Tournament conditions
+* Model predictions
+* Model disagreement
+* Data quality
+* Predicted set score
+* Final recommendation
+
+Show source date and last-updated time for important data.
+
+⸻
+
+19. LIVE MATCH EXTENSION
+
+For live matches, keep the pre-match model and live model separate.
+
+Pre-match model factors:
+
+* Rankings
+* Surface Elo
+* Serve and return
+* Form
+* Fatigue
+* Style
+* Injury
+* Conditions
+
+Live model factors:
+
+* Current score
+* Current server
+* Break status
+* First-serve percentage
+* Points won on serve
+* Points won on return
+* Break points created
+* Break points saved
+* Current movement or injury indicators
+* Set and game momentum
+
+Display:
+
+PRE-MATCH PROBABILITY
+LIVE-ADJUSTED PROBABILITY
+
+Do not erase the original pre-match probability.
+
+Do not allow a few early points to cause extreme probability swings.
+
+Use smoothing and minimum-sample rules.
+
+⸻
+
+20. BACKTESTING SYSTEM
+
+Backtest the engine on historical matches.
+
+Use:
+
+* Separate training data
+* Validation data
+* Completely unseen test data
+* Time-based splits
+* Surface-based evaluation
+* Tour-based evaluation
+
+Never train and test on the same matches.
+
+Prevent data leakage.
+
+The model must not use information that became available after the match began.
+
+Track:
+
+* Overall winner accuracy
+* Brier score
+* Log loss
+* Calibration
+* Accuracy by confidence band
+* Accuracy by surface
+* ATP accuracy
+* WTA accuracy
+* Challenger accuracy
+* ITF accuracy
+* Favorite accuracy
+* Underdog accuracy
+* Straight-set prediction accuracy
+* Set-score accuracy
+* Performance with incomplete data
+
+⸻
+
+21. WALK-FORWARD TESTING
+
+Use walk-forward validation.
+
+Example:
+
+Train on older data
+→ Predict the next period
+→ Record results
+→ Move forward
+→ Retrain using only past data
+→ Predict the following period
+
+This better represents real-world performance.
+
+Do not rely only on random train-test splits.
+
+⸻
+
+22. CHAMPION-CHALLENGER MODEL SYSTEM
+
+Keep the current best model as the Champion.
+
+New models are Challengers.
+
+A Challenger may replace the Champion only if it improves:
+
+* Out-of-sample accuracy
+* Calibration
+* Brier score
+* Log loss
+* Stability across surfaces
+* Stability across tours
+* Performance on recent unseen matches
+
+Do not replace the Champion because of one short winning streak.
+
+Require sufficient sample size.
+
+Do not deploy a new model automatically without passing validation rules.
+
+⸻
+
+23. MODEL SAFETY RULES
+
+* Never use future data in historical testing.
+* Never count walkovers as normal completed matches.
+* Treat retirements separately.
+* Do not invent injuries.
+* Do not invent weather.
+* Do not invent surface data.
+* Do not use betting odds unless separately enabled.
+* Do not treat rankings as the entire model.
+* Do not use raw OCR text inside the prediction engine.
+* Do not show uncalibrated probabilities.
+* Do not hide model disagreement.
+* Do not claim guaranteed winners.
+* Do not label every match as strong.
+* Do not increase confidence to satisfy a target percentage.
+* Do not retrain the production model on every individual result.
+* Do not deploy a model that only performs well on one surface or one tour.
+
+⸻
+
+24. BUILD PHASES
+
+PHASE 1 — DATA FOUNDATION
+
+Build:
+
+* Player IDs
+* Match history retrieval
+* Surface classification
+* Serve statistics
+* Return statistics
+* Opponent-quality adjustment
+* Data-quality scoring
+
+PHASE 2 — CORE PREDICTION MODELS
+
+Build:
+
+* Surface Elo
+* Serve-return model
+* Recent-form model
+* Basic fatigue model
+* Logistic regression model
+* Initial ensemble
+
+PHASE 3 — ADVANCED CONTEXT
+
+Build:
+
+* Travel modeling
+* Style matchup
+* Injury and withdrawal system
+* Tournament conditions
+* Advanced head-to-head context
+
+PHASE 4 — CALIBRATION AND TESTING
+
+Build:
+
+* Probability calibration
+* Walk-forward testing
+* Brier score
+* Log loss
+* Confidence-band tracking
+* Surface and tour evaluation
+
+PHASE 5 — CHAMPION-CHALLENGER SYSTEM
+
+Build:
+
+* Model registry
+* Champion model
+* Challenger models
+* Deployment rules
+* Rollback support
+* Performance dashboard
+
+PHASE 6 — LIVE MATCH MODEL
+
+Build only after pre-match prediction is stable.
+
+Complete:
+
+* Live-stat ingestion
+* Live probability adjustment
+* Score-state modeling
+* Server advantage
+* Break-status adjustment
+* Live calibration
+
+Do not skip phases by creating buttons without working logic.
+
+⸻
+
+25. FINAL ACCEPTANCE REQUIREMENTS
+
+The upgrade is complete only when:
+
+* Every prediction uses confirmed player identities
+* Surface Elo is active
+* Serve and return ratings are opponent-adjusted
+* Recent form is quality-adjusted
+* Fatigue and workload are included
+* Style matchup is included
+* Injury data is verified or clearly marked uncertain
+* Tournament conditions are included when available
+* Multiple independent models are combined
+* Probabilities are calibrated
+* Data quality is scored separately
+* Model disagreement lowers confidence
+* Backtesting uses unseen data
+* Walk-forward testing is implemented
+* The production model can be rolled back
+* Existing manual and screenshot workflows still work
+* Existing saved predictions remain available
+* The app does not claim guaranteed outcomes
+
+The final engine should prioritize:
+
+1. Correct player identity
+2. Current verified data
+3. Surface-specific performance
+4. Serve and return strength
+5. Opponent quality
+6. Recent form
+7. Fatigue and travel
+8. Style matchup
+9. Injury and availability
+10. Probability calibration
+11. Honest uncertainty
+12. Long-term out-of-sample performance

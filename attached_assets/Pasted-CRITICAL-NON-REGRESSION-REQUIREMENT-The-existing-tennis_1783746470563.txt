@@ -1,0 +1,217 @@
+CRITICAL NON-REGRESSION REQUIREMENT
+
+The existing tennis prediction application is already working and must remain fully functional.
+
+This screenshot-import feature is an addition, not a rebuild.
+
+Do not redesign, rewrite, replace, remove, rename, relocate, or alter any existing working feature unless it is absolutely required to connect the new screenshot-import system.
+
+Before making changes:
+
+1. Inspect the existing application structure.
+2. Identify all working pages, components, buttons, routes, APIs, database tables, prediction logic, and manual-entry features.
+3. Create a backup or restore point of the current working version.
+4. Record the current behavior of the application.
+5. Add the screenshot feature in isolated new files and components whenever possible.
+6. Reuse existing interfaces only where necessary.
+7. Do not overwrite existing working code with placeholder code.
+8. Do not replace real data connections with mock data.
+9. Do not remove existing styling or mobile responsiveness.
+10. Do not change the existing prediction model.
+
+The following existing features must remain unchanged and working:
+
+* Manual player search
+* Manual match entry
+* Existing prediction generation
+* Existing statistics retrieval
+* Existing match analysis
+* Existing prediction history
+* Existing navigation
+* Existing buttons and controls
+* Existing mobile layout
+* Existing database records
+* Existing API connections
+* Existing user settings
+* Existing saved matches
+* Existing prediction results
+
+Build the screenshot system as a separate optional import path:
+
+Existing Manual Entry
+        ↓
+Validated Match Object
+        ↓
+Existing Prediction Engine
+New Screenshot Import
+        ↓
+OCR and Validation
+        ↓
+Validated Match Object
+        ↓
+Existing Prediction Engine
+
+Both entry methods must produce the same validated match-data format before reaching the prediction engine.
+
+Do not create a second prediction engine.
+
+Do not duplicate existing prediction logic.
+
+Do not modify prediction formulas, confidence calculations, ranking logic, or statistical weighting while building the screenshot feature.
+
+The screenshot system should only identify and validate matches before passing them into the existing analysis system.
+
+ISOLATED FEATURE REQUIREMENT
+
+Place the new screenshot feature in separate modules, routes, components, services, and tests.
+
+Suggested separation:
+
+/features/screenshot-import/
+/components/screenshot-import/
+/services/ocr/
+/services/player-resolution/
+/services/event-resolution/
+/services/duplicate-detection/
+
+Avoid editing shared files unless necessary.
+
+When a shared file must be changed:
+
+* Make the smallest possible change.
+* Preserve all current behavior.
+* Do not remove existing code.
+* Do not rename existing exports without updating every dependency.
+* Do not change database fields used by the existing app.
+* Do not change existing API response formats.
+* Do not change route names already used by the app.
+* Do not change existing component props unless backward compatibility is preserved.
+
+Use feature flags where appropriate:
+
+screenshotImportEnabled = true
+
+If the screenshot feature fails or is disabled, the rest of the application must continue working normally.
+
+DATABASE SAFETY
+
+Do not delete, rename, or destructively modify existing database tables or fields.
+
+Any new database changes must be additive.
+
+Allowed:
+
+* New tables
+* New optional fields
+* New indexes
+* New screenshot-import records
+* New validation-status fields
+
+Not allowed:
+
+* Dropping existing tables
+* Removing columns
+* Renaming existing fields without migration support
+* Clearing prediction history
+* Replacing existing player IDs
+* Overwriting confirmed match records
+* Making new fields required for old records
+
+All migrations must be backward compatible.
+
+Old manually entered matches must continue loading correctly.
+
+API SAFETY
+
+Do not replace or break existing APIs.
+
+The screenshot system may call new OCR and validation services, but the final confirmed match must be converted into the format already expected by the existing prediction engine.
+
+If an API is unavailable:
+
+* Show an error inside the screenshot-import feature.
+* Do not crash the application.
+* Do not disable manual match entry.
+* Do not block existing predictions.
+* Do not return fake data.
+
+USER-INTERFACE SAFETY
+
+Do not rearrange the existing main screen unnecessarily.
+
+Add the new button without removing or hiding current controls:
+
+UPLOAD TENNIS SCREENSHOTS
+
+The manual player-search option must remain visible and usable.
+
+The screenshot-import workflow should open in its own screen, panel, tab, modal, or route.
+
+Do not force users to use screenshot import.
+
+Do not change existing button behavior.
+
+Do not move important existing controls unless required for mobile spacing.
+
+Do not change existing colors, fonts, branding, or card styles unless the new feature needs to visually match them.
+
+ROLLBACK SAFETY
+
+Every development phase must leave the application in a working state.
+
+After each phase:
+
+1. Run the existing test suite.
+2. Test manual player entry.
+3. Test a normal prediction.
+4. Test existing navigation.
+5. Test saved match history.
+6. Test the application on a phone-sized screen.
+7. Confirm that no existing database records were changed.
+8. Confirm that the app works when screenshot import is disabled.
+
+If a new change breaks an existing feature:
+
+* Stop.
+* Restore the last working version.
+* Identify the specific conflict.
+* Fix the screenshot feature without weakening the existing feature.
+* Do not continue building on top of broken behavior.
+
+REQUIRED REGRESSION TESTS
+
+Create automated regression tests for:
+
+* Manual player search still works
+* Manual match entry still works
+* Existing predictions still run
+* Existing results still display
+* Existing history still loads
+* Existing routes still open
+* Existing APIs still return expected data
+* Existing saved records remain compatible
+* Screenshot import can be disabled safely
+* OCR failure does not affect manual entry
+* Screenshot validation failure does not affect the prediction engine
+* Duplicate detection does not alter manually entered matches
+* New database fields do not break old records
+* Mobile layout remains usable
+* Existing app startup does not depend on the OCR provider
+
+FINAL ACCEPTANCE RULE
+
+Do not mark the screenshot-import feature complete until all of the following are true:
+
+* The new screenshot workflow functions correctly.
+* The existing manual workflow functions exactly as before.
+* The existing prediction engine produces the same results for the same manual inputs as it did before this feature was added.
+* Existing saved data remains available.
+* No existing page or feature was removed.
+* No placeholder replaced working code.
+* No destructive database migration occurred.
+* Disabling screenshot import returns the application to its previous behavior.
+* All new tests and all existing regression tests pass.
+
+The highest priority is:
+
+Add screenshot importing without changing or damaging anything that already works.

@@ -1,0 +1,57 @@
+// === ADD THIS: Fatigue & Style Matchup Functions ===
+
+// Fatigue calculation
+function calculateFatigue(matches) {
+  const recentMatches = matches.slice(0, 7);
+  const threeSetters = recentMatches.filter(m => 
+    (m.score && m.score.includes("3-2")) || 
+    (m.score && m.score.includes("2-1"))
+  ).length;
+  
+  const fatigueScore = Math.max(20, 100 - (recentMatches.length * 8) - (threeSetters * 12));
+  return Math.round(fatigueScore);
+}
+
+// Style matchup
+function calculateStyleMatchup(player1Name, player2Name, surface) {
+  const bigServers = ["Isner", "Kyrgios", "Raonic", "Opelka", "Karlovic", "Alcaraz" "Nadal", "Rafa", "Ruud", "Fritz", "Zverev"];
+  
+  const p1IsBigServer = bigServers.some(name => player1Name.includes(name));
+  const p2IsBigServer = bigServers.some(name => player2Name.includes(name));
+  const p1IsLefty = lefties.some(name => player1Name.includes(name));
+  
+  let edge = 50;
+  
+  if (p1IsBigServer && surface === "Grass") edge += 12;
+  if (p1IsBigServer && surface === "Hard") edge += 8;
+  if (p1IsLefty) edge += 5;
+  
+  return Math.max(35, Math.min(78, Math.round(edge)));
+}
+
+// === NOW UPDATE YOUR FINAL PREDICTION BLOCK ===
+// Replace your current final prediction block with this new one:
+let baseScore = (player1WinRate + player2WinRate) / 2;
+
+const surface1 = calculateSurfaceWinRate(player1Matches, surface);
+const surface2 = calculateSurfaceWinRate(player2Matches, surface);
+const form1 = calculateRecentForm(player1Matches);
+const form2 = calculateRecentForm(player2Matches);
+const quality1 = calculateOpponentQuality(player1Matches);
+const quality2 = calculateOpponentQuality(player2Matches);
+const fatigue1 = calculateFatigue(player1Matches);
+const fatigue2 = calculateFatigue(player2Matches);
+const styleEdge = calculateStyleMatchup(player1Name, player2Name, surface);
+
+const finalScore = Math.round(
+  baseScore * 0.35 +
+  (surface1 - surface2) * 0.25 +
+  (form1 - form2) * 0.15 +
+  (quality1 - quality2) * 0.12 +
+  (fatigue1 - fatigue2) * 0.08 +
+  (styleEdge - 50) * 0.05
+);
+
+let prediction = finalScore > 50 ? player1Name : player2Name;
+let confidence = Math.abs(finalScore - 50) * 1.8;
+confidence = Math.min(90, Math.max(52, Math.round(confidence)));
