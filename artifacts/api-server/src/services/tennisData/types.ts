@@ -91,6 +91,39 @@ export interface HeadToHeadRecord {
   meetings: HeadToHeadMeeting[];
 }
 
+/**
+ * A single completed (or definitively-terminated: retired/walkover/cancelled) historical match,
+ * as reported directly by a provider's bulk date-range endpoint. This is intentionally a richer,
+ * lower-level shape than `MatchRecord` (which is player-perspective) -- the historical backfill
+ * pipeline needs the neutral, tour-wide view so it can process matches in true chronological
+ * order across every player at once.
+ */
+export interface HistoricalFixture {
+  id: string;
+  provider: string;
+  date: string; // YYYY-MM-DD, as reported by the provider
+  time: string | null; // HH:MM local-to-provider, when known
+  tour: string | null;
+  tournamentName: string | null;
+  tournamentLevel: TournamentLevel | null;
+  round: string | null;
+  surface: Surface | null;
+  matchFormat: MatchFormat | null;
+  player1Id: string;
+  player1Name: string;
+  player2Id: string;
+  player2Name: string;
+  winnerId: string | null; // null only when cancelled
+  score: string | null;
+  retired: boolean;
+  walkover: boolean;
+  cancelled: boolean;
+  /** Games won/lost per set, from player1's perspective, when the provider reports it. */
+  setGameMargins: Array<{ player1Games: number; player2Games: number }>;
+  /** Raw provider payload, kept for audit trails in the historical store. */
+  raw: unknown;
+}
+
 export interface ProviderStatusInfo {
   provider: string;
   connected: boolean;
@@ -113,5 +146,11 @@ export interface TennisDataProvider {
   getPlayerMatches(playerId: string): Promise<MatchRecord[]>;
   getUpcomingFixtures(date: string): Promise<Fixture[]>;
   getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord>;
+  /**
+   * Bulk, player-agnostic pull of every definitively-terminated match in a date range (finished,
+   * retired, walkover, or cancelled). Used only by the historical backfill pipeline -- never by
+   * live prediction requests. `dateStart`/`dateStop` are inclusive, `YYYY-MM-DD`.
+   */
+  getCompletedMatchesByDateRange(dateStart: string, dateStop: string): Promise<HistoricalFixture[]>;
   getStatus(): ProviderStatusInfo;
 }

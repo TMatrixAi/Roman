@@ -1,2 +1,3 @@
 - [API-Tennis provider quirks](api-tennis-provider.md) — real API-Tennis responses violate its own docs (numeric keys, null surfaces/levels); design for it, don't trust the docs literally.
 - [Orval + zod codegen pitfalls](orval-zod-codegen-pitfalls.md) — zod.coerce.string() silently defeats required-field validation; generated react-query hook option types require queryKey.
+- [Historical backfill cross-run state continuity](historical-backfill-state-continuity.md) — chronological importers with running state (Elo, form) must hydrate from persisted records, not just in-process memory, or later runs silently cold-start.

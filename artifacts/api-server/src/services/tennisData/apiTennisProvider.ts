@@ -5,6 +5,7 @@ import {
   ProviderUnavailableError,
   type Fixture,
   type HeadToHeadRecord,
+  type HistoricalFixture,
   type MatchFormat,
   type MatchRecord,
   type PlayerProfile,
@@ -122,6 +123,31 @@ function mapScoreString(raw: RawMatch): string | null {
       .join(" ");
   }
   return raw.event_final_result ?? null;
+}
+
+/** Normalizes API-Tennis's free-text `event_type_type` into a coarse, stable tour label. */
+function deriveTour(eventTypeType: string | undefined): string | null {
+  const type = eventTypeType ?? "";
+  if (!type) return null;
+  if (/challenger/i.test(type)) return "Challenger";
+  if (/itf/i.test(type)) return "ITF";
+  if (/exhibition/i.test(type)) return "Exhibition";
+  if (/boys|girls|junior/i.test(type)) return "Junior";
+  if (/atp/i.test(type)) return "ATP";
+  if (/wta/i.test(type)) return "WTA";
+  return type;
+}
+
+function mapHistoricalFixtureGameMargins(raw: RawMatch): Array<{ player1Games: number; player2Games: number }> {
+  if (!raw.scores) return [];
+  return raw.scores
+    .map((s) => {
+      const first = Math.trunc(parseFloat(s.score_first));
+      const second = Math.trunc(parseFloat(s.score_second));
+      if (Number.isNaN(first) || Number.isNaN(second)) return null;
+      return { player1Games: first, player2Games: second };
+    })
+    .filter((v): v is { player1Games: number; player2Games: number } => v !== null);
 }
 
 function mapSetGameMargins(raw: RawMatch, isFirstPlayer: boolean): Array<{ playerGames: number; opponentGames: number }> {
@@ -336,6 +362,60 @@ export class ApiTennisProvider implements TennisDataProvider {
           player2Name: m.event_second_player,
         };
       });
+  }
+
+  /**
+   * Bulk date-range pull for the historical backfill pipeline. Confirmed live (2026-07-11):
+   * `get_fixtures` accepts a plain `date_start`/`date_stop` window with no `player_key`, and
+   * returns every match across all tours/levels in that window (real data verified back to at
+   * least 2010; ranges of ~3 weeks return successfully, but very large ranges (~1 month+) have
+   * been observed to fail/time out, so callers should chunk into short windows).
+   */
+  async getCompletedMatchesByDateRange(dateStart: string, dateStop: string): Promise<HistoricalFixture[]> {
+    const raw = await this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop });
+
+    return (raw ?? [])
+      .map((m) => {
+        const status = mapMatchStatus(m.event_status);
+        const isCancelled = /cancel|postpone/i.test(m.event_status);
+        // Only keep matches with a definitive terminal outcome -- exclude anything still
+        // scheduled/live, which should not appear in a past date range but is guarded anyway.
+        if (!status.finished && !isCancelled) return null;
+
+        const { surface, level } = inferSurfaceAndLevel(m.tournament_name);
+        const winnerId =
+          m.event_winner === "First Player"
+            ? str(m.first_player_key)
+            : m.event_winner === "Second Player"
+              ? str(m.second_player_key)
+              : null;
+
+        const fixture: HistoricalFixture = {
+          id: str(m.event_key),
+          provider: this.name,
+          date: m.event_date,
+          time: m.event_time ?? null,
+          tour: deriveTour(m.event_type_type),
+          tournamentName: m.tournament_name ?? null,
+          tournamentLevel: level,
+          round: m.tournament_round ?? null,
+          surface,
+          matchFormat: determineMatchFormat(m.event_type_type, level),
+          player1Id: str(m.first_player_key),
+          player1Name: m.event_first_player,
+          player2Id: str(m.second_player_key),
+          player2Name: m.event_second_player,
+          winnerId,
+          score: mapScoreString(m),
+          retired: status.retired,
+          walkover: status.walkover,
+          cancelled: isCancelled,
+          setGameMargins: mapHistoricalFixtureGameMargins(m),
+          raw: m,
+        };
+        return fixture;
+      })
+      .filter((f): f is HistoricalFixture => f !== null);
   }
 
   async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
