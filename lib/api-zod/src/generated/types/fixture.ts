@@ -14,7 +14,7 @@ export interface Fixture {
   date: Date;
   /** @nullable */
   tournamentName?: string | null;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   round?: string | null;
   surface: Surface | null;

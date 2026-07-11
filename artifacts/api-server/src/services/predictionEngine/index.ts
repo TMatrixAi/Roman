@@ -103,7 +103,14 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   }
 
   if (headToHead.player1Wins + headToHead.player2Wins > 0) {
-    reasons.push(`Head-to-head: ${input.player1.name} leads ${headToHead.player1Wins}-${headToHead.player2Wins}.`);
+    if (headToHead.player1Wins === headToHead.player2Wins) {
+      reasons.push(`Head-to-head is tied ${headToHead.player1Wins}-${headToHead.player2Wins}.`);
+    } else {
+      const leader = headToHead.player1Wins > headToHead.player2Wins ? input.player1.name : input.player2.name;
+      reasons.push(
+        `Head-to-head: ${leader} leads ${Math.max(headToHead.player1Wins, headToHead.player2Wins)}-${Math.min(headToHead.player1Wins, headToHead.player2Wins)}.`,
+      );
+    }
   } else {
     risks.push("No prior head-to-head meetings found -- this matchup has no direct precedent.");
   }

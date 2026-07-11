@@ -123,7 +123,7 @@ export interface MatchRecord {
   date: string;
   /** @nullable */
   tournamentName?: string | null;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   round?: string | null;
   matchFormat?: MatchFormat;
@@ -139,8 +139,8 @@ export interface MatchRecord {
   score?: string | null;
   retired?: boolean;
   walkover?: boolean;
-  stats?: MatchStatLine;
-  opponentStats?: MatchStatLine;
+  stats?: MatchStatLine | null;
+  opponentStats?: MatchStatLine | null;
 }
 
 export interface Fixture {
@@ -148,7 +148,7 @@ export interface Fixture {
   date: string;
   /** @nullable */
   tournamentName?: string | null;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   round?: string | null;
   surface: Surface | null;
@@ -351,7 +351,7 @@ export interface Prediction {
   player2Name: string;
   surface: Surface;
   matchFormat: MatchFormat;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   tournamentName?: string | null;
   predictedWinnerId: string;

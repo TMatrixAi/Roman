@@ -427,7 +427,9 @@ components:
         tournamentName:
           type: ["string", "null"]
         tournamentLevel:
-          $ref: "#/components/schemas/TournamentLevel"
+          oneOf:
+            - $ref: "#/components/schemas/TournamentLevel"
+            - type: "null"
         round:
           type: ["string", "null"]
         matchFormat:
@@ -454,9 +456,13 @@ components:
         walkover:
           type: boolean
         stats:
-          $ref: "#/components/schemas/MatchStatLine"
+          oneOf:
+            - $ref: "#/components/schemas/MatchStatLine"
+            - type: "null"
         opponentStats:
-          $ref: "#/components/schemas/MatchStatLine"
+          oneOf:
+            - $ref: "#/components/schemas/MatchStatLine"
+            - type: "null"
 
     Fixture:
       type: object
@@ -470,7 +476,9 @@ components:
         tournamentName:
           type: ["string", "null"]
         tournamentLevel:
-          $ref: "#/components/schemas/TournamentLevel"
+          oneOf:
+            - $ref: "#/components/schemas/TournamentLevel"
+            - type: "null"
         round:
           type: ["string", "null"]
         surface:
@@ -770,7 +778,9 @@ components:
         matchFormat:
           $ref: "#/components/schemas/MatchFormat"
         tournamentLevel:
-          $ref: "#/components/schemas/TournamentLevel"
+          oneOf:
+            - $ref: "#/components/schemas/TournamentLevel"
+            - type: "null"
         tournamentName:
           type: ["string", "null"]
         predictedWinnerId:

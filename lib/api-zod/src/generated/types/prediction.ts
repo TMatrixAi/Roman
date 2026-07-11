@@ -21,7 +21,7 @@ export interface Prediction {
   player2Name: string;
   surface: Surface;
   matchFormat: MatchFormat;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   tournamentName?: string | null;
   predictedWinnerId: string;

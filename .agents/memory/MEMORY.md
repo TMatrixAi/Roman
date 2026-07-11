@@ -1,0 +1,1 @@
+- [API-Tennis provider quirks](api-tennis-provider.md) — real API-Tennis responses violate its own docs (numeric keys, null surfaces/levels); design for it, don't trust the docs literally.

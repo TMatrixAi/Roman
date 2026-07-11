@@ -16,7 +16,7 @@ export interface MatchRecord {
   date: Date;
   /** @nullable */
   tournamentName?: string | null;
-  tournamentLevel?: TournamentLevel;
+  tournamentLevel?: TournamentLevel | null;
   /** @nullable */
   round?: string | null;
   matchFormat?: MatchFormat;
@@ -32,6 +32,6 @@ export interface MatchRecord {
   score?: string | null;
   retired?: boolean;
   walkover?: boolean;
-  stats?: MatchStatLine;
-  opponentStats?: MatchStatLine;
+  stats?: MatchStatLine | null;
+  opponentStats?: MatchStatLine | null;
 }

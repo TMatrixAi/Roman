@@ -22,17 +22,22 @@ interface ApiTennisEnvelope<T> {
   result: T;
 }
 
+/** API-Tennis is inconsistent about whether keys come back as strings or numbers -- always normalize with str(). */
+function str(value: string | number): string {
+  return String(value);
+}
+
 interface RawStandingRow {
   place: string;
   player: string;
-  player_key: string;
+  player_key: string | number;
   league: string;
   country: string;
   points: string;
 }
 
 interface RawPlayer {
-  player_key: string;
+  player_key: string | number;
   player_name: string;
   player_country: string | null;
   player_bday: string | null;
@@ -45,13 +50,13 @@ interface RawScoreEntry {
 }
 
 interface RawMatch {
-  event_key: string;
+  event_key: string | number;
   event_date: string;
   event_time?: string;
   event_first_player: string;
-  first_player_key: string;
+  first_player_key: string | number;
   event_second_player: string;
-  second_player_key: string;
+  second_player_key: string | number;
   event_final_result: string;
   event_winner: "First Player" | "Second Player" | null;
   event_status: string;
@@ -177,7 +182,7 @@ export class ApiTennisProvider implements TennisDataProvider {
       .filter((row) => row.player.toLowerCase().includes(lowerQuery))
       .slice(0, 25)
       .map((row) => ({
-        id: row.player_key,
+        id: str(row.player_key),
         name: row.player,
         countryCode: row.country ?? null,
         currentRank: parseInt(row.place, 10) || null,
@@ -192,9 +197,9 @@ export class ApiTennisProvider implements TennisDataProvider {
     ]);
     const raw = players?.[0];
     if (!raw) return null;
-    const standingRow = standings.find((row) => row.player_key === playerId);
+    const standingRow = standings.find((row) => str(row.player_key) === playerId);
     return {
-      id: raw.player_key,
+      id: str(raw.player_key),
       name: raw.player_name,
       countryCode: raw.player_country ?? standingRow?.country ?? null,
       currentRank: standingRow ? parseInt(standingRow.place, 10) || null : null,
@@ -224,13 +229,13 @@ export class ApiTennisProvider implements TennisDataProvider {
   }
 
   private mapMatchRecord(raw: RawMatch, playerId: string): MatchRecord {
-    const isFirstPlayer = raw.first_player_key === playerId;
+    const isFirstPlayer = str(raw.first_player_key) === playerId;
     const { surface, level } = inferSurfaceAndLevel(raw.tournament_name);
     const status = mapMatchStatus(raw.event_status);
     const won = (isFirstPlayer && raw.event_winner === "First Player") || (!isFirstPlayer && raw.event_winner === "Second Player");
 
     return {
-      id: raw.event_key,
+      id: str(raw.event_key),
       date: raw.event_date,
       tournamentName: raw.tournament_name ?? null,
       tournamentLevel: level,
@@ -238,7 +243,7 @@ export class ApiTennisProvider implements TennisDataProvider {
       matchFormat: determineMatchFormat(raw.event_type_type, level),
       surface,
       indoor: surface === "IndoorHard" ? true : null,
-      opponentId: isFirstPlayer ? raw.second_player_key : raw.first_player_key,
+      opponentId: isFirstPlayer ? str(raw.second_player_key) : str(raw.first_player_key),
       opponentName: isFirstPlayer ? raw.event_second_player : raw.event_first_player,
       opponentRank: null,
       result: won ? "W" : "L",
@@ -261,7 +266,7 @@ export class ApiTennisProvider implements TennisDataProvider {
       .map((m) => {
         const { surface, level } = inferSurfaceAndLevel(m.tournament_name);
         return {
-          id: m.event_key,
+          id: str(m.event_key),
           date: m.event_date,
           tournamentName: m.tournament_name ?? null,
           tournamentLevel: level,
@@ -269,9 +274,9 @@ export class ApiTennisProvider implements TennisDataProvider {
           surface,
           indoor: surface === "IndoorHard" ? true : null,
           matchFormat: determineMatchFormat(m.event_type_type, level),
-          player1Id: m.first_player_key,
+          player1Id: str(m.first_player_key),
           player1Name: m.event_first_player,
-          player2Id: m.second_player_key,
+          player2Id: str(m.second_player_key),
           player2Name: m.event_second_player,
         };
       });
@@ -289,7 +294,7 @@ export class ApiTennisProvider implements TennisDataProvider {
       .filter((m) => mapMatchStatus(m.event_status).finished && m.event_winner !== null)
       .map((m) => {
         const { surface } = inferSurfaceAndLevel(m.tournament_name);
-        const winnerId = m.event_winner === "First Player" ? m.first_player_key : m.second_player_key;
+        const winnerId = m.event_winner === "First Player" ? str(m.first_player_key) : str(m.second_player_key);
         return {
           date: m.event_date,
           tournamentName: m.tournament_name ?? null,

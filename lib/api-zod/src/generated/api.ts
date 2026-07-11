@@ -79,7 +79,7 @@ export const GetPlayerMatchesResponseItem = zod.object({
   "id": zod.string(),
   "date": zod.coerce.date(),
   "tournamentName": zod.string().nullish(),
-  "tournamentLevel": zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']).optional(),
+  "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "round": zod.string().nullish(),
   "matchFormat": zod.enum(['BestOf3', 'BestOf5']).optional(),
   "surface": zod.union([zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),zod.null()]),
@@ -91,7 +91,7 @@ export const GetPlayerMatchesResponseItem = zod.object({
   "score": zod.string().nullish(),
   "retired": zod.boolean().optional(),
   "walkover": zod.boolean().optional(),
-  "stats": zod.object({
+  "stats": zod.union([zod.object({
   "firstServePct": zod.number().nullish(),
   "firstServeWon": zod.number().nullish(),
   "secondServeWon": zod.number().nullish(),
@@ -100,8 +100,8 @@ export const GetPlayerMatchesResponseItem = zod.object({
   "breakPointsSaved": zod.number().nullish(),
   "breakPointsFaced": zod.number().nullish(),
   "returnPointsWon": zod.number().nullish()
-}).optional().describe('Raw serve\/return counting stats for one player in one match, when the provider supplies them'),
-  "opponentStats": zod.object({
+}).describe('Raw serve\/return counting stats for one player in one match, when the provider supplies them'),zod.null()]).optional(),
+  "opponentStats": zod.union([zod.object({
   "firstServePct": zod.number().nullish(),
   "firstServeWon": zod.number().nullish(),
   "secondServeWon": zod.number().nullish(),
@@ -110,7 +110,7 @@ export const GetPlayerMatchesResponseItem = zod.object({
   "breakPointsSaved": zod.number().nullish(),
   "breakPointsFaced": zod.number().nullish(),
   "returnPointsWon": zod.number().nullish()
-}).optional().describe('Raw serve\/return counting stats for one player in one match, when the provider supplies them')
+}).describe('Raw serve\/return counting stats for one player in one match, when the provider supplies them'),zod.null()]).optional()
 })
 export const GetPlayerMatchesResponse = zod.array(GetPlayerMatchesResponseItem)
 
@@ -126,7 +126,7 @@ export const GetUpcomingFixturesResponseItem = zod.object({
   "id": zod.string(),
   "date": zod.coerce.date(),
   "tournamentName": zod.string().nullish(),
-  "tournamentLevel": zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']).optional(),
+  "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "round": zod.string().nullish(),
   "surface": zod.union([zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),zod.null()]),
   "indoor": zod.boolean().nullish(),
@@ -210,7 +210,7 @@ export const CreatePredictionResponse = zod.object({
   "player2Name": zod.string(),
   "surface": zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),
   "matchFormat": zod.enum(['BestOf3', 'BestOf5']),
-  "tournamentLevel": zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']).optional(),
+  "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "tournamentName": zod.string().nullish(),
   "predictedWinnerId": zod.string(),
   "predictedWinnerName": zod.string(),
@@ -316,7 +316,7 @@ export const GetPredictionResponse = zod.object({
   "player2Name": zod.string(),
   "surface": zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),
   "matchFormat": zod.enum(['BestOf3', 'BestOf5']),
-  "tournamentLevel": zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']).optional(),
+  "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "tournamentName": zod.string().nullish(),
   "predictedWinnerId": zod.string(),
   "predictedWinnerName": zod.string(),
@@ -411,7 +411,7 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "player2Name": zod.string(),
   "surface": zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),
   "matchFormat": zod.enum(['BestOf3', 'BestOf5']),
-  "tournamentLevel": zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']).optional(),
+  "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "tournamentName": zod.string().nullish(),
   "predictedWinnerId": zod.string(),
   "predictedWinnerName": zod.string(),
