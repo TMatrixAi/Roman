@@ -265,6 +265,23 @@ export const CreatePredictionResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "availability": zod.object({
+  "player1": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "player2": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "reliability": zod.number(),
+  "note": zod.string(),
+  "warnings": zod.array(zod.string())
+}).optional().describe('Real injury\/travel\/rest signals derived from verified match data -- no external pre-match injury\/withdrawal feed is connected (see availabilityNote).'),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),
@@ -398,6 +415,23 @@ export const GetPredictionResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "availability": zod.object({
+  "player1": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "player2": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "reliability": zod.number(),
+  "note": zod.string(),
+  "warnings": zod.array(zod.string())
+}).optional().describe('Real injury\/travel\/rest signals derived from verified match data -- no external pre-match injury\/withdrawal feed is connected (see availabilityNote).'),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),
@@ -520,6 +554,23 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "availability": zod.object({
+  "player1": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "player2": zod.object({
+  "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
+  "travelDistanceKm": zod.number().nullable().describe('Real great-circle distance between the venue of this player\'s last match and this match\'s venue. Null when either venue can\'t be resolved.'),
+  "recentRetirementOrWithdrawal": zod.boolean().describe('True only when this player\'s own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.'),
+  "recentRetirementTournament": zod.string().nullable()
+}),
+  "reliability": zod.number(),
+  "note": zod.string(),
+  "warnings": zod.array(zod.string())
+}).optional().describe('Real injury\/travel\/rest signals derived from verified match data -- no external pre-match injury\/withdrawal feed is connected (see availabilityNote).'),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),

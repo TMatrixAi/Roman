@@ -34,6 +34,13 @@ export interface PredictionEngineInput {
    */
   weather?: WeatherConditions | null;
   /**
+   * The tournament name for this match, used only to look up real venue coordinates (via
+   * `venueMap.ts`, the same static lookup weather uses) for the rest/travel signals in
+   * `availability.ts`. Omit/null when unknown -- travel distance simply reports as unavailable,
+   * never a guess.
+   */
+  tournamentName?: string | null;
+  /**
    * The currently active Phase 4 isotonic calibration mapping (fitted from real walk-forward
    * validation data), pre-fetched by the caller. When present, this is used in place of the
    * engine's own dataQuality-based heuristic shrink -- a real, data-validated calibration beats a

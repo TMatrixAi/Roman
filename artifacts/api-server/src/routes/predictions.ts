@@ -119,6 +119,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       // No scheduled fixture date is known for an ad-hoc prediction request, so weather is
       // intentionally omitted here -- see paperTrading.ts for genuinely upcoming fixtures.
       weather: null,
+      tournamentName: body.tournamentName ?? null,
       segment,
     });
 

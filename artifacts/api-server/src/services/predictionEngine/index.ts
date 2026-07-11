@@ -2,6 +2,7 @@ import { computeSurfaceEloModule } from "./surfaceElo";
 import { computeServeReturnModule } from "./serveReturn";
 import { computeRecentFormModule } from "./recentForm";
 import { computeFatigueModule } from "./fatigue";
+import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
 import { computeDataQuality } from "./dataQuality";
@@ -18,6 +19,7 @@ export interface EngineBreakdown {
   serveReturn: ReturnType<typeof computeServeReturnModule>;
   recentForm: ReturnType<typeof computeRecentFormModule>;
   fatigue: ReturnType<typeof computeFatigueModule>;
+  availability: ReturnType<typeof computeAvailabilityModule>;
   styleMatchup: ReturnType<typeof computeStyleMatchupModule>;
   headToHead: ReturnType<typeof computeHeadToHeadModule>;
   models: ModelVote[];
@@ -51,6 +53,68 @@ export interface EngineOutput {
   engine: EngineBreakdown;
 }
 
+/**
+ * Turns the availability module's real signals into a signed player1 edge. Each component only
+ * contributes when its underlying data actually resolved for both players (or, for retirement,
+ * for the player it fired on) -- missing data contributes exactly 0, it never gets treated as
+ * "no disadvantage" vs. a fabricated default, which is why the module's own `reliability` (not
+ * this edge) is what tells the ensemble how much to trust it.
+ */
+function computeAvailabilityEdge(availability: ReturnType<typeof computeAvailabilityModule>): number {
+  let edge = 0;
+
+  const { player1, player2 } = availability;
+  if (player1.daysSinceLastMatch !== null && player2.daysSinceLastMatch !== null) {
+    const restDiff = player1.daysSinceLastMatch - player2.daysSinceLastMatch;
+    edge += Math.max(-7, Math.min(7, restDiff)) * 1.5;
+  }
+
+  if (player1.travelDistanceKm !== null && player2.travelDistanceKm !== null) {
+    const travelDiff = player2.travelDistanceKm - player1.travelDistanceKm; // positive favors player1 (they traveled less)
+    edge += Math.max(-10, Math.min(10, travelDiff / 500));
+  }
+
+  if (player1.recentRetirementOrWithdrawal) edge -= 15;
+  if (player2.recentRetirementOrWithdrawal) edge += 15;
+
+  return Math.max(-30, Math.min(30, edge));
+}
+
+/**
+ * Discloses exactly what availability data is real vs. missing for THIS match, rather than a
+ * flat "not connected" disclaimer -- rest days and recent retirement come straight from verified
+ * match records; travel distance depends on venue coverage; pre-match withdrawal (before either
+ * player has struck a ball) has no verified feed connected at all (RAPIDAPI_KEY/API_SPORTS_KEY
+ * checked live on 2026-07-11 -- neither resolves to a subscribed, working tennis data source) and
+ * that gap is always named explicitly.
+ */
+function buildAvailabilityNote(availability: ReturnType<typeof computeAvailabilityModule>): string {
+  const parts: string[] = [];
+
+  const rest: string[] = [];
+  if (availability.player1.daysSinceLastMatch !== null) rest.push(`P1 rested ${availability.player1.daysSinceLastMatch}d`);
+  if (availability.player2.daysSinceLastMatch !== null) rest.push(`P2 rested ${availability.player2.daysSinceLastMatch}d`);
+  if (rest.length > 0) parts.push(`Real rest days since last match: ${rest.join(", ")}.`);
+
+  const travel: string[] = [];
+  if (availability.player1.travelDistanceKm !== null) travel.push(`P1 traveled ~${availability.player1.travelDistanceKm}km since their last match`);
+  if (availability.player2.travelDistanceKm !== null) travel.push(`P2 traveled ~${availability.player2.travelDistanceKm}km since their last match`);
+  parts.push(travel.length > 0 ? `${travel.join(", ")}.` : "Travel distance unavailable for this match (venue coverage is limited to recognized tournaments).");
+
+  if (availability.player1.recentRetirementOrWithdrawal) {
+    parts.push(`P1 retired mid-match at ${availability.player1.recentRetirementTournament ?? "a recent tournament"} within the last 3 weeks -- a real recorded fact worth weighing, not a confirmed current injury.`);
+  }
+  if (availability.player2.recentRetirementOrWithdrawal) {
+    parts.push(`P2 retired mid-match at ${availability.player2.recentRetirementTournament ?? "a recent tournament"} within the last 3 weeks -- a real recorded fact worth weighing, not a confirmed current injury.`);
+  }
+
+  parts.push(
+    "No verified pre-match withdrawal/injury-status feed is connected -- this prediction cannot see an injury that hasn't yet caused a retirement or walkover in the match record.",
+  );
+
+  return parts.join(" ");
+}
+
 function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbability: number, favorsPlayer1: boolean): string {
   const margin = Math.abs(calibratedProbability - 50);
   const setsToWin = matchFormat === "BestOf5" ? 3 : 2;
@@ -68,6 +132,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
   const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches);
+  const availability = computeAvailabilityModule(input.player1Matches, input.player2Matches, input.tournamentName ?? null);
   const styleMatchup = computeStyleMatchupModule(input.player1Matches, input.player2Matches);
   const headToHead = computeHeadToHeadModule(input.headToHead, input.surface);
 
@@ -80,6 +145,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     },
     { name: "Recent Form", player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2, reliability: recentForm.reliability },
     { name: "Fatigue", player1Edge: (fatigue.player2FatigueScore - fatigue.player1FatigueScore) / 2, reliability: fatigue.reliability },
+    { name: "Availability (rest/travel/injury)", player1Edge: computeAvailabilityEdge(availability), reliability: availability.reliability },
     {
       name: "Head-to-Head",
       player1Edge: headToHead.player1Wins + headToHead.player2Wins > 0
@@ -202,6 +268,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     ...serveReturn.warnings,
     ...recentForm.warnings,
     ...fatigue.warnings,
+    ...availability.warnings,
     ...styleMatchup.warnings,
     ...headToHead.warnings,
   ];
@@ -213,6 +280,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     serveReturn,
     recentForm,
     fatigue,
+    availability,
     styleMatchup,
     headToHead,
     models,
@@ -220,8 +288,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     reasons,
     risks,
     warnings,
-    availabilityNote:
-      "Verified injury/availability tracking is not connected yet (evaluated in Phase 5: no reliable timestamped withdrawal/injury feed was found) -- this prediction assumes both players are fit to compete.",
+    availabilityNote: buildAvailabilityNote(availability),
     conditionsNote: weather
       ? `Forecast conditions for ${weather.venueName}: ${weather.temperatureC}°C, wind ${weather.windSpeedKph} km/h, ${weather.precipitationProbability}% chance of precipitation. ${weather.note}`
       : "Live weather and court-speed conditions are not connected for this matchup -- either the fixture isn't a genuinely upcoming one with a known venue/date, or it's beyond the forecast horizon.",

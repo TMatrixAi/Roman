@@ -5,6 +5,7 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { AvailabilityResult } from './availabilityResult';
 import type { EngineBreakdownModelAgreement } from './engineBreakdownModelAgreement';
 import type { FatigueResult } from './fatigueResult';
 import type { HeadToHeadResult } from './headToHeadResult';
@@ -23,6 +24,7 @@ export interface EngineBreakdown {
   serveReturn: ServeReturnResult;
   recentForm: RecentFormResult;
   fatigue: FatigueResult;
+  availability?: AvailabilityResult;
   styleMatchup: StyleMatchupResult;
   headToHead: HeadToHeadResult;
   models: ModelVote[];

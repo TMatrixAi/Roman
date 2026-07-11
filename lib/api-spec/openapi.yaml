@@ -857,6 +857,40 @@ components:
           items:
             type: string
 
+    PlayerAvailability:
+      type: object
+      required: [daysSinceLastMatch, travelDistanceKm, recentRetirementOrWithdrawal, recentRetirementTournament]
+      properties:
+        daysSinceLastMatch:
+          type: ["integer", "null"]
+          description: Exact real days since this player's most recent completed match. Null when there's no prior match on record.
+        travelDistanceKm:
+          type: ["number", "null"]
+          description: Real great-circle distance between the venue of this player's last match and this match's venue. Null when either venue can't be resolved.
+        recentRetirementOrWithdrawal:
+          type: boolean
+          description: True only when this player's own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis.
+        recentRetirementTournament:
+          type: ["string", "null"]
+
+    AvailabilityResult:
+      type: object
+      description: Real injury/travel/rest signals derived from verified match data -- no external pre-match injury/withdrawal feed is connected (see availabilityNote).
+      required: [player1, player2, reliability, note, warnings]
+      properties:
+        player1:
+          $ref: "#/components/schemas/PlayerAvailability"
+        player2:
+          $ref: "#/components/schemas/PlayerAvailability"
+        reliability:
+          type: number
+        note:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+
     StyleMatchupResult:
       type: object
       required: [player1Styles, player2Styles, reliability]
@@ -938,6 +972,8 @@ components:
     EngineBreakdown:
       type: object
       description: Full module-by-module output of the prediction engine
+      # `availability` is intentionally NOT required: predictions saved before this field existed
+      # have a stored `engine` JSON blob without it, and must still parse/read back cleanly.
       required: [surfaceElo, serveReturn, recentForm, fatigue, styleMatchup, headToHead, models]
       properties:
         surfaceElo:
@@ -948,6 +984,8 @@ components:
           $ref: "#/components/schemas/RecentFormResult"
         fatigue:
           $ref: "#/components/schemas/FatigueResult"
+        availability:
+          $ref: "#/components/schemas/AvailabilityResult"
         styleMatchup:
           $ref: "#/components/schemas/StyleMatchupResult"
         headToHead:

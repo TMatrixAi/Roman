@@ -342,6 +342,58 @@ export default function PredictionResultPage() {
             </div>
           </ModuleCard>
 
+          {engine.availability ? (
+            <ModuleCard title="REST, TRAVEL & INJURY" reliability={engine.availability.reliability} icon={Activity}>
+              <div className="text-xs text-muted-foreground space-y-1">
+                <div className="flex justify-between">
+                  <span>{prediction.player1Name} rest days:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.availability.player1.daysSinceLastMatch ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player2Name} rest days:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.availability.player2.daysSinceLastMatch ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player1Name} travel since last match:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.availability.player1.travelDistanceKm !== null ? `${engine.availability.player1.travelDistanceKm} km` : "n/a"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player2Name} travel since last match:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.availability.player2.travelDistanceKm !== null ? `${engine.availability.player2.travelDistanceKm} km` : "n/a"}
+                  </span>
+                </div>
+                {engine.availability.player1.recentRetirementOrWithdrawal && (
+                  <p className="text-amber-600 dark:text-amber-500">
+                    {prediction.player1Name} retired mid-match recently
+                    {engine.availability.player1.recentRetirementTournament ? ` (${engine.availability.player1.recentRetirementTournament})` : ""}.
+                  </p>
+                )}
+                {engine.availability.player2.recentRetirementOrWithdrawal && (
+                  <p className="text-amber-600 dark:text-amber-500">
+                    {prediction.player2Name} retired mid-match recently
+                    {engine.availability.player2.recentRetirementTournament ? ` (${engine.availability.player2.recentRetirementTournament})` : ""}.
+                  </p>
+                )}
+              </div>
+              {engine.availability.note && (
+                <p className="text-xs text-muted-foreground mt-2 italic">{engine.availability.note}</p>
+              )}
+            </ModuleCard>
+          ) : (
+            <ModuleCard title="REST, TRAVEL & INJURY" reliability={0} icon={Activity}>
+              <p className="text-xs text-muted-foreground italic">
+                This prediction was made before rest/travel/injury tracking was added and doesn't carry this data.
+              </p>
+            </ModuleCard>
+          )}
+
           <ModuleCard title="HEAD TO HEAD" reliability={engine.headToHead.reliability} icon={Swords}>
              <div className="flex justify-center items-center gap-6 py-4">
                 <div className="text-center">

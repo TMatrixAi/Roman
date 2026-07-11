@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './availabilityResult';
 export * from './calibrationBucket';
 export * from './calibrationKnot';
 export * from './engineBreakdown';
@@ -35,6 +36,7 @@ export * from './matchRecordResult';
 export * from './matchStatLine';
 export * from './modelVote';
 export * from './paperTradingCycleSummary';
+export * from './playerAvailability';
 export * from './playerProfile';
 export * from './playerSummary';
 export * from './prediction';

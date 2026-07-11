@@ -274,6 +274,34 @@ export interface FatigueResult {
   warnings?: string[];
 }
 
+export interface PlayerAvailability {
+  /**
+     * Exact real days since this player's most recent completed match. Null when there's no prior match on record.
+     * @nullable
+     */
+  daysSinceLastMatch: number | null;
+  /**
+     * Real great-circle distance between the venue of this player's last match and this match's venue. Null when either venue can't be resolved.
+     * @nullable
+     */
+  travelDistanceKm: number | null;
+  /** True only when this player's own match record shows they retired mid-match (the losing side of a retired result) within the last 3 weeks -- a real recorded fact, not a diagnosis. */
+  recentRetirementOrWithdrawal: boolean;
+  /** @nullable */
+  recentRetirementTournament: string | null;
+}
+
+/**
+ * Real injury/travel/rest signals derived from verified match data -- no external pre-match injury/withdrawal feed is connected (see availabilityNote).
+ */
+export interface AvailabilityResult {
+  player1: PlayerAvailability;
+  player2: PlayerAvailability;
+  reliability: number;
+  note: string;
+  warnings: string[];
+}
+
 export interface StyleMatchupResult {
   player1Styles: string[];
   player2Styles: string[];
@@ -330,6 +358,7 @@ export interface EngineBreakdown {
   serveReturn: ServeReturnResult;
   recentForm: RecentFormResult;
   fatigue: FatigueResult;
+  availability?: AvailabilityResult;
   styleMatchup: StyleMatchupResult;
   headToHead: HeadToHeadResult;
   models: ModelVote[];

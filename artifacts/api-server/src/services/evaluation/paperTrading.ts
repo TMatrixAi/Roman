@@ -151,6 +151,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         player2OpponentElo: player2OpponentStrength.lookup,
         activeCalibration: activeCalibration?.mapping ?? null,
         weather,
+        tournamentName: fixture.tournamentName,
         segment,
       });
 
