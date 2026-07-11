@@ -57,6 +57,25 @@ export interface PredictionEngineInput {
    * instead of silently doing the same thing for two different reasons.
    */
   segment?: SegmentSpecialistInput | null;
+  /**
+   * Phase 7: whether the Monte Carlo point-by-point simulator has been validated (against real
+   * historical/live outcomes) well enough to earn a vote in the ensemble, pre-resolved by the
+   * caller (mirrors the `segment` pattern -- the engine stays sync/DB-free). Omit/null to fall
+   * back to "not yet validated" -- the simulation is still computed and shown, just not blended
+   * into calibratedProbability.
+   */
+  simulatorAdoption?: SimulatorAdoptionInput | null;
+}
+
+export interface SimulatorAdoptionInput {
+  /** True only once the simulator has cleared its own sample-size threshold AND measurably improved on the general model's logLoss on real graded outcomes. */
+  adopted: boolean;
+  /** This simulator's measured blend weight (0-1) against the rest of the ensemble. Present only when `adopted` is true. */
+  weight?: number;
+  sampleSize: number;
+  minSampleSize: number;
+  /** Always present -- explains why the simulator is or isn't voting yet, never silent. */
+  note: string;
 }
 
 export interface SegmentSpecialistInput {

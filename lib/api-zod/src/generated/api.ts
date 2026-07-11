@@ -324,7 +324,28 @@ export const CreatePredictionResponse = zod.object({
   "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
   "segmentLabel": zod.string().nullish(),
   "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
-  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.'),
+  "simulation": zod.object({
+  "player1WinProbability": zod.number().describe('Point-estimate probability (0-100) that player1 wins the match, from the simulation\'s mean'),
+  "rangeLow": zod.number().describe('10th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "rangeHigh": zod.number().describe('90th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "straightSetsProbabilityPlayer1": zod.number(),
+  "straightSetsProbabilityPlayer2": zod.number(),
+  "setScoreDistribution": zod.array(zod.object({
+  "score": zod.string().describe('Set score in \"winner-loser\" games form, e.g. \"2-0\", \"3-1\"'),
+  "probability": zod.number().describe('Percentage (0-100) of simulated matches that ended with this exact set score'),
+  "favors": zod.enum(['player1', 'player2'])
+})),
+  "expectedGamesPlayer1": zod.number(),
+  "expectedGamesPlayer2": zod.number(),
+  "player1ServicePointProbability": zod.number().describe('Derived (not point-tracked) probability player1 wins a point on their own serve, 0-1'),
+  "player2ServicePointProbability": zod.number(),
+  "inputReliability": zod.number().describe('0-100 -- how much the underlying surface-Elo and serve\/return signals can be trusted; drives how wide the uncertainty range is'),
+  "simulationsRun": zod.number(),
+  "note": zod.string()
+}).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
+  "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -474,7 +495,28 @@ export const GetPredictionResponse = zod.object({
   "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
   "segmentLabel": zod.string().nullish(),
   "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
-  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.'),
+  "simulation": zod.object({
+  "player1WinProbability": zod.number().describe('Point-estimate probability (0-100) that player1 wins the match, from the simulation\'s mean'),
+  "rangeLow": zod.number().describe('10th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "rangeHigh": zod.number().describe('90th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "straightSetsProbabilityPlayer1": zod.number(),
+  "straightSetsProbabilityPlayer2": zod.number(),
+  "setScoreDistribution": zod.array(zod.object({
+  "score": zod.string().describe('Set score in \"winner-loser\" games form, e.g. \"2-0\", \"3-1\"'),
+  "probability": zod.number().describe('Percentage (0-100) of simulated matches that ended with this exact set score'),
+  "favors": zod.enum(['player1', 'player2'])
+})),
+  "expectedGamesPlayer1": zod.number(),
+  "expectedGamesPlayer2": zod.number(),
+  "player1ServicePointProbability": zod.number().describe('Derived (not point-tracked) probability player1 wins a point on their own serve, 0-1'),
+  "player2ServicePointProbability": zod.number(),
+  "inputReliability": zod.number().describe('0-100 -- how much the underlying surface-Elo and serve\/return signals can be trusted; drives how wide the uncertainty range is'),
+  "simulationsRun": zod.number(),
+  "note": zod.string()
+}).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
+  "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -613,7 +655,28 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
   "segmentLabel": zod.string().nullish(),
   "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
-  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.'),
+  "simulation": zod.object({
+  "player1WinProbability": zod.number().describe('Point-estimate probability (0-100) that player1 wins the match, from the simulation\'s mean'),
+  "rangeLow": zod.number().describe('10th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "rangeHigh": zod.number().describe('90th percentile of player1\'s simulated win rate across uncertainty draws'),
+  "straightSetsProbabilityPlayer1": zod.number(),
+  "straightSetsProbabilityPlayer2": zod.number(),
+  "setScoreDistribution": zod.array(zod.object({
+  "score": zod.string().describe('Set score in \"winner-loser\" games form, e.g. \"2-0\", \"3-1\"'),
+  "probability": zod.number().describe('Percentage (0-100) of simulated matches that ended with this exact set score'),
+  "favors": zod.enum(['player1', 'player2'])
+})),
+  "expectedGamesPlayer1": zod.number(),
+  "expectedGamesPlayer2": zod.number(),
+  "player1ServicePointProbability": zod.number().describe('Derived (not point-tracked) probability player1 wins a point on their own serve, 0-1'),
+  "player2ServicePointProbability": zod.number(),
+  "inputReliability": zod.number().describe('0-100 -- how much the underlying surface-Elo and serve\/return signals can be trusted; drives how wide the uncertainty range is'),
+  "simulationsRun": zod.number(),
+  "note": zod.string()
+}).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
+  "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -862,6 +925,44 @@ export const UpdateEvaluationSettingsResponse = zod.object({
   "retirementRule": zod.enum(['excluded', 'included']),
   "paperTradeLeadMinutes": zod.number()
 })
+
+
+/**
+ * @summary Current Phase 7 Monte Carlo simulator validation status against real graded outcomes
+ */
+export const GetSimulatorValidationResponse = zod.object({
+  "sampleSize": zod.number(),
+  "minSampleSize": zod.number(),
+  "simulatorAccuracy": zod.number().nullish(),
+  "simulatorLogLoss": zod.number().nullish(),
+  "simulatorBrier": zod.number().nullish(),
+  "ensembleAccuracy": zod.number().nullish(),
+  "ensembleLogLoss": zod.number().nullish(),
+  "ensembleBrier": zod.number().nullish(),
+  "adopted": zod.boolean(),
+  "weight": zod.number(),
+  "note": zod.string(),
+  "computedAt": zod.coerce.date().nullish()
+}).describe('Phase 7 simulator validation status against real graded outcomes -- honest either way, never silently adopted.')
+
+
+/**
+ * @summary Recompute the simulator's validation status from every real graded outcome currently available, and persist it
+ */
+export const RunSimulatorValidationResponse = zod.object({
+  "sampleSize": zod.number(),
+  "minSampleSize": zod.number(),
+  "simulatorAccuracy": zod.number().nullish(),
+  "simulatorLogLoss": zod.number().nullish(),
+  "simulatorBrier": zod.number().nullish(),
+  "ensembleAccuracy": zod.number().nullish(),
+  "ensembleLogLoss": zod.number().nullish(),
+  "ensembleBrier": zod.number().nullish(),
+  "adopted": zod.boolean(),
+  "weight": zod.number(),
+  "note": zod.string(),
+  "computedAt": zod.coerce.date().nullish()
+}).describe('Phase 7 simulator validation status against real graded outcomes -- honest either way, never silently adopted.')
 
 
 /**

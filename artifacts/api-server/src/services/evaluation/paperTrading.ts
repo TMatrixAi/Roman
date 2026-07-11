@@ -8,6 +8,7 @@ import { buildPlayerProfileWarnings } from "../predictionEngine/playerProfileWar
 import { getUpcomingConditions } from "../predictionEngine/weather";
 import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
+import { resolveSimulatorAdoption } from "./simulatorValidation";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import { logger } from "../../lib/logger";
 
@@ -136,12 +137,13 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
 
       const matchTour = player1.tour ?? player2.tour;
 
-      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather, segment] = await Promise.all([
+      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather, segment, simulatorAdoption] = await Promise.all([
         resolveOpponentStrength(player1Matches),
         resolveOpponentStrength(player2Matches),
         getActiveCalibration(),
         getUpcomingConditions(fixture.tournamentName, scheduledStartAt),
         resolveSegmentSpecialistInput(matchTour, fixture.surface),
+        resolveSimulatorAdoption(),
       ]);
 
       const output = runPredictionEngine({
@@ -158,6 +160,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         weather,
         tournamentName: fixture.tournamentName,
         segment,
+        simulatorAdoption,
       });
       output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 

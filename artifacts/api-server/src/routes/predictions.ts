@@ -19,6 +19,7 @@ import { runPredictionEngine } from "../services/predictionEngine";
 import { buildPlayerProfileWarnings } from "../services/predictionEngine/playerProfileWarnings";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
+import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
 
 const router: IRouter = Router();
 
@@ -103,11 +104,12 @@ router.post("/predictions", async (req, res): Promise<void> => {
     // only if player1's happens to be unknown).
     const matchTour = player1.tour ?? player2.tour;
 
-    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment] = await Promise.all([
+    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment, simulatorAdoption] = await Promise.all([
       resolveOpponentStrength(player1Matches),
       resolveOpponentStrength(player2Matches),
       db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
       resolveSegmentSpecialistInput(matchTour, body.surface),
+      resolveSimulatorAdoption(),
     ]);
 
     const output = runPredictionEngine({
@@ -126,6 +128,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       weather: null,
       tournamentName: body.tournamentName ?? null,
       segment,
+      simulatorAdoption,
     });
     output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 

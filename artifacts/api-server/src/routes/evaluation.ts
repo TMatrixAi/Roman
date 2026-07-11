@@ -18,6 +18,7 @@ import {
   ListPaperTradingJobRunsResponse,
   ListCalibrationRefitJobRunsQueryParams,
   ListCalibrationRefitJobRunsResponse,
+  GetSimulatorValidationResponse,
 } from "@workspace/api-zod";
 import { PAPER_TRADING_JOB_NAME } from "../jobs/paperTradingJobName";
 import { CALIBRATION_REFIT_JOB_NAME } from "../jobs/calibrationRefitJobName";
@@ -26,7 +27,8 @@ import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
 import { computeSegmentMetrics, computeCalibrationBuckets, computeStreaks } from "../services/evaluation/metrics";
 import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
-import { predictionSettingsTable } from "@workspace/db";
+import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
+import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -148,6 +150,40 @@ router.patch("/evaluation/settings", async (req, res): Promise<void> => {
     .returning();
 
   res.json(UpdateEvaluationSettingsResponse.parse(updated));
+});
+
+router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
+  const [row] = await db.select().from(simulatorValidationTable).limit(1);
+  if (!row) {
+    res.json(
+      GetSimulatorValidationResponse.parse({
+        sampleSize: 0,
+        minSampleSize: 30,
+        simulatorAccuracy: null,
+        simulatorLogLoss: null,
+        simulatorBrier: null,
+        ensembleAccuracy: null,
+        ensembleLogLoss: null,
+        ensembleBrier: null,
+        adopted: false,
+        weight: 0,
+        note: "No validation run has completed yet -- POST /api/evaluation/simulator/validate to compute one from real graded outcomes.",
+        computedAt: null,
+      }),
+    );
+    return;
+  }
+  res.json(GetSimulatorValidationResponse.parse(row));
+});
+
+router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> => {
+  const summary = await validateAndStoreSimulator();
+  res.json(
+    GetSimulatorValidationResponse.parse({
+      ...summary,
+      computedAt: new Date().toISOString(),
+    }),
+  );
 });
 
 router.post("/paper-trading/run-cycle", async (_req, res): Promise<void> => {

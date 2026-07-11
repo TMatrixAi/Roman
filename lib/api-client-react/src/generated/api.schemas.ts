@@ -381,6 +381,46 @@ export const EngineBreakdownModelAgreement = {
   HighDisagreement: 'HighDisagreement',
 } as const;
 
+export type SetScoreOutcomeFavors = typeof SetScoreOutcomeFavors[keyof typeof SetScoreOutcomeFavors];
+
+
+export const SetScoreOutcomeFavors = {
+  player1: 'player1',
+  player2: 'player2',
+} as const;
+
+export interface SetScoreOutcome {
+  /** Set score in "winner-loser" games form, e.g. "2-0", "3-1" */
+  score: string;
+  /** Percentage (0-100) of simulated matches that ended with this exact set score */
+  probability: number;
+  favors: SetScoreOutcomeFavors;
+}
+
+/**
+ * Phase 7 point-by-point Monte Carlo simulation -- point/game/set/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.
+ */
+export interface MatchSimulationResult {
+  /** Point-estimate probability (0-100) that player1 wins the match, from the simulation's mean */
+  player1WinProbability: number;
+  /** 10th percentile of player1's simulated win rate across uncertainty draws */
+  rangeLow: number;
+  /** 90th percentile of player1's simulated win rate across uncertainty draws */
+  rangeHigh: number;
+  straightSetsProbabilityPlayer1: number;
+  straightSetsProbabilityPlayer2: number;
+  setScoreDistribution: SetScoreOutcome[];
+  expectedGamesPlayer1: number;
+  expectedGamesPlayer2: number;
+  /** Derived (not point-tracked) probability player1 wins a point on their own serve, 0-1 */
+  player1ServicePointProbability: number;
+  player2ServicePointProbability: number;
+  /** 0-100 -- how much the underlying surface-Elo and serve/return signals can be trusted; drives how wide the uncertainty range is */
+  inputReliability: number;
+  simulationsRun: number;
+  note: string;
+}
+
 /**
  * Full module-by-module output of the prediction engine
  */
@@ -412,6 +452,36 @@ export interface EngineBreakdown {
   specialistApplied?: boolean;
   /** Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
   segmentNote?: string;
+  simulation?: MatchSimulationResult;
+  /** True only when the Phase 7 Monte Carlo simulator's validated performance earned it a vote in calibratedProbability */
+  simulatorApplied?: boolean;
+  /** Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent. */
+  simulatorNote?: string;
+}
+
+/**
+ * Phase 7 simulator validation status against real graded outcomes -- honest either way, never silently adopted.
+ */
+export interface SimulatorValidation {
+  sampleSize: number;
+  minSampleSize: number;
+  /** @nullable */
+  simulatorAccuracy?: number | null;
+  /** @nullable */
+  simulatorLogLoss?: number | null;
+  /** @nullable */
+  simulatorBrier?: number | null;
+  /** @nullable */
+  ensembleAccuracy?: number | null;
+  /** @nullable */
+  ensembleLogLoss?: number | null;
+  /** @nullable */
+  ensembleBrier?: number | null;
+  adopted: boolean;
+  weight: number;
+  note: string;
+  /** @nullable */
+  computedAt?: string | null;
 }
 
 export type Recommendation = typeof Recommendation[keyof typeof Recommendation];

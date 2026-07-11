@@ -202,6 +202,43 @@ export const insertSpecialistModelSchema = createInsertSchema(specialistModelsTa
 export type InsertSpecialistModel = z.infer<typeof insertSpecialistModelSchema>;
 export type SpecialistModelRow = typeof specialistModelsTable.$inferSelect;
 
+/**
+ * Phase 7: the current validation status of the Monte Carlo point-by-point simulator, recomputed
+ * on demand by `services/evaluation/simulatorValidation.ts` from whatever real graded outcomes
+ * exist (historical_test test-segment rows and paper_trade/live rows, both of which store a full
+ * live EngineBreakdown snapshot the simulator's inputs can be reconstructed from). Only one row
+ * is kept -- each validation run overwrites it -- since, unlike specialist_models (many
+ * segments), there is exactly one simulator to evaluate.
+ */
+export const simulatorValidationTable = pgTable("simulator_validation", {
+  id: serial("id").primaryKey(),
+
+  sampleSize: integer("sample_size").notNull(),
+  minSampleSize: integer("min_sample_size").notNull(),
+
+  simulatorAccuracy: real("simulator_accuracy"),
+  simulatorLogLoss: real("simulator_log_loss"),
+  simulatorBrier: real("simulator_brier"),
+  // The existing ensemble's OWN calibrated probability on the exact same graded rows -- the fair
+  // baseline the simulator is actually being compared against.
+  ensembleAccuracy: real("ensemble_accuracy"),
+  ensembleLogLoss: real("ensemble_log_loss"),
+  ensembleBrier: real("ensemble_brier"),
+
+  // True only when sampleSize >= minSampleSize AND the simulator measurably beat the ensemble's
+  // logLoss on these points -- never hand-picked.
+  adopted: boolean("adopted").notNull().default(false),
+  // This simulator's measured blend weight (0-1) against the rest of the ensemble; 0 when not adopted.
+  weight: real("weight").notNull().default(0),
+  note: text("note").notNull(),
+
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertSimulatorValidationSchema = createInsertSchema(simulatorValidationTable).omit({ id: true, computedAt: true });
+export type InsertSimulatorValidation = z.infer<typeof insertSimulatorValidationSchema>;
+export type SimulatorValidationRow = typeof simulatorValidationTable.$inferSelect;
+
 /** Singleton admin configuration row for Phase 4 evaluation behavior. */
 export const predictionSettingsTable = pgTable("prediction_settings", {
   id: serial("id").primaryKey(),

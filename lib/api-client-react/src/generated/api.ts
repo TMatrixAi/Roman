@@ -47,6 +47,7 @@ import type {
   ProviderStatus,
   RunWalkForwardRequest,
   SearchPlayersParams,
+  SimulatorValidation,
   UpdatePredictionSettingsRequest,
   WalkForwardSummary
 } from './api.schemas';
@@ -1553,6 +1554,154 @@ export const useUpdateEvaluationSettings = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateEvaluationSettingsMutationOptions(options));
+    }
+
+export const getGetSimulatorValidationUrl = () => {
+
+
+
+
+  return `/api/evaluation/simulator`
+}
+
+/**
+ * @summary Current Phase 7 Monte Carlo simulator validation status against real graded outcomes
+ */
+export const getSimulatorValidation = async ( options?: RequestInit): Promise<SimulatorValidation> => {
+
+  return customFetch<SimulatorValidation>(getGetSimulatorValidationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSimulatorValidationQueryKey = () => {
+    return [
+    `/api/evaluation/simulator`
+    ] as const;
+    }
+
+
+export const getGetSimulatorValidationQueryOptions = <TData = Awaited<ReturnType<typeof getSimulatorValidation>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSimulatorValidation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSimulatorValidationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSimulatorValidation>>> = ({ signal }) => getSimulatorValidation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSimulatorValidation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSimulatorValidationQueryResult = NonNullable<Awaited<ReturnType<typeof getSimulatorValidation>>>
+export type GetSimulatorValidationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Current Phase 7 Monte Carlo simulator validation status against real graded outcomes
+ */
+
+export function useGetSimulatorValidation<TData = Awaited<ReturnType<typeof getSimulatorValidation>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSimulatorValidation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSimulatorValidationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunSimulatorValidationUrl = () => {
+
+
+
+
+  return `/api/evaluation/simulator/validate`
+}
+
+/**
+ * @summary Recompute the simulator's validation status from every real graded outcome currently available, and persist it
+ */
+export const runSimulatorValidation = async ( options?: RequestInit): Promise<SimulatorValidation> => {
+
+  return customFetch<SimulatorValidation>(getRunSimulatorValidationUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunSimulatorValidationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSimulatorValidation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runSimulatorValidation>>, TError,void, TContext> => {
+
+const mutationKey = ['runSimulatorValidation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runSimulatorValidation>>, void> = () => {
+
+
+          return  runSimulatorValidation(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunSimulatorValidationMutationResult = NonNullable<Awaited<ReturnType<typeof runSimulatorValidation>>>
+
+    export type RunSimulatorValidationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Recompute the simulator's validation status from every real graded outcome currently available, and persist it
+ */
+export const useRunSimulatorValidation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSimulatorValidation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runSimulatorValidation>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunSimulatorValidationMutationOptions(options));
     }
 
 export const getRunPaperTradingCycleUrl = () => {

@@ -7,7 +7,8 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
 const AGREEMENT_STYLES: Record<string, string> = {
   Strong: "text-success",
@@ -239,6 +240,106 @@ export default function PredictionResultPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* PHASE 7: MONTE CARLO MATCH SIMULATION */}
+      {engine.simulation && (
+        <div>
+          <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
+            <Dices className="w-5 h-5" /> MONTE CARLO SIMULATION
+          </h3>
+
+          <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
+            <Info className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
+            <div className="space-y-1">
+              <div>{engine.simulatorNote}</div>
+              <Badge variant={engine.simulatorApplied ? "success" : "outline"} className="font-mono text-[10px]">
+                {engine.simulatorApplied ? "VOTING IN FINAL PROBABILITY" : "DISPLAY-ONLY, NOT YET VOTING"}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardContent className="p-6 space-y-6">
+                <div>
+                  <p className="text-xs font-mono text-muted-foreground mb-1">SIMULATED WIN PROBABILITY ({prediction.player1Name})</p>
+                  <p className="text-4xl font-black tracking-tighter">
+                    {engine.simulation.player1WinProbability.toFixed(1)}%
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1 font-mono">
+                    range {engine.simulation.rangeLow.toFixed(0)}–{engine.simulation.rangeHigh.toFixed(0)}%
+                  </p>
+                  <div className="relative h-3 w-full bg-secondary rounded-full overflow-hidden mt-3">
+                    <div
+                      className="absolute h-full bg-primary/30"
+                      style={{ left: `${engine.simulation.rangeLow}%`, width: `${Math.max(0, engine.simulation.rangeHigh - engine.simulation.rangeLow)}%` }}
+                    />
+                    <div className="absolute top-0 h-full w-0.5 bg-primary" style={{ left: `${engine.simulation.player1WinProbability}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="p-3 bg-background rounded-lg border">
+                    <p className="text-xs font-mono text-muted-foreground">STRAIGHT SETS</p>
+                    <p className="font-mono font-bold text-foreground mt-1 truncate">{prediction.player1Name}</p>
+                    <p className="text-lg font-bold">{engine.simulation.straightSetsProbabilityPlayer1.toFixed(1)}%</p>
+                  </div>
+                  <div className="p-3 bg-background rounded-lg border">
+                    <p className="text-xs font-mono text-muted-foreground">STRAIGHT SETS</p>
+                    <p className="font-mono font-bold text-foreground mt-1 truncate">{prediction.player2Name}</p>
+                    <p className="text-lg font-bold">{engine.simulation.straightSetsProbabilityPlayer2.toFixed(1)}%</p>
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground space-y-1 font-mono border-t pt-3">
+                  <div className="flex justify-between">
+                    <span>Expected games ({prediction.player1Name}):</span>
+                    <span className="text-foreground font-bold">{engine.simulation.expectedGamesPlayer1.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Expected games ({prediction.player2Name}):</span>
+                    <span className="text-foreground font-bold">{engine.simulation.expectedGamesPlayer2.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Simulations run:</span>
+                    <span className="text-foreground font-bold">{engine.simulation.simulationsRun.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Input reliability:</span>
+                    <span className="text-foreground font-bold">{engine.simulation.inputReliability}%</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground italic">{engine.simulation.note}</p>
+              </CardContent>
+            </Card>
+
+            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={engine.simulation.inputReliability} icon={Dices}>
+              <div className="h-64 -ml-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={engine.simulation.setScoreDistribution.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border" />
+                    <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="score" tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip
+                      formatter={(value: number, _name, item) => [`${value.toFixed(1)}%`, item.payload.favors === "player1" ? prediction.player1Name : prediction.player2Name]}
+                      contentStyle={{ fontSize: 12 }}
+                    />
+                    <Bar dataKey="probability" radius={[0, 4, 4, 0]}>
+                      {engine.simulation.setScoreDistribution.slice(0, 8).map((entry, i) => (
+                        <Cell key={i} fill={entry.favors === "player1" ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1" /> {prediction.player1Name}
+                <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground ml-3 mr-1" /> {prediction.player2Name}
+              </p>
+            </ModuleCard>
+          </div>
+        </div>
+      )}
 
       {/* FULL ENGINE BREAKDOWN */}
       <div>

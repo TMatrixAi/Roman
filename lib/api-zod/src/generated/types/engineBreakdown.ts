@@ -9,6 +9,7 @@ import type { AvailabilityResult } from './availabilityResult';
 import type { EngineBreakdownModelAgreement } from './engineBreakdownModelAgreement';
 import type { FatigueResult } from './fatigueResult';
 import type { HeadToHeadResult } from './headToHeadResult';
+import type { MatchSimulationResult } from './matchSimulationResult';
 import type { ModelVote } from './modelVote';
 import type { RecentFormResult } from './recentFormResult';
 import type { ServeReturnResult } from './serveReturnResult';
@@ -47,4 +48,9 @@ export interface EngineBreakdown {
   specialistApplied?: boolean;
   /** Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
   segmentNote?: string;
+  simulation?: MatchSimulationResult;
+  /** True only when the Phase 7 Monte Carlo simulator's validated performance earned it a vote in calibratedProbability */
+  simulatorApplied?: boolean;
+  /** Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent. */
+  simulatorNote?: string;
 }

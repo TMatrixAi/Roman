@@ -11,6 +11,7 @@ import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
 import { computeRecommendation } from "./recommendation";
+import { deriveServicePointEstimate, runMatchSimulation, type MatchSimulationResult } from "./simulator";
 import type { PredictionEngineInput } from "./types";
 import type { WeatherConditions } from "./weather";
 
@@ -37,6 +38,12 @@ export interface EngineBreakdown {
   specialistApplied: boolean;
   /** Always present and always visible -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
   segmentNote: string;
+  /** Phase 7: point-by-point Monte Carlo simulation output. Always computed and shown, regardless of whether it's been validated into the ensemble vote below. */
+  simulation: MatchSimulationResult;
+  /** True only when the simulator's own validated performance earned it a vote in calibratedProbability below. */
+  simulatorApplied: boolean;
+  /** Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent. */
+  simulatorNote: string;
 }
 
 export interface EngineOutput {
@@ -159,6 +166,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
 
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(moduleEdges.map((m) => m.reliability));
 
+  // Phase 7: point-by-point Monte Carlo simulation, always computed for display/transparency.
+  const servicePointEstimate = deriveServicePointEstimate(surfaceElo, serveReturn);
+  const simulation = runMatchSimulation(servicePointEstimate, input.matchFormat);
+
   // Prefer the real, Phase-4-fitted isotonic calibration (learned from actual walk-forward
   // validation outcomes) whenever one exists. Only fall back to the hand-tuned dataQuality-shrink
   // heuristic before any evaluation run has ever produced a fitted model -- that heuristic is a
@@ -182,9 +193,21 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     specialistWeight = segment.weight!;
   }
 
-  const calibratedProbability = specialistApplied && specialistProbability !== null
+  const preSimulatorProbability = specialistApplied && specialistProbability !== null
     ? Math.round((specialistWeight * specialistProbability + (1 - specialistWeight) * generalProbability) * 10) / 10
     : generalProbability;
+
+  // Phase 7: only blend the simulator's own vote into the final probability once it has been
+  // validated (against real historical/live outcomes) to actually earn one -- see
+  // services/evaluation/simulatorValidation.ts. Until then it stays supplementary/display-only,
+  // with an honest note explaining exactly why.
+  const simulatorAdoption = input.simulatorAdoption ?? null;
+  const simulatorApplied = !!(simulatorAdoption?.adopted && typeof simulatorAdoption.weight === "number");
+  const simulatorWeight = simulatorApplied ? simulatorAdoption!.weight! : 0;
+
+  const calibratedProbability = simulatorApplied
+    ? Math.round((simulatorWeight * simulation.player1WinProbability + (1 - simulatorWeight) * preSimulatorProbability) * 10) / 10
+    : preSimulatorProbability;
 
   const models: ModelVote[] = [...featureModels];
   models.push({
@@ -206,6 +229,20 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     const generalVsSpecialistSpread = Math.abs(generalProbability - specialistProbability);
     modelAgreement = worseAgreement(featureAgreement, agreementFromSpread(generalVsSpecialistSpread));
   }
+
+  if (simulatorApplied) {
+    models.push({
+      modelName: "Monte Carlo Simulator",
+      player1Probability: simulation.player1WinProbability,
+      weightUsed: Math.round(simulatorWeight * 1000) / 1000,
+      reliability: simulation.inputReliability,
+    });
+    const preSimulatorVsSimulatorSpread = Math.abs(preSimulatorProbability - simulation.player1WinProbability);
+    modelAgreement = worseAgreement(modelAgreement, agreementFromSpread(preSimulatorVsSimulatorSpread));
+  }
+
+  const simulatorNote = simulatorAdoption?.note ??
+    `The Monte Carlo simulator has not been validated against enough real graded outcomes yet (needs a minimum sample; see the evaluation dashboard) -- shown for transparency only and not yet voted into the final probability.`;
 
   let segmentNote: string;
   if (!segment) {
@@ -297,6 +334,9 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     segmentLabel: segment?.label ?? null,
     specialistApplied,
     segmentNote,
+    simulation,
+    simulatorApplied,
+    simulatorNote,
   };
 
   return {

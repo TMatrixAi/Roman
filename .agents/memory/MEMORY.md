@@ -7,3 +7,4 @@
 - [Calibration fallback shrink curve](calibration-fallback-shrink-curve.md) — dataQuality-shrink fallback re-tuned from real walk-forward outcomes; full trust now at DQ=65 not 90, floor 0.4.
 - [Test isolation against live tables](test-isolation-against-live-tables.md) — tests asserting exact counts on shared tables (historical_matches, evaluation_predictions) break once real jobs populate them; snapshot pre-existing counts instead.
 - [Player identity resolution beyond live standings](player-identity-resolution.md) — get_players works for any player_key; use our own historical_matches as a real fallback identity source instead of a fake second provider.
+- [Monte Carlo simulator service-point math](monte-carlo-simulator-service-point-math.md) — "prob server wins" vs "prob player1 wins" framings look interchangeable but aren't; test with symmetric inputs to catch silent bias bugs.

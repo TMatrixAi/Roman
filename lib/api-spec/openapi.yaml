@@ -456,6 +456,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/PredictionSettings"
 
+  /evaluation/simulator:
+    get:
+      operationId: getSimulatorValidation
+      tags: [evaluation]
+      summary: Current Phase 7 Monte Carlo simulator validation status against real graded outcomes
+      responses:
+        "200":
+          description: Simulator validation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorValidation"
+
+  /evaluation/simulator/validate:
+    post:
+      operationId: runSimulatorValidation
+      tags: [evaluation]
+      summary: Recompute the simulator's validation status from every real graded outcome currently available, and persist it
+      responses:
+        "200":
+          description: Freshly computed simulator validation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorValidation"
+
   /paper-trading/run-cycle:
     post:
       operationId: runPaperTradingCycle
@@ -1071,6 +1097,113 @@ components:
         segmentNote:
           type: string
           description: Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.
+        simulation:
+          $ref: "#/components/schemas/MatchSimulationResult"
+        simulatorApplied:
+          type: boolean
+          description: True only when the Phase 7 Monte Carlo simulator's validated performance earned it a vote in calibratedProbability
+        simulatorNote:
+          type: string
+          description: Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.
+
+    SetScoreOutcome:
+      type: object
+      required: [score, probability, favors]
+      properties:
+        score:
+          type: string
+          description: Set score in "winner-loser" games form, e.g. "2-0", "3-1"
+        probability:
+          type: number
+          description: Percentage (0-100) of simulated matches that ended with this exact set score
+        favors:
+          type: string
+          enum: [player1, player2]
+
+    MatchSimulationResult:
+      type: object
+      description: Phase 7 point-by-point Monte Carlo simulation -- point/game/set/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.
+      required:
+        [
+          player1WinProbability,
+          rangeLow,
+          rangeHigh,
+          straightSetsProbabilityPlayer1,
+          straightSetsProbabilityPlayer2,
+          setScoreDistribution,
+          expectedGamesPlayer1,
+          expectedGamesPlayer2,
+          player1ServicePointProbability,
+          player2ServicePointProbability,
+          inputReliability,
+          simulationsRun,
+          note,
+        ]
+      properties:
+        player1WinProbability:
+          type: number
+          description: Point-estimate probability (0-100) that player1 wins the match, from the simulation's mean
+        rangeLow:
+          type: number
+          description: 10th percentile of player1's simulated win rate across uncertainty draws
+        rangeHigh:
+          type: number
+          description: 90th percentile of player1's simulated win rate across uncertainty draws
+        straightSetsProbabilityPlayer1:
+          type: number
+        straightSetsProbabilityPlayer2:
+          type: number
+        setScoreDistribution:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetScoreOutcome"
+        expectedGamesPlayer1:
+          type: number
+        expectedGamesPlayer2:
+          type: number
+        player1ServicePointProbability:
+          type: number
+          description: Derived (not point-tracked) probability player1 wins a point on their own serve, 0-1
+        player2ServicePointProbability:
+          type: number
+        inputReliability:
+          type: number
+          description: 0-100 -- how much the underlying surface-Elo and serve/return signals can be trusted; drives how wide the uncertainty range is
+        simulationsRun:
+          type: integer
+        note:
+          type: string
+
+    SimulatorValidation:
+      type: object
+      description: Phase 7 simulator validation status against real graded outcomes -- honest either way, never silently adopted.
+      required: [sampleSize, minSampleSize, adopted, weight, note]
+      properties:
+        sampleSize:
+          type: integer
+        minSampleSize:
+          type: integer
+        simulatorAccuracy:
+          type: ["number", "null"]
+        simulatorLogLoss:
+          type: ["number", "null"]
+        simulatorBrier:
+          type: ["number", "null"]
+        ensembleAccuracy:
+          type: ["number", "null"]
+        ensembleLogLoss:
+          type: ["number", "null"]
+        ensembleBrier:
+          type: ["number", "null"]
+        adopted:
+          type: boolean
+        weight:
+          type: number
+        note:
+          type: string
+        computedAt:
+          type: ["string", "null"]
+          format: date-time
 
     Recommendation:
       type: string
