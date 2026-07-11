@@ -1,4 +1,4 @@
-import { useGetPrediction, useRecordPredictionOutcome } from "@workspace/api-client-react"
+import { useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
 import { useParams } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -55,7 +55,7 @@ export default function PredictionResultPage() {
   const id = parseInt(params.id || "0", 10)
   
   const { data: prediction, isLoading, isError } = useGetPrediction(id, {
-    query: { enabled: !!id }
+    query: { queryKey: getGetPredictionQueryKey(id), enabled: !!id }
   })
 
   const recordOutcome = useRecordPredictionOutcome()

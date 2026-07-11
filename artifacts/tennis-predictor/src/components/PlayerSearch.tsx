@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
-import { useSearchPlayers, type PlayerSummary } from "@workspace/api-client-react"
+import { useSearchPlayers, getSearchPlayersQueryKey, type PlayerSummary } from "@workspace/api-client-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, User, Trophy, Globe2 } from "lucide-react"
@@ -17,7 +16,7 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
 
   const { data: players, isLoading, isError } = useSearchPlayers(
     { query: debouncedQuery },
-    { query: { enabled: debouncedQuery.length >= 2, retry: false } }
+    { query: { queryKey: getSearchPlayersQueryKey({ query: debouncedQuery }), enabled: debouncedQuery.length >= 2, retry: false } }
   )
 
   return (

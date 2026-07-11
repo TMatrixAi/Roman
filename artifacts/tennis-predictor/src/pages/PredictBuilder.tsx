@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useLocation, useSearch } from "wouter"
-import { useGetPlayer, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import { useGetPlayer, getGetPlayerQueryKey, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +20,7 @@ function PlayerCard({
   onRemove: () => void 
 }) {
   const { data: player, isLoading, isError } = useGetPlayer(playerId || "", {
-    query: { enabled: !!playerId }
+    query: { queryKey: getGetPlayerQueryKey(playerId || ""), enabled: !!playerId }
   })
 
   if (!playerId) {

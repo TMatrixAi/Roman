@@ -116,7 +116,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   }
 
   if (modelAgreement === "HighDisagreement" || modelAgreement === "Mixed") {
-    risks.push(`Engine models disagree (${modelAgreement.toLowerCase()}) -- treat the edge with caution.`);
+    const agreementLabel = modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+    risks.push(`Engine models disagree (${agreementLabel}) -- treat the edge with caution.`);
   }
 
   const engine: EngineBreakdown = {
