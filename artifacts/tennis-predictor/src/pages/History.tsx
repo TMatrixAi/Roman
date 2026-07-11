@@ -2,7 +2,7 @@ import { useGetPredictionStats, useListPredictions, useRecordPredictionOutcome, 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatDate, formatProbability, formatQualityLabel } from "@/lib/utils"
+import { formatDate, formatProbability } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Link } from "wouter"
 import { Target, CheckCircle2, XCircle, Clock, AlertTriangle, TrendingUp, ChevronRight } from "lucide-react"

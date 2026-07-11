@@ -1,1 +1,2 @@
 - [API-Tennis provider quirks](api-tennis-provider.md) — real API-Tennis responses violate its own docs (numeric keys, null surfaces/levels); design for it, don't trust the docs literally.
+- [Orval + zod codegen pitfalls](orval-zod-codegen-pitfalls.md) — zod.coerce.string() silently defeats required-field validation; generated react-query hook option types require queryKey.

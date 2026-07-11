@@ -17,17 +17,15 @@ function ratingsFromMargins(matches: MatchRecord[]): { serve: number; ret: numbe
   const withMargins = matches.filter((m) => m.setGameMargins.length > 0);
   if (withMargins.length === 0) return { serve: 50, ret: 50, sample: 0 };
 
-  let heldMargin = 0;
-  let brokeMargin = 0;
+  let marginSum = 0;
   let sets = 0;
   for (const m of withMargins) {
     for (const set of m.setGameMargins) {
-      heldMargin += set.playerGames - set.opponentGames;
-      brokeMargin += set.playerGames - set.opponentGames;
+      marginSum += set.playerGames - set.opponentGames;
       sets += 1;
     }
   }
-  const avgMargin = sets > 0 ? heldMargin / sets : 0;
+  const avgMargin = sets > 0 ? marginSum / sets : 0;
   // Map an average game-margin per set (roughly -6..6) onto a 0-100 rating centered at 50.
   const rating = Math.max(5, Math.min(95, 50 + avgMargin * 6));
   return { serve: rating, ret: rating, sample: withMargins.length };

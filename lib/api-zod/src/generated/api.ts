@@ -37,7 +37,7 @@ export const searchPlayersQueryQueryMin = 2;
 
 
 export const SearchPlayersQueryParams = zod.object({
-  "query": zod.coerce.string().min(searchPlayersQueryQueryMin)
+  "query": zod.string().min(searchPlayersQueryQueryMin)
 })
 
 export const SearchPlayersResponseItem = zod.object({
@@ -54,7 +54,7 @@ export const SearchPlayersResponse = zod.array(SearchPlayersResponseItem)
  * @summary Get a player profile
  */
 export const GetPlayerParams = zod.object({
-  "playerId": zod.coerce.string()
+  "playerId": zod.string()
 })
 
 export const GetPlayerResponse = zod.object({
@@ -72,7 +72,7 @@ export const GetPlayerResponse = zod.object({
  * @summary Recent match history for a player (all surfaces, most recent first)
  */
 export const GetPlayerMatchesParams = zod.object({
-  "playerId": zod.coerce.string()
+  "playerId": zod.string()
 })
 
 export const GetPlayerMatchesResponseItem = zod.object({
@@ -119,7 +119,7 @@ export const GetPlayerMatchesResponse = zod.array(GetPlayerMatchesResponseItem)
  * @summary Upcoming scheduled matches
  */
 export const GetUpcomingFixturesQueryParams = zod.object({
-  "date": zod.coerce.string().optional().describe('ISO date (YYYY-MM-DD). Defaults to today.')
+  "date": zod.string().optional().describe('ISO date (YYYY-MM-DD). Defaults to today.')
 })
 
 export const GetUpcomingFixturesResponseItem = zod.object({
@@ -143,8 +143,8 @@ export const GetUpcomingFixturesResponse = zod.array(GetUpcomingFixturesResponse
  * @summary Head-to-head match list between two players
  */
 export const GetHeadToHeadQueryParams = zod.object({
-  "player1Id": zod.coerce.string(),
-  "player2Id": zod.coerce.string()
+  "player1Id": zod.string(),
+  "player2Id": zod.string()
 })
 
 export const GetHeadToHeadResponse = zod.object({

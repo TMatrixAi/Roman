@@ -68,8 +68,12 @@ interface RawMatch {
 }
 
 function determineMatchFormat(eventTypeType: string | undefined, level: string | null): MatchFormat {
-  const isMen = /atp|men/i.test(eventTypeType ?? "");
-  if (isMen && level === "GrandSlam") return "BestOf5";
+  const type = eventTypeType ?? "";
+  const isDoubles = /doubles/i.test(type);
+  const isMen = /atp|men/i.test(type);
+  // Best-of-5 only applies to men's singles at Grand Slams -- doubles (at any level, including
+  // slams) and all WTA/junior/challenger matches are best-of-3.
+  if (isMen && !isDoubles && level === "GrandSlam") return "BestOf5";
   return "BestOf3";
 }
 
@@ -97,9 +101,25 @@ function mapMatchStatus(status: string): { retired: boolean; walkover: boolean; 
   };
 }
 
+/**
+ * API-Tennis reports tiebreak sets as decimals (e.g. "7.7"-"6.5" for a 7-6(5) set) instead of
+ * documenting the tiebreak points separately. We don't have a reliable way to tell which side of
+ * the decimal is the tiebreak-loser's points without more provider documentation, so we round to
+ * the game count only -- an honest "7-6" beats a confusing "7.7-6.5". Deferred: reconstruct full
+ * tiebreak scores (e.g. "7-6(5)") once the provider's exact encoding is confirmed.
+ */
 function mapScoreString(raw: RawMatch): string | null {
   if (raw.scores && raw.scores.length > 0) {
-    return raw.scores.map((s) => `${s.score_first}-${s.score_second}`).join(" ");
+    return raw.scores
+      .map((s) => {
+        // Truncate (not round) to the whole-games part: "7.7" is 7 games (plus a tiebreak
+        // point count we discard), and Math.round would wrongly bump it to 8.
+        const first = Math.trunc(parseFloat(s.score_first));
+        const second = Math.trunc(parseFloat(s.score_second));
+        if (Number.isNaN(first) || Number.isNaN(second)) return `${s.score_first}-${s.score_second}`;
+        return `${first}-${second}`;
+      })
+      .join(" ");
   }
   return raw.event_final_result ?? null;
 }
