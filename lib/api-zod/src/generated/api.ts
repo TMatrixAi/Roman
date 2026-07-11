@@ -897,3 +897,28 @@ export const ListPaperTradingJobRunsResponseItem = zod.object({
 export const ListPaperTradingJobRunsResponse = zod.array(ListPaperTradingJobRunsResponseItem)
 
 
+/**
+ * @summary Recent invocations of the standalone calibration-refit scheduled job, for monitoring gaps or failures
+ */
+export const listCalibrationRefitJobRunsQueryLimitDefault = 20;
+export const listCalibrationRefitJobRunsQueryLimitMax = 100;
+
+
+
+export const ListCalibrationRefitJobRunsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listCalibrationRefitJobRunsQueryLimitMax).default(listCalibrationRefitJobRunsQueryLimitDefault)
+})
+
+export const ListCalibrationRefitJobRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "jobName": zod.string(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date(),
+  "status": zod.enum(['success', 'failed']),
+  "attempts": zod.number(),
+  "summary": zod.unknown().nullish(),
+  "errorMessage": zod.string().nullish()
+})
+export const ListCalibrationRefitJobRunsResponse = zod.array(ListCalibrationRefitJobRunsResponseItem)
+
+

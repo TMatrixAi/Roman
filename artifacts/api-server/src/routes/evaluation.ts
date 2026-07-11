@@ -16,8 +16,11 @@ import {
   RunPaperTradingCycleResponse,
   ListPaperTradingJobRunsQueryParams,
   ListPaperTradingJobRunsResponse,
+  ListCalibrationRefitJobRunsQueryParams,
+  ListCalibrationRefitJobRunsResponse,
 } from "@workspace/api-zod";
 import { PAPER_TRADING_JOB_NAME } from "../jobs/paperTradingJobName";
+import { CALIBRATION_REFIT_JOB_NAME } from "../jobs/calibrationRefitJobName";
 import { runWalkForwardEvaluation } from "../services/evaluation/walkForward";
 import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
@@ -167,6 +170,23 @@ router.get("/paper-trading/job-runs", async (req, res): Promise<void> => {
     .limit(parsed.data.limit);
 
   res.json(ListPaperTradingJobRunsResponse.parse(rows));
+});
+
+router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<void> => {
+  const parsed = ListCalibrationRefitJobRunsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, CALIBRATION_REFIT_JOB_NAME))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(parsed.data.limit);
+
+  res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
 });
 
 export default router;

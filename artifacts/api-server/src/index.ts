@@ -31,4 +31,12 @@ app.listen(port, (err) => {
   // schedule -- e.g. a Replit Scheduled Deployment running `pnpm --filter @workspace/api-server
   // run job:paper-trading` every 15 minutes, independent of this server's uptime. See
   // GET /paper-trading/job-runs for the durable run history.
+  //
+  // Likewise, the live probability calibration model (the isotonic mapping predictions prefer
+  // over the dataQuality-shrink fallback -- see predictionEngine/calibration.ts) only gets
+  // refreshed when someone runs a walk-forward evaluation. It now has its own standalone job
+  // (`src/jobs/runCalibrationRefitJob.ts`, built to dist/jobs/runCalibrationRefitJob.mjs) intended
+  // for a Replit Scheduled Deployment running `pnpm --filter @workspace/api-server run
+  // job:calibration-refit` once daily, so the active model can't silently go stale or never exist.
+  // See GET /evaluation/calibration-refit/job-runs for the durable run history.
 });

@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { db, historicalMatchesTable, evaluationPredictionsTable, specialistModelsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   computeAndStoreSpecialistSegments,
   resolveSegmentSpecialistInput,
@@ -53,9 +53,40 @@ function makeHistoricalMatch(i: number, tour: string, surface: "Clay" | "Grass",
 }
 
 test("Phase 6 specialist weighting: rich segment gets its own calibration, thin segment falls back honestly", async (t) => {
+  // `historicalMatchCount` is a real, live count of ALL historical matches for a tour+surface
+  // (see `computeOneSegment`) -- it is NOT scoped to this test's own inserted rows. A real backfill
+  // (manual, or the recurring calibration-refit job) may have already populated real ATP-Clay /
+  // WTA-Grass matches by the time this test runs, so expectations must be relative to whatever
+  // pre-existing count is really in the table, never a hardcoded assumption that it starts at 0.
+  const [{ count: preexistingRich }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(historicalMatchesTable)
+    .where(and(eq(historicalMatchesTable.tour, RICH_TOUR), eq(historicalMatchesTable.surface, RICH_SURFACE)));
+  const [{ count: preexistingThin }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(historicalMatchesTable)
+    .where(and(eq(historicalMatchesTable.tour, THIN_TOUR), eq(historicalMatchesTable.surface, THIN_SURFACE)));
+
+  // Same real-data caveat applies to validation-segment `evaluation_predictions` rows (e.g. from a
+  // real, already-run walk-forward evaluation) -- count what's already there for this exact
+  // tour+surface before adding the test's own synthetic validation rows.
+  const [{ count: preexistingRichValidation }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(evaluationPredictionsTable)
+    .innerJoin(historicalMatchesTable, eq(evaluationPredictionsTable.historicalMatchId, historicalMatchesTable.id))
+    .where(
+      and(
+        eq(evaluationPredictionsTable.runKind, "historical_test"),
+        eq(evaluationPredictionsTable.segment, "validation"),
+        eq(evaluationPredictionsTable.includedInAccuracy, true),
+        eq(historicalMatchesTable.tour, RICH_TOUR),
+        eq(historicalMatchesTable.surface, RICH_SURFACE),
+      ),
+    );
+
   const richMatchCount = MIN_HISTORICAL_MATCHES_FOR_SEGMENT + 10;
   const richValidationCount = MIN_VALIDATION_SAMPLES_FOR_SEGMENT + 10;
-  const thinMatchCount = 5; // deliberately far under threshold
+  const thinMatchCount = 5; // deliberately far under threshold, on top of whatever real data already exists
 
   const richMatches = Array.from({ length: richMatchCount }, (_, i) =>
     makeHistoricalMatch(i, RICH_TOUR, RICH_SURFACE, `rich-p1`, `rich-p2`, i % 2 === 0 ? "rich-p1" : "rich-p2"),
@@ -120,13 +151,13 @@ test("Phase 6 specialist weighting: rich segment gets its own calibration, thin 
   // Thin segment: honest fallback, never silently fit.
   assert.equal(thinResult!.meetsThreshold, false);
   assert.equal(thinResult!.weight, 0);
-  assert.equal(thinResult!.historicalMatchCount, thinMatchCount);
+  assert.equal(thinResult!.historicalMatchCount, preexistingThin + thinMatchCount);
 
   // Rich segment: cleared both thresholds, fit its own mapping, and measurably beats the naive
   // identity general mapping on the same points (lower logLoss = better).
   assert.equal(richResult!.meetsThreshold, true);
-  assert.equal(richResult!.historicalMatchCount, richMatchCount);
-  assert.equal(richResult!.validationSampleSize, richValidationCount);
+  assert.equal(richResult!.historicalMatchCount, preexistingRich + richMatchCount);
+  assert.equal(richResult!.validationSampleSize, preexistingRichValidation + richValidationCount);
   assert.ok(richResult!.logLoss !== null && richResult!.generalLogLoss !== null);
   assert.ok(richResult!.logLoss! < richResult!.generalLogLoss!, "Segment-fit calibration should beat the naive general mapping on its own data");
   assert.ok(richResult!.weight > 0.1 && richResult!.weight <= 0.85, `Weight ${richResult!.weight} should be within the documented [0.1, 0.85] blend range`);

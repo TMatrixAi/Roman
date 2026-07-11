@@ -824,3 +824,11 @@ export type ListPaperTradingJobRunsParams = {
 limit?: number;
 };
 
+export type ListCalibrationRefitJobRunsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+

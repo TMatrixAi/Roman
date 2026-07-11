@@ -492,6 +492,29 @@ paths:
                 items:
                   $ref: "#/components/schemas/JobRun"
 
+  /evaluation/calibration-refit/job-runs:
+    get:
+      operationId: listCalibrationRefitJobRuns
+      tags: [evaluation]
+      summary: Recent invocations of the standalone calibration-refit scheduled job, for monitoring gaps or failures
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Most recent job runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JobRun"
+
 components:
   schemas:
     HealthStatus:

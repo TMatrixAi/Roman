@@ -27,6 +27,7 @@ export * from './headToHeadResult';
 export * from './healthStatus';
 export * from './jobRun';
 export * from './jobRunStatus';
+export * from './listCalibrationRefitJobRunsParams';
 export * from './listEvaluationPredictionsParams';
 export * from './listPaperTradingJobRunsParams';
 export * from './listPredictionsParams';

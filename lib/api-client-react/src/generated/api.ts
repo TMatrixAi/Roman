@@ -29,6 +29,7 @@ import type {
   HeadToHeadRecord,
   HealthStatus,
   JobRun,
+  ListCalibrationRefitJobRunsParams,
   ListEvaluationPredictionsParams,
   ListPaperTradingJobRunsParams,
   ListPredictionsParams,
@@ -1697,6 +1698,90 @@ export function useListPaperTradingJobRuns<TData = Awaited<ReturnType<typeof lis
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPaperTradingJobRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCalibrationRefitJobRunsUrl = (params?: ListCalibrationRefitJobRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/evaluation/calibration-refit/job-runs?${stringifiedParams}` : `/api/evaluation/calibration-refit/job-runs`
+}
+
+/**
+ * @summary Recent invocations of the standalone calibration-refit scheduled job, for monitoring gaps or failures
+ */
+export const listCalibrationRefitJobRuns = async (params?: ListCalibrationRefitJobRunsParams, options?: RequestInit): Promise<JobRun[]> => {
+
+  return customFetch<JobRun[]>(getListCalibrationRefitJobRunsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCalibrationRefitJobRunsQueryKey = (params?: ListCalibrationRefitJobRunsParams,) => {
+    return [
+    `/api/evaluation/calibration-refit/job-runs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCalibrationRefitJobRunsQueryOptions = <TData = Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>, TError = ErrorType<unknown>>(params?: ListCalibrationRefitJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCalibrationRefitJobRunsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>> = ({ signal }) => listCalibrationRefitJobRuns(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCalibrationRefitJobRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>>
+export type ListCalibrationRefitJobRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Recent invocations of the standalone calibration-refit scheduled job, for monitoring gaps or failures
+ */
+
+export function useListCalibrationRefitJobRuns<TData = Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>, TError = ErrorType<unknown>>(
+ params?: ListCalibrationRefitJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCalibrationRefitJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCalibrationRefitJobRunsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
