@@ -46,6 +46,7 @@ interface RawStandingRow {
 interface RawPlayer {
   player_key: string | number;
   player_name: string;
+  player_full_name?: string | null;
   player_country: string | null;
   player_bday: string | null;
 }
@@ -379,11 +380,16 @@ export class ApiTennisProvider implements TennisDataProvider {
     return {
       id: str(raw.player_key),
       name: raw.player_name,
+      fullName: raw.player_full_name ?? null,
       countryCode: raw.player_country ?? standingRow?.country ?? null,
       currentRank: standingRow ? parseInt(standingRow.place, 10) || null : null,
       tour: standingRow?.league ?? null,
       age: parseAgeFromBday(raw.player_bday),
       plays: null,
+      // Historical-match fallback (for players outside the current standings) is applied by
+      // `resolvePlayerProfile` in `playerIdentity.ts`, not here -- this provider stays a thin,
+      // DB-free wrapper around the raw API (see predictionEngine calibration architecture memory).
+      source: standingRow ? "live-standings" : undefined,
     };
   }
 

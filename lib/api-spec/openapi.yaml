@@ -575,6 +575,14 @@ components:
           type: ["integer", "null"]
         tour:
           type: ["string", "null"]
+        source:
+          type: string
+          enum: [live-standings, historical-match]
+          description: >-
+            How this player was found. "live-standings" means they're in the current ATP/WTA
+            standings feed (rank/tour are live). "historical-match" means they were found only in
+            our own previously-fetched real match history -- a genuinely real player, but rank/tour
+            here reflect their last known match, not a live ranking. Omitted for legacy rows.
 
     PlayerProfile:
       type: object
@@ -595,6 +603,17 @@ components:
           description: Playing hand, e.g. "Right-handed"
         tour:
           type: ["string", "null"]
+        fullName:
+          type: ["string", "null"]
+          description: Provider's full given+family name, when it differs from the display name.
+        source:
+          type: string
+          enum: [live-standings, historical-match]
+          description: >-
+            How tour/rank were resolved. "live-standings" means the current ATP/WTA standings feed
+            had this player. "historical-match" means the standings feed didn't have them, but a
+            real, previously-fetched match record did (tour reflects their last known match, not a
+            live ranking). Omitted when neither source could resolve tour/rank at all.
 
     MatchStatLine:
       type: object

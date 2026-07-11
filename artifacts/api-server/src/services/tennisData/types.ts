@@ -16,17 +16,30 @@ export type TournamentLevel =
   | "ITF"
   | "Other";
 
+/**
+ * How a player's tour/rank were resolved. "live-standings" means the current ATP/WTA standings
+ * feed had them (rank/tour are live). "historical-match" means the standings feed didn't have
+ * them (e.g. a Challenger/ITF-only player, or a recently-retired/returning player outside the
+ * current top rankings), but a real, previously-fetched match record did -- still real data, just
+ * reflecting their last known match rather than a live ranking. Omitted (undefined) when neither
+ * source could resolve anything -- a genuinely unresolvable player, never silently defaulted.
+ */
+export type PlayerProfileSource = "live-standings" | "historical-match";
+
 export interface PlayerSummary {
   id: string;
   name: string;
   countryCode: string | null;
   currentRank: number | null;
   tour: string | null;
+  source?: PlayerProfileSource;
 }
 
 export interface PlayerProfile extends PlayerSummary {
   age: number | null;
   plays: string | null;
+  /** Provider's full given+family name, when it differs from the display name. */
+  fullName: string | null;
 }
 
 export interface MatchStatLine {

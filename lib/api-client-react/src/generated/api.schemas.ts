@@ -59,6 +59,17 @@ export const MatchFormat = {
   BestOf5: 'BestOf5',
 } as const;
 
+/**
+ * How this player was found. "live-standings" means they're in the current ATP/WTA standings feed (rank/tour are live). "historical-match" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank/tour here reflect their last known match, not a live ranking. Omitted for legacy rows.
+ */
+export type PlayerSummarySource = typeof PlayerSummarySource[keyof typeof PlayerSummarySource];
+
+
+export const PlayerSummarySource = {
+  'live-standings': 'live-standings',
+  'historical-match': 'historical-match',
+} as const;
+
 export interface PlayerSummary {
   id: string;
   name: string;
@@ -68,7 +79,20 @@ export interface PlayerSummary {
   currentRank?: number | null;
   /** @nullable */
   tour?: string | null;
+  /** How this player was found. "live-standings" means they're in the current ATP/WTA standings feed (rank/tour are live). "historical-match" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank/tour here reflect their last known match, not a live ranking. Omitted for legacy rows. */
+  source?: PlayerSummarySource;
 }
+
+/**
+ * How tour/rank were resolved. "live-standings" means the current ATP/WTA standings feed had this player. "historical-match" means the standings feed didn't have them, but a real, previously-fetched match record did (tour reflects their last known match, not a live ranking). Omitted when neither source could resolve tour/rank at all.
+ */
+export type PlayerProfileSource = typeof PlayerProfileSource[keyof typeof PlayerProfileSource];
+
+
+export const PlayerProfileSource = {
+  'live-standings': 'live-standings',
+  'historical-match': 'historical-match',
+} as const;
 
 export interface PlayerProfile {
   id: string;
@@ -86,6 +110,13 @@ export interface PlayerProfile {
   plays?: string | null;
   /** @nullable */
   tour?: string | null;
+  /**
+     * Provider's full given+family name, when it differs from the display name.
+     * @nullable
+     */
+  fullName?: string | null;
+  /** How tour/rank were resolved. "live-standings" means the current ATP/WTA standings feed had this player. "historical-match" means the standings feed didn't have them, but a real, previously-fetched match record did (tour reflects their last known match, not a live ranking). Omitted when neither source could resolve tour/rank at all. */
+  source?: PlayerProfileSource;
 }
 
 /**

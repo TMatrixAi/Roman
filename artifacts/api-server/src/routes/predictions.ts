@@ -14,7 +14,9 @@ import {
   RecordPredictionOutcomeResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
+import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
 import { runPredictionEngine } from "../services/predictionEngine";
+import { buildPlayerProfileWarnings } from "../services/predictionEngine/playerProfileWarnings";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
 
@@ -80,7 +82,10 @@ router.post("/predictions", async (req, res): Promise<void> => {
   const provider = getTennisDataProvider();
 
   try {
-    const [player1, player2] = await Promise.all([provider.getPlayer(body.player1Id), provider.getPlayer(body.player2Id)]);
+    const [player1, player2] = await Promise.all([
+      resolvePlayerProfile(provider, body.player1Id),
+      resolvePlayerProfile(provider, body.player2Id),
+    ]);
 
     if (!player1 || !player2) {
       res.status(400).json({ error: "One or both players could not be found by the data provider" });
@@ -122,6 +127,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       tournamentName: body.tournamentName ?? null,
       segment,
     });
+    output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 
     const [saved] = await db
       .insert(predictionsTable)

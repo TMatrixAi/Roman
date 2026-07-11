@@ -45,7 +45,8 @@ export const SearchPlayersResponseItem = zod.object({
   "name": zod.string(),
   "countryCode": zod.string().nullable(),
   "currentRank": zod.number().nullish(),
-  "tour": zod.string().nullish()
+  "tour": zod.string().nullish(),
+  "source": zod.enum(['live-standings', 'historical-match']).optional().describe('How this player was found. \"live-standings\" means they\'re in the current ATP\/WTA standings feed (rank\/tour are live). \"historical-match\" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank\/tour here reflect their last known match, not a live ranking. Omitted for legacy rows.')
 })
 export const SearchPlayersResponse = zod.array(SearchPlayersResponseItem)
 
@@ -64,7 +65,9 @@ export const GetPlayerResponse = zod.object({
   "currentRank": zod.number().nullish(),
   "age": zod.number().nullish(),
   "plays": zod.string().nullish().describe('Playing hand, e.g. \"Right-handed\"'),
-  "tour": zod.string().nullish()
+  "tour": zod.string().nullish(),
+  "fullName": zod.string().nullish().describe('Provider\'s full given+family name, when it differs from the display name.'),
+  "source": zod.enum(['live-standings', 'historical-match']).optional().describe('How tour\/rank were resolved. \"live-standings\" means the current ATP\/WTA standings feed had this player. \"historical-match\" means the standings feed didn\'t have them, but a real, previously-fetched match record did (tour reflects their last known match, not a live ranking). Omitted when neither source could resolve tour\/rank at all.')
 })
 
 

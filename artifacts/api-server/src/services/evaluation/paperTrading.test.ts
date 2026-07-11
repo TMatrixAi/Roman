@@ -29,7 +29,7 @@ class FakeProvider implements TennisDataProvider {
     return [];
   }
   async getPlayer(playerId: string): Promise<PlayerProfile | null> {
-    return { id: playerId, name: playerId, countryCode: null, currentRank: null, tour: "ATP", age: null, plays: null };
+    return { id: playerId, name: playerId, fullName: null, countryCode: null, currentRank: null, tour: "ATP", age: null, plays: null };
   }
   async getPlayerMatches(): Promise<MatchRecord[]> {
     return [];

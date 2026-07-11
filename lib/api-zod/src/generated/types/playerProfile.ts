@@ -5,6 +5,7 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlayerProfileSource } from './playerProfileSource';
 
 export interface PlayerProfile {
   id: string;
@@ -22,4 +23,11 @@ export interface PlayerProfile {
   plays?: string | null;
   /** @nullable */
   tour?: string | null;
+  /**
+     * Provider's full given+family name, when it differs from the display name.
+     * @nullable
+     */
+  fullName?: string | null;
+  /** How tour/rank were resolved. "live-standings" means the current ATP/WTA standings feed had this player. "historical-match" means the standings feed didn't have them, but a real, previously-fetched match record did (tour reflects their last known match, not a live ranking). Omitted when neither source could resolve tour/rank at all. */
+  source?: PlayerProfileSource;
 }

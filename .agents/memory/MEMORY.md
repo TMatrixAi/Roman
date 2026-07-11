@@ -6,3 +6,4 @@
 - [Regex substring tournament-name bugs](regex-substring-tournament-name-bugs.md) — unanchored short regexes (e.g. "halle") match as substrings inside unrelated names (e.g. "Challenger"); check every name-lookup table, not just the one you're editing.
 - [Calibration fallback shrink curve](calibration-fallback-shrink-curve.md) — dataQuality-shrink fallback re-tuned from real walk-forward outcomes; full trust now at DQ=65 not 90, floor 0.4.
 - [Test isolation against live tables](test-isolation-against-live-tables.md) — tests asserting exact counts on shared tables (historical_matches, evaluation_predictions) break once real jobs populate them; snapshot pre-existing counts instead.
+- [Player identity resolution beyond live standings](player-identity-resolution.md) — get_players works for any player_key; use our own historical_matches as a real fallback identity source instead of a fake second provider.

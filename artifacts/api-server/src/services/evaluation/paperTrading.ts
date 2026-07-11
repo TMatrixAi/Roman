@@ -1,8 +1,10 @@
 import { db, evaluationPredictionsTable, calibrationModelsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getTennisDataProvider, ProviderUnavailableError, type TennisDataProvider } from "../tennisData";
+import { resolvePlayerProfile } from "../tennisData/playerIdentity";
 import { runPredictionEngine } from "../predictionEngine";
 import { resolveOpponentStrength } from "../predictionEngine/opponentStrength";
+import { buildPlayerProfileWarnings } from "../predictionEngine/playerProfileWarnings";
 import { getUpcomingConditions } from "../predictionEngine/weather";
 import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
@@ -118,7 +120,10 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
     if (now < cutoffAt.getTime()) continue; // not yet time to lock this one
 
     try {
-      const [player1, player2] = await Promise.all([provider.getPlayer(fixture.player1Id), provider.getPlayer(fixture.player2Id)]);
+      const [player1, player2] = await Promise.all([
+        resolvePlayerProfile(provider, fixture.player1Id),
+        resolvePlayerProfile(provider, fixture.player2Id),
+      ]);
       if (!player1 || !player2 || !fixture.surface || !fixture.matchFormat) {
         summary.errors.push(`Fixture ${fixture.id}: missing player profile or surface/format, skipped this cycle`);
         continue;
@@ -154,6 +159,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         tournamentName: fixture.tournamentName,
         segment,
       });
+      output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 
       // The engine already applies the active Phase-4 calibration internally when one exists (see
       // predictionEngine/index.ts), so its own `calibratedProbability` output IS the final,

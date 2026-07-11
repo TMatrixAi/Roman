@@ -5,6 +5,7 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlayerSummarySource } from './playerSummarySource';
 
 export interface PlayerSummary {
   id: string;
@@ -15,4 +16,6 @@ export interface PlayerSummary {
   currentRank?: number | null;
   /** @nullable */
   tour?: string | null;
+  /** How this player was found. "live-standings" means they're in the current ATP/WTA standings feed (rank/tour are live). "historical-match" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank/tour here reflect their last known match, not a live ranking. Omitted for legacy rows. */
+  source?: PlayerSummarySource;
 }

@@ -56,8 +56,9 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
           <div className="h-full flex flex-col items-center justify-center gap-1 text-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
             <span>NO PLAYERS FOUND</span>
             <span className="text-xs normal-case font-sans text-muted-foreground/80 max-w-xs">
-              Search only covers players currently in the ATP/WTA rankings. Retired players and
-              players who only compete on the Challenger/ITF circuit won't appear here.
+              Search covers current ATP/WTA rankings plus any player we've already recorded a real
+              match for (Challenger, ITF, Junior). A genuinely new name with no match on file yet
+              won't appear here.
             </span>
           </div>
         )}
@@ -90,6 +91,11 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
                       {player.tour && (
                         <span className="px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded-[2px]">
                           {player.tour}
+                        </span>
+                      )}
+                      {player.source === "historical-match" && (
+                        <span className="px-1.5 py-0.5 bg-muted text-muted-foreground rounded-[2px] normal-case">
+                          Not in live standings -- found via past match record
                         </span>
                       )}
                     </div>

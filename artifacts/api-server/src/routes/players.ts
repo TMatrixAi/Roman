@@ -8,6 +8,7 @@ import {
   GetPlayerMatchesResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
+import { resolvePlayerProfile, searchKnownPlayers } from "../services/tennisData/playerIdentity";
 
 const router: IRouter = Router();
 
@@ -19,7 +20,7 @@ router.get("/players/search", async (req, res): Promise<void> => {
   }
 
   try {
-    const players = await getTennisDataProvider().searchPlayers(parsed.data.query);
+    const players = await searchKnownPlayers(getTennisDataProvider(), parsed.data.query);
     res.json(SearchPlayersResponse.parse(players));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {
@@ -38,7 +39,7 @@ router.get("/players/:playerId", async (req, res): Promise<void> => {
   }
 
   try {
-    const player = await getTennisDataProvider().getPlayer(params.data.playerId);
+    const player = await resolvePlayerProfile(getTennisDataProvider(), params.data.playerId);
     if (!player) {
       res.status(404).json({ error: "Player not found" });
       return;
