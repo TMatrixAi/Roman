@@ -8,6 +8,7 @@ import {
   type HistoricalFixture,
   type MatchFormat,
   type MatchRecord,
+  type MatchStatLine,
   type PlayerProfile,
   type PlayerSummary,
   type ProviderStatusInfo,
@@ -50,6 +51,22 @@ interface RawScoreEntry {
   score_set: string;
 }
 
+/**
+ * Confirmed live (2026-07-11): `get_fixtures` returns a `statistics` array for a subset of
+ * finished matches (mostly tour-level, ~23% of finished matches in a sample window) with
+ * match- and set-level per-player stat rows. This directly contradicts the provider's docs,
+ * which don't mention this field at all -- always verify live, per prior provider quirks.
+ */
+interface RawStatEntry {
+  player_key: string | number;
+  stat_period: string; // "match", "set1", "set2", ...
+  stat_type: string; // "Service" | "Return" | "Points"
+  stat_name: string;
+  stat_value: string; // often a percentage string like "65%", sometimes a plain count like "3"
+  stat_won: number | null;
+  stat_total: number | null;
+}
+
 interface RawMatch {
   event_key: string | number;
   event_date: string;
@@ -66,6 +83,47 @@ interface RawMatch {
   tournament_key?: string;
   tournament_round?: string;
   scores?: RawScoreEntry[];
+  statistics?: RawStatEntry[];
+}
+
+/** Parses "65%" -> 65, "3" -> 3; returns null on anything unparseable, never a fabricated default. */
+function parseStatNumber(value: string | undefined | null): number | null {
+  if (value === undefined || value === null) return null;
+  const parsed = parseFloat(value.replace("%", "").trim());
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Builds a real, provider-reported point-level stat line for one player from a match's
+ * `statistics` array, using only `stat_period === "match"` rows (whole-match totals, not
+ * per-set breakdowns). Returns null when the provider didn't include statistics for this
+ * match/player at all -- callers must treat that as "unavailable", never interpolate.
+ */
+function mapStatistics(raw: RawMatch, playerKey: string): MatchStatLine | null {
+  if (!raw.statistics || raw.statistics.length === 0) return null;
+  const rows = raw.statistics.filter((s) => str(s.player_key) === playerKey && s.stat_period === "match");
+  if (rows.length === 0) return null;
+
+  const find = (statType: string, statName: string) => rows.find((r) => r.stat_type === statType && r.stat_name === statName);
+
+  const breakPointsSavedRow = find("Service", "Break Points Saved");
+
+  const line: MatchStatLine = {
+    firstServePct: parseStatNumber(find("Service", "1st serve percentage")?.stat_value),
+    firstServeWon: parseStatNumber(find("Service", "1st serve points won")?.stat_value),
+    secondServeWon: parseStatNumber(find("Service", "2nd serve points won")?.stat_value),
+    aces: parseStatNumber(find("Service", "Aces")?.stat_value),
+    doubleFaults: parseStatNumber(find("Service", "Double Faults")?.stat_value),
+    breakPointsSaved: breakPointsSavedRow?.stat_won ?? parseStatNumber(breakPointsSavedRow?.stat_value),
+    breakPointsFaced: breakPointsSavedRow?.stat_total ?? null,
+    returnPointsWon: parseStatNumber(find("Points", "Return Points Won")?.stat_value),
+    servicePointsWonPct: parseStatNumber(find("Points", "Service Points Won")?.stat_value),
+  };
+
+  // If every field came back null, the provider didn't actually have usable data for this
+  // player/match despite the array being non-empty -- report "unavailable", not a hollow object.
+  const hasAnyValue = Object.values(line).some((v) => v !== null);
+  return hasAnyValue ? line : null;
 }
 
 function determineMatchFormat(eventTypeType: string | undefined, level: string | null): MatchFormat {
@@ -312,6 +370,7 @@ export class ApiTennisProvider implements TennisDataProvider {
 
   private mapMatchRecord(raw: RawMatch, playerId: string): MatchRecord {
     const isFirstPlayer = str(raw.first_player_key) === playerId;
+    const opponentId = isFirstPlayer ? str(raw.second_player_key) : str(raw.first_player_key);
     const { surface, level } = inferSurfaceAndLevel(raw.tournament_name);
     const status = mapMatchStatus(raw.event_status);
     const won = (isFirstPlayer && raw.event_winner === "First Player") || (!isFirstPlayer && raw.event_winner === "Second Player");
@@ -325,15 +384,15 @@ export class ApiTennisProvider implements TennisDataProvider {
       matchFormat: determineMatchFormat(raw.event_type_type, level),
       surface,
       indoor: surface === "IndoorHard" ? true : null,
-      opponentId: isFirstPlayer ? str(raw.second_player_key) : str(raw.first_player_key),
+      opponentId,
       opponentName: isFirstPlayer ? raw.event_second_player : raw.event_first_player,
       opponentRank: null,
       result: won ? "W" : "L",
       score: mapScoreString(raw),
       retired: status.retired,
       walkover: status.walkover,
-      stats: null,
-      opponentStats: null,
+      stats: mapStatistics(raw, playerId),
+      opponentStats: mapStatistics(raw, opponentId),
       setGameMargins: mapSetGameMargins(raw, isFirstPlayer),
     };
   }

@@ -38,6 +38,12 @@ export interface MatchStatLine {
   breakPointsSaved: number | null;
   breakPointsFaced: number | null;
   returnPointsWon: number | null;
+  /**
+   * Overall percentage of total service points won in the match (0-100), when the provider
+   * reports match-level point totals directly. Distinct from `firstServeWon`/`secondServeWon`,
+   * which only cover points won on first/second serve individually.
+   */
+  servicePointsWonPct: number | null;
 }
 
 export interface MatchRecord {
