@@ -16,6 +16,7 @@ import {
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { runPredictionEngine } from "../services/predictionEngine";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
+import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
 
 const router: IRouter = Router();
 
@@ -92,10 +93,16 @@ router.post("/predictions", async (req, res): Promise<void> => {
       provider.getHeadToHead(body.player1Id, body.player2Id),
     ]);
 
-    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow] = await Promise.all([
+    // Tour isn't part of the request -- it's read off the player profiles themselves (both
+    // players are on the same tour for any real fixture; player1's is preferred, player2's used
+    // only if player1's happens to be unknown).
+    const matchTour = player1.tour ?? player2.tour;
+
+    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment] = await Promise.all([
       resolveOpponentStrength(player1Matches),
       resolveOpponentStrength(player2Matches),
       db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
+      resolveSegmentSpecialistInput(matchTour, body.surface),
     ]);
 
     const output = runPredictionEngine({
@@ -112,6 +119,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       // No scheduled fixture date is known for an ad-hoc prediction request, so weather is
       // intentionally omitted here -- see paperTrading.ts for genuinely upcoming fixtures.
       weather: null,
+      segment,
     });
 
     const [saved] = await db

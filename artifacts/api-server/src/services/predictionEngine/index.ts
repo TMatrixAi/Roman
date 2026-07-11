@@ -5,7 +5,7 @@ import { computeFatigueModule } from "./fatigue";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
 import { computeDataQuality } from "./dataQuality";
-import { buildEnsemble } from "./ensemble";
+import { buildEnsemble, agreementFromSpread, worseAgreement, type ModelVote } from "./ensemble";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
@@ -20,7 +20,7 @@ export interface EngineBreakdown {
   fatigue: ReturnType<typeof computeFatigueModule>;
   styleMatchup: ReturnType<typeof computeStyleMatchupModule>;
   headToHead: ReturnType<typeof computeHeadToHeadModule>;
-  models: ReturnType<typeof buildEnsemble>["models"];
+  models: ModelVote[];
   modelAgreement: ReturnType<typeof buildEnsemble>["modelAgreement"];
   reasons: string[];
   risks: string[];
@@ -28,6 +28,13 @@ export interface EngineBreakdown {
   availabilityNote: string;
   conditionsNote: string;
   weather: WeatherConditions | null;
+  /** Segment key (e.g. "ATP-Clay") a specialist was evaluated for, or null when this match's tour isn't a Phase 6 candidate segment at all. */
+  segmentKey: string | null;
+  segmentLabel: string | null;
+  /** True only when a segment specialist actually contributed to the blended probability below. */
+  specialistApplied: boolean;
+  /** Always present and always visible -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
+  segmentNote: string;
 }
 
 export interface EngineOutput {
@@ -82,7 +89,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     },
   ];
 
-  const { models, ensembleProbability, modelAgreement } = buildEnsemble(moduleEdges);
+  const { models: featureModels, ensembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
 
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(moduleEdges.map((m) => m.reliability));
 
@@ -90,10 +97,58 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // validation outcomes) whenever one exists. Only fall back to the hand-tuned dataQuality-shrink
   // heuristic before any evaluation run has ever produced a fitted model -- that heuristic is a
   // documented stand-in, not the validated calibration this engine should prefer.
-  const calibratedProbability =
+  const generalProbability =
     input.activeCalibration && input.activeCalibration.length > 0
       ? Math.round(applyCalibration(input.activeCalibration, ensembleProbability / 100) * 1000) / 10
       : calibrateProbability(ensembleProbability, dataQuality);
+
+  // Phase 6: blend in a tour/surface segment specialist -- literally the same ensemble
+  // probability run through a SEGMENT-ONLY isotonic calibration instead of the pooled one -- when
+  // (and only when) that segment has cleared its own data-sufficiency thresholds. Everything else
+  // falls back to the general model alone, with a visible reason why (never silently).
+  const segment = input.segment ?? null;
+  const specialistApplied = !!(segment?.meetsThreshold && segment.calibrationMapping && segment.calibrationMapping.length > 0 && typeof segment.weight === "number");
+
+  let specialistProbability: number | null = null;
+  let specialistWeight = 0;
+  if (specialistApplied && segment) {
+    specialistProbability = Math.round(applyCalibration(segment.calibrationMapping!, ensembleProbability / 100) * 1000) / 10;
+    specialistWeight = segment.weight!;
+  }
+
+  const calibratedProbability = specialistApplied && specialistProbability !== null
+    ? Math.round((specialistWeight * specialistProbability + (1 - specialistWeight) * generalProbability) * 10) / 10
+    : generalProbability;
+
+  const models: ModelVote[] = [...featureModels];
+  models.push({
+    modelName: "General Model",
+    player1Probability: generalProbability,
+    weightUsed: specialistApplied ? Math.round((1 - specialistWeight) * 1000) / 1000 : 1,
+    reliability: dataQuality,
+  });
+  let modelAgreement = featureAgreement;
+  if (specialistApplied && specialistProbability !== null && segment) {
+    models.push({
+      modelName: `Segment Specialist (${segment.label})`,
+      player1Probability: specialistProbability,
+      weightUsed: Math.round(specialistWeight * 1000) / 1000,
+      // Reliability scales with the validation sample the specialist was actually measured on,
+      // capped at 100 -- a specialist barely over threshold is voted on, but not trusted blindly.
+      reliability: Math.min(100, Math.round((segment.validationSampleSize / segment.minValidationSamples) * 50)),
+    });
+    const generalVsSpecialistSpread = Math.abs(generalProbability - specialistProbability);
+    modelAgreement = worseAgreement(featureAgreement, agreementFromSpread(generalVsSpecialistSpread));
+  }
+
+  let segmentNote: string;
+  if (!segment) {
+    segmentNote = "This match's tour isn't one of Phase 6's candidate specialist segments (ATP/WTA on Hard, Clay, Grass, or IndoorHard) -- using the general model only.";
+  } else if (specialistApplied) {
+    segmentNote = `Segment specialist for ${segment.label} applied (blend weight ${Math.round(specialistWeight * 100)}%), measured on ${segment.validationSampleSize} validation-segment predictions across ${segment.historicalMatchCount} real historical ${segment.label} matches.`;
+  } else {
+    segmentNote = `No segment specialist for ${segment.label} yet -- only ${segment.historicalMatchCount} historical match(es) and ${segment.validationSampleSize} validation prediction(s) recorded so far (needs at least ${segment.minHistoricalMatches} matches and ${segment.minValidationSamples} validation predictions). Using the general model only.`;
+  }
 
   const upsetRisk = computeUpsetRisk(calibratedProbability, modelAgreement);
   const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement);
@@ -171,6 +226,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       ? `Forecast conditions for ${weather.venueName}: ${weather.temperatureC}°C, wind ${weather.windSpeedKph} km/h, ${weather.precipitationProbability}% chance of precipitation. ${weather.note}`
       : "Live weather and court-speed conditions are not connected for this matchup -- either the fixture isn't a genuinely upcoming one with a known venue/date, or it's beyond the forecast horizon.",
     weather,
+    segmentKey: segment?.segmentKey ?? null,
+    segmentLabel: segment?.label ?? null,
+    specialistApplied,
+    segmentNote,
   };
 
   return {

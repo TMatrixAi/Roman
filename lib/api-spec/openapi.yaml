@@ -980,6 +980,17 @@ components:
           oneOf:
             - $ref: "#/components/schemas/WeatherConditions"
             - type: "null"
+        segmentKey:
+          type: ["string", "null"]
+          description: Tour/surface segment key (e.g. "ATP-Clay") a specialist was evaluated for, or null when this match's tour isn't a Phase 6 candidate segment at all
+        segmentLabel:
+          type: ["string", "null"]
+        specialistApplied:
+          type: boolean
+          description: True only when a segment specialist actually contributed to calibratedProbability
+        segmentNote:
+          type: string
+          description: Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.
 
     Recommendation:
       type: string
@@ -1410,9 +1421,52 @@ components:
         streaks:
           $ref: "#/components/schemas/StreakSummary"
 
+    SpecialistSegmentSummary:
+      type: object
+      description: Phase 6 tour/surface specialist segment breakdown, always shown with its sample sizes so a small sample is never presented as a strong result
+      required:
+        [segmentKey, tour, surface, label, historicalMatchCount, meetsThreshold, validationSampleSize, weight]
+      properties:
+        segmentKey:
+          type: string
+        tour:
+          type: string
+        surface:
+          type: string
+        label:
+          type: string
+        historicalMatchCount:
+          type: integer
+          description: Real historical matches in this tour/surface segment (Phase 3 coverage check)
+        meetsThreshold:
+          type: boolean
+          description: Whether this segment has enough real data to run its own specialist calibration at all
+        validationSampleSize:
+          type: integer
+        accuracy:
+          type: ["number", "null"]
+          description: This segment's own calibration accuracy on its validation-segment points
+        logLoss:
+          type: ["number", "null"]
+        brier:
+          type: ["number", "null"]
+        generalAccuracy:
+          type: ["number", "null"]
+          description: The general (pooled) model's accuracy on the SAME segment-scoped validation points, for a fair comparison
+        generalLogLoss:
+          type: ["number", "null"]
+        generalBrier:
+          type: ["number", "null"]
+        weight:
+          type: number
+          description: This segment's measured blend weight (0-1) against the general model in live predictions; 0 when meetsThreshold is false
+        computedAt:
+          type: string
+          format: date-time
+
     EvaluationDashboard:
       type: object
-      required: [segments, activeCalibrationSampleSize]
+      required: [segments, activeCalibrationSampleSize, specialistSegments]
       properties:
         segments:
           type: array
@@ -1421,6 +1475,10 @@ components:
         activeCalibrationSampleSize:
           type: integer
           description: How many validation-segment predictions the live paper-trading calibration was fit on
+        specialistSegments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpecialistSegmentSummary"
 
     PredictionSettings:
       type: object

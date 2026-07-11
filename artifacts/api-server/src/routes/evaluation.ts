@@ -22,6 +22,7 @@ import { runWalkForwardEvaluation } from "../services/evaluation/walkForward";
 import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
 import { computeSegmentMetrics, computeCalibrationBuckets, computeStreaks } from "../services/evaluation/metrics";
+import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
 import { predictionSettingsTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -113,11 +114,13 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
   }));
 
   const [activeCalibration] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1);
+  const specialistSegments = await getActiveSpecialistSegments();
 
   res.json(
     GetEvaluationDashboardResponse.parse({
       segments,
       activeCalibrationSampleSize: activeCalibration?.validationSampleSize ?? 0,
+      specialistSegments,
     }),
   );
 });

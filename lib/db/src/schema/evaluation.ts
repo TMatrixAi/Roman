@@ -152,6 +152,56 @@ export const insertCalibrationModelSchema = createInsertSchema(calibrationModels
 export type InsertCalibrationModel = z.infer<typeof insertCalibrationModelSchema>;
 export type CalibrationModelRow = typeof calibrationModelsTable.$inferSelect;
 
+/**
+ * Phase 6: one row per tour/surface segment (e.g. "ATP-Clay", "WTA-Hard"). Recomputed every time
+ * the walk-forward runner completes, from the SAME leak-proof validation-segment data Phase 4
+ * already produces -- never a separately-fit model family. `historicalMatchCount` is the raw
+ * Phase 3 coverage check (real matches in this segment, regardless of whether they were ever
+ * scored); `meetsThreshold` gates whether this segment is trusted enough to run its own
+ * calibration at all. `weight` is this segment's measured share of the live blend against the
+ * general model -- derived only from how much better (or worse) its own calibration scores vs.
+ * the general mapping on the same segment-scoped validation points, never hand-tuned.
+ */
+export const specialistModelsTable = pgTable(
+  "specialist_models",
+  {
+    id: serial("id").primaryKey(),
+
+    segmentKey: text("segment_key").notNull(), // e.g. "ATP-Clay", "WTA-Hard", "ATP-General"
+    tour: text("tour").notNull(),
+    surface: text("surface").notNull(),
+    label: text("label").notNull(),
+
+    // Phase 3 coverage check: total real historical matches in this tour+surface segment,
+    // regardless of whether they were ever scored/validated.
+    historicalMatchCount: integer("historical_match_count").notNull(),
+    meetsThreshold: boolean("meets_threshold").notNull(),
+
+    // Phase 4 validation-segment sample actually used to fit/measure this specialist.
+    validationSampleSize: integer("validation_sample_size").notNull().default(0),
+    accuracy: real("accuracy"),
+    logLoss: real("log_loss"),
+    brier: real("brier"),
+    // The general (pooled, segment-agnostic) model's metrics on this SAME segment-scoped
+    // validation data -- the fair baseline the specialist is actually being compared against.
+    generalAccuracy: real("general_accuracy"),
+    generalLogLoss: real("general_log_loss"),
+    generalBrier: real("general_brier"),
+
+    calibrationMapping: jsonb("calibration_mapping").$type<CalibrationKnotJson[]>().notNull().default([]),
+    // This segment's share (0-1) of the level-2 live blend against the general model. 0 whenever
+    // meetsThreshold is false (i.e. the live engine falls back to the general model entirely).
+    weight: real("weight").notNull().default(0),
+
+    computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("specialist_models_segment_key_idx").on(table.segmentKey)],
+);
+
+export const insertSpecialistModelSchema = createInsertSchema(specialistModelsTable).omit({ id: true, computedAt: true });
+export type InsertSpecialistModel = z.infer<typeof insertSpecialistModelSchema>;
+export type SpecialistModelRow = typeof specialistModelsTable.$inferSelect;
+
 /** Singleton admin configuration row for Phase 4 evaluation behavior. */
 export const predictionSettingsTable = pgTable("prediction_settings", {
   id: serial("id").primaryKey(),

@@ -7,7 +7,14 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info } from "lucide-react"
+
+const AGREEMENT_STYLES: Record<string, string> = {
+  Strong: "text-success",
+  Moderate: "text-foreground",
+  Mixed: "text-warning",
+  HighDisagreement: "text-destructive",
+}
 
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
   const total = p1Value + p2Value;
@@ -189,6 +196,49 @@ export default function PredictionResultPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* MODEL VOTES & SEGMENT SPECIALIST (Phase 6) */}
+      <div>
+        <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
+          <Vote className="w-5 h-5" /> MODEL VOTES
+        </h3>
+
+        <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
+          <Info className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
+          <div className="space-y-1">
+            <div>{engine.segmentNote ?? "This prediction predates Phase 6 segment specialists -- no segment data was recorded for it."}</div>
+            {engine.segmentLabel && (
+              <Badge variant={engine.specialistApplied ? "success" : "outline"} className="font-mono text-[10px]">
+                {engine.segmentLabel} {engine.specialistApplied ? "SPECIALIST APPLIED" : "SPECIALIST NOT AVAILABLE"}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <Card className="mb-6">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-muted-foreground">MODEL AGREEMENT</span>
+              <span className={`text-sm font-bold font-mono ${(engine.modelAgreement && AGREEMENT_STYLES[engine.modelAgreement]) ?? "text-foreground"}`}>
+                {engine.modelAgreement ? engine.modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "—"}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {engine.models.map((vote, i) => (
+                <div key={i} className="flex items-center gap-3 text-sm">
+                  <span className="flex-1 truncate">{vote.modelName}</span>
+                  <span className="w-16 text-right font-mono text-muted-foreground">{vote.player1Probability.toFixed(1)}%</span>
+                  <div className="w-24 h-2 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${vote.weightUsed * 100}%` }} />
+                  </div>
+                  <span className="w-14 text-right font-mono text-xs text-muted-foreground">w={vote.weightUsed.toFixed(2)}</span>
+                  <span className="w-14 text-right font-mono text-xs text-muted-foreground">rel={vote.reliability.toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* FULL ENGINE BREAKDOWN */}
       <div>

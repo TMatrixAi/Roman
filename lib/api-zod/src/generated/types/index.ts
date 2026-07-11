@@ -59,6 +59,7 @@ export * from './searchPlayersParams';
 export * from './segment';
 export * from './segmentMetrics';
 export * from './serveReturnResult';
+export * from './specialistSegmentSummary';
 export * from './streakSummary';
 export * from './streakSummaryCurrentStreakType';
 export * from './styleMatchupResult';

@@ -34,4 +34,15 @@ export interface EngineBreakdown {
   availabilityNote?: string;
   conditionsNote?: string;
   weather?: WeatherConditions | null;
+  /**
+     * Tour/surface segment key (e.g. "ATP-Clay") a specialist was evaluated for, or null when this match's tour isn't a Phase 6 candidate segment at all
+     * @nullable
+     */
+  segmentKey?: string | null;
+  /** @nullable */
+  segmentLabel?: string | null;
+  /** True only when a segment specialist actually contributed to calibratedProbability */
+  specialistApplied?: boolean;
+  /** Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
+  segmentNote?: string;
 }

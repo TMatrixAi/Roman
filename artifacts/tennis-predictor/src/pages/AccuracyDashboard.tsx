@@ -6,6 +6,7 @@ import {
   useGetEvaluationSettings,
   useUpdateEvaluationSettings,
   type EvaluationDashboardSegment,
+  type SpecialistSegmentSummary,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers } from "lucide-react"
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
@@ -86,6 +87,56 @@ function SegmentCard({ segment }: { segment: EvaluationDashboardSegment }) {
           </div>
           <span className="font-mono text-muted-foreground">LONGEST WIN: {segment.streaks.longestWinStreak}</span>
           <span className="font-mono text-muted-foreground">LONGEST LOSS: {segment.streaks.longestLossStreak}</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SpecialistSegmentTable({ segments }: { segments: SpecialistSegmentSummary[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Layers className="w-4 h-4" /> Specialist Segments (Phase 6)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Each tour/surface segment's own calibration vs. the general model, on the SAME validation-segment points. Sample
+          sizes are always shown alongside accuracy so a small sample is never presented as a strong result.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-mono text-muted-foreground border-b">
+                <th className="py-2 pr-4">Segment</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2 pr-4">Historical Matches</th>
+                <th className="py-2 pr-4">Validation N</th>
+                <th className="py-2 pr-4">Specialist Acc.</th>
+                <th className="py-2 pr-4">General Acc.</th>
+                <th className="py-2 pr-4">Blend Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {segments.map((s) => (
+                <tr key={s.segmentKey} className="border-b last:border-0">
+                  <td className="py-2 pr-4 font-medium">{s.label}</td>
+                  <td className="py-2 pr-4">
+                    <Badge variant={s.meetsThreshold ? "success" : "outline"} className="font-mono text-[10px]">
+                      {s.meetsThreshold ? "ACTIVE" : "INSUFFICIENT DATA"}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pr-4 font-mono">{s.historicalMatchCount}</td>
+                  <td className="py-2 pr-4 font-mono">{s.validationSampleSize}</td>
+                  <td className="py-2 pr-4 font-mono">{s.accuracy !== null && s.accuracy !== undefined ? `${s.accuracy}%` : "—"}</td>
+                  <td className="py-2 pr-4 font-mono">{s.generalAccuracy !== null && s.generalAccuracy !== undefined ? `${s.generalAccuracy}%` : "—"}</td>
+                  <td className="py-2 pr-4 font-mono">{s.meetsThreshold ? s.weight.toFixed(2) : "0.00 (fallback to general)"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </CardContent>
     </Card>
@@ -179,6 +230,7 @@ export default function AccuracyDashboardPage() {
           {dashboard.segments.map((segment) => (
             <SegmentCard key={segment.key} segment={segment} />
           ))}
+          {dashboard.specialistSegments.length > 0 && <SpecialistSegmentTable segments={dashboard.specialistSegments} />}
         </div>
       ) : null}
 

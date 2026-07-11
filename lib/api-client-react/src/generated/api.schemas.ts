@@ -341,6 +341,17 @@ export interface EngineBreakdown {
   availabilityNote?: string;
   conditionsNote?: string;
   weather?: WeatherConditions | null;
+  /**
+     * Tour/surface segment key (e.g. "ATP-Clay") a specialist was evaluated for, or null when this match's tour isn't a Phase 6 candidate segment at all
+     * @nullable
+     */
+  segmentKey?: string | null;
+  /** @nullable */
+  segmentLabel?: string | null;
+  /** True only when a segment specialist actually contributed to calibratedProbability */
+  specialistApplied?: boolean;
+  /** Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent. */
+  segmentNote?: string;
 }
 
 export type Recommendation = typeof Recommendation[keyof typeof Recommendation];
@@ -639,10 +650,47 @@ export interface EvaluationDashboardSegment {
   streaks: StreakSummary;
 }
 
+/**
+ * Phase 6 tour/surface specialist segment breakdown, always shown with its sample sizes so a small sample is never presented as a strong result
+ */
+export interface SpecialistSegmentSummary {
+  segmentKey: string;
+  tour: string;
+  surface: string;
+  label: string;
+  /** Real historical matches in this tour/surface segment (Phase 3 coverage check) */
+  historicalMatchCount: number;
+  /** Whether this segment has enough real data to run its own specialist calibration at all */
+  meetsThreshold: boolean;
+  validationSampleSize: number;
+  /**
+     * This segment's own calibration accuracy on its validation-segment points
+     * @nullable
+     */
+  accuracy?: number | null;
+  /** @nullable */
+  logLoss?: number | null;
+  /** @nullable */
+  brier?: number | null;
+  /**
+     * The general (pooled) model's accuracy on the SAME segment-scoped validation points, for a fair comparison
+     * @nullable
+     */
+  generalAccuracy?: number | null;
+  /** @nullable */
+  generalLogLoss?: number | null;
+  /** @nullable */
+  generalBrier?: number | null;
+  /** This segment's measured blend weight (0-1) against the general model in live predictions; 0 when meetsThreshold is false */
+  weight: number;
+  computedAt?: string;
+}
+
 export interface EvaluationDashboard {
   segments: EvaluationDashboardSegment[];
   /** How many validation-segment predictions the live paper-trading calibration was fit on */
   activeCalibrationSampleSize: number;
+  specialistSegments: SpecialistSegmentSummary[];
 }
 
 export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];

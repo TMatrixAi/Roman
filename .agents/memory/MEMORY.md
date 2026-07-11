@@ -2,3 +2,4 @@
 - [Orval + zod codegen pitfalls](orval-zod-codegen-pitfalls.md) — zod.coerce.string() silently defeats required-field validation; generated react-query hook option types require queryKey.
 - [Historical backfill cross-run state continuity](historical-backfill-state-continuity.md) — chronological importers with running state (Elo, form) must hydrate from persisted records, not just in-process memory, or later runs silently cold-start.
 - [Prediction engine calibration architecture](predictionengine-calibration-architecture.md) — engine stays sync/DB-free; opponent Elo, calibration, weather are caller-resolved and "absent, not faked" when unavailable.
+- [Specialist segment thresholds](specialist-segment-thresholds.md) — two distinct thresholds (matches vs. validation samples) gate tour/surface specialists; new engine fields must stay optional or old rows break schema validation.

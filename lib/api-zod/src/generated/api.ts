@@ -300,7 +300,11 @@ export const CreatePredictionResponse = zod.object({
   "windSpeedKph": zod.number(),
   "precipitationProbability": zod.number(),
   "note": zod.string()
-}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional(),
+  "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
+  "segmentLabel": zod.string().nullish(),
+  "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -429,7 +433,11 @@ export const GetPredictionResponse = zod.object({
   "windSpeedKph": zod.number(),
   "precipitationProbability": zod.number(),
   "note": zod.string()
-}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional(),
+  "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
+  "segmentLabel": zod.string().nullish(),
+  "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -547,7 +555,11 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "windSpeedKph": zod.number(),
   "precipitationProbability": zod.number(),
   "note": zod.string()
-}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional(),
+  "segmentKey": zod.string().nullish().describe('Tour\/surface segment key (e.g. \"ATP-Clay\") a specialist was evaluated for, or null when this match\'s tour isn\'t a Phase 6 candidate segment at all'),
+  "segmentLabel": zod.string().nullish(),
+  "specialistApplied": zod.boolean().optional().describe('True only when a segment specialist actually contributed to calibratedProbability'),
+  "segmentNote": zod.string().optional().describe('Always present -- explains whether a specialist was applied, or exactly why the engine fell back to the general model. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -750,7 +762,24 @@ export const GetEvaluationDashboardResponse = zod.object({
   "longestLossStreak": zod.number()
 })
 })),
-  "activeCalibrationSampleSize": zod.number().describe('How many validation-segment predictions the live paper-trading calibration was fit on')
+  "activeCalibrationSampleSize": zod.number().describe('How many validation-segment predictions the live paper-trading calibration was fit on'),
+  "specialistSegments": zod.array(zod.object({
+  "segmentKey": zod.string(),
+  "tour": zod.string(),
+  "surface": zod.string(),
+  "label": zod.string(),
+  "historicalMatchCount": zod.number().describe('Real historical matches in this tour\/surface segment (Phase 3 coverage check)'),
+  "meetsThreshold": zod.boolean().describe('Whether this segment has enough real data to run its own specialist calibration at all'),
+  "validationSampleSize": zod.number(),
+  "accuracy": zod.number().nullish().describe('This segment\'s own calibration accuracy on its validation-segment points'),
+  "logLoss": zod.number().nullish(),
+  "brier": zod.number().nullish(),
+  "generalAccuracy": zod.number().nullish().describe('The general (pooled) model\'s accuracy on the SAME segment-scoped validation points, for a fair comparison'),
+  "generalLogLoss": zod.number().nullish(),
+  "generalBrier": zod.number().nullish(),
+  "weight": zod.number().describe('This segment\'s measured blend weight (0-1) against the general model in live predictions; 0 when meetsThreshold is false'),
+  "computedAt": zod.coerce.date().optional()
+}).describe('Phase 6 tour\/surface specialist segment breakdown, always shown with its sample sizes so a small sample is never presented as a strong result'))
 })
 
 

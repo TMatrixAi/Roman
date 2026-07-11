@@ -5,6 +5,7 @@ import { runPredictionEngine } from "../predictionEngine";
 import { resolveOpponentStrength } from "../predictionEngine/opponentStrength";
 import { getUpcomingConditions } from "../predictionEngine/weather";
 import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
+import { resolveSegmentSpecialistInput } from "./specialistWeights";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import { logger } from "../../lib/logger";
 
@@ -128,11 +129,14 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         provider.getHeadToHead(fixture.player1Id, fixture.player2Id),
       ]);
 
-      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather] = await Promise.all([
+      const matchTour = player1.tour ?? player2.tour;
+
+      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather, segment] = await Promise.all([
         resolveOpponentStrength(player1Matches),
         resolveOpponentStrength(player2Matches),
         getActiveCalibration(),
         getUpcomingConditions(fixture.tournamentName, scheduledStartAt),
+        resolveSegmentSpecialistInput(matchTour, fixture.surface),
       ]);
 
       const output = runPredictionEngine({
@@ -147,6 +151,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         player2OpponentElo: player2OpponentStrength.lookup,
         activeCalibration: activeCalibration?.mapping ?? null,
         weather,
+        segment,
       });
 
       // The engine already applies the active Phase-4 calibration internally when one exists (see

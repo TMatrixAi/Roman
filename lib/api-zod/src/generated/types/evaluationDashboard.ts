@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EvaluationDashboardSegment } from './evaluationDashboardSegment';
+import type { SpecialistSegmentSummary } from './specialistSegmentSummary';
 
 export interface EvaluationDashboard {
   segments: EvaluationDashboardSegment[];
   /** How many validation-segment predictions the live paper-trading calibration was fit on */
   activeCalibrationSampleSize: number;
+  specialistSegments: SpecialistSegmentSummary[];
 }

@@ -41,4 +41,27 @@ export interface PredictionEngineInput {
    * has ever produced a fitted model).
    */
   activeCalibration?: CalibrationKnot[] | null;
+  /**
+   * Phase 6 tour/surface specialist for this match's segment, pre-resolved by the caller (mirrors
+   * the `activeCalibration` pattern -- the engine stays sync/DB-free). Omit/null when the match's
+   * tour isn't one of Phase 6's candidate segments at all (e.g. Challenger/ITF/Exhibition) --
+   * distinct from a *resolved* segment that simply doesn't meet its data threshold yet
+   * (`meetsThreshold: false`), so the engine can surface an honest, specific disclaimer either way
+   * instead of silently doing the same thing for two different reasons.
+   */
+  segment?: SegmentSpecialistInput | null;
+}
+
+export interface SegmentSpecialistInput {
+  segmentKey: string;
+  label: string;
+  meetsThreshold: boolean;
+  historicalMatchCount: number;
+  validationSampleSize: number;
+  minHistoricalMatches: number;
+  minValidationSamples: number;
+  /** Present only when `meetsThreshold` is true. */
+  calibrationMapping?: CalibrationKnot[];
+  /** This segment's measured blend weight (0-1) against the general model. Present only when `meetsThreshold` is true. */
+  weight?: number;
 }

@@ -4,6 +4,7 @@ import { logger } from "../../lib/logger";
 import { fitIsotonicCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
 import { scoreHistoricalMatch } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
+import { computeAndStoreSpecialistSegments } from "./specialistWeights";
 import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "./types";
 import type { CalibrationKnot } from "./types";
 
@@ -145,6 +146,10 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     validationDateRangeEnd: dates.length ? new Date(Math.max(...dates)) : null,
     active: true,
   });
+
+  // Phase 6: recompute every tour/surface specialist segment from the fold's freshly-written
+  // validation-segment data, comparing each against this SAME newly-fit general/pooled mapping.
+  await computeAndStoreSpecialistSegments(liveMapping);
 
   return { foldsRun: foldIds.length, foldIds, skippedNoEligibleMatches: false };
 
