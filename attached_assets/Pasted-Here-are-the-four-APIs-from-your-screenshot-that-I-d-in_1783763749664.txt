@@ -1,0 +1,281 @@
+Here are the four APIs from your screenshot that I’d integrate into your tennis app:
+1. Tennis API (ATP • WTA • ITF) https://tennis-api-atp-wta-itf.p.rapidapi.com
+2. Tennis Stats API https://tennis-stats-api.p.rapidapi.com
+3. Tennis Predictions API https://tennis-predictions-api.p.rapidapi.com
+4. Tennis Live API https://tennis-live-api.p.rapidapi.com
+I would use them like this:
+* Tennis API (ATP/WTA/ITF) → Rankings, tournaments, schedules, results, player information.
+* Tennis Stats API → Head-to-head, serve statistics, return statistics, surface records, advanced analytics.
+* Tennis Live API → Live scores, live match status, current sets, games, and server.
+* Tennis Predictions API → Comparison only. Do not use it to generate your predictions. Use it as a benchmark against your own model.
+This is the exact architecture I’d recommend:
+Tennis API (ATP/WTA/ITF) │ ▼ Player Database │ ▼ Tennis Stats API │ ▼ Your Prediction Engine │ ├──────────────► Tennis Live API │ (Live Updates) │ └──────────────► Tennis Predictions API (Comparison Only)
+This setup gives your app a much stronger foundation by separating raw data, advanced statistics, live updates, and external prediction comparison, while keeping your own prediction engine as the final decision-maker.
+1. Tennis API (ATP • WTA • ITF) https://tennis-api-atp-wta-itf.p.rapidapi.com
+2. Tennis Stats API https://tennis-stats-api.p.rapidapi.com
+3. Tennis Predictions API https://tennis-predictions-api.p.rapidapi.com
+4. Tennis Live API https://tennis-live-api.p.rapidapi.com
+
+These are the development rules you’ve asked to add to the app so far. This is the version I’d give your builder.
+
+⸻
+
+Tennis Prediction Engine Update Rules
+
+1. Do NOT break the existing app
+
+* Do not remove any current features.
+* Do not change existing navigation.
+* Do not break manual match entry.
+* Do not break screenshot importing.
+* Create a checkpoint before making changes.
+* Every update must be backward compatible.
+* If anything fails, automatically roll back.
+
+⸻
+
+2. Improve Data Quality
+
+Target:
+
+70–90+ Data Quality
+
+Do not increase the score artificially.
+
+Instead:
+
+Automatically retrieve additional verified data before making a prediction.
+
+Fetch:
+
+* Rankings
+* Recent matches
+* Surface-specific matches
+* Serve statistics
+* Return statistics
+* Opponent quality
+* Head-to-head
+* Fatigue
+* Travel
+* Tournament information
+* Weather
+* Injuries
+* Withdrawals
+* Data freshness
+
+If Data Quality is still below 70
+
+* Show exactly what is missing.
+* Automatically perform another data retrieval.
+* Recalculate Data Quality.
+* Only then generate the prediction.
+
+Never fake missing data.
+
+⸻
+
+3. Better Win Probability
+
+Stop producing so many:
+
+* 48%
+* 49%
+* 50%
+* 51%
+* 52%
+
+unless the match is truly even.
+
+Instead:
+
+Allow probabilities to expand naturally.
+
+Example:
+
+Huge favorite
+
+80–90%
+
+Moderate favorite
+
+65–75%
+
+Small favorite
+
+55–64%
+
+True coin flip
+
+48–52%
+
+The probability must reflect the actual strength of the matchup.
+
+⸻
+
+4. Better Upset Risk
+
+Current upset risk is too aggressive.
+
+Instead:
+
+Use:
+
+* Model agreement
+* Data quality
+* Surface matchup
+* Recent form
+* Fatigue
+* Injuries
+* Style matchup
+* Head-to-head
+* Confidence
+
+Examples:
+
+Very uneven match
+
+Low upset risk
+
+Even match
+
+Moderate upset risk
+
+Unknown players with little data
+
+High upset risk
+
+Never show Low Upset Risk unless multiple models agree.
+
+⸻
+
+5. Automatic No Trade Rule
+
+If:
+
+* Win Probability is 48–52%
+* AND Upset Risk is Extreme
+
+Automatically display:
+
+NO TRADE
+
+Do not recommend either player.
+
+⸻
+
+6. Probability Calibration
+
+Continuously monitor predictions.
+
+If the engine starts producing too many
+
+* 50%
+* Extreme upset
+
+predictions,
+
+Automatically recalibrate the prediction engine.
+
+⸻
+
+7. Dynamic Prediction Engine
+
+Allow probabilities to increase when multiple factors agree.
+
+Examples:
+
+Surface Elo
+
+Serve Advantage
+
+Recent Form
+
+Fatigue Edge
+
+Head-to-head
+
+Better Surface Record
+
+Better Opponent Quality
+
+=
+
+Higher Probability
+
+Never cap a strong edge at only 55%.
+
+⸻
+
+8. Prediction History
+
+Allow:
+
+* Delete one prediction
+* Delete multiple predictions
+* Delete all predictions
+* Search prediction history
+* Undo delete (recommended)
+
+Never delete application data.
+
+Only prediction logs.
+
+⸻
+
+9. Developer Export
+
+Create a Developer page.
+
+Allow:
+
+* Copy Entire Source Code
+* Export ZIP
+* Download Source Files
+* Search Files
+* Copy Individual Files
+* View Project Structure
+
+Never export:
+
+* API Keys
+* Secrets
+* Tokens
+* Environment Variables
+* Passwords
+
+⸻
+
+10. Multiple Data Sources
+
+Use multiple APIs instead of relying on one provider.
+
+Current stack:
+
+* Tennis API (ATP/WTA/ITF)
+* Tennis Stats API
+* Tennis Live API
+* Tennis Predictions API (comparison only)
+* API-Tennis
+* API-Sports
+* Open-Meteo
+
+Use them together.
+
+Cross-check information.
+
+Fill missing data automatically.
+
+⸻
+
+11. Final Goal
+
+The app should only produce high-confidence predictions when the underlying data supports them.
+
+It should:
+
+* Pull the most complete verified data available.
+* Increase confidence only when multiple independent models agree.
+* Be willing to say “No Trade” when the evidence is weak.
+* Never invent missing information or inflate probabilities.
+
+This keeps the app focused on accuracy and reliability, rather than trying to force a prediction for every match

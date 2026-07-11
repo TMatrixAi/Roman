@@ -1,0 +1,968 @@
+Build a Proper Out-of-Sample Testing and Live Tracking System
+
+Add a complete historical testing, validation, and live prediction tracking system to the tennis predictor.
+
+The purpose is to measure whether the predictor performs accurately on matches it has never seen before. Do not measure accuracy only on data that was used to train or adjust the model.
+
+The system must strictly prevent future information from leaking into earlier predictions.
+
+1. Historical Match Database
+
+Create a historical tennis match database containing completed matches from ATP, WTA, Challenger, and ITF events whenever reliable data is available.
+
+Each match record should include:
+
+* Match ID
+* Match date and scheduled start time
+* Tournament name
+* Tournament level
+* Tour: ATP, WTA, Challenger, or ITF
+* Round
+* Surface: hard, clay, grass, indoor hard, or other
+* Indoor or outdoor
+* Best-of-three or best-of-five format
+* Player 1
+* Player 2
+* Actual winner
+* Final score
+* Retirement, walkover, cancellation, or completed-match status
+* Tournament location
+* Weather conditions when available
+* Court speed information when available
+
+For each player, store only information that was available before the scheduled start of that match.
+
+Pre-match player data may include:
+
+* Official ranking before the match
+* Ranking points before the match
+* Elo rating before the match
+* Surface-specific Elo before the match
+* Recent overall record
+* Recent surface record
+* Last 5 matches
+* Last 10 matches
+* Last 20 matches
+* Sets won and lost
+* Games won and lost
+* Service hold percentage
+* Break-point save percentage
+* First-serve percentage
+* First-serve points won
+* Second-serve points won
+* Ace rate
+* Double-fault rate
+* Return points won
+* Break-point conversion rate
+* Opponent-adjusted performance
+* Performance against left-handed players
+* Performance against right-handed players
+* Indoor and outdoor performance
+* Performance in the current tournament level
+* Travel distance
+* Rest days
+* Matches played during the previous 7, 14, and 30 days
+* Total court time during the previous 7 and 14 days
+* Previous-match duration
+* Recent injuries when the information was publicly available before the match
+* Retirement history
+* Age
+* Height
+* Playing hand
+* Career surface experience
+
+Do not use any statistic calculated using the current match result.
+
+Example:
+
+When predicting a match played on June 10, the model may only use matches completed before that match began. It cannot use the result, score, statistics, ranking update, or later information from June 10 or any future date.
+
+2. Prevent Data Leakage
+
+Data leakage prevention is mandatory.
+
+The following information must never be used as a pre-match feature:
+
+* The actual winner of the match being predicted
+* Final score
+* Post-match statistics
+* Rankings published after the match
+* Elo ratings updated using the match result
+* Injury news reported after the match
+* Tournament results that happened later
+* Future matches
+* Closing information collected after the configured prediction cutoff
+* Any feature that indirectly reveals the result
+
+Every feature must have:
+
+* A source timestamp
+* A recorded-at timestamp
+* A match cutoff timestamp
+* A validation field showing that the information existed before the cutoff
+
+Reject any feature whose timestamp is later than the prediction cutoff.
+
+The default prediction cutoff should be 30 minutes before the scheduled match start.
+
+Allow the administrator to change the cutoff to:
+
+* 24 hours before
+* 12 hours before
+* 6 hours before
+* 1 hour before
+* 30 minutes before
+* 15 minutes before
+
+Once the cutoff is reached, freeze the prediction inputs for that test.
+
+3. Chronological Data Splitting
+
+Never randomly mix old and new matches when performing the main evaluation.
+
+Split matches chronologically.
+
+Use the following default structure:
+
+* Training data: January 1, 2022 through December 31, 2024
+* Validation data: January 1, 2025 through June 30, 2025
+* Final unseen test data: July 1, 2025 through December 31, 2025
+
+The training period is used to fit the model.
+
+The validation period may be used to:
+
+* Compare model types
+* Select features
+* Tune hyperparameters
+* Set ensemble weights
+* Choose confidence thresholds
+
+The final unseen test period must not be used to:
+
+* Train the model
+* Tune the model
+* Select features
+* Change thresholds
+* Adjust weights
+* Remove losing predictions
+* Make manual corrections
+
+The final test period must remain completely untouched until the model configuration is locked.
+
+4. Walk-Forward Testing
+
+In addition to one fixed train/test split, implement walk-forward testing.
+
+Example walk-forward structure:
+
+Fold 1
+
+* Train: January 2022 through December 2023
+* Validate: January 2024 through March 2024
+* Test: April 2024 through June 2024
+
+Fold 2
+
+* Train: January 2022 through March 2024
+* Validate: April 2024 through June 2024
+* Test: July 2024 through September 2024
+
+Fold 3
+
+* Train: January 2022 through June 2024
+* Validate: July 2024 through September 2024
+* Test: October 2024 through December 2024
+
+Fold 4
+
+* Train: January 2022 through September 2024
+* Validate: October 2024 through December 2024
+* Test: January 2025 through March 2025
+
+Continue this process through the most recent completed period.
+
+For every fold:
+
+1. Train only on data before the validation and test periods.
+2. Tune only on the validation period.
+3. Lock the model.
+4. Predict the test period.
+5. Save all predictions before viewing test results.
+6. Record the results.
+7. Move forward to the next period.
+
+Do not allow test matches from one fold to influence predictions within that same test fold.
+
+5. Model Training
+
+Train multiple model families rather than relying on one model.
+
+Supported model families should include, where technically appropriate:
+
+* Logistic regression
+* Regularized logistic regression
+* Random forest
+* Gradient boosting
+* XGBoost
+* LightGBM
+* CatBoost
+* Support-vector machine
+* Neural network
+* Bayesian model
+* Elo-based model
+* Surface-specific Elo model
+* Recent-form model
+* Serve-and-return model
+* Fatigue model
+* Tournament-level model
+* Ensemble model
+
+Each model must have:
+
+* A unique model ID
+* Model name
+* Model version
+* Training date range
+* Validation date range
+* Test date range
+* Feature list
+* Hyperparameters
+* Data-source version
+* Code version
+* Random seed
+* Creation timestamp
+* Accuracy results
+* Calibration results
+* Status: active, experimental, retired, or rejected
+
+Use a fixed random seed where randomness is involved so tests can be reproduced.
+
+Save the exact model configuration used for every prediction.
+
+6. Feature Engineering Rules
+
+All rolling statistics must be calculated backward from the match date.
+
+For example:
+
+* Last-5 record means the player’s five completed matches before the current match.
+* Last-30-day performance means matches completed during the 30 days before the current match.
+* Surface Elo means the player’s surface Elo immediately before the current match.
+* Rest days means the number of days since the player’s previous completed match.
+
+Do not calculate rolling features using the entire dataset at once unless the calculation is shifted so the current match and future matches are excluded.
+
+Use opponent-adjusted statistics where possible so strong performance against weak opposition is not treated the same as strong performance against elite opposition.
+
+Separate features by surface and event level when enough data exists.
+
+Apply minimum sample-size rules.
+
+Example:
+
+* Do not treat a player as a strong grass player based on only one grass match.
+* Use career or overall performance as a fallback when surface-specific samples are too small.
+* Display a low-sample warning when fewer than the required number of matches are available.
+
+7. Prediction Output
+
+For every match, produce:
+
+* Predicted winner
+* Predicted loser
+* Player 1 win probability
+* Player 2 win probability
+* Confidence level
+* Predicted set score
+* Most important supporting factors
+* Most important risk factors
+* Model agreement percentage
+* Number of models supporting each player
+* Data-quality score
+* Missing-data warning
+* Low-sample warning
+* Prediction timestamp
+* Prediction cutoff timestamp
+* Model version
+* Whether the prediction is historical, validation, test, paper-trade, or live
+
+The two player probabilities must total approximately 100%.
+
+Do not display fake precision.
+
+Use reasonable probability formatting, such as:
+
+* 54%
+* 61%
+* 68%
+
+Do not display 68.34782% unless an administrator specifically enables detailed diagnostics.
+
+8. Confidence Calibration
+
+The confidence number must represent observed historical reliability, not just the model’s raw score.
+
+Create calibration buckets:
+
+* 50% to 54.9%
+* 55% to 59.9%
+* 60% to 64.9%
+* 65% to 69.9%
+* 70% to 74.9%
+* 75% to 79.9%
+* 80% and above
+
+For each bucket, calculate:
+
+* Number of predictions
+* Number correct
+* Actual accuracy
+* Average predicted probability
+* Calibration difference
+
+Example:
+
+If predictions labeled 70% win only 61% of the time, the model is overconfident and must be recalibrated.
+
+Use appropriate calibration methods such as:
+
+* Platt scaling
+* Isotonic regression
+* Temperature scaling
+
+Calibration must be trained only on the validation data, never on the final test data.
+
+9. Performance Metrics
+
+Do not judge the model using accuracy alone.
+
+Calculate and display:
+
+* Total predictions
+* Correct predictions
+* Incorrect predictions
+* Accuracy
+* Balanced accuracy
+* Log loss
+* Brier score
+* Calibration error
+* Area under the ROC curve
+* Precision
+* Recall
+* F1 score
+* Average predicted confidence
+* Actual win rate by confidence bucket
+* Maximum losing streak
+* Maximum winning streak
+* Performance over time
+
+For betting-oriented evaluation, also calculate:
+
+* Fair probability
+* Fair decimal odds
+* Fair American odds
+* Market probability when supplied
+* Estimated model edge
+* Closing-line comparison when available
+* Return on investment during paper testing
+* Yield
+* Maximum drawdown
+* Number of bets
+* Average edge at entry
+
+Keep prediction accuracy separate from betting profitability.
+
+A model can predict winners accurately but still lose money if the available price is poor.
+
+10. Segmented Performance
+
+Measure performance separately by:
+
+* ATP
+* WTA
+* Challenger
+* ITF
+* Hard court
+* Clay court
+* Grass court
+* Indoor hard court
+* Tournament level
+* Best-of-three
+* Best-of-five
+* Men
+* Women
+* Favorite versus underdog classification
+* Ranking difference
+* Elo difference
+* Confidence level
+* Data-quality level
+* Month
+* Year
+* Tournament
+* Round
+* Player experience level
+
+Show minimum sample sizes beside every segment.
+
+Do not declare a segment strong based on a tiny sample.
+
+Example:
+
+* Clay accuracy: 63%, 420 matches
+* Grass accuracy: 71%, 17 matches
+
+The grass result must be marked as low-confidence because the sample is small.
+
+11. Locked Historical Predictions
+
+When running historical tests, create a prediction record before comparing it with the result.
+
+Each prediction record must include:
+
+* Match ID
+* Prediction ID
+* Model version
+* Feature snapshot
+* Predicted winner
+* Predicted probabilities
+* Confidence
+* Prediction timestamp
+* Cutoff timestamp
+* Test fold
+* Dataset version
+* Status: locked
+* Actual result field initially blank
+
+After the prediction is locked:
+
+* Do not modify it.
+* Do not delete it because it lost.
+* Do not replace it with another prediction.
+* Do not change its confidence.
+* Do not change its winner.
+* Do not edit the feature values.
+
+After the match result is processed, fill in:
+
+* Actual winner
+* Final score
+* Correct or incorrect
+* Match completion status
+* Settlement timestamp
+
+Keep a complete audit trail for every modification.
+
+12. Handling Retirements, Walkovers, and Cancellations
+
+Use separate rules for abnormal outcomes.
+
+Walkovers
+
+* Do not count walkovers as prediction wins or losses.
+* Mark them as void.
+* Exclude them from model accuracy.
+
+Canceled or postponed matches
+
+* Mark them as void.
+* Do not count them in accuracy.
+
+Retirements
+
+Track retirement predictions separately.
+
+Allow an administrator setting with two options:
+
+1. Exclude retirements from standard winner accuracy.
+2. Grade retirements according to the official competition or market settlement rule.
+
+The default should be to exclude retirements from standard model accuracy while reporting them in a separate retirement category.
+
+Never silently count a retirement as a normal completed match.
+
+13. Live Paper-Trading Mode
+
+Add a paper-trading mode for future matches.
+
+Before each match begins:
+
+1. Gather all allowed data.
+2. Generate the prediction.
+3. Save the predicted winner.
+4. Save both probabilities.
+5. Save the fair odds.
+6. Save available market prices when connected.
+7. Save the recommended action.
+8. Lock the prediction.
+9. Record the exact time.
+10. Prevent editing after the cutoff.
+
+After the match finishes:
+
+1. Retrieve the official result.
+2. Confirm whether the match completed normally.
+3. Grade the prediction.
+4. Update performance statistics.
+5. Update calibration reports.
+6. Update model rankings.
+7. Add the result to the Prediction Log.
+
+Do not allow live paper-trade predictions to be backfilled after the match begins.
+
+If the system failed to make a prediction before the cutoff, mark it as missed. Do not create a late prediction and treat it as a valid live test.
+
+14. Prediction Log
+
+Create a Prediction Log with one permanent record per prediction.
+
+Each row should show:
+
+* Date
+* Scheduled time
+* Tournament
+* Surface
+* Round
+* Player 1
+* Player 2
+* Predicted winner
+* Win probability
+* Fair odds
+* Actual winner
+* Final score
+* Correct, incorrect, void, or pending
+* Model version
+* Test type
+* Confidence bucket
+* Data-quality score
+
+Each row should have an accordion dropdown showing:
+
+* Full feature snapshot
+* Model-by-model predictions
+* Ensemble decision
+* Main reasons for the prediction
+* Risk factors
+* Missing data
+* Historical statistics used
+* Market comparison when available
+* Why the prediction won or lost
+* Whether the model was well-calibrated
+* Whether the result exposed a repeatable weakness
+
+Do not generate a dishonest explanation after the result.
+
+Separate the pre-match explanation from the post-match analysis.
+
+Label them clearly:
+
+* Pre-Match Reasoning
+* Post-Match Review
+
+15. Post-Match Error Analysis
+
+For every incorrect prediction, analyze possible causes without pretending that every loss was preventable.
+
+Possible error categories:
+
+* Unexpected injury
+* Retirement
+* Poor recent-form weighting
+* Surface mismatch
+* Fatigue underestimated
+* Ranking overvalued
+* Serve performance overvalued
+* Return performance undervalued
+* Weak-opponent statistics overvalued
+* Small sample size
+* Missing data
+* Incorrect player identity match
+* Stale ranking
+* Stale injury information
+* Model disagreement
+* Match was close to 50/50
+* Random match variance
+* Data-source failure
+* Calibration problem
+
+Store one or more error tags.
+
+Do not immediately change the model because of one loss.
+
+Only consider model changes when the same weakness appears repeatedly across a meaningful sample.
+
+16. Model Improvement Process
+
+Use the following controlled improvement cycle:
+
+1. Finish the current locked test period.
+2. Review the full results.
+3. Identify repeated weaknesses.
+4. Create a new model version.
+5. Change only documented features, parameters, or weights.
+6. Train the new version on the allowed training data.
+7. Tune it on the validation data.
+8. Compare it with the current champion model.
+9. Test it on a new unseen period.
+10. Promote it only if it improves multiple important metrics.
+
+Do not overwrite the existing champion model.
+
+Keep:
+
+* Champion model
+* Challenger models
+* Retired models
+* Rejected models
+
+A challenger should not replace the champion based only on higher raw accuracy.
+
+Promotion should consider:
+
+* Accuracy
+* Log loss
+* Brier score
+* Calibration
+* Stability across time
+* Stability across surfaces
+* Sample size
+* Maximum drawdown
+* Paper-trading results
+* Data requirements
+* Reliability
+
+17. Champion-versus-Challenger System
+
+Create a champion-versus-challenger evaluation system.
+
+The current champion is the model used for primary live predictions.
+
+New challenger models must be tested against the champion on the exact same unseen matches.
+
+Display:
+
+* Champion accuracy
+* Challenger accuracy
+* Champion log loss
+* Challenger log loss
+* Champion Brier score
+* Challenger Brier score
+* Calibration difference
+* Surface performance
+* Tour performance
+* Confidence-bucket performance
+* Number of test matches
+* Statistical uncertainty
+
+Do not promote a challenger unless:
+
+* It has enough test predictions.
+* It improves performance consistently.
+* It does not achieve improvement only in one tiny segment.
+* It does not have materially worse calibration.
+* It passes all data-leakage checks.
+
+18. Ensemble System
+
+Allow multiple approved models to vote on a match.
+
+The ensemble should not simply average every model equally.
+
+Assign weights based on validated performance.
+
+Possible specialist models include:
+
+* ATP model
+* WTA model
+* Challenger model
+* ITF model
+* Clay model
+* Grass model
+* Hard-court model
+* Indoor model
+* Serve-dominant matchup model
+* Return-dominant matchup model
+* Fatigue model
+* Injury-risk model
+
+Only use specialist weights that were established on validation data.
+
+Do not select a specialist after viewing the result.
+
+Display:
+
+* Models used
+* Each model’s prediction
+* Each model’s probability
+* Model weight
+* Final ensemble probability
+* Agreement percentage
+* Disagreement warning
+
+When model disagreement is high, reduce confidence rather than forcing an artificially strong prediction.
+
+19. Data-Quality Checks
+
+Before generating any prediction, validate:
+
+* Both players were identified correctly.
+* Player names were matched to unique IDs.
+* Rankings are current for the prediction date.
+* Surface is correct.
+* Tournament is correct.
+* Round is correct.
+* Match format is correct.
+* Player statistics are dated before the cutoff.
+* No duplicate match exists.
+* No future match data is included.
+* No result field is populated before prediction.
+* Required features are present.
+* Data sources responded successfully.
+
+Create a data-quality score from 0 to 100.
+
+Suggested interpretation:
+
+* 90–100: excellent data
+* 75–89: good data
+* 60–74: usable with caution
+* Below 60: weak data
+
+Do not hide weak data.
+
+Display a visible warning when data quality is low.
+
+20. Prevent Overfitting
+
+Add safeguards against overfitting.
+
+The system must:
+
+* Limit unnecessary features.
+* Remove duplicate or nearly identical features.
+* Use regularization where appropriate.
+* Use validation data for tuning.
+* Keep the final test period untouched.
+* Avoid tuning repeatedly against the same test set.
+* Record how many experiments were attempted.
+* Compare complex models against simple baselines.
+* Reject models that perform well only on one short period.
+* Require stable results across multiple walk-forward folds.
+
+Include baseline models:
+
+* Higher-ranked player wins
+* Higher-Elo player wins
+* Higher-surface-Elo player wins
+* Simple recent-form model
+* 50/50 random baseline
+
+The advanced system should clearly outperform simple baselines before being considered valuable.
+
+21. Retraining Schedule
+
+Do not retrain after every single match.
+
+Use controlled retraining schedules such as:
+
+* Weekly
+* Every two weeks
+* Monthly
+* After a minimum number of newly completed matches
+
+The default should be weekly.
+
+When retraining:
+
+1. Keep the old model active until testing is complete.
+2. Create a new model version.
+3. Train using only data available before the retraining timestamp.
+4. Validate the new version.
+5. Compare it with the champion.
+6. Promote or reject it.
+7. Save the decision and reason.
+
+Never allow the model to silently change while live predictions are being graded.
+
+22. Accuracy Dashboard
+
+Create an Accuracy Dashboard showing:
+
+* Overall historical test accuracy
+* Current live paper-trade accuracy
+* Last 50 predictions
+* Last 100 predictions
+* Last 250 predictions
+* Last 500 predictions
+* Accuracy by surface
+* Accuracy by tour
+* Accuracy by tournament level
+* Accuracy by confidence bucket
+* Calibration chart
+* Brier score
+* Log loss
+* Winning and losing streaks
+* Monthly accuracy
+* Model-version comparison
+* Champion-versus-challenger comparison
+* Number of pending matches
+* Number of void matches
+* Number of missed predictions
+
+Clearly separate:
+
+* Training results
+* Validation results
+* Historical unseen-test results
+* Live paper-trading results
+
+Never combine these categories into one misleading accuracy number.
+
+23. Betting-Odds Comparison
+
+The predictor must generate its own probability before reading or comparing market odds whenever possible.
+
+Example:
+
+* Model probability: Player A 65%
+* Model fair decimal odds: 1.54
+* Model fair American odds: approximately -186
+* Available sportsbook odds: 1.75
+* Market implied probability before removing margin: 57.1%
+* Estimated model edge: 7.9 percentage points
+
+Show both:
+
+* Predicted winner
+* Model probability
+* Fair odds
+* Market odds
+* Estimated edge
+
+Do not use market odds as proof that the model is correct.
+
+Allow two operating modes:
+
+Independent Mode
+
+Market odds are not used as model features. They are used only after the prediction to compare value.
+
+Market-Informed Mode
+
+Market information may be used as an input feature.
+
+Track the performance of these two modes separately.
+
+Use Independent Mode as the default so the app can measure whether its own model adds information beyond the market.
+
+24. No False Accuracy Claims
+
+Do not display statements such as:
+
+* Guaranteed winner
+* Certain winner
+* Lock
+* Cannot lose
+* Confirmed 70% accuracy
+
+Only display measured results from locked predictions.
+
+Every accuracy result must show:
+
+* Number of predictions
+* Date range
+* Testing method
+* Whether the matches were unseen
+* Whether predictions were historical or live
+* Whether retirements were excluded
+* Model version
+
+Correct example:
+
+“Model version 4.2 achieved 61.8% accuracy over 1,245 locked, unseen test matches from July 1 through December 31, with walkovers excluded.”
+
+Incorrect example:
+
+“This model is 70% accurate.”
+
+25. Required Automated Tests
+
+Create automated tests that fail if:
+
+* Future matches appear in training features.
+* A match result is available before the prediction record is created.
+* Ranking data comes from after the match.
+* Elo includes the match currently being predicted.
+* Rolling statistics include the current match.
+* A locked prediction is edited.
+* A void match is graded as a normal win or loss.
+* Probabilities do not total approximately 100%.
+* Duplicate matches are included.
+* Training, validation, and test dates overlap.
+* The final test set is used for tuning.
+* A live prediction is created after the cutoff and marked valid.
+* Player IDs do not match the displayed player names.
+* Model versions are missing.
+* Feature timestamps are missing.
+
+Do not deploy the testing system until these checks pass.
+
+26. Final Required Workflow
+
+The finished system must operate in this exact order:
+
+1. Import historical matches.
+2. Clean and validate player identities.
+3. Sort all data chronologically.
+4. Create pre-match features using only earlier information.
+5. Run leakage checks.
+6. Split data into training, validation, and unseen test periods.
+7. Train candidate models.
+8. Tune only using validation data.
+9. Lock the chosen model configuration.
+10. Generate predictions for the unseen test set.
+11. Save predictions before reading results.
+12. Grade predictions.
+13. Calculate full performance metrics.
+14. Compare against baseline models.
+15. Run walk-forward tests.
+16. Select the champion model.
+17. Start live paper-trading mode.
+18. Lock every live prediction before the match.
+19. Grade completed matches automatically.
+20. Review repeated errors.
+21. Create challenger models.
+22. Promote challengers only after valid unseen testing.
+23. Keep a permanent audit log.
+
+27. Completion Requirements
+
+Do not mark this feature complete unless all of the following work:
+
+* Historical data is stored chronologically.
+* Pre-match features exclude future information.
+* Training, validation, and test sets are separate.
+* Walk-forward testing works.
+* Predictions are locked.
+* Live paper-trade predictions cannot be edited.
+* Retirements and walkovers are handled correctly.
+* Accuracy and calibration are calculated.
+* Performance can be filtered by surface and tour.
+* Model versions are stored.
+* Champion and challenger models can be compared.
+* Every prediction appears in the Prediction Log.
+* Post-match analysis is separated from pre-match reasoning.
+* Data quality and missing-data warnings are visible.
+* The dashboard separates training, validation, test, and live results.
+* Automated leakage tests pass.
+* No accuracy guarantee is displayed without a valid sample size and date range.
+
+Do not simplify this into a basic random train/test split.
+
+Do not allow future information into the model.
+
+Do not modify losing predictions after the event.
+
+Do not claim that historical backtest accuracy guarantees future results.
+
+Build the system so every reported result is reproducible, timestamped, auditable, and based on information that was genuinely available before the match.
