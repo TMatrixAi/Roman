@@ -1,0 +1,305 @@
+import { logger } from "../../lib/logger";
+import { TtlCache } from "./cache";
+import { inferSurfaceAndLevel } from "./surfaceMap";
+import {
+  ProviderUnavailableError,
+  type Fixture,
+  type HeadToHeadRecord,
+  type MatchFormat,
+  type MatchRecord,
+  type PlayerProfile,
+  type PlayerSummary,
+  type ProviderStatusInfo,
+  type TennisDataProvider,
+} from "./types";
+
+const BASE_URL = "https://api.api-tennis.com/tennis/";
+const STANDINGS_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const FIXTURES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface ApiTennisEnvelope<T> {
+  success: 0 | 1;
+  result: T;
+}
+
+interface RawStandingRow {
+  place: string;
+  player: string;
+  player_key: string;
+  league: string;
+  country: string;
+  points: string;
+}
+
+interface RawPlayer {
+  player_key: string;
+  player_name: string;
+  player_country: string | null;
+  player_bday: string | null;
+}
+
+interface RawScoreEntry {
+  score_first: string;
+  score_second: string;
+  score_set: string;
+}
+
+interface RawMatch {
+  event_key: string;
+  event_date: string;
+  event_time?: string;
+  event_first_player: string;
+  first_player_key: string;
+  event_second_player: string;
+  second_player_key: string;
+  event_final_result: string;
+  event_winner: "First Player" | "Second Player" | null;
+  event_status: string;
+  event_type_type?: string;
+  tournament_name: string;
+  tournament_key?: string;
+  tournament_round?: string;
+  scores?: RawScoreEntry[];
+}
+
+function determineMatchFormat(eventTypeType: string | undefined, level: string | null): MatchFormat {
+  const isMen = /atp|men/i.test(eventTypeType ?? "");
+  if (isMen && level === "GrandSlam") return "BestOf5";
+  return "BestOf3";
+}
+
+function parseAgeFromBday(bday: string | null): number | null {
+  if (!bday) return null;
+  const parts = bday.split(".");
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map((p) => parseInt(p, 10));
+  if (!dd || !mm || !yyyy) return null;
+  const born = new Date(yyyy, mm - 1, dd);
+  const now = new Date();
+  let age = now.getFullYear() - born.getFullYear();
+  const hasHadBirthdayThisYear =
+    now.getMonth() > born.getMonth() || (now.getMonth() === born.getMonth() && now.getDate() >= born.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+function mapMatchStatus(status: string): { retired: boolean; walkover: boolean; finished: boolean } {
+  const lower = status.toLowerCase();
+  return {
+    retired: lower.includes("retired"),
+    walkover: lower.includes("walkover") || lower.includes("w.o"),
+    finished: lower === "finished" || lower.includes("retired") || lower.includes("walkover"),
+  };
+}
+
+function mapScoreString(raw: RawMatch): string | null {
+  if (raw.scores && raw.scores.length > 0) {
+    return raw.scores.map((s) => `${s.score_first}-${s.score_second}`).join(" ");
+  }
+  return raw.event_final_result ?? null;
+}
+
+function mapSetGameMargins(raw: RawMatch, isFirstPlayer: boolean): Array<{ playerGames: number; opponentGames: number }> {
+  if (!raw.scores) return [];
+  return raw.scores
+    .map((s) => {
+      const first = parseInt(s.score_first, 10);
+      const second = parseInt(s.score_second, 10);
+      if (Number.isNaN(first) || Number.isNaN(second)) return null;
+      return isFirstPlayer ? { playerGames: first, opponentGames: second } : { playerGames: second, opponentGames: first };
+    })
+    .filter((v): v is { playerGames: number; opponentGames: number } => v !== null);
+}
+
+export class ApiTennisProvider implements TennisDataProvider {
+  readonly name = "API-Tennis";
+
+  private apiKey: string;
+  private cache = new TtlCache();
+  private lastSuccessfulCallAt: string | null = null;
+  private lastError: string | null = null;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  getStatus(): ProviderStatusInfo {
+    return {
+      provider: this.name,
+      connected: this.lastSuccessfulCallAt !== null,
+      lastSuccessfulCallAt: this.lastSuccessfulCallAt,
+      lastError: this.lastError,
+    };
+  }
+
+  private async call<T>(method: string, params: Record<string, string> = {}): Promise<T> {
+    const url = new URL(BASE_URL);
+    url.searchParams.set("method", method);
+    url.searchParams.set("APIkey", this.apiKey);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+
+    try {
+      const response = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) {
+        throw new Error(`API-Tennis responded with HTTP ${response.status}`);
+      }
+      const body = (await response.json()) as ApiTennisEnvelope<T>;
+      if (body.success !== 1) {
+        throw new Error("API-Tennis reported an unsuccessful response");
+      }
+      this.lastSuccessfulCallAt = new Date().toISOString();
+      this.lastError = null;
+      return body.result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error calling API-Tennis";
+      this.lastError = message;
+      logger.error({ err, method }, "API-Tennis call failed");
+      throw new ProviderUnavailableError(message);
+    }
+  }
+
+  private async getStandingsCache(): Promise<RawStandingRow[]> {
+    return this.cache.getOrFetch("standings", STANDINGS_TTL_MS, async () => {
+      const [atp, wta] = await Promise.all([
+        this.call<RawStandingRow[]>("get_standings", { event_type: "ATP" }),
+        this.call<RawStandingRow[]>("get_standings", { event_type: "WTA" }),
+      ]);
+      return [...(atp ?? []), ...(wta ?? [])];
+    });
+  }
+
+  async searchPlayers(query: string): Promise<PlayerSummary[]> {
+    const standings = await this.getStandingsCache();
+    const lowerQuery = query.toLowerCase();
+    return standings
+      .filter((row) => row.player.toLowerCase().includes(lowerQuery))
+      .slice(0, 25)
+      .map((row) => ({
+        id: row.player_key,
+        name: row.player,
+        countryCode: row.country ?? null,
+        currentRank: parseInt(row.place, 10) || null,
+        tour: row.league ?? null,
+      }));
+  }
+
+  async getPlayer(playerId: string): Promise<PlayerProfile | null> {
+    const [players, standings] = await Promise.all([
+      this.call<RawPlayer[]>("get_players", { player_key: playerId }),
+      this.getStandingsCache(),
+    ]);
+    const raw = players?.[0];
+    if (!raw) return null;
+    const standingRow = standings.find((row) => row.player_key === playerId);
+    return {
+      id: raw.player_key,
+      name: raw.player_name,
+      countryCode: raw.player_country ?? standingRow?.country ?? null,
+      currentRank: standingRow ? parseInt(standingRow.place, 10) || null : null,
+      tour: standingRow?.league ?? null,
+      age: parseAgeFromBday(raw.player_bday),
+      plays: null,
+    };
+  }
+
+  async getPlayerMatches(playerId: string): Promise<MatchRecord[]> {
+    const dateStop = new Date();
+    const dateStart = new Date(dateStop.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+    const raw = await this.cache.getOrFetch(`matches:${playerId}`, FIXTURES_TTL_MS, () =>
+      this.call<RawMatch[]>("get_fixtures", {
+        player_key: playerId,
+        date_start: fmt(dateStart),
+        date_stop: fmt(dateStop),
+      }),
+    );
+
+    return (raw ?? [])
+      .filter((m) => mapMatchStatus(m.event_status).finished && m.event_winner !== null)
+      .map((m) => this.mapMatchRecord(m, playerId))
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  private mapMatchRecord(raw: RawMatch, playerId: string): MatchRecord {
+    const isFirstPlayer = raw.first_player_key === playerId;
+    const { surface, level } = inferSurfaceAndLevel(raw.tournament_name);
+    const status = mapMatchStatus(raw.event_status);
+    const won = (isFirstPlayer && raw.event_winner === "First Player") || (!isFirstPlayer && raw.event_winner === "Second Player");
+
+    return {
+      id: raw.event_key,
+      date: raw.event_date,
+      tournamentName: raw.tournament_name ?? null,
+      tournamentLevel: level,
+      round: raw.tournament_round ?? null,
+      matchFormat: determineMatchFormat(raw.event_type_type, level),
+      surface,
+      indoor: surface === "IndoorHard" ? true : null,
+      opponentId: isFirstPlayer ? raw.second_player_key : raw.first_player_key,
+      opponentName: isFirstPlayer ? raw.event_second_player : raw.event_first_player,
+      opponentRank: null,
+      result: won ? "W" : "L",
+      score: mapScoreString(raw),
+      retired: status.retired,
+      walkover: status.walkover,
+      stats: null,
+      opponentStats: null,
+      setGameMargins: mapSetGameMargins(raw, isFirstPlayer),
+    };
+  }
+
+  async getUpcomingFixtures(date: string): Promise<Fixture[]> {
+    const raw = await this.cache.getOrFetch(`fixtures:${date}`, FIXTURES_TTL_MS, () =>
+      this.call<RawMatch[]>("get_fixtures", { date_start: date, date_stop: date }),
+    );
+
+    return (raw ?? [])
+      .filter((m) => m.event_winner === null)
+      .map((m) => {
+        const { surface, level } = inferSurfaceAndLevel(m.tournament_name);
+        return {
+          id: m.event_key,
+          date: m.event_date,
+          tournamentName: m.tournament_name ?? null,
+          tournamentLevel: level,
+          round: m.tournament_round ?? null,
+          surface,
+          indoor: surface === "IndoorHard" ? true : null,
+          matchFormat: determineMatchFormat(m.event_type_type, level),
+          player1Id: m.first_player_key,
+          player1Name: m.event_first_player,
+          player2Id: m.second_player_key,
+          player2Name: m.event_second_player,
+        };
+      });
+  }
+
+  async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
+    const raw = await this.cache.getOrFetch(`h2h:${player1Id}:${player2Id}`, FIXTURES_TTL_MS, () =>
+      this.call<{ H2H: RawMatch[] }>("get_H2H", {
+        first_player_key: player1Id,
+        second_player_key: player2Id,
+      }),
+    );
+
+    const meetings = (raw?.H2H ?? [])
+      .filter((m) => mapMatchStatus(m.event_status).finished && m.event_winner !== null)
+      .map((m) => {
+        const { surface } = inferSurfaceAndLevel(m.tournament_name);
+        const winnerId = m.event_winner === "First Player" ? m.first_player_key : m.second_player_key;
+        return {
+          date: m.event_date,
+          tournamentName: m.tournament_name ?? null,
+          surface,
+          score: mapScoreString(m),
+          winnerId,
+        };
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+    return { player1Id, player2Id, meetings };
+  }
+}

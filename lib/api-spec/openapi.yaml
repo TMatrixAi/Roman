@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Tennis prediction engine API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: players
+    description: Player search and profiles
+  - name: matchups
+    description: Head-to-head and fixtures
+  - name: predictions
+    description: Prediction engine
+  - name: provider
+    description: Data provider status
 paths:
   /healthz:
     get:
@@ -24,6 +32,287 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /provider/status:
+    get:
+      operationId: getProviderStatus
+      tags: [provider]
+      summary: Data provider status
+      description: Reports which live tennis-data provider is active and when it last responded successfully
+      responses:
+        "200":
+          description: Provider status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderStatus"
+
+  /players/search:
+    get:
+      operationId: searchPlayers
+      tags: [players]
+      summary: Search players by name
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+      responses:
+        "200":
+          description: Matching players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlayerSummary"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /players/{playerId}:
+    get:
+      operationId: getPlayer
+      tags: [players]
+      summary: Get a player profile
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Player profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerProfile"
+        "404":
+          description: Player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /players/{playerId}/matches:
+    get:
+      operationId: getPlayerMatches
+      tags: [players]
+      summary: Recent match history for a player (all surfaces, most recent first)
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Match history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchRecord"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /fixtures/upcoming:
+    get:
+      operationId: getUpcomingFixtures
+      tags: [matchups]
+      summary: Upcoming scheduled matches
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: ISO date (YYYY-MM-DD). Defaults to today.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upcoming fixtures
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Fixture"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /h2h:
+    get:
+      operationId: getHeadToHead
+      tags: [matchups]
+      summary: Head-to-head match list between two players
+      parameters:
+        - name: player1Id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: player2Id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Head-to-head record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeadToHeadRecord"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /predictions:
+    get:
+      operationId: listPredictions
+      tags: [predictions]
+      summary: List saved predictions (most recent first)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Prediction history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PredictionSummary"
+    post:
+      operationId: createPrediction
+      tags: [predictions]
+      summary: Run the prediction engine for a matchup and save the result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionRequest"
+      responses:
+        "201":
+          description: Prediction generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prediction"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /predictions/stats:
+    get:
+      operationId: getPredictionStats
+      tags: [predictions]
+      summary: Aggregate stats across saved predictions
+      responses:
+        "200":
+          description: Aggregate stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionStats"
+
+  /predictions/{predictionId}:
+    get:
+      operationId: getPrediction
+      tags: [predictions]
+      summary: Get a saved prediction with its full engine breakdown
+      parameters:
+        - name: predictionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Prediction detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prediction"
+        "404":
+          description: Prediction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /predictions/{predictionId}/outcome:
+    patch:
+      operationId: recordPredictionOutcome
+      tags: [predictions]
+      summary: Record the actual match winner for a saved prediction
+      parameters:
+        - name: predictionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionOutcomeInput"
+      responses:
+        "200":
+          description: Updated prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prediction"
+        "404":
+          description: Prediction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +323,549 @@ components:
       required:
         - status
 
+    ProviderError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        detail:
+          type: ["string", "null"]
+
+    ProviderStatus:
+      type: object
+      required: [provider, connected, lastSuccessfulCallAt, lastError]
+      properties:
+        provider:
+          type: string
+          description: Name of the active tennis data provider
+        connected:
+          type: boolean
+        lastSuccessfulCallAt:
+          type: ["string", "null"]
+          format: date-time
+        lastError:
+          type: ["string", "null"]
+
+    Surface:
+      type: string
+      enum: [Hard, Clay, Grass, IndoorHard]
+
+    TournamentLevel:
+      type: string
+      enum: [GrandSlam, Masters1000, ATP500, ATP250, WTA1000, WTA500, WTA250, Challenger, ITF, Other]
+
+    MatchFormat:
+      type: string
+      enum: [BestOf3, BestOf5]
+
+    PlayerSummary:
+      type: object
+      required: [id, name, countryCode]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        countryCode:
+          type: ["string", "null"]
+        currentRank:
+          type: ["integer", "null"]
+        tour:
+          type: ["string", "null"]
+
+    PlayerProfile:
+      type: object
+      required: [id, name, countryCode]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        countryCode:
+          type: ["string", "null"]
+        currentRank:
+          type: ["integer", "null"]
+        age:
+          type: ["number", "null"]
+        plays:
+          type: ["string", "null"]
+          description: Playing hand, e.g. "Right-handed"
+        tour:
+          type: ["string", "null"]
+
+    MatchStatLine:
+      type: object
+      description: Raw serve/return counting stats for one player in one match, when the provider supplies them
+      properties:
+        firstServePct:
+          type: ["number", "null"]
+        firstServeWon:
+          type: ["number", "null"]
+        secondServeWon:
+          type: ["number", "null"]
+        aces:
+          type: ["integer", "null"]
+        doubleFaults:
+          type: ["integer", "null"]
+        breakPointsSaved:
+          type: ["number", "null"]
+        breakPointsFaced:
+          type: ["integer", "null"]
+        returnPointsWon:
+          type: ["number", "null"]
+
+    MatchRecord:
+      type: object
+      required: [id, date, opponentId, opponentName, opponentRank, surface, result]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        tournamentName:
+          type: ["string", "null"]
+        tournamentLevel:
+          $ref: "#/components/schemas/TournamentLevel"
+        round:
+          type: ["string", "null"]
+        matchFormat:
+          $ref: "#/components/schemas/MatchFormat"
+        surface:
+          oneOf:
+            - $ref: "#/components/schemas/Surface"
+            - type: "null"
+        indoor:
+          type: ["boolean", "null"]
+        opponentId:
+          type: string
+        opponentName:
+          type: string
+        opponentRank:
+          type: ["integer", "null"]
+        result:
+          type: string
+          enum: [W, L]
+        score:
+          type: ["string", "null"]
+        retired:
+          type: boolean
+        walkover:
+          type: boolean
+        stats:
+          $ref: "#/components/schemas/MatchStatLine"
+        opponentStats:
+          $ref: "#/components/schemas/MatchStatLine"
+
+    Fixture:
+      type: object
+      required: [id, date, player1Id, player1Name, player2Id, player2Name, surface]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date-time
+        tournamentName:
+          type: ["string", "null"]
+        tournamentLevel:
+          $ref: "#/components/schemas/TournamentLevel"
+        round:
+          type: ["string", "null"]
+        surface:
+          oneOf:
+            - $ref: "#/components/schemas/Surface"
+            - type: "null"
+        indoor:
+          type: ["boolean", "null"]
+        matchFormat:
+          $ref: "#/components/schemas/MatchFormat"
+        player1Id:
+          type: string
+        player1Name:
+          type: string
+        player2Id:
+          type: string
+        player2Name:
+          type: string
+
+    HeadToHeadMeeting:
+      type: object
+      required: [date, winnerId, surface]
+      properties:
+        date:
+          type: string
+          format: date
+        tournamentName:
+          type: ["string", "null"]
+        surface:
+          oneOf:
+            - $ref: "#/components/schemas/Surface"
+            - type: "null"
+        score:
+          type: ["string", "null"]
+        winnerId:
+          type: string
+
+    HeadToHeadRecord:
+      type: object
+      required: [player1Id, player2Id, meetings]
+      properties:
+        player1Id:
+          type: string
+        player2Id:
+          type: string
+        meetings:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeadToHeadMeeting"
+
+    PredictionRequest:
+      type: object
+      required: [player1Id, player2Id, surface, matchFormat]
+      properties:
+        player1Id:
+          type: string
+        player2Id:
+          type: string
+        surface:
+          $ref: "#/components/schemas/Surface"
+        matchFormat:
+          $ref: "#/components/schemas/MatchFormat"
+        tournamentLevel:
+          $ref: "#/components/schemas/TournamentLevel"
+        tournamentName:
+          type: ["string", "null"]
+        indoor:
+          type: ["boolean", "null"]
+
+    PredictionOutcomeInput:
+      type: object
+      required: [actualWinnerId]
+      properties:
+        actualWinnerId:
+          type: string
+
+    EngineModelOutput:
+      type: object
+      description: Standard shape every prediction-engine module returns
+      required: [player1Edge, player2Edge, reliability, summary]
+      properties:
+        player1Edge:
+          type: number
+          description: Signed edge toward player 1, roughly -50..50
+        player2Edge:
+          type: number
+        reliability:
+          type: number
+          description: 0-100 confidence in this module's inputs
+        summary:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+
+    SurfaceEloResult:
+      type: object
+      required: [player1SurfaceElo, player2SurfaceElo, eloDifference, eloWinProbabilityPlayer1, reliability, sampleSizePlayer1, sampleSizePlayer2]
+      properties:
+        player1SurfaceElo:
+          type: number
+        player2SurfaceElo:
+          type: number
+        eloDifference:
+          type: number
+        eloWinProbabilityPlayer1:
+          type: number
+        reliability:
+          type: number
+        sampleSizePlayer1:
+          type: integer
+        sampleSizePlayer2:
+          type: integer
+
+    ServeReturnResult:
+      type: object
+      required: [player1ServeRating, player2ServeRating, player1ReturnRating, player2ReturnRating, reliability]
+      properties:
+        player1ServeRating:
+          type: number
+        player2ServeRating:
+          type: number
+        player1ReturnRating:
+          type: number
+        player2ReturnRating:
+          type: number
+        reliability:
+          type: number
+        note:
+          type: ["string", "null"]
+
+    RecentFormResult:
+      type: object
+      required: [player1Form, player2Form, player1Trend, player2Trend, reliability]
+      properties:
+        player1Form:
+          type: number
+        player2Form:
+          type: number
+        player1Trend:
+          type: string
+          enum: [improving, stable, declining]
+        player2Trend:
+          type: string
+          enum: [improving, stable, declining]
+        reliability:
+          type: number
+
+    FatigueResult:
+      type: object
+      required: [player1FatigueScore, player2FatigueScore, player1MatchesLast7Days, player2MatchesLast7Days, reliability]
+      properties:
+        player1FatigueScore:
+          type: number
+        player2FatigueScore:
+          type: number
+        player1MatchesLast7Days:
+          type: integer
+        player2MatchesLast7Days:
+          type: integer
+        reliability:
+          type: number
+        note:
+          type: string
+
+    StyleMatchupResult:
+      type: object
+      required: [player1Styles, player2Styles, reliability]
+      properties:
+        player1Styles:
+          type: array
+          items:
+            type: string
+        player2Styles:
+          type: array
+          items:
+            type: string
+        player1Advantages:
+          type: array
+          items:
+            type: string
+        player2Advantages:
+          type: array
+          items:
+            type: string
+        reliability:
+          type: number
+
+    HeadToHeadResult:
+      type: object
+      required: [player1Wins, player2Wins, surfaceMeetings, reliability]
+      properties:
+        player1Wins:
+          type: integer
+        player2Wins:
+          type: integer
+        surfaceMeetings:
+          type: integer
+        recentMeetings:
+          type: integer
+        reliability:
+          type: number
+
+    ModelVote:
+      type: object
+      required: [modelName, player1Probability, weightUsed, reliability]
+      properties:
+        modelName:
+          type: string
+        player1Probability:
+          type: number
+        weightUsed:
+          type: number
+        reliability:
+          type: number
+
+    EngineBreakdown:
+      type: object
+      description: Full module-by-module output of the prediction engine
+      required: [surfaceElo, serveReturn, recentForm, fatigue, styleMatchup, headToHead, models]
+      properties:
+        surfaceElo:
+          $ref: "#/components/schemas/SurfaceEloResult"
+        serveReturn:
+          $ref: "#/components/schemas/ServeReturnResult"
+        recentForm:
+          $ref: "#/components/schemas/RecentFormResult"
+        fatigue:
+          $ref: "#/components/schemas/FatigueResult"
+        styleMatchup:
+          $ref: "#/components/schemas/StyleMatchupResult"
+        headToHead:
+          $ref: "#/components/schemas/HeadToHeadResult"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelVote"
+        modelAgreement:
+          type: string
+          enum: [Strong, Moderate, Mixed, HighDisagreement]
+        reasons:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        availabilityNote:
+          type: string
+        conditionsNote:
+          type: string
+
+    Recommendation:
+      type: string
+      enum: [STRONG_RECOMMENDATION, MODERATE_LEAN, HIGH_RISK, DO_NOT_RECOMMEND]
+
+    UpsetRisk:
+      type: string
+      enum: [LOW, MODERATE, HIGH, EXTREME]
+
+    Prediction:
+      type: object
+      required:
+        [
+          id,
+          player1Id,
+          player1Name,
+          player2Id,
+          player2Name,
+          surface,
+          matchFormat,
+          predictedWinnerId,
+          predictedWinnerName,
+          calibratedProbability,
+          dataQuality,
+          upsetRisk,
+          recommendation,
+          predictedSetScore,
+          engine,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: integer
+        player1Id:
+          type: string
+        player1Name:
+          type: string
+        player2Id:
+          type: string
+        player2Name:
+          type: string
+        surface:
+          $ref: "#/components/schemas/Surface"
+        matchFormat:
+          $ref: "#/components/schemas/MatchFormat"
+        tournamentLevel:
+          $ref: "#/components/schemas/TournamentLevel"
+        tournamentName:
+          type: ["string", "null"]
+        predictedWinnerId:
+          type: string
+        predictedWinnerName:
+          type: string
+        calibratedProbability:
+          type: number
+          description: Calibrated win probability for player 1, 0-100
+        dataQuality:
+          type: integer
+        dataQualityLabel:
+          type: string
+          enum: [Excellent, Strong, Acceptable, Limited, Poor]
+        upsetRisk:
+          $ref: "#/components/schemas/UpsetRisk"
+        recommendation:
+          $ref: "#/components/schemas/Recommendation"
+        predictedSetScore:
+          type: string
+        engine:
+          $ref: "#/components/schemas/EngineBreakdown"
+        actualWinnerId:
+          type: ["string", "null"]
+        actualWinnerName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    PredictionSummary:
+      type: object
+      required:
+        [
+          id,
+          player1Name,
+          player2Name,
+          surface,
+          predictedWinnerName,
+          calibratedProbability,
+          dataQuality,
+          upsetRisk,
+          recommendation,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: integer
+        player1Name:
+          type: string
+        player2Name:
+          type: string
+        surface:
+          $ref: "#/components/schemas/Surface"
+        tournamentName:
+          type: ["string", "null"]
+        predictedWinnerName:
+          type: string
+        calibratedProbability:
+          type: number
+        dataQuality:
+          type: integer
+        upsetRisk:
+          $ref: "#/components/schemas/UpsetRisk"
+        recommendation:
+          $ref: "#/components/schemas/Recommendation"
+        actualWinnerName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    PredictionStats:
+      type: object
+      required: [totalPredictions, resolvedPredictions, correctPredictions, accuracy, byRecommendation]
+      properties:
+        totalPredictions:
+          type: integer
+        resolvedPredictions:
+          type: integer
+        correctPredictions:
+          type: integer
+        accuracy:
+          type: ["number", "null"]
+          description: correctPredictions / resolvedPredictions as a percentage, null if no resolved predictions yet
+        byRecommendation:
+          type: array
+          items:
+            type: object
+            required: [recommendation, count]
+            properties:
+              recommendation:
+                $ref: "#/components/schemas/Recommendation"
+              count:
+                type: integer

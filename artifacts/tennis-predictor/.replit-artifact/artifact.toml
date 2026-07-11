@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Tennis Predictor"
+version = "1.0.0"
+id = "artifacts/tennis-predictor"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20235
+
+[services.development]
+run = "pnpm --filter @workspace/tennis-predictor run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tennis-predictor", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tennis-predictor/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20235"
+BASE_PATH = "/"
