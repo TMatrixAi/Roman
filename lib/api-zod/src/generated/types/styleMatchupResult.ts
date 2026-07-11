@@ -12,4 +12,5 @@ export interface StyleMatchupResult {
   player1Advantages?: string[];
   player2Advantages?: string[];
   reliability: number;
+  warnings?: string[];
 }

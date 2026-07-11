@@ -35,6 +35,7 @@ function PredictionRow({ prediction }: { prediction: PredictionSummary }) {
       case 'STRONG_RECOMMENDATION': return <Badge variant="success">STRONG</Badge>
       case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
       case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
+      case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
       case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">NO REC</Badge>
       default: return null
     }

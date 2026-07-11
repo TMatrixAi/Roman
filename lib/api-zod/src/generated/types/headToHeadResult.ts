@@ -11,5 +11,8 @@ export interface HeadToHeadResult {
   player2Wins: number;
   surfaceMeetings: number;
   recentMeetings?: number;
+  /** Recency- and tournament-level-weighted edge toward player1, -1..1 */
+  weightedEdge?: number;
   reliability: number;
+  warnings?: string[];
 }

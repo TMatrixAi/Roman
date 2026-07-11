@@ -11,6 +11,13 @@ export interface FatigueResult {
   player2FatigueScore: number;
   player1MatchesLast7Days: number;
   player2MatchesLast7Days: number;
+  player1MatchesLast3Days?: number;
+  player2MatchesLast3Days?: number;
+  player1MatchesLast14Days?: number;
+  player2MatchesLast14Days?: number;
+  player1EstimatedGamesLast14Days?: number;
+  player2EstimatedGamesLast14Days?: number;
   reliability: number;
   note?: string;
+  warnings?: string[];
 }

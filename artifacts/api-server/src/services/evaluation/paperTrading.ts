@@ -2,7 +2,8 @@ import { db, evaluationPredictionsTable, calibrationModelsTable } from "@workspa
 import { and, eq } from "drizzle-orm";
 import { getTennisDataProvider, ProviderUnavailableError, type TennisDataProvider } from "../tennisData";
 import { runPredictionEngine } from "../predictionEngine";
-import { applyCalibration } from "./calibration";
+import { resolveOpponentStrength } from "../predictionEngine/opponentStrength";
+import { getUpcomingConditions } from "../predictionEngine/weather";
 import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import { logger } from "../../lib/logger";
@@ -127,6 +128,13 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         provider.getHeadToHead(fixture.player1Id, fixture.player2Id),
       ]);
 
+      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather] = await Promise.all([
+        resolveOpponentStrength(player1Matches),
+        resolveOpponentStrength(player2Matches),
+        getActiveCalibration(),
+        getUpcomingConditions(fixture.tournamentName, scheduledStartAt),
+      ]);
+
       const output = runPredictionEngine({
         player1,
         player2,
@@ -135,13 +143,17 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         headToHead,
         surface: fixture.surface,
         matchFormat: fixture.matchFormat,
+        player1OpponentElo: player1OpponentStrength.lookup,
+        player2OpponentElo: player2OpponentStrength.lookup,
+        activeCalibration: activeCalibration?.mapping ?? null,
+        weather,
       });
 
-      const activeCalibration = await getActiveCalibration();
-      const rawProbability = output.calibratedProbability; // engine's own heuristic estimate, 0-100
-      const calibratedProbability = activeCalibration
-        ? applyCalibration(activeCalibration.mapping, rawProbability / 100) * 100
-        : rawProbability;
+      // The engine already applies the active Phase-4 calibration internally when one exists (see
+      // predictionEngine/index.ts), so its own `calibratedProbability` output IS the final,
+      // validated probability here -- no separate post-hoc calibration step is needed anymore.
+      const calibratedProbability = output.calibratedProbability;
+      const rawProbability = output.rawEnsembleProbability; // pre-calibration, kept for transparency/future refitting
 
       const favorsPlayer1 = calibratedProbability >= 50;
       const snapshot: LiveFeatureSnapshot = {

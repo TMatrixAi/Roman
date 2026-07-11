@@ -14,4 +14,5 @@ export interface SurfaceEloResult {
   reliability: number;
   sampleSizePlayer1: number;
   sampleSizePlayer2: number;
+  warnings?: string[];
 }

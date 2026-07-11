@@ -772,6 +772,10 @@ components:
           type: integer
         sampleSizePlayer2:
           type: integer
+        warnings:
+          type: array
+          items:
+            type: string
 
     ServeReturnResult:
       type: object
@@ -789,6 +793,10 @@ components:
           type: number
         note:
           type: ["string", "null"]
+        warnings:
+          type: array
+          items:
+            type: string
 
     RecentFormResult:
       type: object
@@ -806,6 +814,15 @@ components:
           enum: [improving, stable, declining]
         reliability:
           type: number
+        player1OpponentAdjustedCoverage:
+          type: number
+          description: Share (0-100) of player1's recent matches with a real opponent-strength estimate available
+        player2OpponentAdjustedCoverage:
+          type: number
+        warnings:
+          type: array
+          items:
+            type: string
 
     FatigueResult:
       type: object
@@ -819,10 +836,26 @@ components:
           type: integer
         player2MatchesLast7Days:
           type: integer
+        player1MatchesLast3Days:
+          type: integer
+        player2MatchesLast3Days:
+          type: integer
+        player1MatchesLast14Days:
+          type: integer
+        player2MatchesLast14Days:
+          type: integer
+        player1EstimatedGamesLast14Days:
+          type: number
+        player2EstimatedGamesLast14Days:
+          type: number
         reliability:
           type: number
         note:
           type: string
+        warnings:
+          type: array
+          items:
+            type: string
 
     StyleMatchupResult:
       type: object
@@ -846,6 +879,10 @@ components:
             type: string
         reliability:
           type: number
+        warnings:
+          type: array
+          items:
+            type: string
 
     HeadToHeadResult:
       type: object
@@ -859,8 +896,31 @@ components:
           type: integer
         recentMeetings:
           type: integer
+        weightedEdge:
+          type: number
+          description: Recency- and tournament-level-weighted edge toward player1, -1..1
         reliability:
           type: number
+        warnings:
+          type: array
+          items:
+            type: string
+
+    WeatherConditions:
+      type: object
+      description: Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.
+      required: [venueName, temperatureC, windSpeedKph, precipitationProbability, note]
+      properties:
+        venueName:
+          type: string
+        temperatureC:
+          type: number
+        windSpeedKph:
+          type: number
+        precipitationProbability:
+          type: number
+        note:
+          type: string
 
     ModelVote:
       type: object
@@ -907,14 +967,23 @@ components:
           type: array
           items:
             type: string
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Aggregated low-sample/low-coverage warnings from every module
         availabilityNote:
           type: string
         conditionsNote:
           type: string
+        weather:
+          oneOf:
+            - $ref: "#/components/schemas/WeatherConditions"
+            - type: "null"
 
     Recommendation:
       type: string
-      enum: [STRONG_RECOMMENDATION, MODERATE_LEAN, HIGH_RISK, DO_NOT_RECOMMEND]
+      enum: [STRONG_RECOMMENDATION, MODERATE_LEAN, HIGH_RISK, NO_STRONG_SIGNAL, DO_NOT_RECOMMEND]
 
     UpsetRisk:
       type: string

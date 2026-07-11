@@ -3,7 +3,7 @@ import type { EngineBreakdown } from "../predictionEngine";
 /** Bumped whenever the reduced-feature historical scoring model's logic changes. */
 export const HISTORICAL_MODEL_VERSION = "phase4-historical-v1";
 /** Bumped whenever the live ensemble engine (predictionEngine/index.ts) materially changes. */
-export const LIVE_MODEL_VERSION = "phase4-live-ensemble-v1";
+export const LIVE_MODEL_VERSION = "phase5-live-ensemble-v1";
 
 export type RunKind = "historical_test" | "paper_trade" | "live";
 export type Segment = "validation" | "test";

@@ -7,9 +7,11 @@ import { computeHeadToHeadModule } from "./headToHead";
 import { computeDataQuality } from "./dataQuality";
 import { buildEnsemble } from "./ensemble";
 import { calibrateProbability } from "./calibration";
+import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
 import { computeRecommendation } from "./recommendation";
 import type { PredictionEngineInput } from "./types";
+import type { WeatherConditions } from "./weather";
 
 export interface EngineBreakdown {
   surfaceElo: ReturnType<typeof computeSurfaceEloModule>;
@@ -22,14 +24,18 @@ export interface EngineBreakdown {
   modelAgreement: ReturnType<typeof buildEnsemble>["modelAgreement"];
   reasons: string[];
   risks: string[];
+  warnings: string[];
   availabilityNote: string;
   conditionsNote: string;
+  weather: WeatherConditions | null;
 }
 
 export interface EngineOutput {
   predictedWinnerId: string;
   predictedWinnerName: string;
-  calibratedProbability: number; // for player 1
+  calibratedProbability: number; // for player 1, final -- Phase-4 fitted calibration when available, else the heuristic fallback
+  /** Ensemble probability for player 1 before any calibration is applied -- kept for transparency and future calibration refitting. */
+  rawEnsembleProbability: number;
   dataQuality: number;
   dataQualityLabel: ReturnType<typeof computeDataQuality>["label"];
   upsetRisk: ReturnType<typeof computeUpsetRisk>;
@@ -48,9 +54,12 @@ function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbabili
 }
 
 export function runPredictionEngine(input: PredictionEngineInput): EngineOutput {
-  const surfaceElo = computeSurfaceEloModule(input.player1Matches, input.player2Matches, input.surface);
-  const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches);
-  const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches);
+  const player1OpponentElo = input.player1OpponentElo ?? new Map();
+  const player2OpponentElo = input.player2OpponentElo ?? new Map();
+
+  const surfaceElo = computeSurfaceEloModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
+  const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
+  const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches);
   const styleMatchup = computeStyleMatchupModule(input.player1Matches, input.player2Matches);
   const headToHead = computeHeadToHeadModule(input.headToHead, input.surface);
@@ -67,7 +76,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     {
       name: "Head-to-Head",
       player1Edge: headToHead.player1Wins + headToHead.player2Wins > 0
-        ? ((headToHead.player1Wins - headToHead.player2Wins) / (headToHead.player1Wins + headToHead.player2Wins)) * 40
+        ? ((headToHead.player1Wins - headToHead.player2Wins) / (headToHead.player1Wins + headToHead.player2Wins)) * 25 + headToHead.weightedEdge * 15
         : 0,
       reliability: headToHead.reliability,
     },
@@ -76,9 +85,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const { models, ensembleProbability, modelAgreement } = buildEnsemble(moduleEdges);
 
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(moduleEdges.map((m) => m.reliability));
-  const calibratedProbability = calibrateProbability(ensembleProbability, dataQuality);
+
+  // Prefer the real, Phase-4-fitted isotonic calibration (learned from actual walk-forward
+  // validation outcomes) whenever one exists. Only fall back to the hand-tuned dataQuality-shrink
+  // heuristic before any evaluation run has ever produced a fitted model -- that heuristic is a
+  // documented stand-in, not the validated calibration this engine should prefer.
+  const calibratedProbability =
+    input.activeCalibration && input.activeCalibration.length > 0
+      ? Math.round(applyCalibration(input.activeCalibration, ensembleProbability / 100) * 1000) / 10
+      : calibrateProbability(ensembleProbability, dataQuality);
+
   const upsetRisk = computeUpsetRisk(calibratedProbability, modelAgreement);
-  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk);
+  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement);
 
   const favorsPlayer1 = calibratedProbability >= 50;
   const predictedWinnerId = favorsPlayer1 ? input.player1.id : input.player2.id;
@@ -120,6 +138,21 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.push(`Engine models disagree (${agreementLabel}) -- treat the edge with caution.`);
   }
 
+  if (recommendation === "NO_STRONG_SIGNAL") {
+    risks.push("Probability is close to a coin flip and the underlying models don't agree -- there is no strong signal either way for this matchup.");
+  }
+
+  const warnings = [
+    ...surfaceElo.warnings,
+    ...serveReturn.warnings,
+    ...recentForm.warnings,
+    ...fatigue.warnings,
+    ...styleMatchup.warnings,
+    ...headToHead.warnings,
+  ];
+
+  const weather = input.weather ?? null;
+
   const engine: EngineBreakdown = {
     surfaceElo,
     serveReturn,
@@ -131,16 +164,20 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     modelAgreement,
     reasons,
     risks,
+    warnings,
     availabilityNote:
-      "Verified injury/availability tracking is not connected yet -- this prediction assumes both players are fit to compete.",
-    conditionsNote:
-      "Live weather and court-speed conditions are not connected yet -- surface is taken from tournament history, not measured court speed on the day.",
+      "Verified injury/availability tracking is not connected yet (evaluated in Phase 5: no reliable timestamped withdrawal/injury feed was found) -- this prediction assumes both players are fit to compete.",
+    conditionsNote: weather
+      ? `Forecast conditions for ${weather.venueName}: ${weather.temperatureC}°C, wind ${weather.windSpeedKph} km/h, ${weather.precipitationProbability}% chance of precipitation. ${weather.note}`
+      : "Live weather and court-speed conditions are not connected for this matchup -- either the fixture isn't a genuinely upcoming one with a known venue/date, or it's beyond the forecast horizon.",
+    weather,
   };
 
   return {
     predictedWinnerId,
     predictedWinnerName,
     calibratedProbability,
+    rawEnsembleProbability: ensembleProbability,
     dataQuality,
     dataQualityLabel,
     upsetRisk,

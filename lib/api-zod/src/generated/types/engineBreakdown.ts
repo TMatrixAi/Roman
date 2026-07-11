@@ -13,6 +13,7 @@ import type { RecentFormResult } from './recentFormResult';
 import type { ServeReturnResult } from './serveReturnResult';
 import type { StyleMatchupResult } from './styleMatchupResult';
 import type { SurfaceEloResult } from './surfaceEloResult';
+import type { WeatherConditions } from './weatherConditions';
 
 /**
  * Full module-by-module output of the prediction engine
@@ -28,6 +29,9 @@ export interface EngineBreakdown {
   modelAgreement?: EngineBreakdownModelAgreement;
   reasons?: string[];
   risks?: string[];
+  /** Aggregated low-sample/low-coverage warnings from every module */
+  warnings?: string[];
   availabilityNote?: string;
   conditionsNote?: string;
+  weather?: WeatherConditions | null;
 }

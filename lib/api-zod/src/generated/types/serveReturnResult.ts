@@ -14,4 +14,5 @@ export interface ServeReturnResult {
   reliability: number;
   /** @nullable */
   note?: string | null;
+  warnings?: string[];
 }

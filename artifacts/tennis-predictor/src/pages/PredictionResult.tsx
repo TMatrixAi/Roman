@@ -110,7 +110,8 @@ export default function PredictionResultPage() {
                   <Badge variant={
                     prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
                     prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
-                    prediction.recommendation === 'HIGH_RISK' ? 'warning' : 'destructive'
+                    prediction.recommendation === 'HIGH_RISK' ? 'warning' :
+                    prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
                   } className="text-sm">
                     {prediction.recommendation.replace(/_/g, ' ')}
                   </Badge>
@@ -196,9 +197,26 @@ export default function PredictionResultPage() {
         </h3>
 
         {engine.availabilityNote && (
-          <div className="mb-6 p-4 border border-warning/30 bg-warning/5 text-warning-foreground rounded-lg flex gap-3 text-sm">
+          <div className="mb-3 p-4 border border-warning/30 bg-warning/5 text-warning-foreground rounded-lg flex gap-3 text-sm">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-warning" />
             <div>{engine.availabilityNote}</div>
+          </div>
+        )}
+
+        {engine.conditionsNote && (
+          <div className="mb-3 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm text-muted-foreground">
+            <Activity className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>{engine.conditionsNote}</div>
+          </div>
+        )}
+
+        {!!engine.warnings?.length && (
+          <div className="mb-6 p-4 border border-warning/30 bg-warning/5 rounded-lg space-y-2">
+            {engine.warnings.map((w, i) => (
+              <div key={i} className="flex gap-2 text-xs text-muted-foreground">
+                <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" /> <span>{w}</span>
+              </div>
+            ))}
           </div>
         )}
 

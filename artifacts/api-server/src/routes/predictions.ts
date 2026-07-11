@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
-import { db, predictionsTable } from "@workspace/db";
+import { db, predictionsTable, calibrationModelsTable } from "@workspace/db";
 import {
   ListPredictionsQueryParams,
   ListPredictionsResponse,
@@ -15,6 +15,7 @@ import {
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { runPredictionEngine } from "../services/predictionEngine";
+import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
 
 const router: IRouter = Router();
 
@@ -91,6 +92,12 @@ router.post("/predictions", async (req, res): Promise<void> => {
       provider.getHeadToHead(body.player1Id, body.player2Id),
     ]);
 
+    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow] = await Promise.all([
+      resolveOpponentStrength(player1Matches),
+      resolveOpponentStrength(player2Matches),
+      db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
+    ]);
+
     const output = runPredictionEngine({
       player1,
       player2,
@@ -99,6 +106,12 @@ router.post("/predictions", async (req, res): Promise<void> => {
       headToHead,
       surface: body.surface,
       matchFormat: body.matchFormat,
+      player1OpponentElo: player1OpponentStrength.lookup,
+      player2OpponentElo: player2OpponentStrength.lookup,
+      activeCalibration: activeCalibrationRow[0]?.mapping ?? null,
+      // No scheduled fixture date is known for an ad-hoc prediction request, so weather is
+      // intentionally omitted here -- see paperTrading.ts for genuinely upcoming fixtures.
+      weather: null,
     });
 
     const [saved] = await db

@@ -69,3 +69,4 @@ export * from './updatePredictionSettingsRequest';
 export * from './updatePredictionSettingsRequestRetirementRule';
 export * from './upsetRisk';
 export * from './walkForwardSummary';
+export * from './weatherConditions';

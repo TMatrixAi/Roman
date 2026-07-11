@@ -14,4 +14,8 @@ export interface RecentFormResult {
   player1Trend: RecentFormResultPlayer1Trend;
   player2Trend: RecentFormResultPlayer2Trend;
   reliability: number;
+  /** Share (0-100) of player1's recent matches with a real opponent-strength estimate available */
+  player1OpponentAdjustedCoverage?: number;
+  player2OpponentAdjustedCoverage?: number;
+  warnings?: string[];
 }

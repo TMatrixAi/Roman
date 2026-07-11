@@ -182,7 +182,7 @@ export const ListPredictionsResponseItem = zod.object({
   "calibratedProbability": zod.number(),
   "dataQuality": zod.number(),
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
-  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'DO_NOT_RECOMMEND']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "actualWinnerName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
@@ -218,7 +218,7 @@ export const CreatePredictionResponse = zod.object({
   "dataQuality": zod.number(),
   "dataQualityLabel": zod.enum(['Excellent', 'Strong', 'Acceptable', 'Limited', 'Poor']).optional(),
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
-  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'DO_NOT_RECOMMEND']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "predictedSetScore": zod.string(),
   "engine": zod.object({
   "surfaceElo": zod.object({
@@ -228,7 +228,8 @@ export const CreatePredictionResponse = zod.object({
   "eloWinProbabilityPlayer1": zod.number(),
   "reliability": zod.number(),
   "sampleSizePlayer1": zod.number(),
-  "sampleSizePlayer2": zod.number()
+  "sampleSizePlayer2": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "serveReturn": zod.object({
   "player1ServeRating": zod.number(),
@@ -236,36 +237,50 @@ export const CreatePredictionResponse = zod.object({
   "player1ReturnRating": zod.number(),
   "player2ReturnRating": zod.number(),
   "reliability": zod.number(),
-  "note": zod.string().nullish()
+  "note": zod.string().nullish(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "recentForm": zod.object({
   "player1Form": zod.number(),
   "player2Form": zod.number(),
   "player1Trend": zod.enum(['improving', 'stable', 'declining']),
   "player2Trend": zod.enum(['improving', 'stable', 'declining']),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
+  "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({
   "player1FatigueScore": zod.number(),
   "player2FatigueScore": zod.number(),
   "player1MatchesLast7Days": zod.number(),
   "player2MatchesLast7Days": zod.number(),
+  "player1MatchesLast3Days": zod.number().optional(),
+  "player2MatchesLast3Days": zod.number().optional(),
+  "player1MatchesLast14Days": zod.number().optional(),
+  "player2MatchesLast14Days": zod.number().optional(),
+  "player1EstimatedGamesLast14Days": zod.number().optional(),
+  "player2EstimatedGamesLast14Days": zod.number().optional(),
   "reliability": zod.number(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),
   "player1Advantages": zod.array(zod.string()).optional(),
   "player2Advantages": zod.array(zod.string()).optional(),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "headToHead": zod.object({
   "player1Wins": zod.number(),
   "player2Wins": zod.number(),
   "surfaceMeetings": zod.number(),
   "recentMeetings": zod.number().optional(),
-  "reliability": zod.number()
+  "weightedEdge": zod.number().optional().describe('Recency- and tournament-level-weighted edge toward player1, -1..1'),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "models": zod.array(zod.object({
   "modelName": zod.string(),
@@ -276,8 +291,16 @@ export const CreatePredictionResponse = zod.object({
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
+  "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
   "availabilityNote": zod.string().optional(),
-  "conditionsNote": zod.string().optional()
+  "conditionsNote": zod.string().optional(),
+  "weather": zod.union([zod.object({
+  "venueName": zod.string(),
+  "temperatureC": zod.number(),
+  "windSpeedKph": zod.number(),
+  "precipitationProbability": zod.number(),
+  "note": zod.string()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -295,7 +318,7 @@ export const GetPredictionStatsResponse = zod.object({
   "correctPredictions": zod.number(),
   "accuracy": zod.number().nullable().describe('correctPredictions \/ resolvedPredictions as a percentage, null if no resolved predictions yet'),
   "byRecommendation": zod.array(zod.object({
-  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'DO_NOT_RECOMMEND']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "count": zod.number()
 }))
 })
@@ -324,7 +347,7 @@ export const GetPredictionResponse = zod.object({
   "dataQuality": zod.number(),
   "dataQualityLabel": zod.enum(['Excellent', 'Strong', 'Acceptable', 'Limited', 'Poor']).optional(),
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
-  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'DO_NOT_RECOMMEND']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "predictedSetScore": zod.string(),
   "engine": zod.object({
   "surfaceElo": zod.object({
@@ -334,7 +357,8 @@ export const GetPredictionResponse = zod.object({
   "eloWinProbabilityPlayer1": zod.number(),
   "reliability": zod.number(),
   "sampleSizePlayer1": zod.number(),
-  "sampleSizePlayer2": zod.number()
+  "sampleSizePlayer2": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "serveReturn": zod.object({
   "player1ServeRating": zod.number(),
@@ -342,36 +366,50 @@ export const GetPredictionResponse = zod.object({
   "player1ReturnRating": zod.number(),
   "player2ReturnRating": zod.number(),
   "reliability": zod.number(),
-  "note": zod.string().nullish()
+  "note": zod.string().nullish(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "recentForm": zod.object({
   "player1Form": zod.number(),
   "player2Form": zod.number(),
   "player1Trend": zod.enum(['improving', 'stable', 'declining']),
   "player2Trend": zod.enum(['improving', 'stable', 'declining']),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
+  "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({
   "player1FatigueScore": zod.number(),
   "player2FatigueScore": zod.number(),
   "player1MatchesLast7Days": zod.number(),
   "player2MatchesLast7Days": zod.number(),
+  "player1MatchesLast3Days": zod.number().optional(),
+  "player2MatchesLast3Days": zod.number().optional(),
+  "player1MatchesLast14Days": zod.number().optional(),
+  "player2MatchesLast14Days": zod.number().optional(),
+  "player1EstimatedGamesLast14Days": zod.number().optional(),
+  "player2EstimatedGamesLast14Days": zod.number().optional(),
   "reliability": zod.number(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),
   "player1Advantages": zod.array(zod.string()).optional(),
   "player2Advantages": zod.array(zod.string()).optional(),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "headToHead": zod.object({
   "player1Wins": zod.number(),
   "player2Wins": zod.number(),
   "surfaceMeetings": zod.number(),
   "recentMeetings": zod.number().optional(),
-  "reliability": zod.number()
+  "weightedEdge": zod.number().optional().describe('Recency- and tournament-level-weighted edge toward player1, -1..1'),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "models": zod.array(zod.object({
   "modelName": zod.string(),
@@ -382,8 +420,16 @@ export const GetPredictionResponse = zod.object({
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
+  "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
   "availabilityNote": zod.string().optional(),
-  "conditionsNote": zod.string().optional()
+  "conditionsNote": zod.string().optional(),
+  "weather": zod.union([zod.object({
+  "venueName": zod.string(),
+  "temperatureC": zod.number(),
+  "windSpeedKph": zod.number(),
+  "precipitationProbability": zod.number(),
+  "note": zod.string()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -419,7 +465,7 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "dataQuality": zod.number(),
   "dataQualityLabel": zod.enum(['Excellent', 'Strong', 'Acceptable', 'Limited', 'Poor']).optional(),
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
-  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'DO_NOT_RECOMMEND']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "predictedSetScore": zod.string(),
   "engine": zod.object({
   "surfaceElo": zod.object({
@@ -429,7 +475,8 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "eloWinProbabilityPlayer1": zod.number(),
   "reliability": zod.number(),
   "sampleSizePlayer1": zod.number(),
-  "sampleSizePlayer2": zod.number()
+  "sampleSizePlayer2": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "serveReturn": zod.object({
   "player1ServeRating": zod.number(),
@@ -437,36 +484,50 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "player1ReturnRating": zod.number(),
   "player2ReturnRating": zod.number(),
   "reliability": zod.number(),
-  "note": zod.string().nullish()
+  "note": zod.string().nullish(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "recentForm": zod.object({
   "player1Form": zod.number(),
   "player2Form": zod.number(),
   "player1Trend": zod.enum(['improving', 'stable', 'declining']),
   "player2Trend": zod.enum(['improving', 'stable', 'declining']),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
+  "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({
   "player1FatigueScore": zod.number(),
   "player2FatigueScore": zod.number(),
   "player1MatchesLast7Days": zod.number(),
   "player2MatchesLast7Days": zod.number(),
+  "player1MatchesLast3Days": zod.number().optional(),
+  "player2MatchesLast3Days": zod.number().optional(),
+  "player1MatchesLast14Days": zod.number().optional(),
+  "player2MatchesLast14Days": zod.number().optional(),
+  "player1EstimatedGamesLast14Days": zod.number().optional(),
+  "player2EstimatedGamesLast14Days": zod.number().optional(),
   "reliability": zod.number(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "styleMatchup": zod.object({
   "player1Styles": zod.array(zod.string()),
   "player2Styles": zod.array(zod.string()),
   "player1Advantages": zod.array(zod.string()).optional(),
   "player2Advantages": zod.array(zod.string()).optional(),
-  "reliability": zod.number()
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "headToHead": zod.object({
   "player1Wins": zod.number(),
   "player2Wins": zod.number(),
   "surfaceMeetings": zod.number(),
   "recentMeetings": zod.number().optional(),
-  "reliability": zod.number()
+  "weightedEdge": zod.number().optional().describe('Recency- and tournament-level-weighted edge toward player1, -1..1'),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
 }),
   "models": zod.array(zod.object({
   "modelName": zod.string(),
@@ -477,8 +538,16 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
+  "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
   "availabilityNote": zod.string().optional(),
-  "conditionsNote": zod.string().optional()
+  "conditionsNote": zod.string().optional(),
+  "weather": zod.union([zod.object({
+  "venueName": zod.string(),
+  "temperatureC": zod.number(),
+  "windSpeedKph": zod.number(),
+  "precipitationProbability": zod.number(),
+  "note": zod.string()
+}).describe('Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.'),zod.null()]).optional()
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),

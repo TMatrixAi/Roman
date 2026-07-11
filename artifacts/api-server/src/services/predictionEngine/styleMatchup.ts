@@ -6,6 +6,7 @@ export interface StyleMatchupResult {
   player1Advantages: string[];
   player2Advantages: string[];
   reliability: number;
+  warnings: string[];
 }
 
 const SURFACES: Surface[] = ["Hard", "Clay", "Grass", "IndoorHard"];
@@ -53,5 +54,17 @@ export function computeStyleMatchupModule(player1Matches: MatchRecord[], player2
   const sampleBreadth = Object.keys(p1Rates).length + Object.keys(p2Rates).length;
   const reliability = Math.max(15, Math.min(70, sampleBreadth * 10));
 
-  return { player1Styles, player2Styles, player1Advantages, player2Advantages, reliability: Math.round(reliability) };
+  const warnings: string[] = [];
+  if (sampleBreadth <= 2) {
+    warnings.push("At least 3 matches on a surface are required to tag a specialist style -- most surfaces are still unrated for one or both players.");
+  }
+
+  return {
+    player1Styles,
+    player2Styles,
+    player1Advantages,
+    player2Advantages,
+    reliability: Math.round(reliability),
+    warnings,
+  };
 }

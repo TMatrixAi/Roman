@@ -214,6 +214,7 @@ export interface SurfaceEloResult {
   reliability: number;
   sampleSizePlayer1: number;
   sampleSizePlayer2: number;
+  warnings?: string[];
 }
 
 export interface ServeReturnResult {
@@ -224,6 +225,7 @@ export interface ServeReturnResult {
   reliability: number;
   /** @nullable */
   note?: string | null;
+  warnings?: string[];
 }
 
 export type RecentFormResultPlayer1Trend = typeof RecentFormResultPlayer1Trend[keyof typeof RecentFormResultPlayer1Trend];
@@ -250,6 +252,10 @@ export interface RecentFormResult {
   player1Trend: RecentFormResultPlayer1Trend;
   player2Trend: RecentFormResultPlayer2Trend;
   reliability: number;
+  /** Share (0-100) of player1's recent matches with a real opponent-strength estimate available */
+  player1OpponentAdjustedCoverage?: number;
+  player2OpponentAdjustedCoverage?: number;
+  warnings?: string[];
 }
 
 export interface FatigueResult {
@@ -257,8 +263,15 @@ export interface FatigueResult {
   player2FatigueScore: number;
   player1MatchesLast7Days: number;
   player2MatchesLast7Days: number;
+  player1MatchesLast3Days?: number;
+  player2MatchesLast3Days?: number;
+  player1MatchesLast14Days?: number;
+  player2MatchesLast14Days?: number;
+  player1EstimatedGamesLast14Days?: number;
+  player2EstimatedGamesLast14Days?: number;
   reliability: number;
   note?: string;
+  warnings?: string[];
 }
 
 export interface StyleMatchupResult {
@@ -267,6 +280,7 @@ export interface StyleMatchupResult {
   player1Advantages?: string[];
   player2Advantages?: string[];
   reliability: number;
+  warnings?: string[];
 }
 
 export interface HeadToHeadResult {
@@ -274,7 +288,21 @@ export interface HeadToHeadResult {
   player2Wins: number;
   surfaceMeetings: number;
   recentMeetings?: number;
+  /** Recency- and tournament-level-weighted edge toward player1, -1..1 */
+  weightedEdge?: number;
   reliability: number;
+  warnings?: string[];
+}
+
+/**
+ * Forecast conditions for a genuinely upcoming fixture with a known venue -- informational only, never used to adjust win probability.
+ */
+export interface WeatherConditions {
+  venueName: string;
+  temperatureC: number;
+  windSpeedKph: number;
+  precipitationProbability: number;
+  note: string;
 }
 
 export interface ModelVote {
@@ -308,8 +336,11 @@ export interface EngineBreakdown {
   modelAgreement?: EngineBreakdownModelAgreement;
   reasons?: string[];
   risks?: string[];
+  /** Aggregated low-sample/low-coverage warnings from every module */
+  warnings?: string[];
   availabilityNote?: string;
   conditionsNote?: string;
+  weather?: WeatherConditions | null;
 }
 
 export type Recommendation = typeof Recommendation[keyof typeof Recommendation];
@@ -319,6 +350,7 @@ export const Recommendation = {
   STRONG_RECOMMENDATION: 'STRONG_RECOMMENDATION',
   MODERATE_LEAN: 'MODERATE_LEAN',
   HIGH_RISK: 'HIGH_RISK',
+  NO_STRONG_SIGNAL: 'NO_STRONG_SIGNAL',
   DO_NOT_RECOMMEND: 'DO_NOT_RECOMMEND',
 } as const;
 
