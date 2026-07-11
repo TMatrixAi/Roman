@@ -1,6 +1,7 @@
 import { logger } from "../../lib/logger";
 import { TtlCache } from "./cache";
-import { inferSurfaceAndLevel } from "./surfaceMap";
+import { normalizeProviderSurface, resolveSurfaceAndLevel } from "./surfaceMap";
+import type { Surface } from "./types";
 import {
   ProviderUnavailableError,
   type Fixture,
@@ -18,6 +19,10 @@ import {
 const BASE_URL = "https://api.api-tennis.com/tennis/";
 const STANDINGS_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const FIXTURES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Tournament surface/venue assignments change extremely rarely (a tournament switching surface
+// is a multi-year event, if it ever happens) -- a long TTL avoids re-pulling ~10k rows on every
+// prediction while still refreshing periodically rather than caching for the process lifetime.
+const TOURNAMENTS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface ApiTennisEnvelope<T> {
   success: 0 | 1;
@@ -49,6 +54,22 @@ interface RawScoreEntry {
   score_first: string;
   score_second: string;
   score_set: string;
+}
+
+/**
+ * Confirmed live (2026-07-11): `get_tournaments` returns one row per (tournament, event-type)
+ * combination -- e.g. a single physical tournament has separate rows for "... Men Singles" and
+ * "... Men Doubles" -- each with its own `tournament_key`, matching the `tournament_key` field
+ * every `get_fixtures` row also carries. `tournament_sourface` (sic, provider's own typo) is
+ * present for the large majority of the ~10,100 rows checked live, including Challenger/ITF
+ * events the name-based regex table never covered.
+ */
+interface RawTournamentRow {
+  tournament_key: string | number;
+  tournament_name: string;
+  event_type_key: string | number;
+  event_type_type?: string;
+  tournament_sourface?: string | null;
 }
 
 /**
@@ -280,6 +301,23 @@ export class ApiTennisProvider implements TennisDataProvider {
   }
 
   /**
+   * Real tournament_key -> surface lookup built from `get_tournaments`, covering nearly every
+   * tournament the provider knows about (including Challenger/ITF). Rows whose `tournament_sourface`
+   * doesn't normalize to a real surface (junk values, team-event rows, missing) map to `null` --
+   * an explicit "not available" for that tournament_key, not a fabricated guess.
+   */
+  private async getTournamentSurfaceMap(): Promise<Map<string, Surface | null>> {
+    return this.cache.getOrFetch("tournamentSurfaces", TOURNAMENTS_TTL_MS, async () => {
+      const rows = await this.call<RawTournamentRow[]>("get_tournaments");
+      const map = new Map<string, Surface | null>();
+      for (const row of rows ?? []) {
+        map.set(str(row.tournament_key), normalizeProviderSurface(row.tournament_sourface));
+      }
+      return map;
+    });
+  }
+
+  /**
    * Player search is scoped to players who currently appear in the ATP/WTA standings feed.
    * API-Tennis has no name-search endpoint (`get_players` requires an exact `player_key`,
    * confirmed live: passing `player_name` returns a "Required parameter missing: player_key"
@@ -351,27 +389,42 @@ export class ApiTennisProvider implements TennisDataProvider {
 
   async getPlayerMatches(playerId: string): Promise<MatchRecord[]> {
     const dateStop = new Date();
-    const dateStart = new Date(dateStop.getTime() - 365 * 24 * 60 * 60 * 1000);
+    // Extended from the original 365 days: with real tournament_key-based surface resolution now
+    // covering nearly every tournament (see getTournamentSurfaceMap), same-surface sample sizes
+    // for Challenger/ITF-heavy players are the real constraint on surface Elo confidence, not
+    // stale data -- a wider window (~18 months) captures a full year-round surface rotation
+    // (clay/grass/hard swings) plus a partial second cycle without reaching back so far that
+    // matches meaningfully misrepresent current form (which recentForm/fatigue don't use this
+    // full window for anyway -- they only look at the most-recent handful of matches/days).
+    const dateStart = new Date(dateStop.getTime() - 548 * 24 * 60 * 60 * 1000);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
-    const raw = await this.cache.getOrFetch(`matches:${playerId}`, FIXTURES_TTL_MS, () =>
-      this.call<RawMatch[]>("get_fixtures", {
-        player_key: playerId,
-        date_start: fmt(dateStart),
-        date_stop: fmt(dateStop),
-      }),
-    );
+    const [raw, surfaceByTournamentKey] = await Promise.all([
+      this.cache.getOrFetch(`matches:${playerId}`, FIXTURES_TTL_MS, () =>
+        this.call<RawMatch[]>("get_fixtures", {
+          player_key: playerId,
+          date_start: fmt(dateStart),
+          date_stop: fmt(dateStop),
+        }),
+      ),
+      this.getTournamentSurfaceMap(),
+    ]);
 
     return (raw ?? [])
       .filter((m) => mapMatchStatus(m.event_status).finished && m.event_winner !== null)
-      .map((m) => this.mapMatchRecord(m, playerId))
+      .map((m) => this.mapMatchRecord(m, playerId, surfaceByTournamentKey))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }
 
-  private mapMatchRecord(raw: RawMatch, playerId: string): MatchRecord {
+  private mapMatchRecord(raw: RawMatch, playerId: string, surfaceByTournamentKey: ReadonlyMap<string, Surface | null>): MatchRecord {
     const isFirstPlayer = str(raw.first_player_key) === playerId;
     const opponentId = isFirstPlayer ? str(raw.second_player_key) : str(raw.first_player_key);
-    const { surface, level } = inferSurfaceAndLevel(raw.tournament_name);
+    const { surface, level } = resolveSurfaceAndLevel({
+      tournamentName: raw.tournament_name,
+      tournamentKey: raw.tournament_key ? str(raw.tournament_key) : null,
+      eventTypeType: raw.event_type_type,
+      surfaceByTournamentKey,
+    });
     const status = mapMatchStatus(raw.event_status);
     const won = (isFirstPlayer && raw.event_winner === "First Player") || (!isFirstPlayer && raw.event_winner === "Second Player");
 
@@ -398,14 +451,22 @@ export class ApiTennisProvider implements TennisDataProvider {
   }
 
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {
-    const raw = await this.cache.getOrFetch(`fixtures:${date}`, FIXTURES_TTL_MS, () =>
-      this.call<RawMatch[]>("get_fixtures", { date_start: date, date_stop: date }),
-    );
+    const [raw, surfaceByTournamentKey] = await Promise.all([
+      this.cache.getOrFetch(`fixtures:${date}`, FIXTURES_TTL_MS, () =>
+        this.call<RawMatch[]>("get_fixtures", { date_start: date, date_stop: date }),
+      ),
+      this.getTournamentSurfaceMap(),
+    ]);
 
     return (raw ?? [])
       .filter((m) => m.event_winner === null)
       .map((m) => {
-        const { surface, level } = inferSurfaceAndLevel(m.tournament_name);
+        const { surface, level } = resolveSurfaceAndLevel({
+          tournamentName: m.tournament_name,
+          tournamentKey: m.tournament_key ? str(m.tournament_key) : null,
+          eventTypeType: m.event_type_type,
+          surfaceByTournamentKey,
+        });
         return {
           id: str(m.event_key),
           date: m.event_date,
@@ -431,7 +492,10 @@ export class ApiTennisProvider implements TennisDataProvider {
    * been observed to fail/time out, so callers should chunk into short windows).
    */
   async getCompletedMatchesByDateRange(dateStart: string, dateStop: string): Promise<HistoricalFixture[]> {
-    const raw = await this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop });
+    const [raw, surfaceByTournamentKey] = await Promise.all([
+      this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop }),
+      this.getTournamentSurfaceMap(),
+    ]);
 
     return (raw ?? [])
       .map((m) => {
@@ -441,7 +505,12 @@ export class ApiTennisProvider implements TennisDataProvider {
         // scheduled/live, which should not appear in a past date range but is guarded anyway.
         if (!status.finished && !isCancelled) return null;
 
-        const { surface, level } = inferSurfaceAndLevel(m.tournament_name);
+        const { surface, level } = resolveSurfaceAndLevel({
+          tournamentName: m.tournament_name,
+          tournamentKey: m.tournament_key ? str(m.tournament_key) : null,
+          eventTypeType: m.event_type_type,
+          surfaceByTournamentKey,
+        });
         const winnerId =
           m.event_winner === "First Player"
             ? str(m.first_player_key)
@@ -478,17 +547,25 @@ export class ApiTennisProvider implements TennisDataProvider {
   }
 
   async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
-    const raw = await this.cache.getOrFetch(`h2h:${player1Id}:${player2Id}`, FIXTURES_TTL_MS, () =>
-      this.call<{ H2H: RawMatch[] }>("get_H2H", {
-        first_player_key: player1Id,
-        second_player_key: player2Id,
-      }),
-    );
+    const [raw, surfaceByTournamentKey] = await Promise.all([
+      this.cache.getOrFetch(`h2h:${player1Id}:${player2Id}`, FIXTURES_TTL_MS, () =>
+        this.call<{ H2H: RawMatch[] }>("get_H2H", {
+          first_player_key: player1Id,
+          second_player_key: player2Id,
+        }),
+      ),
+      this.getTournamentSurfaceMap(),
+    ]);
 
     const meetings = (raw?.H2H ?? [])
       .filter((m) => mapMatchStatus(m.event_status).finished && m.event_winner !== null)
       .map((m) => {
-        const { surface } = inferSurfaceAndLevel(m.tournament_name);
+        const { surface } = resolveSurfaceAndLevel({
+          tournamentName: m.tournament_name,
+          tournamentKey: m.tournament_key ? str(m.tournament_key) : null,
+          eventTypeType: m.event_type_type,
+          surfaceByTournamentKey,
+        });
         const winnerId = m.event_winner === "First Player" ? str(m.first_player_key) : str(m.second_player_key);
         return {
           date: m.event_date,

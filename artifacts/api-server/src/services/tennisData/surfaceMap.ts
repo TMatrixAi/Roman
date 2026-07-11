@@ -1,57 +1,134 @@
 import type { Surface, TournamentLevel } from "./types";
 
-// API-Tennis does not report court surface or tournament tier directly on fixtures/results.
-// Surface and tour-level are well-known, stable public facts about specific tournaments
-// (e.g. "Wimbledon is grass"), so we maintain a lookup rather than fabricating per-match data.
-// Anything not in this table is reported as `null` ("not available") -- never guessed.
+// API-Tennis does not report court surface or tournament tier on `get_fixtures` rows directly,
+// but (confirmed live, 2026-07-11 -- verify live, don't trust docs, per prior provider quirks)
+// its separate `get_tournaments` endpoint returns real per-tournament surface data
+// (`tournament_sourface`, sic) for essentially every tournament it knows about (~10,100 rows
+// checked live, keyed by `tournament_key`, which every fixture also carries). That closes the
+// coverage gap this table used to have almost entirely: a live 7-day fixtures pull previously
+// found only 1 of 43 distinct tournament names resolved via this regex table alone (every
+// Challenger/ITF event -- the majority of match volume -- came back `null`). See
+// `ApiTennisProvider`'s tournament-surface lookup for how the two sources are combined:
+// `tournament_key` lookup is tried FIRST (real, tournament-specific data covering nearly
+// everything), and this name-based table is used only when that lookup has no entry.
 //
-// Known coverage limitation (verified live, 2026-07-11): this table only covers Grand Slams,
-// Masters1000/WTA1000, and the more prominent ATP500/WTA500 events. A live 7-day fixtures pull
-// across ATP/WTA/Challenger/ITF returned 43 distinct tournament names, of which only 1
-// (Wimbledon) matched this table -- every Challenger and ITF event (the large majority of
-// day-to-day match volume) resolves to `null` surface/level. This is a real, not cosmetic,
-// data gap for any module that buckets matches by surface (e.g. surfaceElo): most of a
-// non-top-100 player's match history will have no surface label at all. See
-// docs/audit-phase2.md for the full writeup and options to close this gap.
+// This table remains the source of truth for tournament LEVEL/tier for the events it lists
+// (Grand Slam / Masters1000 / WTA1000 / the more prominent ATP500/WTA500s) since
+// `get_tournaments` doesn't expose that granularity -- only a coarse tour/event-type label. For
+// everything else, `inferLevelFromEventType` below assigns a defensible default tier from that
+// coarse label. Anything that can't be resolved by either path stays `null` -- never guessed.
 const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: TournamentLevel }> = [
   { match: /wimbledon/i, surface: "Grass", level: "GrandSlam" },
   { match: /roland garros|french open/i, surface: "Clay", level: "GrandSlam" },
-  { match: /us open/i, surface: "Hard", level: "GrandSlam" },
+  { match: /\bus open\b/i, surface: "Hard", level: "GrandSlam" },
   { match: /australian open/i, surface: "Hard", level: "GrandSlam" },
   { match: /indian wells/i, surface: "Hard", level: "Masters1000" },
   { match: /miami open/i, surface: "Hard", level: "Masters1000" },
   { match: /monte.?carlo/i, surface: "Clay", level: "Masters1000" },
   { match: /madrid open/i, surface: "Clay", level: "Masters1000" },
-  { match: /^rome|italian open/i, surface: "Clay", level: "Masters1000" },
-  { match: /canadian open|montreal|toronto/i, surface: "Hard", level: "Masters1000" },
-  { match: /cincinnati/i, surface: "Hard", level: "Masters1000" },
-  { match: /shanghai/i, surface: "Hard", level: "Masters1000" },
-  { match: /paris masters|bercy/i, surface: "IndoorHard", level: "Masters1000" },
-  { match: /halle/i, surface: "Grass", level: "ATP500" },
-  { match: /queen'?s club|queens/i, surface: "Grass", level: "ATP500" },
-  { match: /barcelona/i, surface: "Clay", level: "ATP500" },
-  { match: /hamburg/i, surface: "Clay", level: "ATP500" },
-  { match: /dubai/i, surface: "Hard", level: "ATP500" },
-  { match: /acapulco/i, surface: "Hard", level: "ATP500" },
-  { match: /rotterdam/i, surface: "IndoorHard", level: "ATP500" },
-  { match: /basel/i, surface: "IndoorHard", level: "ATP500" },
-  { match: /vienna/i, surface: "IndoorHard", level: "ATP500" },
-  { match: /atp finals|nitto/i, surface: "IndoorHard", level: "Masters1000" },
+  { match: /^rome\b|italian open/i, surface: "Clay", level: "Masters1000" },
+  { match: /canadian open|\bmontreal\b|\btoronto\b/i, surface: "Hard", level: "Masters1000" },
+  { match: /\bcincinnati\b/i, surface: "Hard", level: "Masters1000" },
+  { match: /\bshanghai\b/i, surface: "Hard", level: "Masters1000" },
+  { match: /paris masters|\bbercy\b/i, surface: "IndoorHard", level: "Masters1000" },
+  { match: /\bhalle\b/i, surface: "Grass", level: "ATP500" },
+  { match: /queen'?s club|\bqueens\b/i, surface: "Grass", level: "ATP500" },
+  { match: /\bbarcelona\b/i, surface: "Clay", level: "ATP500" },
+  { match: /\bhamburg\b/i, surface: "Clay", level: "ATP500" },
+  { match: /\bdubai\b/i, surface: "Hard", level: "ATP500" },
+  { match: /\bacapulco\b/i, surface: "Hard", level: "ATP500" },
+  { match: /\brotterdam\b/i, surface: "IndoorHard", level: "ATP500" },
+  { match: /\bbasel\b/i, surface: "IndoorHard", level: "ATP500" },
+  { match: /\bvienna\b/i, surface: "IndoorHard", level: "ATP500" },
+  { match: /atp finals|\bnitto\b/i, surface: "IndoorHard", level: "Masters1000" },
   { match: /wta finals/i, surface: "IndoorHard", level: "WTA1000" },
-  { match: /doha|qatar/i, surface: "Hard", level: "WTA1000" },
-  { match: /wuhan/i, surface: "Hard", level: "WTA1000" },
-  { match: /beijing/i, surface: "Hard", level: "WTA1000" },
+  { match: /\bdoha\b|\bqatar\b/i, surface: "Hard", level: "WTA1000" },
+  { match: /\bwuhan\b/i, surface: "Hard", level: "WTA1000" },
+  { match: /\bbeijing\b/i, surface: "Hard", level: "WTA1000" },
 ];
 
+// Verified live (2026-07-11): tournament names for lower-tier events routinely contain
+// substrings that collide with the short single-word entries above -- e.g. "Challenger"
+// contains "halle" (C-h-a-l-l-e-n-g-e-r), which without a word boundary silently misclassified
+// every Challenger-level event as the ATP500 grass event in Halle. As defense in depth beyond
+// the \b word boundaries added above, any name containing one of these structural markers of a
+// lower-tier/non-tour event is never run through the named table at all -- no major, Masters, or
+// 500-level tournament is ever named with these words, so this can only prevent false positives,
+// never suppress a real match.
+const NEVER_NAMED_TABLE = /challenger|\bitf\b|\bqualif|\bjunior|\bboys\b|\bgirls\b/i;
+
+/** Legacy name-only lookup -- kept for callers that don't have a tournament_key. Only ever
+ * resolves the ~26 majors/Masters/500-level events in the table above. */
 export function inferSurfaceAndLevel(tournamentName: string | null | undefined): {
   surface: Surface | null;
   level: TournamentLevel | null;
 } {
-  if (!tournamentName) return { surface: null, level: null };
+  if (!tournamentName || NEVER_NAMED_TABLE.test(tournamentName)) return { surface: null, level: null };
   for (const entry of TOURNAMENT_SURFACE) {
     if (entry.match.test(tournamentName)) {
       return { surface: entry.surface, level: entry.level ?? null };
     }
   }
   return { surface: null, level: null };
+}
+
+/**
+ * Normalizes the real `tournament_sourface` string from API-Tennis's `get_tournaments` endpoint
+ * into our `Surface` enum. Confirmed live (2026-07-11) values include mixed casing ("Hard" /
+ * "hard"), indoor variants ("Hard (Indoor)", "Clay (Indoor)", "Grass (Indoor)"), and a handful of
+ * non-surface junk values for team-event rows ("- Promotion", "- Play Offs", "", null, etc).
+ * Our `Surface` type only distinguishes indoor for hard courts (matching the rest of the app's
+ * data model), so indoor clay/grass -- vanishingly rare in practice -- fold into their base
+ * surface rather than being fabricated into a category the app doesn't otherwise track.
+ * Anything unrecognized returns null rather than guessing.
+ */
+export function normalizeProviderSurface(raw: string | null | undefined): Surface | null {
+  if (!raw) return null;
+  const lower = raw.trim().toLowerCase();
+  if (lower.startsWith("hard")) return lower.includes("indoor") ? "IndoorHard" : "Hard";
+  if (lower.startsWith("clay")) return "Clay";
+  if (lower.startsWith("grass")) return "Grass";
+  return null;
+}
+
+/**
+ * Assigns a defensible tournament-tier default from API-Tennis's coarse `event_type_type` label
+ * (e.g. "Challenger Men Singles", "Itf Women Doubles", "Atp Singles") for tournaments not already
+ * classified by the name-based table above (which covers the specific majors/Masters/500-level
+ * events at real precision). This is a real classification of the provider's own category label,
+ * not a guess about a specific tournament's importance -- an unlisted ATP-tour event defaults to
+ * ATP250 (the most common tier by far once Masters/500s are excluded), and likewise WTA250 for
+ * WTA-tour events; genuinely non-tour formats (exhibitions, juniors, mixed/team events) get
+ * "Other" rather than being forced into a tier that doesn't apply to them.
+ */
+export function inferLevelFromEventType(eventTypeType: string | undefined | null): TournamentLevel | null {
+  const type = eventTypeType ?? "";
+  if (!type) return null;
+  if (/challenger/i.test(type)) return "Challenger";
+  if (/itf/i.test(type)) return "ITF";
+  if (/boys|girls|junior|exhibition|mixed|teams/i.test(type)) return "Other";
+  if (/wta/i.test(type)) return "WTA250";
+  if (/atp/i.test(type)) return "ATP250";
+  return "Other";
+}
+
+/**
+ * Primary surface/level resolver: tries the name-based table first (authoritative, precise tier
+ * for the majors/Masters/500-level events it lists), then a real tournament_key -> surface
+ * lookup built from `get_tournaments` (covers nearly every tournament the provider knows about,
+ * including Challenger/ITF), then falls back to a coarse event-type-based tier default. Only
+ * returns null fields when no real signal is available at all -- never fabricated.
+ */
+export function resolveSurfaceAndLevel(params: {
+  tournamentName: string | null | undefined;
+  tournamentKey: string | null | undefined;
+  eventTypeType: string | null | undefined;
+  surfaceByTournamentKey: ReadonlyMap<string, Surface | null>;
+}): { surface: Surface | null; level: TournamentLevel | null } {
+  const named = inferSurfaceAndLevel(params.tournamentName);
+  if (named.surface !== null) return named;
+
+  const surfaceFromKey = params.tournamentKey ? (params.surfaceByTournamentKey.get(params.tournamentKey) ?? null) : null;
+  const level = named.level ?? inferLevelFromEventType(params.eventTypeType);
+  return { surface: surfaceFromKey, level };
 }
