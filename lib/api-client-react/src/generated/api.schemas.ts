@@ -650,6 +650,25 @@ export interface PaperTradingCycleSummary {
   errors: string[];
 }
 
+export type JobRunStatus = typeof JobRunStatus[keyof typeof JobRunStatus];
+
+
+export const JobRunStatus = {
+  success: 'success',
+  failed: 'failed',
+} as const;
+
+export interface JobRun {
+  id: number;
+  jobName: string;
+  startedAt: string;
+  finishedAt: string;
+  status: JobRunStatus;
+  attempts: number;
+  summary?: unknown | null;
+  errorMessage?: string | null;
+}
+
 export type SearchPlayersParams = {
 /**
  * @minLength 2
@@ -684,6 +703,14 @@ status?: EvaluationStatus;
 /**
  * @minimum 1
  * @maximum 200
+ */
+limit?: number;
+};
+
+export type ListPaperTradingJobRunsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
  */
 limit?: number;
 };

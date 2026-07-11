@@ -469,6 +469,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/PaperTradingCycleSummary"
 
+  /paper-trading/job-runs:
+    get:
+      operationId: listPaperTradingJobRuns
+      tags: [evaluation]
+      summary: Recent invocations of the standalone paper-trading scheduled job, for monitoring gaps or failures
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Most recent job runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JobRun"
+
 components:
   schemas:
     HealthStatus:
@@ -1365,3 +1388,28 @@ components:
           type: array
           items:
             type: string
+
+    JobRun:
+      type: object
+      required: [id, jobName, startedAt, finishedAt, status, attempts]
+      properties:
+        id:
+          type: integer
+        jobName:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [success, failed]
+        attempts:
+          type: integer
+        summary:
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true

@@ -28,7 +28,9 @@ import type {
   GetUpcomingFixturesParams,
   HeadToHeadRecord,
   HealthStatus,
+  JobRun,
   ListEvaluationPredictionsParams,
+  ListPaperTradingJobRunsParams,
   ListPredictionsParams,
   MatchRecord,
   PaperTradingCycleSummary,
@@ -1622,4 +1624,88 @@ export const useRunPaperTradingCycle = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunPaperTradingCycleMutationOptions(options));
     }
+
+export const getListPaperTradingJobRunsUrl = (params?: ListPaperTradingJobRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/paper-trading/job-runs?${stringifiedParams}` : `/api/paper-trading/job-runs`
+}
+
+/**
+ * @summary Recent invocations of the standalone paper-trading scheduled job, for monitoring gaps or failures
+ */
+export const listPaperTradingJobRuns = async (params?: ListPaperTradingJobRunsParams, options?: RequestInit): Promise<JobRun[]> => {
+
+  return customFetch<JobRun[]>(getListPaperTradingJobRunsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPaperTradingJobRunsQueryKey = (params?: ListPaperTradingJobRunsParams,) => {
+    return [
+    `/api/paper-trading/job-runs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPaperTradingJobRunsQueryOptions = <TData = Awaited<ReturnType<typeof listPaperTradingJobRuns>>, TError = ErrorType<unknown>>(params?: ListPaperTradingJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaperTradingJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPaperTradingJobRunsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPaperTradingJobRuns>>> = ({ signal }) => listPaperTradingJobRuns(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPaperTradingJobRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPaperTradingJobRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listPaperTradingJobRuns>>>
+export type ListPaperTradingJobRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Recent invocations of the standalone paper-trading scheduled job, for monitoring gaps or failures
+ */
+
+export function useListPaperTradingJobRuns<TData = Awaited<ReturnType<typeof listPaperTradingJobRuns>>, TError = ErrorType<unknown>>(
+ params?: ListPaperTradingJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaperTradingJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPaperTradingJobRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

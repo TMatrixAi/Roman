@@ -166,3 +166,37 @@ export const predictionSettingsTable = pgTable("prediction_settings", {
 export const insertPredictionSettingsSchema = createInsertSchema(predictionSettingsTable).omit({ id: true, updatedAt: true });
 export type InsertPredictionSettings = z.infer<typeof insertPredictionSettingsSchema>;
 export type PredictionSettingsRow = typeof predictionSettingsTable.$inferSelect;
+
+/**
+ * Durable audit trail for the paper-trading job (see `services/evaluation/paperTrading.ts` and
+ * `jobs/runPaperTradingJob.ts`). One row per invocation of the standalone job process --
+ * intentionally NOT in-memory, so a run's outcome (and any retries it took) survives process
+ * restarts and is inspectable regardless of which process/host ran it. This is what lets a
+ * cutoff-uptime-independent scheduler (e.g. a Replit Scheduled Deployment) be monitored: a gap
+ * in recent 'success' rows, or a run of 'failed' rows, is the alert signal.
+ */
+export const jobRunsTable = pgTable(
+  "job_runs",
+  {
+    id: serial("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
+    // 'success': the cycle ran to completion (it may still contain per-fixture errors in
+    // `summary.errors`, e.g. a transient provider hiccup on one fixture -- those are not fatal).
+    // 'failed': every retry attempt threw and the job gave up -- this is the fatal, alert-worthy
+    // case, and the process exits non-zero so an external scheduler's own failure detection fires.
+    status: text("status").notNull(),
+    attempts: integer("attempts").notNull(),
+    // The cycle's own locked/missed/graded/errors summary, present even when status = 'success'.
+    summary: jsonb("summary"),
+    // Only set when status = 'failed' -- the final attempt's error message.
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("job_runs_job_name_started_idx").on(table.jobName, table.startedAt)],
+);
+
+export const insertJobRunSchema = createInsertSchema(jobRunsTable).omit({ id: true, createdAt: true });
+export type InsertJobRun = z.infer<typeof insertJobRunSchema>;
+export type JobRunRow = typeof jobRunsTable.$inferSelect;

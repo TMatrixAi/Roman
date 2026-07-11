@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
-import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable } from "@workspace/db";
+import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable } from "@workspace/db";
 import {
   ListEvaluationPredictionsQueryParams,
   ListEvaluationPredictionsResponse,
@@ -14,7 +14,10 @@ import {
   UpdateEvaluationSettingsBody,
   UpdateEvaluationSettingsResponse,
   RunPaperTradingCycleResponse,
+  ListPaperTradingJobRunsQueryParams,
+  ListPaperTradingJobRunsResponse,
 } from "@workspace/api-zod";
+import { PAPER_TRADING_JOB_NAME } from "../jobs/paperTradingJobName";
 import { runWalkForwardEvaluation } from "../services/evaluation/walkForward";
 import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
@@ -144,6 +147,23 @@ router.patch("/evaluation/settings", async (req, res): Promise<void> => {
 router.post("/paper-trading/run-cycle", async (_req, res): Promise<void> => {
   const summary = await runPaperTradingCycle();
   res.json(RunPaperTradingCycleResponse.parse(summary));
+});
+
+router.get("/paper-trading/job-runs", async (req, res): Promise<void> => {
+  const parsed = ListPaperTradingJobRunsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, PAPER_TRADING_JOB_NAME))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(parsed.data.limit);
+
+  res.json(ListPaperTradingJobRunsResponse.parse(rows));
 });
 
 export default router;

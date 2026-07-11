@@ -723,3 +723,28 @@ export const RunPaperTradingCycleResponse = zod.object({
 })
 
 
+/**
+ * @summary Recent invocations of the standalone paper-trading scheduled job, for monitoring gaps or failures
+ */
+export const listPaperTradingJobRunsQueryLimitDefault = 20;
+export const listPaperTradingJobRunsQueryLimitMax = 100;
+
+
+
+export const ListPaperTradingJobRunsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listPaperTradingJobRunsQueryLimitMax).default(listPaperTradingJobRunsQueryLimitDefault)
+})
+
+export const ListPaperTradingJobRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "jobName": zod.string(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date(),
+  "status": zod.enum(['success', 'failed']),
+  "attempts": zod.number(),
+  "summary": zod.unknown().nullish(),
+  "errorMessage": zod.string().nullish()
+})
+export const ListPaperTradingJobRunsResponse = zod.array(ListPaperTradingJobRunsResponseItem)
+
+

@@ -10,7 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "backfill": "tsx src/scripts/backfillHistoricalMatches.ts",
     "test:leakage": "tsx --test src/services/historicalData/leakage.test.ts",
-    "test:evaluation": "tsx --test src/services/evaluation/walkForward.test.ts src/services/evaluation/paperTrading.test.ts"
+    "test:evaluation": "tsx --test src/services/evaluation/walkForward.test.ts src/services/evaluation/paperTrading.test.ts",
+    "test:job-smoke": "pnpm run build && tsx --test src/jobs/runPaperTradingJob.smoke.test.ts",
+    "job:paper-trading": "node --enable-source-maps ./dist/jobs/runPaperTradingJob.mjs",
+    "job:paper-trading:dev": "tsx src/jobs/runPaperTradingJob.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

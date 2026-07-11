@@ -1,6 +1,5 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { runPaperTradingCycle } from "./services/evaluation/paperTrading";
 
 const rawPort = process.env["PORT"];
 
@@ -24,14 +23,12 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
-  // Live paper-trading loop: periodically lock predictions for newly-eligible upcoming
-  // fixtures, mark missed cutoffs, and grade completed matches. Runs on a timer inside this
-  // long-lived server process rather than a separate scheduled job -- acceptable for Phase 4's
-  // scope, but it only progresses while this process is running.
-  const PAPER_TRADING_INTERVAL_MS = 15 * 60_000;
-  setInterval(() => {
-    runPaperTradingCycle().catch((err) => {
-      logger.error({ err }, "Paper-trading cycle failed");
-    });
-  }, PAPER_TRADING_INTERVAL_MS);
+  // The live paper-trading loop (lock predictions for newly-eligible upcoming fixtures, mark
+  // missed cutoffs, grade completed matches) no longer runs on an in-process timer here -- that
+  // only progressed while this exact server process stayed up, so a restart/deploy/crash could
+  // silently create gaps. It now runs as a standalone, retrying, durably-logged job
+  // (`src/jobs/runPaperTradingJob.ts`, built to dist/jobs/runPaperTradingJob.mjs) invoked on its own
+  // schedule -- e.g. a Replit Scheduled Deployment running `pnpm --filter @workspace/api-server
+  // run job:paper-trading` every 15 minutes, independent of this server's uptime. See
+  // GET /paper-trading/job-runs for the durable run history.
 });
