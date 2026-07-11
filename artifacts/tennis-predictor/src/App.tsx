@@ -8,6 +8,8 @@ import Home from '@/pages/Home';
 import PredictBuilderPage from '@/pages/PredictBuilder';
 import PredictionResultPage from '@/pages/PredictionResult';
 import HistoryPage from '@/pages/History';
+import PredictionLogPage from '@/pages/PredictionLog';
+import AccuracyDashboardPage from '@/pages/AccuracyDashboard';
 
 const queryClient = new QueryClient();
 
@@ -19,6 +21,8 @@ function Router() {
         <Route path="/predict" component={PredictBuilderPage} />
         <Route path="/predictions/:id" component={PredictionResultPage} />
         <Route path="/history" component={HistoryPage} />
+        <Route path="/evaluation/log" component={PredictionLogPage} />
+        <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

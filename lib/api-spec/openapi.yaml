@@ -18,6 +18,8 @@ tags:
     description: Prediction engine
   - name: provider
     description: Data provider status
+  - name: evaluation
+    description: Out-of-sample testing, calibration, and paper trading (Phase 4)
 paths:
   /healthz:
     get:
@@ -312,6 +314,160 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderError"
+
+  /evaluation/runs:
+    get:
+      operationId: listEvaluationRuns
+      tags: [evaluation]
+      summary: List walk-forward fold results (most recent first)
+      responses:
+        "200":
+          description: Fold results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvaluationRun"
+
+  /evaluation/walk-forward/run:
+    post:
+      operationId: runWalkForward
+      tags: [evaluation]
+      summary: Run a fresh sequence of expanding-window walk-forward folds over the historical store
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunWalkForwardRequest"
+      responses:
+        "200":
+          description: Walk-forward run summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalkForwardSummary"
+
+  /evaluation/predictions:
+    get:
+      operationId: listEvaluationPredictions
+      tags: [evaluation]
+      summary: List locked evaluation predictions (historical-test, paper-trade, or live)
+      parameters:
+        - name: runKind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RunKind"
+        - name: segment
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Segment"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/EvaluationStatus"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Evaluation predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvaluationPrediction"
+
+  /evaluation/predictions/{predictionId}:
+    get:
+      operationId: getEvaluationPrediction
+      tags: [evaluation]
+      summary: Get one locked evaluation prediction with its full feature snapshot
+      parameters:
+        - name: predictionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Evaluation prediction detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluationPrediction"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /evaluation/dashboard:
+    get:
+      operationId: getEvaluationDashboard
+      tags: [evaluation]
+      summary: Segmented, honestly-labeled accuracy dashboard (validation / test / paper-trade never combined)
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluationDashboard"
+
+  /evaluation/settings:
+    get:
+      operationId: getEvaluationSettings
+      tags: [evaluation]
+      summary: Get the admin-configurable evaluation settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionSettings"
+    patch:
+      operationId: updateEvaluationSettings
+      tags: [evaluation]
+      summary: Update the admin-configurable evaluation settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePredictionSettingsRequest"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionSettings"
+
+  /paper-trading/run-cycle:
+    post:
+      operationId: runPaperTradingCycle
+      tags: [evaluation]
+      summary: Lock predictions for newly-eligible upcoming fixtures, mark missed cutoffs, and grade completed matches
+      responses:
+        "200":
+          description: Cycle summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperTradingCycleSummary"
 
 components:
   schemas:
@@ -879,3 +1035,333 @@ components:
                 $ref: "#/components/schemas/Recommendation"
               count:
                 type: integer
+
+    RunKind:
+      type: string
+      enum: [historical_test, paper_trade, live]
+      description: historical_test replays the leak-proof historical store; paper_trade/live lock predictions for real fixtures ahead of time
+
+    Segment:
+      type: string
+      enum: [validation, test]
+
+    EvaluationStatus:
+      type: string
+      enum: [pending, graded, void, missed]
+
+    ResultType:
+      type: string
+      enum: [normal, retired, walkover, cancelled]
+
+    CalibrationKnot:
+      type: object
+      required: [x, y]
+      properties:
+        x:
+          type: number
+          description: Raw predicted probability (0-1)
+        y:
+          type: number
+          description: Calibrated probability (0-1)
+
+    SegmentMetrics:
+      type: object
+      required:
+        [n, accuracy, logLoss, brier, dateRangeStart, dateRangeEnd, retiredCount, retiredAccuracy, voidCount, missedCount]
+      properties:
+        n:
+          type: integer
+          description: Sample size actually counted toward accuracy/logLoss/Brier
+        accuracy:
+          type: ["number", "null"]
+        logLoss:
+          type: ["number", "null"]
+        brier:
+          type: ["number", "null"]
+        dateRangeStart:
+          type: ["string", "null"]
+          format: date-time
+        dateRangeEnd:
+          type: ["string", "null"]
+          format: date-time
+        retiredCount:
+          type: integer
+        retiredAccuracy:
+          type: ["number", "null"]
+          description: Accuracy on retirements alone, reported separately from the standard metric
+        voidCount:
+          type: integer
+          description: Walkovers and cancellations, always excluded from accuracy
+        missedCount:
+          type: integer
+
+    EvaluationRun:
+      type: object
+      required:
+        [
+          id,
+          foldIndex,
+          modelVersion,
+          trainStart,
+          trainEnd,
+          validationStart,
+          validationEnd,
+          testStart,
+          testEnd,
+          calibrationMapping,
+          validationMetrics,
+          testMetrics,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: integer
+        foldIndex:
+          type: integer
+        modelVersion:
+          type: string
+        trainStart:
+          type: string
+          format: date-time
+        trainEnd:
+          type: string
+          format: date-time
+        validationStart:
+          type: string
+          format: date-time
+        validationEnd:
+          type: string
+          format: date-time
+        testStart:
+          type: string
+          format: date-time
+        testEnd:
+          type: string
+          format: date-time
+        calibrationMapping:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalibrationKnot"
+        validationMetrics:
+          $ref: "#/components/schemas/SegmentMetrics"
+        testMetrics:
+          $ref: "#/components/schemas/SegmentMetrics"
+        createdAt:
+          type: string
+          format: date-time
+
+    RunWalkForwardRequest:
+      type: object
+      properties:
+        foldCount:
+          type: integer
+          minimum: 1
+          maximum: 20
+        warmupFraction:
+          type: number
+          minimum: 0.05
+          maximum: 0.95
+
+    WalkForwardSummary:
+      type: object
+      required: [foldsRun, foldIds, skippedNoEligibleMatches]
+      properties:
+        foldsRun:
+          type: integer
+        foldIds:
+          type: array
+          items:
+            type: integer
+        skippedNoEligibleMatches:
+          type: boolean
+
+    EvaluationPrediction:
+      type: object
+      required:
+        [
+          id,
+          runKind,
+          player1Id,
+          player1Name,
+          player2Id,
+          player2Name,
+          scheduledStartAt,
+          cutoffAt,
+          lockedAt,
+          modelVersion,
+          status,
+        ]
+      properties:
+        id:
+          type: integer
+        runKind:
+          $ref: "#/components/schemas/RunKind"
+        foldId:
+          type: ["integer", "null"]
+        segment:
+          oneOf:
+            - $ref: "#/components/schemas/Segment"
+            - type: "null"
+        historicalMatchId:
+          type: ["integer", "null"]
+        provider:
+          type: ["string", "null"]
+        externalFixtureId:
+          type: ["string", "null"]
+        player1Id:
+          type: string
+        player1Name:
+          type: string
+        player2Id:
+          type: string
+        player2Name:
+          type: string
+        surface:
+          oneOf:
+            - $ref: "#/components/schemas/Surface"
+            - type: "null"
+        matchFormat:
+          oneOf:
+            - $ref: "#/components/schemas/MatchFormat"
+            - type: "null"
+        tournamentLevel:
+          type: ["string", "null"]
+        tournamentName:
+          type: ["string", "null"]
+        scheduledStartAt:
+          type: string
+          format: date-time
+        cutoffAt:
+          type: string
+          format: date-time
+        lockedAt:
+          type: string
+          format: date-time
+        modelVersion:
+          type: string
+        featureSnapshot:
+          description: Reduced feature set for historical_test rows, full EngineBreakdown for paper_trade/live
+        rawProbability:
+          type: ["number", "null"]
+          description: Player-1 win probability before Phase 4 calibration, 0-100
+        calibratedProbability:
+          type: ["number", "null"]
+          description: Player-1 win probability after Phase 4 calibration, 0-100
+        predictedWinnerId:
+          type: ["string", "null"]
+        predictedWinnerName:
+          type: ["string", "null"]
+        status:
+          $ref: "#/components/schemas/EvaluationStatus"
+        actualWinnerId:
+          type: ["string", "null"]
+        actualWinnerName:
+          type: ["string", "null"]
+        resultType:
+          oneOf:
+            - $ref: "#/components/schemas/ResultType"
+            - type: "null"
+        includedInAccuracy:
+          type: ["boolean", "null"]
+        gradedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    CalibrationBucket:
+      type: object
+      required: [label, min, max, n, avgPredicted, observedAccuracy]
+      properties:
+        label:
+          type: string
+        min:
+          type: number
+        max:
+          type: number
+        n:
+          type: integer
+        avgPredicted:
+          type: ["number", "null"]
+        observedAccuracy:
+          type: ["number", "null"]
+
+    StreakSummary:
+      type: object
+      required: [currentStreakType, currentStreakLength, longestWinStreak, longestLossStreak]
+      properties:
+        currentStreakType:
+          type: ["string", "null"]
+          enum: [win, loss, null]
+        currentStreakLength:
+          type: integer
+        longestWinStreak:
+          type: integer
+        longestLossStreak:
+          type: integer
+
+    EvaluationDashboardSegment:
+      type: object
+      required: [key, label, isGenuinelyUnseen, metrics, calibrationBuckets, streaks]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        isGenuinelyUnseen:
+          type: boolean
+          description: True for test/paper-trade/live; false for validation (used for fitting calibration)
+        metrics:
+          $ref: "#/components/schemas/SegmentMetrics"
+        calibrationBuckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalibrationBucket"
+        streaks:
+          $ref: "#/components/schemas/StreakSummary"
+
+    EvaluationDashboard:
+      type: object
+      required: [segments, activeCalibrationSampleSize]
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvaluationDashboardSegment"
+        activeCalibrationSampleSize:
+          type: integer
+          description: How many validation-segment predictions the live paper-trading calibration was fit on
+
+    PredictionSettings:
+      type: object
+      required: [retirementRule, paperTradeLeadMinutes]
+      properties:
+        retirementRule:
+          type: string
+          enum: [excluded, included]
+        paperTradeLeadMinutes:
+          type: integer
+
+    UpdatePredictionSettingsRequest:
+      type: object
+      properties:
+        retirementRule:
+          type: string
+          enum: [excluded, included]
+        paperTradeLeadMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+
+    PaperTradingCycleSummary:
+      type: object
+      required: [locked, missed, graded, errors]
+      properties:
+        locked:
+          type: integer
+        missed:
+          type: integer
+        graded:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string

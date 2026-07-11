@@ -487,3 +487,239 @@ export const RecordPredictionOutcomeResponse = zod.object({
 })
 
 
+/**
+ * @summary List walk-forward fold results (most recent first)
+ */
+export const ListEvaluationRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "foldIndex": zod.number(),
+  "modelVersion": zod.string(),
+  "trainStart": zod.coerce.date(),
+  "trainEnd": zod.coerce.date(),
+  "validationStart": zod.coerce.date(),
+  "validationEnd": zod.coerce.date(),
+  "testStart": zod.coerce.date(),
+  "testEnd": zod.coerce.date(),
+  "calibrationMapping": zod.array(zod.object({
+  "x": zod.number().describe('Raw predicted probability (0-1)'),
+  "y": zod.number().describe('Calibrated probability (0-1)')
+})),
+  "validationMetrics": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number()
+}),
+  "testMetrics": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number()
+}),
+  "createdAt": zod.coerce.date()
+})
+export const ListEvaluationRunsResponse = zod.array(ListEvaluationRunsResponseItem)
+
+
+/**
+ * @summary Run a fresh sequence of expanding-window walk-forward folds over the historical store
+ */
+export const runWalkForwardBodyFoldCountMax = 20;
+
+export const runWalkForwardBodyWarmupFractionMin = 0.05;
+export const runWalkForwardBodyWarmupFractionMax = 0.95;
+
+
+
+export const RunWalkForwardBody = zod.object({
+  "foldCount": zod.number().min(1).max(runWalkForwardBodyFoldCountMax).optional(),
+  "warmupFraction": zod.number().min(runWalkForwardBodyWarmupFractionMin).max(runWalkForwardBodyWarmupFractionMax).optional()
+})
+
+export const RunWalkForwardResponse = zod.object({
+  "foldsRun": zod.number(),
+  "foldIds": zod.array(zod.number()),
+  "skippedNoEligibleMatches": zod.boolean()
+})
+
+
+/**
+ * @summary List locked evaluation predictions (historical-test, paper-trade, or live)
+ */
+export const listEvaluationPredictionsQueryLimitDefault = 50;
+export const listEvaluationPredictionsQueryLimitMax = 200;
+
+
+
+export const ListEvaluationPredictionsQueryParams = zod.object({
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).optional(),
+  "segment": zod.enum(['validation', 'test']).optional(),
+  "status": zod.enum(['pending', 'graded', 'void', 'missed']).optional(),
+  "limit": zod.coerce.number().min(1).max(listEvaluationPredictionsQueryLimitMax).default(listEvaluationPredictionsQueryLimitDefault)
+})
+
+export const ListEvaluationPredictionsResponseItem = zod.object({
+  "id": zod.number(),
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).describe('historical_test replays the leak-proof historical store; paper_trade\/live lock predictions for real fixtures ahead of time'),
+  "foldId": zod.number().nullish(),
+  "segment": zod.union([zod.enum(['validation', 'test']),zod.null()]).optional(),
+  "historicalMatchId": zod.number().nullish(),
+  "provider": zod.string().nullish(),
+  "externalFixtureId": zod.string().nullish(),
+  "player1Id": zod.string(),
+  "player1Name": zod.string(),
+  "player2Id": zod.string(),
+  "player2Name": zod.string(),
+  "surface": zod.union([zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),zod.null()]).optional(),
+  "matchFormat": zod.union([zod.enum(['BestOf3', 'BestOf5']),zod.null()]).optional(),
+  "tournamentLevel": zod.string().nullish(),
+  "tournamentName": zod.string().nullish(),
+  "scheduledStartAt": zod.coerce.date(),
+  "cutoffAt": zod.coerce.date(),
+  "lockedAt": zod.coerce.date(),
+  "modelVersion": zod.string(),
+  "featureSnapshot": zod.unknown().optional().describe('Reduced feature set for historical_test rows, full EngineBreakdown for paper_trade\/live'),
+  "rawProbability": zod.number().nullish().describe('Player-1 win probability before Phase 4 calibration, 0-100'),
+  "calibratedProbability": zod.number().nullish().describe('Player-1 win probability after Phase 4 calibration, 0-100'),
+  "predictedWinnerId": zod.string().nullish(),
+  "predictedWinnerName": zod.string().nullish(),
+  "status": zod.enum(['pending', 'graded', 'void', 'missed']),
+  "actualWinnerId": zod.string().nullish(),
+  "actualWinnerName": zod.string().nullish(),
+  "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
+  "includedInAccuracy": zod.boolean().nullish(),
+  "gradedAt": zod.coerce.date().nullish()
+})
+export const ListEvaluationPredictionsResponse = zod.array(ListEvaluationPredictionsResponseItem)
+
+
+/**
+ * @summary Get one locked evaluation prediction with its full feature snapshot
+ */
+export const GetEvaluationPredictionParams = zod.object({
+  "predictionId": zod.coerce.number()
+})
+
+export const GetEvaluationPredictionResponse = zod.object({
+  "id": zod.number(),
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).describe('historical_test replays the leak-proof historical store; paper_trade\/live lock predictions for real fixtures ahead of time'),
+  "foldId": zod.number().nullish(),
+  "segment": zod.union([zod.enum(['validation', 'test']),zod.null()]).optional(),
+  "historicalMatchId": zod.number().nullish(),
+  "provider": zod.string().nullish(),
+  "externalFixtureId": zod.string().nullish(),
+  "player1Id": zod.string(),
+  "player1Name": zod.string(),
+  "player2Id": zod.string(),
+  "player2Name": zod.string(),
+  "surface": zod.union([zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),zod.null()]).optional(),
+  "matchFormat": zod.union([zod.enum(['BestOf3', 'BestOf5']),zod.null()]).optional(),
+  "tournamentLevel": zod.string().nullish(),
+  "tournamentName": zod.string().nullish(),
+  "scheduledStartAt": zod.coerce.date(),
+  "cutoffAt": zod.coerce.date(),
+  "lockedAt": zod.coerce.date(),
+  "modelVersion": zod.string(),
+  "featureSnapshot": zod.unknown().optional().describe('Reduced feature set for historical_test rows, full EngineBreakdown for paper_trade\/live'),
+  "rawProbability": zod.number().nullish().describe('Player-1 win probability before Phase 4 calibration, 0-100'),
+  "calibratedProbability": zod.number().nullish().describe('Player-1 win probability after Phase 4 calibration, 0-100'),
+  "predictedWinnerId": zod.string().nullish(),
+  "predictedWinnerName": zod.string().nullish(),
+  "status": zod.enum(['pending', 'graded', 'void', 'missed']),
+  "actualWinnerId": zod.string().nullish(),
+  "actualWinnerName": zod.string().nullish(),
+  "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
+  "includedInAccuracy": zod.boolean().nullish(),
+  "gradedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Segmented, honestly-labeled accuracy dashboard (validation / test / paper-trade never combined)
+ */
+export const GetEvaluationDashboardResponse = zod.object({
+  "segments": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "isGenuinelyUnseen": zod.boolean().describe('True for test\/paper-trade\/live; false for validation (used for fitting calibration)'),
+  "metrics": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number()
+}),
+  "calibrationBuckets": zod.array(zod.object({
+  "label": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "n": zod.number(),
+  "avgPredicted": zod.number().nullable(),
+  "observedAccuracy": zod.number().nullable()
+})),
+  "streaks": zod.object({
+  "currentStreakType": zod.union([zod.literal('win'),zod.literal('loss'),zod.literal(null)]).nullable(),
+  "currentStreakLength": zod.number(),
+  "longestWinStreak": zod.number(),
+  "longestLossStreak": zod.number()
+})
+})),
+  "activeCalibrationSampleSize": zod.number().describe('How many validation-segment predictions the live paper-trading calibration was fit on')
+})
+
+
+/**
+ * @summary Get the admin-configurable evaluation settings
+ */
+export const GetEvaluationSettingsResponse = zod.object({
+  "retirementRule": zod.enum(['excluded', 'included']),
+  "paperTradeLeadMinutes": zod.number()
+})
+
+
+/**
+ * @summary Update the admin-configurable evaluation settings
+ */
+export const updateEvaluationSettingsBodyPaperTradeLeadMinutesMax = 1440;
+
+
+
+export const UpdateEvaluationSettingsBody = zod.object({
+  "retirementRule": zod.enum(['excluded', 'included']).optional(),
+  "paperTradeLeadMinutes": zod.number().min(1).max(updateEvaluationSettingsBodyPaperTradeLeadMinutesMax).optional()
+})
+
+export const UpdateEvaluationSettingsResponse = zod.object({
+  "retirementRule": zod.enum(['excluded', 'included']),
+  "paperTradeLeadMinutes": zod.number()
+})
+
+
+/**
+ * @summary Lock predictions for newly-eligible upcoming fixtures, mark missed cutoffs, and grade completed matches
+ */
+export const RunPaperTradingCycleResponse = zod.object({
+  "locked": zod.number(),
+  "missed": zod.number(),
+  "graded": zod.number(),
+  "errors": zod.array(zod.string())
+})
+
+

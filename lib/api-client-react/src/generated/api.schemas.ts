@@ -407,6 +407,249 @@ export interface PredictionStats {
   byRecommendation: PredictionStatsByRecommendationItem[];
 }
 
+/**
+ * historical_test replays the leak-proof historical store; paper_trade/live lock predictions for real fixtures ahead of time
+ */
+export type RunKind = typeof RunKind[keyof typeof RunKind];
+
+
+export const RunKind = {
+  historical_test: 'historical_test',
+  paper_trade: 'paper_trade',
+  live: 'live',
+} as const;
+
+export type Segment = typeof Segment[keyof typeof Segment];
+
+
+export const Segment = {
+  validation: 'validation',
+  test: 'test',
+} as const;
+
+export type EvaluationStatus = typeof EvaluationStatus[keyof typeof EvaluationStatus];
+
+
+export const EvaluationStatus = {
+  pending: 'pending',
+  graded: 'graded',
+  void: 'void',
+  missed: 'missed',
+} as const;
+
+export type ResultType = typeof ResultType[keyof typeof ResultType];
+
+
+export const ResultType = {
+  normal: 'normal',
+  retired: 'retired',
+  walkover: 'walkover',
+  cancelled: 'cancelled',
+} as const;
+
+export interface CalibrationKnot {
+  /** Raw predicted probability (0-1) */
+  x: number;
+  /** Calibrated probability (0-1) */
+  y: number;
+}
+
+export interface SegmentMetrics {
+  /** Sample size actually counted toward accuracy/logLoss/Brier */
+  n: number;
+  /** @nullable */
+  accuracy: number | null;
+  /** @nullable */
+  logLoss: number | null;
+  /** @nullable */
+  brier: number | null;
+  /** @nullable */
+  dateRangeStart: string | null;
+  /** @nullable */
+  dateRangeEnd: string | null;
+  retiredCount: number;
+  /**
+     * Accuracy on retirements alone, reported separately from the standard metric
+     * @nullable
+     */
+  retiredAccuracy: number | null;
+  /** Walkovers and cancellations, always excluded from accuracy */
+  voidCount: number;
+  missedCount: number;
+}
+
+export interface EvaluationRun {
+  id: number;
+  foldIndex: number;
+  modelVersion: string;
+  trainStart: string;
+  trainEnd: string;
+  validationStart: string;
+  validationEnd: string;
+  testStart: string;
+  testEnd: string;
+  calibrationMapping: CalibrationKnot[];
+  validationMetrics: SegmentMetrics;
+  testMetrics: SegmentMetrics;
+  createdAt: string;
+}
+
+export interface RunWalkForwardRequest {
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  foldCount?: number;
+  /**
+     * @minimum 0.05
+     * @maximum 0.95
+     */
+  warmupFraction?: number;
+}
+
+export interface WalkForwardSummary {
+  foldsRun: number;
+  foldIds: number[];
+  skippedNoEligibleMatches: boolean;
+}
+
+export interface EvaluationPrediction {
+  id: number;
+  runKind: RunKind;
+  /** @nullable */
+  foldId?: number | null;
+  segment?: Segment | null;
+  /** @nullable */
+  historicalMatchId?: number | null;
+  /** @nullable */
+  provider?: string | null;
+  /** @nullable */
+  externalFixtureId?: string | null;
+  player1Id: string;
+  player1Name: string;
+  player2Id: string;
+  player2Name: string;
+  surface?: Surface | null;
+  matchFormat?: MatchFormat | null;
+  /** @nullable */
+  tournamentLevel?: string | null;
+  /** @nullable */
+  tournamentName?: string | null;
+  scheduledStartAt: string;
+  cutoffAt: string;
+  lockedAt: string;
+  modelVersion: string;
+  /** Reduced feature set for historical_test rows, full EngineBreakdown for paper_trade/live */
+  featureSnapshot?: unknown;
+  /**
+     * Player-1 win probability before Phase 4 calibration, 0-100
+     * @nullable
+     */
+  rawProbability?: number | null;
+  /**
+     * Player-1 win probability after Phase 4 calibration, 0-100
+     * @nullable
+     */
+  calibratedProbability?: number | null;
+  /** @nullable */
+  predictedWinnerId?: string | null;
+  /** @nullable */
+  predictedWinnerName?: string | null;
+  status: EvaluationStatus;
+  /** @nullable */
+  actualWinnerId?: string | null;
+  /** @nullable */
+  actualWinnerName?: string | null;
+  resultType?: ResultType | null;
+  /** @nullable */
+  includedInAccuracy?: boolean | null;
+  /** @nullable */
+  gradedAt?: string | null;
+}
+
+export interface CalibrationBucket {
+  label: string;
+  min: number;
+  max: number;
+  n: number;
+  /** @nullable */
+  avgPredicted: number | null;
+  /** @nullable */
+  observedAccuracy: number | null;
+}
+
+/**
+ * @nullable
+ */
+export type StreakSummaryCurrentStreakType = typeof StreakSummaryCurrentStreakType[keyof typeof StreakSummaryCurrentStreakType] | null;
+
+
+export const StreakSummaryCurrentStreakType = {
+  win: 'win',
+  loss: 'loss',
+} as const;
+
+export interface StreakSummary {
+  /** @nullable */
+  currentStreakType: StreakSummaryCurrentStreakType;
+  currentStreakLength: number;
+  longestWinStreak: number;
+  longestLossStreak: number;
+}
+
+export interface EvaluationDashboardSegment {
+  key: string;
+  label: string;
+  /** True for test/paper-trade/live; false for validation (used for fitting calibration) */
+  isGenuinelyUnseen: boolean;
+  metrics: SegmentMetrics;
+  calibrationBuckets: CalibrationBucket[];
+  streaks: StreakSummary;
+}
+
+export interface EvaluationDashboard {
+  segments: EvaluationDashboardSegment[];
+  /** How many validation-segment predictions the live paper-trading calibration was fit on */
+  activeCalibrationSampleSize: number;
+}
+
+export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];
+
+
+export const PredictionSettingsRetirementRule = {
+  excluded: 'excluded',
+  included: 'included',
+} as const;
+
+export interface PredictionSettings {
+  retirementRule: PredictionSettingsRetirementRule;
+  paperTradeLeadMinutes: number;
+}
+
+export type UpdatePredictionSettingsRequestRetirementRule = typeof UpdatePredictionSettingsRequestRetirementRule[keyof typeof UpdatePredictionSettingsRequestRetirementRule];
+
+
+export const UpdatePredictionSettingsRequestRetirementRule = {
+  excluded: 'excluded',
+  included: 'included',
+} as const;
+
+export interface UpdatePredictionSettingsRequest {
+  retirementRule?: UpdatePredictionSettingsRequestRetirementRule;
+  /**
+     * @minimum 1
+     * @maximum 1440
+     */
+  paperTradeLeadMinutes?: number;
+}
+
+export interface PaperTradingCycleSummary {
+  locked: number;
+  missed: number;
+  graded: number;
+  errors: string[];
+}
+
 export type SearchPlayersParams = {
 /**
  * @minLength 2
@@ -430,6 +673,17 @@ export type ListPredictionsParams = {
 /**
  * @minimum 1
  * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListEvaluationPredictionsParams = {
+runKind?: RunKind;
+segment?: Segment;
+status?: EvaluationStatus;
+/**
+ * @minimum 1
+ * @maximum 200
  */
 limit?: number;
 };

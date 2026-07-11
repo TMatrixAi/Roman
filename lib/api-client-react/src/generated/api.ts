@@ -20,23 +20,32 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  EvaluationDashboard,
+  EvaluationPrediction,
+  EvaluationRun,
   Fixture,
   GetHeadToHeadParams,
   GetUpcomingFixturesParams,
   HeadToHeadRecord,
   HealthStatus,
+  ListEvaluationPredictionsParams,
   ListPredictionsParams,
   MatchRecord,
+  PaperTradingCycleSummary,
   PlayerProfile,
   PlayerSummary,
   Prediction,
   PredictionOutcomeInput,
   PredictionRequest,
+  PredictionSettings,
   PredictionStats,
   PredictionSummary,
   ProviderError,
   ProviderStatus,
-  SearchPlayersParams
+  RunWalkForwardRequest,
+  SearchPlayersParams,
+  UpdatePredictionSettingsRequest,
+  WalkForwardSummary
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1007,5 +1016,610 @@ export const useRecordPredictionOutcome = <TError = ErrorType<ProviderError>,
         TContext
       > => {
       return useMutation(getRecordPredictionOutcomeMutationOptions(options));
+    }
+
+export const getListEvaluationRunsUrl = () => {
+
+
+
+
+  return `/api/evaluation/runs`
+}
+
+/**
+ * @summary List walk-forward fold results (most recent first)
+ */
+export const listEvaluationRuns = async ( options?: RequestInit): Promise<EvaluationRun[]> => {
+
+  return customFetch<EvaluationRun[]>(getListEvaluationRunsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEvaluationRunsQueryKey = () => {
+    return [
+    `/api/evaluation/runs`
+    ] as const;
+    }
+
+
+export const getListEvaluationRunsQueryOptions = <TData = Awaited<ReturnType<typeof listEvaluationRuns>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEvaluationRunsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEvaluationRuns>>> = ({ signal }) => listEvaluationRuns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEvaluationRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEvaluationRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listEvaluationRuns>>>
+export type ListEvaluationRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List walk-forward fold results (most recent first)
+ */
+
+export function useListEvaluationRuns<TData = Awaited<ReturnType<typeof listEvaluationRuns>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEvaluationRunsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunWalkForwardUrl = () => {
+
+
+
+
+  return `/api/evaluation/walk-forward/run`
+}
+
+/**
+ * @summary Run a fresh sequence of expanding-window walk-forward folds over the historical store
+ */
+export const runWalkForward = async (runWalkForwardRequest?: RunWalkForwardRequest, options?: RequestInit): Promise<WalkForwardSummary> => {
+
+  return customFetch<WalkForwardSummary>(getRunWalkForwardUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runWalkForwardRequest)
+  }
+);}
+
+
+
+
+
+export const getRunWalkForwardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWalkForward>>, TError,{data?: BodyType<RunWalkForwardRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runWalkForward>>, TError,{data?: BodyType<RunWalkForwardRequest>}, TContext> => {
+
+const mutationKey = ['runWalkForward'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runWalkForward>>, {data?: BodyType<RunWalkForwardRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  runWalkForward(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunWalkForwardMutationResult = NonNullable<Awaited<ReturnType<typeof runWalkForward>>>
+    export type RunWalkForwardMutationBody = BodyType<RunWalkForwardRequest> | undefined
+    export type RunWalkForwardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Run a fresh sequence of expanding-window walk-forward folds over the historical store
+ */
+export const useRunWalkForward = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWalkForward>>, TError,{data?: BodyType<RunWalkForwardRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runWalkForward>>,
+        TError,
+        {data?: BodyType<RunWalkForwardRequest>},
+        TContext
+      > => {
+      return useMutation(getRunWalkForwardMutationOptions(options));
+    }
+
+export const getListEvaluationPredictionsUrl = (params?: ListEvaluationPredictionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/evaluation/predictions?${stringifiedParams}` : `/api/evaluation/predictions`
+}
+
+/**
+ * @summary List locked evaluation predictions (historical-test, paper-trade, or live)
+ */
+export const listEvaluationPredictions = async (params?: ListEvaluationPredictionsParams, options?: RequestInit): Promise<EvaluationPrediction[]> => {
+
+  return customFetch<EvaluationPrediction[]>(getListEvaluationPredictionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEvaluationPredictionsQueryKey = (params?: ListEvaluationPredictionsParams,) => {
+    return [
+    `/api/evaluation/predictions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListEvaluationPredictionsQueryOptions = <TData = Awaited<ReturnType<typeof listEvaluationPredictions>>, TError = ErrorType<unknown>>(params?: ListEvaluationPredictionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationPredictions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEvaluationPredictionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEvaluationPredictions>>> = ({ signal }) => listEvaluationPredictions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEvaluationPredictions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEvaluationPredictionsQueryResult = NonNullable<Awaited<ReturnType<typeof listEvaluationPredictions>>>
+export type ListEvaluationPredictionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List locked evaluation predictions (historical-test, paper-trade, or live)
+ */
+
+export function useListEvaluationPredictions<TData = Awaited<ReturnType<typeof listEvaluationPredictions>>, TError = ErrorType<unknown>>(
+ params?: ListEvaluationPredictionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationPredictions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEvaluationPredictionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEvaluationPredictionUrl = (predictionId: number,) => {
+
+
+
+
+  return `/api/evaluation/predictions/${predictionId}`
+}
+
+/**
+ * @summary Get one locked evaluation prediction with its full feature snapshot
+ */
+export const getEvaluationPrediction = async (predictionId: number, options?: RequestInit): Promise<EvaluationPrediction> => {
+
+  return customFetch<EvaluationPrediction>(getGetEvaluationPredictionUrl(predictionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEvaluationPredictionQueryKey = (predictionId: number,) => {
+    return [
+    `/api/evaluation/predictions/${predictionId}`
+    ] as const;
+    }
+
+
+export const getGetEvaluationPredictionQueryOptions = <TData = Awaited<ReturnType<typeof getEvaluationPrediction>>, TError = ErrorType<ProviderError>>(predictionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationPrediction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEvaluationPredictionQueryKey(predictionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEvaluationPrediction>>> = ({ signal }) => getEvaluationPrediction(predictionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: predictionId !== null && predictionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEvaluationPrediction>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEvaluationPredictionQueryResult = NonNullable<Awaited<ReturnType<typeof getEvaluationPrediction>>>
+export type GetEvaluationPredictionQueryError = ErrorType<ProviderError>
+
+
+/**
+ * @summary Get one locked evaluation prediction with its full feature snapshot
+ */
+
+export function useGetEvaluationPrediction<TData = Awaited<ReturnType<typeof getEvaluationPrediction>>, TError = ErrorType<ProviderError>>(
+ predictionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationPrediction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEvaluationPredictionQueryOptions(predictionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEvaluationDashboardUrl = () => {
+
+
+
+
+  return `/api/evaluation/dashboard`
+}
+
+/**
+ * @summary Segmented, honestly-labeled accuracy dashboard (validation / test / paper-trade never combined)
+ */
+export const getEvaluationDashboard = async ( options?: RequestInit): Promise<EvaluationDashboard> => {
+
+  return customFetch<EvaluationDashboard>(getGetEvaluationDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEvaluationDashboardQueryKey = () => {
+    return [
+    `/api/evaluation/dashboard`
+    ] as const;
+    }
+
+
+export const getGetEvaluationDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getEvaluationDashboard>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEvaluationDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEvaluationDashboard>>> = ({ signal }) => getEvaluationDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEvaluationDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEvaluationDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getEvaluationDashboard>>>
+export type GetEvaluationDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Segmented, honestly-labeled accuracy dashboard (validation / test / paper-trade never combined)
+ */
+
+export function useGetEvaluationDashboard<TData = Awaited<ReturnType<typeof getEvaluationDashboard>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEvaluationDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEvaluationSettingsUrl = () => {
+
+
+
+
+  return `/api/evaluation/settings`
+}
+
+/**
+ * @summary Get the admin-configurable evaluation settings
+ */
+export const getEvaluationSettings = async ( options?: RequestInit): Promise<PredictionSettings> => {
+
+  return customFetch<PredictionSettings>(getGetEvaluationSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEvaluationSettingsQueryKey = () => {
+    return [
+    `/api/evaluation/settings`
+    ] as const;
+    }
+
+
+export const getGetEvaluationSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getEvaluationSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEvaluationSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEvaluationSettings>>> = ({ signal }) => getEvaluationSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEvaluationSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getEvaluationSettings>>>
+export type GetEvaluationSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the admin-configurable evaluation settings
+ */
+
+export function useGetEvaluationSettings<TData = Awaited<ReturnType<typeof getEvaluationSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEvaluationSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateEvaluationSettingsUrl = () => {
+
+
+
+
+  return `/api/evaluation/settings`
+}
+
+/**
+ * @summary Update the admin-configurable evaluation settings
+ */
+export const updateEvaluationSettings = async (updatePredictionSettingsRequest: UpdatePredictionSettingsRequest, options?: RequestInit): Promise<PredictionSettings> => {
+
+  return customFetch<PredictionSettings>(getUpdateEvaluationSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updatePredictionSettingsRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateEvaluationSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEvaluationSettings>>, TError,{data: BodyType<UpdatePredictionSettingsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateEvaluationSettings>>, TError,{data: BodyType<UpdatePredictionSettingsRequest>}, TContext> => {
+
+const mutationKey = ['updateEvaluationSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEvaluationSettings>>, {data: BodyType<UpdatePredictionSettingsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateEvaluationSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateEvaluationSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateEvaluationSettings>>>
+    export type UpdateEvaluationSettingsMutationBody = BodyType<UpdatePredictionSettingsRequest>
+    export type UpdateEvaluationSettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update the admin-configurable evaluation settings
+ */
+export const useUpdateEvaluationSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEvaluationSettings>>, TError,{data: BodyType<UpdatePredictionSettingsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateEvaluationSettings>>,
+        TError,
+        {data: BodyType<UpdatePredictionSettingsRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateEvaluationSettingsMutationOptions(options));
+    }
+
+export const getRunPaperTradingCycleUrl = () => {
+
+
+
+
+  return `/api/paper-trading/run-cycle`
+}
+
+/**
+ * @summary Lock predictions for newly-eligible upcoming fixtures, mark missed cutoffs, and grade completed matches
+ */
+export const runPaperTradingCycle = async ( options?: RequestInit): Promise<PaperTradingCycleSummary> => {
+
+  return customFetch<PaperTradingCycleSummary>(getRunPaperTradingCycleUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunPaperTradingCycleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runPaperTradingCycle>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runPaperTradingCycle>>, TError,void, TContext> => {
+
+const mutationKey = ['runPaperTradingCycle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runPaperTradingCycle>>, void> = () => {
+
+
+          return  runPaperTradingCycle(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunPaperTradingCycleMutationResult = NonNullable<Awaited<ReturnType<typeof runPaperTradingCycle>>>
+
+    export type RunPaperTradingCycleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Lock predictions for newly-eligible upcoming fixtures, mark missed cutoffs, and grade completed matches
+ */
+export const useRunPaperTradingCycle = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runPaperTradingCycle>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runPaperTradingCycle>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunPaperTradingCycleMutationOptions(options));
     }
 

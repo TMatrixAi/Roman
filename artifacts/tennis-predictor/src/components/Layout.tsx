@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart } from "lucide-react"
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
@@ -35,6 +35,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 className={`transition-colors hover:text-foreground/80 ${location.startsWith("/history") || location.startsWith("/predictions") ? "text-foreground" : "text-foreground/60"}`}
               >
                 Ledger
+              </Link>
+              <Link 
+                href="/evaluation/log" 
+                className={`transition-colors hover:text-foreground/80 flex items-center gap-1 ${location.startsWith("/evaluation/log") ? "text-foreground" : "text-foreground/60"}`}
+              >
+                <ClipboardList className="w-3.5 h-3.5" /> Prediction Log
+              </Link>
+              <Link 
+                href="/evaluation/dashboard" 
+                className={`transition-colors hover:text-foreground/80 flex items-center gap-1 ${location.startsWith("/evaluation/dashboard") ? "text-foreground" : "text-foreground/60"}`}
+              >
+                <LineChart className="w-3.5 h-3.5" /> Accuracy
               </Link>
             </nav>
           </div>
