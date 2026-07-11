@@ -4,6 +4,15 @@ import type { Surface, TournamentLevel } from "./types";
 // Surface and tour-level are well-known, stable public facts about specific tournaments
 // (e.g. "Wimbledon is grass"), so we maintain a lookup rather than fabricating per-match data.
 // Anything not in this table is reported as `null` ("not available") -- never guessed.
+//
+// Known coverage limitation (verified live, 2026-07-11): this table only covers Grand Slams,
+// Masters1000/WTA1000, and the more prominent ATP500/WTA500 events. A live 7-day fixtures pull
+// across ATP/WTA/Challenger/ITF returned 43 distinct tournament names, of which only 1
+// (Wimbledon) matched this table -- every Challenger and ITF event (the large majority of
+// day-to-day match volume) resolves to `null` surface/level. This is a real, not cosmetic,
+// data gap for any module that buckets matches by surface (e.g. surfaceElo): most of a
+// non-top-100 player's match history will have no surface label at all. See
+// docs/audit-phase2.md for the full writeup and options to close this gap.
 const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: TournamentLevel }> = [
   { match: /wimbledon/i, surface: "Grass", level: "GrandSlam" },
   { match: /roland garros|french open/i, surface: "Clay", level: "GrandSlam" },

@@ -53,8 +53,12 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
         )}
 
         {players && players.length === 0 && (
-          <div className="h-full flex items-center justify-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
-            NO PLAYERS FOUND
+          <div className="h-full flex flex-col items-center justify-center gap-1 text-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
+            <span>NO PLAYERS FOUND</span>
+            <span className="text-xs normal-case font-sans text-muted-foreground/80 max-w-xs">
+              Search only covers players currently in the ATP/WTA rankings. Retired players and
+              players who only compete on the Challenger/ITF circuit won't appear here.
+            </span>
           </div>
         )}
 

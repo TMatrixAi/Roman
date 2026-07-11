@@ -195,19 +195,55 @@ export class ApiTennisProvider implements TennisDataProvider {
     });
   }
 
+  /**
+   * Player search is scoped to players who currently appear in the ATP/WTA standings feed.
+   * API-Tennis has no name-search endpoint (`get_players` requires an exact `player_key`,
+   * confirmed live: passing `player_name` returns a "Required parameter missing: player_key"
+   * error, not a search). That means retired players, players outside the current
+   * ATP/WTA rankings (e.g. Challenger/ITF-only players), and very recently-retired top
+   * players are genuinely unsearchable with this provider -- not a bug in this function,
+   * a hard provider limitation. Callers must not interpret an empty result as "player
+   * doesn't exist"; it means "not in the current ATP/WTA standings snapshot".
+   *
+   * Within that scope we still make ranking honest and deterministic:
+   * - de-duplicate by player_key (defensive: a player briefly overlapping both tour lists,
+   *   or any future provider quirk, should not produce duplicate rows)
+   * - rank exact (case-insensitive) full-name matches above partial/substring matches
+   * - break ties by current rank ascending (unranked/parse failures sort last)
+   * so the most relevant, most recognizable player for a query is never buried by
+   * whichever tour's list happened to come first in the combined standings array.
+   */
   async searchPlayers(query: string): Promise<PlayerSummary[]> {
     const standings = await this.getStandingsCache();
-    const lowerQuery = query.toLowerCase();
-    return standings
-      .filter((row) => row.player.toLowerCase().includes(lowerQuery))
-      .slice(0, 25)
-      .map((row) => ({
-        id: str(row.player_key),
-        name: row.player,
-        countryCode: row.country ?? null,
-        currentRank: parseInt(row.place, 10) || null,
-        tour: row.league ?? null,
-      }));
+    const lowerQuery = query.toLowerCase().trim();
+
+    const seen = new Set<string>();
+    const matches: Array<{ row: RawStandingRow; rank: number | null; exact: boolean }> = [];
+    for (const row of standings) {
+      const key = str(row.player_key);
+      if (seen.has(key)) continue;
+      const lowerName = row.player.toLowerCase();
+      if (!lowerName.includes(lowerQuery)) continue;
+      seen.add(key);
+      const rank = parseInt(row.place, 10);
+      matches.push({ row, rank: Number.isNaN(rank) ? null : rank, exact: lowerName === lowerQuery });
+    }
+
+    matches.sort((a, b) => {
+      if (a.exact !== b.exact) return a.exact ? -1 : 1;
+      if (a.rank === null && b.rank === null) return 0;
+      if (a.rank === null) return 1;
+      if (b.rank === null) return -1;
+      return a.rank - b.rank;
+    });
+
+    return matches.slice(0, 25).map(({ row }) => ({
+      id: str(row.player_key),
+      name: row.player,
+      countryCode: row.country ?? null,
+      currentRank: parseInt(row.place, 10) || null,
+      tour: row.league ?? null,
+    }));
   }
 
   async getPlayer(playerId: string): Promise<PlayerProfile | null> {
