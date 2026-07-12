@@ -53,9 +53,12 @@ function isoDaysFromNow(ms: number): string {
 }
 
 function makeFixture(id: string, startOffsetMs: number): Fixture {
+  const scheduledStart = isoDaysFromNow(startOffsetMs);
   return {
     id,
-    date: isoDaysFromNow(startOffsetMs),
+    date: scheduledStart.slice(0, 10),
+    scheduledStart,
+    timeConfirmed: true,
     tournamentName: "Paper Trade Test Series",
     tournamentLevel: "ATP250",
     round: null,

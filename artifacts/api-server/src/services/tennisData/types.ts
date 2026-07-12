@@ -83,7 +83,17 @@ export interface MatchRecord {
 
 export interface Fixture {
   id: string;
+  /** Calendar date the match is scheduled for (YYYY-MM-DD), always present. */
   date: string;
+  /**
+   * Full ISO-8601 instant (UTC) combining the provider's real event_date + event_time for this
+   * specific fixture. Null when the provider did not supply a verified start time for this match
+   * -- never fabricated or copied from another fixture/tournament. When null, `timeConfirmed` is
+   * false and callers must display "Time TBD" rather than inventing a time.
+   */
+  scheduledStart: string | null;
+  /** True only when `scheduledStart` reflects a real provider-supplied time for this exact fixture. */
+  timeConfirmed: boolean;
   tournamentName: string | null;
   tournamentLevel: TournamentLevel | null;
   round: string | null;

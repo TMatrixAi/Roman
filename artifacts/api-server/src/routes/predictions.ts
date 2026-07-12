@@ -16,6 +16,8 @@ import {
   BulkDeletePredictionsBody,
   BulkDeletePredictionsResponse,
   GradePendingLedgerPredictionsResponse,
+  PreviewDuplicatePredictionsResponse,
+  RemoveDuplicatePredictionsResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
@@ -25,6 +27,7 @@ import { resolveOpponentStrength } from "../services/predictionEngine/opponentSt
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
 import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
 import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrading";
+import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
 
 const router: IRouter = Router();
 
@@ -231,6 +234,17 @@ router.post("/predictions/bulk-delete", async (req, res): Promise<void> => {
     .returning({ id: predictionsTable.id });
 
   res.json(BulkDeletePredictionsResponse.parse({ deletedCount: deleted.length }));
+});
+
+router.post("/predictions/duplicates/preview", async (_req, res): Promise<void> => {
+  const groups = await findDuplicatePredictionGroups();
+  const removableCount = groups.reduce((sum, g) => sum + g.removeIds.length, 0);
+  res.json(PreviewDuplicatePredictionsResponse.parse({ removableCount, groups }));
+});
+
+router.post("/predictions/duplicates/remove", async (_req, res): Promise<void> => {
+  const { removedCount, groups } = await removeDuplicatePredictions();
+  res.json(RemoveDuplicatePredictionsResponse.parse({ removedCount, groups }));
 });
 
 router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {

@@ -127,7 +127,9 @@ export const GetUpcomingFixturesQueryParams = zod.object({
 
 export const GetUpcomingFixturesResponseItem = zod.object({
   "id": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.coerce.date().describe('Calendar date the match is scheduled for (YYYY-MM-DD). Always present.'),
+  "scheduledStart": zod.union([zod.coerce.date(),zod.null()]).optional().describe('Full real start instant (UTC) for this exact fixture, combining the provider\'s per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show \"Time TBD\" when null.'),
+  "timeConfirmed": zod.boolean().describe('True only when scheduledStart reflects a real provider-supplied time for this exact fixture.'),
   "tournamentName": zod.string().nullish(),
   "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "round": zod.string().nullish(),
@@ -561,6 +563,38 @@ export const GradePendingLedgerPredictionsResponse = zod.object({
   "checked": zod.number().describe('Pending predictions old enough to check for a real result'),
   "graded": zod.number().describe('Predictions actually marked Win\/Loss this run'),
   "errors": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Scan the entire Ledger for true duplicate predictions (without deleting anything) so the UI can show a confirmation before removing them
+ */
+export const PreviewDuplicatePredictionsResponse = zod.object({
+  "removableCount": zod.number().describe('Total number of duplicate rows that would be removed across all groups'),
+  "groups": zod.array(zod.object({
+  "keepId": zod.number().describe('The original prediction (earliest created) kept from this duplicate group'),
+  "removeIds": zod.array(zod.number()).describe('The duplicate prediction(s) in this group that would be\/were removed'),
+  "player1Name": zod.string(),
+  "player2Name": zod.string(),
+  "tournamentName": zod.string().nullable(),
+  "predictedWinnerName": zod.string()
+}))
+})
+
+
+/**
+ * @summary Re-scan the entire Ledger for true duplicate predictions and delete only the duplicate rows, keeping the original of each group
+ */
+export const RemoveDuplicatePredictionsResponse = zod.object({
+  "removedCount": zod.number().describe('Total number of duplicate rows actually removed'),
+  "groups": zod.array(zod.object({
+  "keepId": zod.number().describe('The original prediction (earliest created) kept from this duplicate group'),
+  "removeIds": zod.array(zod.number()).describe('The duplicate prediction(s) in this group that would be\/were removed'),
+  "player1Name": zod.string(),
+  "player2Name": zod.string(),
+  "tournamentName": zod.string().nullable(),
+  "predictedWinnerName": zod.string()
+}))
 })
 
 

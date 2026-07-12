@@ -341,6 +341,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProviderError"
 
+  /predictions/duplicates/preview:
+    post:
+      operationId: previewDuplicatePredictions
+      tags: [predictions]
+      summary: Scan the entire Ledger for true duplicate predictions (without deleting anything) so the UI can show a confirmation before removing them
+      responses:
+        "200":
+          description: Duplicate groups found, and how many rows would be removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicatePredictionsPreviewResult"
+
+  /predictions/duplicates/remove:
+    post:
+      operationId: removeDuplicatePredictions
+      tags: [predictions]
+      summary: Re-scan the entire Ledger for true duplicate predictions and delete only the duplicate rows, keeping the original of each group
+      responses:
+        "200":
+          description: Duplicates removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoveDuplicatePredictionsResult"
+
   /predictions/{predictionId}/outcome:
     patch:
       operationId: recordPredictionOutcome
@@ -770,13 +796,23 @@ components:
 
     Fixture:
       type: object
-      required: [id, date, player1Id, player1Name, player2Id, player2Name, surface]
+      required: [id, date, timeConfirmed, player1Id, player1Name, player2Id, player2Name, surface]
       properties:
         id:
           type: string
         date:
           type: string
-          format: date-time
+          format: date
+          description: Calendar date the match is scheduled for (YYYY-MM-DD). Always present.
+        scheduledStart:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Full real start instant (UTC) for this exact fixture, combining the provider's per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show "Time TBD" when null.
+        timeConfirmed:
+          type: boolean
+          description: True only when scheduledStart reflects a real provider-supplied time for this exact fixture.
         tournamentName:
           type: ["string", "null"]
         tournamentLevel:
@@ -1200,6 +1236,51 @@ components:
           type: array
           items:
             type: string
+
+    DuplicatePredictionGroup:
+      type: object
+      required: [keepId, removeIds, player1Name, player2Name, tournamentName, predictedWinnerName]
+      properties:
+        keepId:
+          type: integer
+          description: The original prediction (earliest created) kept from this duplicate group
+        removeIds:
+          type: array
+          items:
+            type: integer
+          description: The duplicate prediction(s) in this group that would be/were removed
+        player1Name:
+          type: string
+        player2Name:
+          type: string
+        tournamentName:
+          type: ["string", "null"]
+        predictedWinnerName:
+          type: string
+
+    DuplicatePredictionsPreviewResult:
+      type: object
+      required: [removableCount, groups]
+      properties:
+        removableCount:
+          type: integer
+          description: Total number of duplicate rows that would be removed across all groups
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicatePredictionGroup"
+
+    RemoveDuplicatePredictionsResult:
+      type: object
+      required: [removedCount, groups]
+      properties:
+        removedCount:
+          type: integer
+          description: Total number of duplicate rows actually removed
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicatePredictionGroup"
 
     SetScoreOutcome:
       type: object

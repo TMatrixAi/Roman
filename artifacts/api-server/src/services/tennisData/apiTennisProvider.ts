@@ -34,6 +34,25 @@ function str(value: string | number): string {
   return String(value);
 }
 
+/**
+ * Combines the provider's per-fixture `event_date` ("YYYY-MM-DD") and `event_time` ("HH:MM") into
+ * a real UTC instant. Confirmed live (2026-07-12): fixtures on the same date routinely carry
+ * different `event_time` values (e.g. "14:10", "16:10", "13:10", "17:10" all on one day) -- this
+ * is a genuine per-match field, not a shared/derived value, so it must never be dropped or
+ * defaulted to a placeholder. API-Tennis does not expose an explicit timezone field for this
+ * value; per this provider family's convention we treat it as UTC. Returns null (never a guessed
+ * time) when the date/time strings are missing or don't match the expected shape -- callers must
+ * show "Time TBD" rather than inventing a time.
+ */
+export function combineDateTimeUtc(eventDate: string | undefined, eventTime: string | undefined): string | null {
+  if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return null;
+  if (!eventTime || !/^\d{2}:\d{2}$/.test(eventTime)) return null;
+  const iso = `${eventDate}T${eventTime}:00Z`;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 interface RawStandingRow {
   place: string;
   player: string;
@@ -473,9 +492,12 @@ export class ApiTennisProvider implements TennisDataProvider {
           eventTypeType: m.event_type_type,
           surfaceByTournamentKey,
         });
+        const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time);
         return {
           id: str(m.event_key),
           date: m.event_date,
+          scheduledStart,
+          timeConfirmed: scheduledStart !== null,
           tournamentName: m.tournament_name ?? null,
           tournamentLevel: level,
           round: m.tournament_round ?? null,

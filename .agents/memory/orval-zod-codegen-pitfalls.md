@@ -64,12 +64,30 @@ as a plain TS type in `generated/types/`). Always grep the actual generated
 `lib/api-zod/src/generated/api.ts` for the real const name before importing it — don't
 assume it matches your schema's component name.
 
-## `lib/api-zod/src/index.ts` has a latent duplicate-export bug that silent codegen runs don't fix
+## `lib/api-zod/src/index.ts` has a latent duplicate-export bug, and running `pnpm run codegen` DOES reintroduce it
 
-This hand-written barrel file has (recurringly) contained each `export * from "./generated/..."`
-line duplicated twice — once double-quoted, once single-quoted. It's harmless until some
-other change introduces a real name collision between the two generated modules, at which
-point it becomes a hard `TS2308`. Running `orval` codegen does NOT fix or re-break this
-file (it only touches `generated/`), so if you find/fix the duplication, verify with
-`cat lib/api-zod/src/index.ts` after any later codegen run — don't assume a fix from an
-earlier session persisted, and don't assume codegen caused a regression here.
+This hand-written barrel file recurringly ends up with each `export * from "./generated/..."`
+line duplicated twice — once double-quoted, once single-quoted. It's harmless on its own
+(TS allows duplicate `export *` of the same path), but becomes a hard `TS2308` the moment a
+real name collision exists between the two generated modules. Confirmed by direct
+reproduction: running `pnpm run codegen` in `lib/api-spec` reintroduces the duplicate lines
+in this file even though `orval.config.ts` only targets the `generated/` output dirs and
+never references `index.ts` — the exact mechanism is still unknown, but the effect is
+reliably reproducible, so treat it as a real side effect of codegen, not a stale artifact
+from an earlier session. Always `cat lib/api-zod/src/index.ts` and rewrite it to the clean
+two-line form immediately after every codegen run, right before the final typecheck.
+
+## A named `$ref`'d component schema can still collide if its name equals the operationId-derived name
+
+Naming a response's `components/schemas` entry to literally match what orval derives from
+`operationId + "Body"/"Response"` reproduces the exact same `TS2308` collision as an inline
+body (see above), because the zod const (in `generated/api.ts`, named from `operationId`)
+and the plain TS type (in `generated/types/`, named from the schema's own component name)
+end up as two same-named exports. E.g. operation `removeDuplicatePredictions` with its
+response `$ref`ing a schema literally named `RemoveDuplicatePredictionsResponse` collides;
+renaming the schema to `RemoveDuplicatePredictionsResult` (matching the existing repo
+convention seen in `BulkDeletePredictionsResult`) fixes it with no behavior change.
+
+**How to apply:** always suffix new response/body component schema names with `Result`
+(not `Response`/`Body`) so they can never textually match the operationId-derived zod const
+name — the zod const alone is what routes import to `.parse(...)`.

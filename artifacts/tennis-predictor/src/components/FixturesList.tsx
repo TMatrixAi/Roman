@@ -31,6 +31,15 @@ function matchesFilter(fixture: Fixture, filter: TourFilter): boolean {
   return false
 }
 
+/**
+ * Sort key for a fixture's real start time. Fixtures with no provider-confirmed time ("Time TBD")
+ * sort after every confirmed fixture on the same calendar date, rather than being guessed into
+ * some position -- never fabricated, never inherited from another match or the tournament date.
+ */
+function timeSortKey(fixture: Fixture): number {
+  return fixture.scheduledStart ? new Date(fixture.scheduledStart).getTime() : new Date(`${fixture.date}T23:59:59.999Z`).getTime()
+}
+
 function sortFixtures(fixtures: Fixture[], filter: TourFilter): Fixture[] {
   const list = [...fixtures]
   if (filter === "atp" || filter === "wta") {
@@ -38,11 +47,18 @@ function sortFixtures(fixtures: Fixture[], filter: TourFilter): Fixture[] {
     return list.sort((a, b) => {
       const nameCompare = (a.tournamentName ?? "").localeCompare(b.tournamentName ?? "")
       if (nameCompare !== 0) return nameCompare
-      return new Date(a.date).getTime() - new Date(b.date).getTime()
+      return timeSortKey(a) - timeSortKey(b)
     })
   }
-  // "All" and "ITF" keep chronological order (earliest start time first), as already sorted by the API.
-  return list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  // "All" and "ITF" keep chronological order (earliest confirmed start time first), as already
+  // sorted by the API.
+  return list.sort((a, b) => timeSortKey(a) - timeSortKey(b))
+}
+
+/** Formats a fixture's real start time in the viewer's local timezone, or "Time TBD" when the provider hasn't confirmed one. */
+function formatFixtureTime(fixture: Fixture): string {
+  if (!fixture.scheduledStart) return "Time TBD"
+  return new Date(fixture.scheduledStart).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 }
 
 function buildCustomMatchUrl(fixture: Fixture): string {
@@ -139,7 +155,7 @@ export function FixturesList({ filter = "all" }: { filter?: TourFilter }) {
                 <span>•</span>
                 <span>{fixture.surface} {fixture.indoor ? '(Indoor)' : ''}</span>
                 <span>•</span>
-                <span>{new Date(fixture.date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className={!fixture.scheduledStart ? "text-muted-foreground/70 italic" : undefined}>{formatFixtureTime(fixture)}</span>
               </div>
               
               <div className="flex flex-col gap-1.5 font-bold text-lg">

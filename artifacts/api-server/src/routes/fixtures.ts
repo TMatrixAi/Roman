@@ -15,9 +15,12 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
 
   try {
     const fixtures = await getTennisDataProvider().getUpcomingFixtures(date);
-    // Today's Fixtures is always shown in real chronological order (earliest start time first) --
-    // sorted here so every consumer of this endpoint gets the same order without re-implementing it.
-    const sorted = [...fixtures].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Today's Fixtures is always shown in real chronological order (earliest confirmed start time
+    // first). Fixtures with no confirmed provider time ("Time TBD") sort after every confirmed
+    // fixture on the same calendar date, rather than being guessed into some position by date alone.
+    const sortKey = (f: (typeof fixtures)[number]) =>
+      f.scheduledStart ? new Date(f.scheduledStart).getTime() : new Date(`${f.date}T23:59:59.999Z`).getTime();
+    const sorted = [...fixtures].sort((a, b) => sortKey(a) - sortKey(b));
     res.json(GetUpcomingFixturesResponse.parse(sorted));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {

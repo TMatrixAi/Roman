@@ -11,7 +11,12 @@ import type { TournamentLevel } from './tournamentLevel';
 
 export interface Fixture {
   id: string;
+  /** Calendar date the match is scheduled for (YYYY-MM-DD). Always present. */
   date: Date;
+  /** Full real start instant (UTC) for this exact fixture, combining the provider's per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show "Time TBD" when null. */
+  scheduledStart?: Date | null;
+  /** True only when scheduledStart reflects a real provider-supplied time for this exact fixture. */
+  timeConfirmed: boolean;
   /** @nullable */
   tournamentName?: string | null;
   tournamentLevel?: TournamentLevel | null;

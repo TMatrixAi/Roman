@@ -6,17 +6,114 @@ import {
   useDeletePrediction,
   useBulkDeletePredictions,
   useGradePendingLedgerPredictions,
+  usePreviewDuplicatePredictions,
+  useRemoveDuplicatePredictions,
   getListPredictionsQueryKey,
   getGetPredictionStatsQueryKey,
   type PredictionSummary,
+  type DuplicatePredictionsPreviewResult,
 } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Link } from "wouter"
-import { Target, CheckCircle2, XCircle, Clock, AlertTriangle, TrendingUp, ChevronRight, Trash2, RefreshCw } from "lucide-react"
+import { Target, CheckCircle2, XCircle, Clock, AlertTriangle, TrendingUp, ChevronRight, Trash2, RefreshCw, Copy } from "lucide-react"
+
+function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
+  const [preview, setPreview] = useState<DuplicatePredictionsPreviewResult | null>(null)
+  const [lastRemovedCount, setLastRemovedCount] = useState<number | null>(null)
+
+  const previewDuplicates = usePreviewDuplicatePredictions({
+    mutation: { onSuccess: (data) => setPreview(data) },
+  })
+  const removeDuplicates = useRemoveDuplicatePredictions({
+    mutation: {
+      onSuccess: (data) => {
+        setLastRemovedCount(data.removedCount)
+        setPreview(null)
+        onRemoved()
+      },
+    },
+  })
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="font-mono self-start md:self-auto"
+        disabled={previewDuplicates.isPending}
+        onClick={() => {
+          setLastRemovedCount(null)
+          previewDuplicates.mutate()
+        }}
+      >
+        <Copy className={`w-4 h-4 mr-2 ${previewDuplicates.isPending ? "animate-pulse" : ""}`} />
+        REMOVE DUPLICATE TRADES
+      </Button>
+
+      {lastRemovedCount !== null && (
+        <span className="text-xs font-mono text-muted-foreground self-center">
+          {lastRemovedCount > 0 ? `Removed ${lastRemovedCount} duplicate${lastRemovedCount === 1 ? "" : "s"}.` : "No duplicates found."}
+        </span>
+      )}
+
+      <AlertDialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove duplicate trades?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {preview && preview.removableCount > 0 ? (
+                  <>
+                    <p>
+                      Found {preview.removableCount} duplicate prediction{preview.removableCount === 1 ? "" : "s"} across{" "}
+                      {preview.groups.length} match{preview.groups.length === 1 ? "" : "es"}. The earliest prediction for each match
+                      will be kept; the rest will be permanently deleted from the Ledger.
+                    </p>
+                    <ul className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono border rounded-md p-2 bg-muted/30">
+                      {preview.groups.map((g) => (
+                        <li key={g.keepId} className="flex justify-between gap-2">
+                          <span className="truncate">
+                            {g.player1Name} vs {g.player2Name}
+                            {g.tournamentName ? ` (${g.tournamentName})` : ""}
+                          </span>
+                          <span className="shrink-0 text-muted-foreground">-{g.removeIds.length}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p>No duplicate predictions were found in the Ledger.</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {preview && preview.removableCount > 0 && (
+              <AlertDialogAction disabled={removeDuplicates.isPending} onClick={() => removeDuplicates.mutate()}>
+                Remove {preview.removableCount} duplicate{preview.removableCount === 1 ? "" : "s"}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
 
 function StatCard({ title, value, subtext, icon: Icon }: { title: string, value: string | number, subtext?: string, icon: any }) {
   return (
@@ -194,16 +291,19 @@ export default function HistoryPage() {
           <h1 className="text-3xl font-bold tracking-tighter">LEDGER</h1>
           <p className="text-muted-foreground mt-1">Historical prediction performance and raw results.</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono self-start md:self-auto"
-          disabled={gradePending.isPending}
-          onClick={() => gradePending.mutate()}
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${gradePending.isPending ? "animate-spin" : ""}`} />
-          REFRESH OUTCOMES
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono self-start md:self-auto"
+            disabled={gradePending.isPending}
+            onClick={() => gradePending.mutate()}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${gradePending.isPending ? "animate-spin" : ""}`} />
+            REFRESH OUTCOMES
+          </Button>
+          <RemoveDuplicateTradesButton onRemoved={invalidateLedger} />
+        </div>
       </div>
 
       {gradePending.isSuccess && gradePending.data && (

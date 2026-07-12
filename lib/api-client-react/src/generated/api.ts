@@ -22,6 +22,7 @@ import type {
 import type {
   BulkDeletePredictionsInput,
   BulkDeletePredictionsResult,
+  DuplicatePredictionsPreviewResult,
   EvaluationDashboard,
   EvaluationPrediction,
   EvaluationRun,
@@ -48,6 +49,7 @@ import type {
   PredictionSummary,
   ProviderError,
   ProviderStatus,
+  RemoveDuplicatePredictionsResult,
   RunWalkForwardRequest,
   SearchPlayersParams,
   SimulatorValidation,
@@ -1164,6 +1166,148 @@ export const useGradePendingLedgerPredictions = <TError = ErrorType<ProviderErro
         TContext
       > => {
       return useMutation(getGradePendingLedgerPredictionsMutationOptions(options));
+    }
+
+export const getPreviewDuplicatePredictionsUrl = () => {
+
+
+
+
+  return `/api/predictions/duplicates/preview`
+}
+
+/**
+ * @summary Scan the entire Ledger for true duplicate predictions (without deleting anything) so the UI can show a confirmation before removing them
+ */
+export const previewDuplicatePredictions = async ( options?: RequestInit): Promise<DuplicatePredictionsPreviewResult> => {
+
+  return customFetch<DuplicatePredictionsPreviewResult>(getPreviewDuplicatePredictionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewDuplicatePredictionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewDuplicatePredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewDuplicatePredictions>>, TError,void, TContext> => {
+
+const mutationKey = ['previewDuplicatePredictions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewDuplicatePredictions>>, void> = () => {
+
+
+          return  previewDuplicatePredictions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewDuplicatePredictionsMutationResult = NonNullable<Awaited<ReturnType<typeof previewDuplicatePredictions>>>
+
+    export type PreviewDuplicatePredictionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Scan the entire Ledger for true duplicate predictions (without deleting anything) so the UI can show a confirmation before removing them
+ */
+export const usePreviewDuplicatePredictions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewDuplicatePredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewDuplicatePredictions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getPreviewDuplicatePredictionsMutationOptions(options));
+    }
+
+export const getRemoveDuplicatePredictionsUrl = () => {
+
+
+
+
+  return `/api/predictions/duplicates/remove`
+}
+
+/**
+ * @summary Re-scan the entire Ledger for true duplicate predictions and delete only the duplicate rows, keeping the original of each group
+ */
+export const removeDuplicatePredictions = async ( options?: RequestInit): Promise<RemoveDuplicatePredictionsResult> => {
+
+  return customFetch<RemoveDuplicatePredictionsResult>(getRemoveDuplicatePredictionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveDuplicatePredictionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeDuplicatePredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeDuplicatePredictions>>, TError,void, TContext> => {
+
+const mutationKey = ['removeDuplicatePredictions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeDuplicatePredictions>>, void> = () => {
+
+
+          return  removeDuplicatePredictions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveDuplicatePredictionsMutationResult = NonNullable<Awaited<ReturnType<typeof removeDuplicatePredictions>>>
+
+    export type RemoveDuplicatePredictionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-scan the entire Ledger for true duplicate predictions and delete only the duplicate rows, keeping the original of each group
+ */
+export const useRemoveDuplicatePredictions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeDuplicatePredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeDuplicatePredictions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRemoveDuplicatePredictionsMutationOptions(options));
     }
 
 export const getRecordPredictionOutcomeUrl = (predictionId: number,) => {

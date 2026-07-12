@@ -68,7 +68,12 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
   const now = Date.now();
 
   for (const fixture of fixtures) {
-    const scheduledStartAt = new Date(fixture.date);
+    // A cutoff can only be computed from a real, per-fixture provider time -- never from the
+    // calendar date alone (that would give every match on a day the same, fabricated cutoff).
+    // Fixtures the provider hasn't confirmed a time for yet are simply not processable this
+    // cycle; they'll be picked up once the provider publishes a real time for them.
+    if (!fixture.timeConfirmed || !fixture.scheduledStart) continue;
+    const scheduledStartAt = new Date(fixture.scheduledStart);
     if (Number.isNaN(scheduledStartAt.getTime())) continue;
 
     const cutoffAt = new Date(scheduledStartAt.getTime() - settings.paperTradeLeadMinutes * 60_000);
