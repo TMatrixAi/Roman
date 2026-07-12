@@ -2,9 +2,11 @@ import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsT
 import { asc, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import { fitIsotonicCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
-import { scoreHistoricalMatch } from "./historicalScoring";
+import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
 import { computeAndStoreSpecialistSegments } from "./specialistWeights";
+import { buildMatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
+import { buildEloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "./types";
 import type { CalibrationKnot } from "./types";
 
@@ -56,6 +58,15 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   // Wipe prior historical_test evaluation state so a re-run never mixes fold generations.
   await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "historical_test"));
   await db.delete(evaluationRunsTable);
+
+  // Preload the whole corpus ONCE for this run -- a run scores thousands of matches, each
+  // needing two players' full prior histories, their H2H, and opponent-Elo lookups. Re-querying
+  // the DB per match would turn a run that should take seconds into one that takes hours; see
+  // `HistoricalScoringContext`.
+  const scoringContext: HistoricalScoringContext = {
+    matchHistory: buildMatchHistoryIndex(allMatches),
+    eloHistory: await buildEloHistoryIndex(),
+  };
 
   const warmupEndIdx = Math.floor(eligible.length * warmupFraction);
   const scorable = eligible.slice(warmupEndIdx);
@@ -168,7 +179,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
       const isVoid = resultType === "walkover" || resultType === "cancelled";
       const player1Won = match.winnerId === match.player1Id;
 
-      const scored = await scoreHistoricalMatch(match.id, match.player1Id, match.player2Id);
+      const scored = scoreHistoricalMatch(match, scoringContext);
       const rawProbability = scored?.rawProbability ?? null;
       const predictedWinnerId = rawProbability !== null ? (rawProbability >= 0.5 ? match.player1Id : match.player2Id) : null;
       const includedInAccuracy = !isVoid && (resultType === "normal" || retirementRule === "included") && rawProbability !== null;

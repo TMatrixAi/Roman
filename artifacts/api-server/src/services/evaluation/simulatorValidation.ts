@@ -34,10 +34,14 @@ interface GradedPoint {
  *    the outcome-recording endpoint), but they don't go through the formal pre-registration/cutoff
  *    ledger, so they're labeled a supplementary source rather than conflated with Phase 4 rigor.
  *
- * `historical_test` rows are deliberately excluded: their feature snapshot is the reduced
- * HistoricalFeatureSnapshot (Elo/form/game-share only, see evaluation/types.ts), which has no
- * serve/return or surface-Elo module output for the simulator to derive service-point
- * probabilities from.
+ * `historical_test` rows are deliberately excluded even though they now carry a full
+ * `LiveFeatureSnapshot` too (historical backtests run the exact same `runPredictionEngine`
+ * ensemble, see `historicalScoring.ts`): they are re-scored/re-fit on every walk-forward run,
+ * so their `calibratedProbability` reflects whatever the most recent fold's calibration mapping
+ * happened to be, not the single durable, monotonically-accumulating ledger the paper-trading/
+ * live cycle produces. Mixing the two would make sample composition depend on when this ran
+ * relative to the last walk-forward re-run. Extending simulator validation to also draw on
+ * historical backtests is tracked as a separate follow-up, not solved here.
  */
 async function gatherGradedPoints(): Promise<{ points: GradedPoint[]; ledgerCount: number; adHocCount: number }> {
   const ledgerRows = await db

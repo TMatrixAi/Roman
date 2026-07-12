@@ -1,73 +1,85 @@
-import { db, matchFeatureSnapshotsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { HISTORICAL_MODEL_VERSION, type HistoricalFeatureSnapshot, type PlayerReducedFeatures } from "./types";
+import type { HistoricalMatchRow } from "@workspace/db";
+import { runPredictionEngine } from "../predictionEngine";
+import { resolveOpponentStrengthFromIndex, type EloHistoryIndex } from "../predictionEngine/opponentStrength";
+import { reconstructHeadToHead, reconstructPlayerMatchHistory, type MatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
+import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
+import type { MatchFormat, PlayerProfile, Surface } from "../tennisData/types";
 
 /**
- * Scores a historical match using ONLY the reduced, leak-proof feature set Phase 3's backfill
- * actually stored per player before the match's cutoff (Elo overall/surface, recent win% and
- * game-share, sample size). This mirrors the shape of the live ensemble's edge-and-logistic
- * approach but is a deliberately reduced reconstruction -- see HistoricalFeatureSnapshot's
- * docstring for why it cannot be bit-identical to the live multi-module engine.
- *
- * Returns null when either player has zero prior recorded matches -- there is no honest
- * probability to produce for a total debutant, so the caller must treat this match as
- * "insufficient data" rather than force a fabricated 50/50 guess into the accuracy denominator.
+ * Everything `scoreHistoricalMatch` needs that's shared across every match in a walk-forward
+ * run, preloaded ONCE by the caller (see `walkForward.ts`) instead of re-queried per match --
+ * the corpus is small enough (tens of thousands of rows) to hold entirely in memory, and a full
+ * run scores thousands of matches, so a per-match DB round-trip for match history/H2H/opponent
+ * Elo would turn a run that should take seconds into one that takes hours.
  */
-export async function scoreHistoricalMatch(
-  matchId: number,
-  player1Id: string,
-  player2Id: string,
-): Promise<{ rawProbability: number; snapshot: HistoricalFeatureSnapshot } | null> {
-  const rows = await db.select().from(matchFeatureSnapshotsTable).where(eq(matchFeatureSnapshotsTable.matchId, matchId));
-
-  const p1 = reduceFeatures(rows, player1Id);
-  const p2 = reduceFeatures(rows, player2Id);
-
-  if (p1.matchesPlayed === 0 || p2.matchesPlayed === 0) return null;
-
-  const elo1 = p1.eloSurface ?? p1.eloOverall ?? 1500;
-  const elo2 = p2.eloSurface ?? p2.eloOverall ?? 1500;
-  const eloEdge = (elo1 - elo2) / 400;
-
-  const form1 = p1.winPctLast10 ?? 0.5;
-  const form2 = p2.winPctLast10 ?? 0.5;
-  const formEdge = form1 - form2;
-
-  const gameShare1 = p1.gameShareLast10 ?? 0.5;
-  const gameShare2 = p2.gameShareLast10 ?? 0.5;
-  const gameShareEdge = gameShare1 - gameShare2;
-
-  // Weighted, logistic-squashed blend: Elo carries the most signal (it already encodes long-run
-  // strength), form and game share are secondary corrections. Weights are fixed constants, not
-  // fit on any data -- the walk-forward calibration step is what learns from data.
-  const combinedEdge = eloEdge * 1.0 + formEdge * 1.5 + gameShareEdge * 1.2;
-  const rawProbability = 1 / (1 + Math.exp(-combinedEdge));
-
-  return {
-    rawProbability,
-    snapshot: {
-      modelVersion: HISTORICAL_MODEL_VERSION,
-      player1: p1,
-      player2: p2,
-      eloEdge,
-      formEdge,
-      gameShareEdge,
-    },
-  };
+export interface HistoricalScoringContext {
+  matchHistory: MatchHistoryIndex;
+  eloHistory: EloHistoryIndex;
 }
 
-function reduceFeatures(
-  rows: Array<{ playerId: string; featureName: string; featureValue: number }>,
-  playerId: string,
-): PlayerReducedFeatures {
-  const forPlayer = rows.filter((r) => r.playerId === playerId);
-  const get = (name: string): number | null => forPlayer.find((r) => r.featureName === name)?.featureValue ?? null;
+function minimalProfile(id: string, name: string): PlayerProfile {
+  // A historical match row carries only the two player ids/names it was imported with -- rank,
+  // country, age, and playing hand are live-standings concepts this row never captured. Every
+  // engine module that would use them (e.g. buildPlayerProfileWarnings) already treats an
+  // absent field as "unknown", never a fabricated default.
+  return { id, name, countryCode: null, currentRank: null, tour: null, age: null, plays: null, fullName: null };
+}
 
-  return {
-    matchesPlayed: get("matchesPlayed") ?? 0,
-    eloOverall: get("eloOverall"),
-    eloSurface: get("eloSurface"),
-    winPctLast10: get("winPctLast10"),
-    gameShareLast10: get("gameShareLast10"),
+/**
+ * Scores a historical match by running the exact same live ensemble (`runPredictionEngine`)
+ * real paper-trading/live predictions use, fed with real match history reconstructed from
+ * Phase 3's leak-proof historical store -- strictly bounded to this match's own frozen
+ * `cutoffAt`, so nothing timestamped at or after that instant can leak in.
+ *
+ * This replaces the earlier, deliberately reduced Elo/form/game-share reconstruction (see the
+ * legacy `HistoricalFeatureSnapshot` type in `./types.ts`): walk-forward accuracy now describes
+ * the actual model users see when they run a live prediction, not a simplified stand-in for it.
+ *
+ * Segment specialists, the Phase 7 simulator's adoption vote, live calibration, and weather are
+ * always omitted (null/undefined) here -- they are either themselves *outputs* of evaluation
+ * (specialists/simulator adoption/calibration are fit FROM walk-forward results, so feeding them
+ * back in would be circular) or have no honest historical reconstruction (no archived weather
+ * data). This mirrors the engine's own "absent, not faked" contract.
+ *
+ * Returns null when either player has zero prior recorded matches, or this match's own
+ * surface/format weren't resolved at import time -- there is no honest probability to produce in
+ * either case, so the caller must treat it as "insufficient data" rather than a fabricated guess.
+ */
+export function scoreHistoricalMatch(match: HistoricalMatchRow, context: HistoricalScoringContext): { rawProbability: number; snapshot: LiveFeatureSnapshot } | null {
+  if (!match.surface || !match.matchFormat) return null;
+  const surface = match.surface as Surface;
+  const matchFormat = match.matchFormat as MatchFormat;
+
+  const player1Matches = reconstructPlayerMatchHistory(context.matchHistory, match.player1Id, match.cutoffAt);
+  const player2Matches = reconstructPlayerMatchHistory(context.matchHistory, match.player2Id, match.cutoffAt);
+  if (player1Matches.length === 0 || player2Matches.length === 0) return null;
+
+  const player1OpponentStrength = resolveOpponentStrengthFromIndex(player1Matches, context.eloHistory);
+  const player2OpponentStrength = resolveOpponentStrengthFromIndex(player2Matches, context.eloHistory);
+  const headToHead = reconstructHeadToHead(context.matchHistory, match.player1Id, match.player2Id, match.cutoffAt);
+
+  const output = runPredictionEngine({
+    player1: minimalProfile(match.player1Id, match.player1Name),
+    player2: minimalProfile(match.player2Id, match.player2Name),
+    player1Matches,
+    player2Matches,
+    headToHead,
+    surface,
+    matchFormat,
+    player1OpponentElo: player1OpponentStrength.lookup,
+    player2OpponentElo: player2OpponentStrength.lookup,
+    tournamentName: match.tournamentName,
+    weather: null,
+    segment: null,
+    simulatorAdoption: null,
+    activeCalibration: null,
+  });
+
+  const snapshot: LiveFeatureSnapshot = {
+    modelVersion: LIVE_MODEL_VERSION,
+    engine: output.engine,
+    preCalibrationProbability: output.rawEnsembleProbability,
   };
+
+  return { rawProbability: output.rawEnsembleProbability / 100, snapshot };
 }

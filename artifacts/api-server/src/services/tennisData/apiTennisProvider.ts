@@ -98,7 +98,7 @@ interface RawTournamentRow {
  * match- and set-level per-player stat rows. This directly contradicts the provider's docs,
  * which don't mention this field at all -- always verify live, per prior provider quirks.
  */
-interface RawStatEntry {
+export interface RawStatEntry {
   player_key: string | number;
   stat_period: string; // "match", "set1", "set2", ...
   stat_type: string; // "Service" | "Return" | "Points"
@@ -108,7 +108,13 @@ interface RawStatEntry {
   stat_total: number | null;
 }
 
-interface RawMatch {
+/**
+ * API-Tennis's raw `get_fixtures`/`get_H2H` match shape. Exported so the historical backtest
+ * reconstruction (`historicalData/matchRecordReconstruction.ts`) can parse the exact same
+ * `rawSource` JSON the backfill pipeline froze per match, using this SAME mapper -- never a
+ * second, independently-maintained parser that could silently drift from this one.
+ */
+export interface RawMatch {
   event_key: string | number;
   event_date: string;
   event_time?: string;
@@ -128,7 +134,7 @@ interface RawMatch {
 }
 
 /** Parses "65%" -> 65, "3" -> 3; returns null on anything unparseable, never a fabricated default. */
-function parseStatNumber(value: string | undefined | null): number | null {
+export function parseStatNumber(value: string | undefined | null): number | null {
   if (value === undefined || value === null) return null;
   const parsed = parseFloat(value.replace("%", "").trim());
   return Number.isNaN(parsed) ? null : parsed;
@@ -140,7 +146,7 @@ function parseStatNumber(value: string | undefined | null): number | null {
  * per-set breakdowns). Returns null when the provider didn't include statistics for this
  * match/player at all -- callers must treat that as "unavailable", never interpolate.
  */
-function mapStatistics(raw: RawMatch, playerKey: string): MatchStatLine | null {
+export function mapStatistics(raw: RawMatch, playerKey: string): MatchStatLine | null {
   if (!raw.statistics || raw.statistics.length === 0) return null;
   const rows = raw.statistics.filter((s) => str(s.player_key) === playerKey && s.stat_period === "match");
   if (rows.length === 0) return null;

@@ -1,7 +1,18 @@
 import type { EngineBreakdown } from "../predictionEngine";
 
-/** Bumped whenever the reduced-feature historical scoring model's logic changes. */
-export const HISTORICAL_MODEL_VERSION = "phase4-historical-v1";
+/**
+ * Bumped whenever the historical walk-forward scoring APPROACH materially changes -- not the
+ * same thing as `LIVE_MODEL_VERSION`, which tracks the ensemble engine's own logic. Historical
+ * rows tagged `phase4-historical-v1` (written before this version existed) used a deliberately
+ * reduced Elo/form/game-share reconstruction and stored the legacy `HistoricalFeatureSnapshot`
+ * shape below, because Phase 3's backfill hadn't yet captured enough raw per-match data to
+ * reconstruct the full live engine's inputs. From `phase8-historical-live-engine-v1` onward,
+ * historical_test rows instead run the exact same `runPredictionEngine` ensemble live/paper-trade
+ * predictions use (see `historicalScoring.ts`) and embed a real `LiveFeatureSnapshot` -- so this
+ * constant now tags "which historical-scoring generation produced this row" rather than a
+ * genuinely different algorithm.
+ */
+export const HISTORICAL_MODEL_VERSION = "phase8-historical-live-engine-v1";
 /** Bumped whenever the live ensemble engine (predictionEngine/index.ts) materially changes. */
 export const LIVE_MODEL_VERSION = "phase5-live-ensemble-v1";
 
@@ -12,14 +23,15 @@ export type ResultType = "normal" | "retired" | "walkover" | "cancelled";
 export type RetirementRule = "excluded" | "included";
 
 /**
- * Feature snapshot stored for a historical_test row -- honestly limited to the reduced feature
- * set Phase 3's leak-proof backfill actually captured per player (Elo, form, sample size). This
- * is NOT the same shape as the full live EngineBreakdown -- reproducing every live module
- * (serve/return splits, style matchup, live H2H) would require backfilling much richer
- * per-match stats than Phase 3 stores today. That gap is deliberate scope, not an oversight.
+ * LEGACY shape. Only present on historical_test rows written before `HISTORICAL_MODEL_VERSION`
+ * was `phase8-historical-live-engine-v1` -- back when Phase 3's backfill hadn't yet captured
+ * enough raw per-match data to reconstruct the full live engine's inputs, so historical scoring
+ * used this deliberately reduced Elo/form/game-share approximation instead. New historical_test
+ * rows use `LiveFeatureSnapshot` (below) like every other run kind. Kept only so old rows already
+ * in the database remain typed/readable.
  */
 export interface HistoricalFeatureSnapshot {
-  modelVersion: typeof HISTORICAL_MODEL_VERSION;
+  modelVersion: "phase4-historical-v1";
   player1: PlayerReducedFeatures;
   player2: PlayerReducedFeatures;
   eloEdge: number;
@@ -35,7 +47,11 @@ export interface PlayerReducedFeatures {
   gameShareLast10: number | null;
 }
 
-/** Feature snapshot stored for a paper_trade/live row: the real, full live engine breakdown. */
+/**
+ * Feature snapshot stored for a paper_trade/live row, and (from `phase8-historical-live-engine-v1`
+ * onward) historical_test rows too: the real, full live engine breakdown, since historical
+ * backtests now run the exact same `runPredictionEngine` call live predictions do.
+ */
 export interface LiveFeatureSnapshot {
   modelVersion: typeof LIVE_MODEL_VERSION;
   engine: EngineBreakdown;

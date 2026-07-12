@@ -21,41 +21,24 @@ export interface OpponentStrengthResolution {
 
 const EMPTY: OpponentStrengthResolution = { lookup: new Map(), coverage: 0 };
 
+/** Sorted-ascending elo history points for one player, keyed by player id. */
+export type EloHistoryIndex = Map<string, Array<{ t: number; elo: number }>>;
+
 /**
- * Resolves opponent-strength estimates for every match in `matches`. Looks up each unique
- * opponent's `eloOverall` feature history (one row per match they were part of, timestamped at
- * that match's date) and, for each input match, picks the latest opponent snapshot strictly
- * before that match's date -- i.e. what was actually knowable about the opponent's strength at
- * that point in time, never a snapshot from after the fact.
+ * Resolves opponent-strength for every match in `matches` purely from an already-loaded
+ * `EloHistoryIndex` -- no I/O. Shared by both the live per-fixture resolver below (which loads
+ * just the opponents it needs from the DB) and the walk-forward backtest path (which preloads
+ * the WHOLE `eloOverall` history once per run via `buildEloHistoryIndex`, then reuses it across
+ * every match scored -- avoiding a fresh DB round-trip per match).
  */
-export async function resolveOpponentStrength(matches: MatchRecord[]): Promise<OpponentStrengthResolution> {
+export function resolveOpponentStrengthFromIndex(matches: MatchRecord[], index: EloHistoryIndex): OpponentStrengthResolution {
   if (matches.length === 0) return EMPTY;
-
-  const opponentIds = Array.from(new Set(matches.map((m) => m.opponentId)));
-  if (opponentIds.length === 0) return EMPTY;
-
-  const rows = await db
-    .select({
-      playerId: matchFeatureSnapshotsTable.playerId,
-      featureValue: matchFeatureSnapshotsTable.featureValue,
-      sourceTimestamp: matchFeatureSnapshotsTable.sourceTimestamp,
-    })
-    .from(matchFeatureSnapshotsTable)
-    .where(and(inArray(matchFeatureSnapshotsTable.playerId, opponentIds), eq(matchFeatureSnapshotsTable.featureName, "eloOverall")));
-
-  const byOpponent = new Map<string, Array<{ t: number; elo: number }>>();
-  for (const row of rows) {
-    const list = byOpponent.get(row.playerId) ?? [];
-    list.push({ t: row.sourceTimestamp.getTime(), elo: row.featureValue });
-    byOpponent.set(row.playerId, list);
-  }
-  for (const list of byOpponent.values()) list.sort((a, b) => a.t - b.t);
 
   const lookup: OpponentEloLookup = new Map();
   let resolved = 0;
 
   for (const match of matches) {
-    const history = byOpponent.get(match.opponentId);
+    const history = index.get(match.opponentId);
     if (!history || history.length === 0) continue;
     const matchTime = new Date(match.date).getTime();
     if (Number.isNaN(matchTime)) continue;
@@ -75,4 +58,65 @@ export async function resolveOpponentStrength(matches: MatchRecord[]): Promise<O
   }
 
   return { lookup, coverage: matches.length > 0 ? resolved / matches.length : 0 };
+}
+
+/**
+ * Preloads and indexes EVERY player's `eloOverall` feature history in a single query -- meant to
+ * be called ONCE per walk-forward run (the corpus is small enough, tens of thousands of rows, to
+ * hold entirely in memory) and then reused for every match scored via
+ * `resolveOpponentStrengthFromIndex`, instead of re-querying the DB per match.
+ */
+export async function buildEloHistoryIndex(): Promise<EloHistoryIndex> {
+  const rows = await db
+    .select({
+      playerId: matchFeatureSnapshotsTable.playerId,
+      featureValue: matchFeatureSnapshotsTable.featureValue,
+      sourceTimestamp: matchFeatureSnapshotsTable.sourceTimestamp,
+    })
+    .from(matchFeatureSnapshotsTable)
+    .where(eq(matchFeatureSnapshotsTable.featureName, "eloOverall"));
+
+  const index: EloHistoryIndex = new Map();
+  for (const row of rows) {
+    const list = index.get(row.playerId) ?? [];
+    list.push({ t: row.sourceTimestamp.getTime(), elo: row.featureValue });
+    index.set(row.playerId, list);
+  }
+  for (const list of index.values()) list.sort((a, b) => a.t - b.t);
+  return index;
+}
+
+/**
+ * Resolves opponent-strength estimates for every match in `matches`. Looks up each unique
+ * opponent's `eloOverall` feature history (one row per match they were part of, timestamped at
+ * that match's date) and, for each input match, picks the latest opponent snapshot strictly
+ * before that match's date -- i.e. what was actually knowable about the opponent's strength at
+ * that point in time, never a snapshot from after the fact. Meant for live/paper-trade callers
+ * scoring a handful of fixtures at a time -- see `buildEloHistoryIndex` for the walk-forward,
+ * whole-corpus-preloaded equivalent.
+ */
+export async function resolveOpponentStrength(matches: MatchRecord[]): Promise<OpponentStrengthResolution> {
+  if (matches.length === 0) return EMPTY;
+
+  const opponentIds = Array.from(new Set(matches.map((m) => m.opponentId)));
+  if (opponentIds.length === 0) return EMPTY;
+
+  const rows = await db
+    .select({
+      playerId: matchFeatureSnapshotsTable.playerId,
+      featureValue: matchFeatureSnapshotsTable.featureValue,
+      sourceTimestamp: matchFeatureSnapshotsTable.sourceTimestamp,
+    })
+    .from(matchFeatureSnapshotsTable)
+    .where(and(inArray(matchFeatureSnapshotsTable.playerId, opponentIds), eq(matchFeatureSnapshotsTable.featureName, "eloOverall")));
+
+  const index: EloHistoryIndex = new Map();
+  for (const row of rows) {
+    const list = index.get(row.playerId) ?? [];
+    list.push({ t: row.sourceTimestamp.getTime(), elo: row.featureValue });
+    index.set(row.playerId, list);
+  }
+  for (const list of index.values()) list.sort((a, b) => a.t - b.t);
+
+  return resolveOpponentStrengthFromIndex(matches, index);
 }
