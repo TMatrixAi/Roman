@@ -125,6 +125,9 @@ export const evaluationPredictionsTable = pgTable(
     uniqueIndex("evaluation_predictions_fixture_idx").on(table.runKind, table.provider, table.externalFixtureId),
     index("evaluation_predictions_status_idx").on(table.status),
     index("evaluation_predictions_scheduled_start_idx").on(table.scheduledStartAt),
+    // Backs GET /evaluation/dashboard's per-segment filters (runKind [+ segment]), which
+    // previously required a full-table scan/load to compute in JS.
+    index("evaluation_predictions_run_kind_segment_idx").on(table.runKind, table.segment),
   ],
 );
 

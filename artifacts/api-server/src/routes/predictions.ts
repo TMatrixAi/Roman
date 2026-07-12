@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { db, predictionsTable, calibrationModelsTable } from "@workspace/db";
 import {
   ListPredictionsQueryParams,
@@ -45,18 +45,32 @@ router.get("/predictions", async (req, res): Promise<void> => {
 });
 
 router.get("/predictions/stats", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(predictionsTable);
+  // Aggregated in SQL rather than loading every row into Node -- same output shape as before,
+  // but the endpoint no longer scales linearly with total prediction count.
+  const [totals] = await db
+    .select({
+      totalPredictions: sql<number>`count(*)`.mapWith(Number),
+      resolvedPredictions: sql<number>`count(*) filter (where ${predictionsTable.actualWinnerId} is not null)`.mapWith(Number),
+      correctPredictions: sql<number>`count(*) filter (where ${predictionsTable.actualWinnerId} = ${predictionsTable.predictedWinnerId})`.mapWith(
+        Number,
+      ),
+    })
+    .from(predictionsTable);
 
-  const totalPredictions = rows.length;
-  const resolved = rows.filter((r) => r.actualWinnerId !== null);
-  const resolvedPredictions = resolved.length;
-  const correctPredictions = resolved.filter((r) => r.actualWinnerId === r.predictedWinnerId).length;
+  const byRecommendationRows = await db
+    .select({
+      recommendation: predictionsTable.recommendation,
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(predictionsTable)
+    .groupBy(predictionsTable.recommendation);
+
+  const { totalPredictions, resolvedPredictions, correctPredictions } = totals ?? {
+    totalPredictions: 0,
+    resolvedPredictions: 0,
+    correctPredictions: 0,
+  };
   const accuracy = resolvedPredictions > 0 ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 : null;
-
-  const byRecommendationMap = new Map<string, number>();
-  for (const row of rows) {
-    byRecommendationMap.set(row.recommendation, (byRecommendationMap.get(row.recommendation) ?? 0) + 1);
-  }
 
   res.json(
     GetPredictionStatsResponse.parse({
@@ -64,10 +78,7 @@ router.get("/predictions/stats", async (_req, res): Promise<void> => {
       resolvedPredictions,
       correctPredictions,
       accuracy,
-      byRecommendation: Array.from(byRecommendationMap.entries()).map(([recommendation, count]) => ({
-        recommendation,
-        count,
-      })),
+      byRecommendation: byRecommendationRows,
     }),
   );
 });

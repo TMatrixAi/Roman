@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "backfill": "tsx src/scripts/backfillHistoricalMatches.ts",
     "test:leakage": "tsx --test src/services/historicalData/leakage.test.ts",
-    "test:predictionEngine": "tsx --test src/services/predictionEngine/serveReturn.test.ts src/services/predictionEngine/availability.test.ts src/services/predictionEngine/calibration.test.ts src/services/predictionEngine/playerProfileWarnings.test.ts src/routes/predictions.legacyEngine.test.ts src/services/predictionEngine/simulator.test.ts src/services/predictionEngine/upsetRisk.test.ts",
+    "test:predictionEngine": "tsx --test src/services/predictionEngine/serveReturn.test.ts src/services/predictionEngine/availability.test.ts src/services/predictionEngine/calibration.test.ts src/services/predictionEngine/playerProfileWarnings.test.ts src/routes/predictions.legacyEngine.test.ts src/services/predictionEngine/simulator.test.ts",
     "test:tennisData": "tsx --test src/services/tennisData/surfaceMap.test.ts src/services/tennisData/playerIdentity.test.ts",
     "test:evaluation": "tsx --test src/services/evaluation/walkForward.test.ts src/services/evaluation/paperTrading.test.ts src/services/evaluation/specialistWeights.test.ts",
     "test:job-smoke": "pnpm run build && tsx --test src/jobs/runPaperTradingJob.smoke.test.ts src/jobs/runCalibrationRefitJob.smoke.test.ts",

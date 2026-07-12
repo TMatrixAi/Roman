@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable } from "@workspace/db";
 import {
   ListEvaluationPredictionsQueryParams,
@@ -86,26 +86,42 @@ router.get("/evaluation/predictions/:predictionId", async (req, res): Promise<vo
 });
 
 router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
-  const allRows = await db.select().from(evaluationPredictionsTable);
+  // Each segment is fetched with its own indexed WHERE (runKind [+ segment]) instead of loading
+  // the entire evaluation_predictions table into Node and filtering in JS -- same three segments,
+  // same rows per segment, but the query no longer scales with total table size.
+  const [historicalValidationRows, historicalTestRows, paperTradeRows] = await Promise.all([
+    db
+      .select()
+      .from(evaluationPredictionsTable)
+      .where(and(eq(evaluationPredictionsTable.runKind, "historical_test"), eq(evaluationPredictionsTable.segment, "validation"))),
+    db
+      .select()
+      .from(evaluationPredictionsTable)
+      .where(and(eq(evaluationPredictionsTable.runKind, "historical_test"), eq(evaluationPredictionsTable.segment, "test"))),
+    db
+      .select()
+      .from(evaluationPredictionsTable)
+      .where(inArray(evaluationPredictionsTable.runKind, ["paper_trade", "live"])),
+  ]);
 
-  const segmentDefs: Array<{ key: string; label: string; isGenuinelyUnseen: boolean; rows: typeof allRows }> = [
+  const segmentDefs = [
     {
       key: "historical_validation",
       label: "Historical Test — Validation (used to fit calibration)",
       isGenuinelyUnseen: false,
-      rows: allRows.filter((r) => r.runKind === "historical_test" && r.segment === "validation"),
+      rows: historicalValidationRows,
     },
     {
       key: "historical_test",
       label: "Historical Test — Test (never used for tuning)",
       isGenuinelyUnseen: true,
-      rows: allRows.filter((r) => r.runKind === "historical_test" && r.segment === "test"),
+      rows: historicalTestRows,
     },
     {
       key: "paper_trade",
       label: "Live Paper Trading (real upcoming fixtures)",
       isGenuinelyUnseen: true,
-      rows: allRows.filter((r) => r.runKind === "paper_trade" || r.runKind === "live"),
+      rows: paperTradeRows,
     },
   ];
 
