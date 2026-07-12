@@ -1,11 +1,21 @@
+import { useState } from "react"
 import { useLocation } from "wouter"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { FixturesList } from "@/components/FixturesList"
+import { Card, CardContent } from "@/components/ui/card"
+import { FixturesList, type TourFilter } from "@/components/FixturesList"
 import { PlayerSearch } from "@/components/PlayerSearch"
+import { Select } from "@/components/ui/select"
 import { ActivitySquare, PlaySquare, Swords } from "lucide-react"
+
+const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
+  { value: "all", label: "All Matches" },
+  { value: "itf", label: "ITF" },
+  { value: "atp", label: "ATP Tournaments" },
+  { value: "wta", label: "WTA Tournaments" },
+]
 
 export default function Home() {
   const [, setLocation] = useLocation()
+  const [tourFilter, setTourFilter] = useState<TourFilter>("all")
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -34,6 +44,16 @@ export default function Home() {
             >
               VIEW LEDGER
             </button>
+            <Select
+              value={tourFilter}
+              onChange={(e) => setTourFilter(e.target.value as TourFilter)}
+              className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
+              aria-label="Filter today's fixtures by tour"
+            >
+              {TOUR_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
+              ))}
+            </Select>
           </div>
         </div>
       </section>
@@ -45,7 +65,7 @@ export default function Home() {
             <h2 className="text-xl font-bold">TODAY'S FIXTURES</h2>
           </div>
           <p className="text-sm text-muted-foreground font-mono mb-4">QUICK START PREDICTIONS</p>
-          <FixturesList onSelectMatchup={(p1, p2) => setLocation(`/predict?p1=${p1}&p2=${p2}`)} />
+          <FixturesList filter={tourFilter} />
         </section>
 
         <section className="space-y-4">

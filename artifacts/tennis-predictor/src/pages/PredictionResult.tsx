@@ -216,6 +216,16 @@ export default function PredictionResultPage() {
           </div>
         </div>
 
+        {engine.modelConflict && (
+          <div className="mb-4 p-4 border border-warning/50 bg-warning/10 rounded-lg flex gap-3 text-sm">
+            <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-warning" />
+            <div className="space-y-1">
+              <div className="font-bold font-mono text-xs text-warning">MODEL CONFLICT</div>
+              <div>{engine.modelConflictNote}</div>
+            </div>
+          </div>
+        )}
+
         <Card className="mb-6">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { db, predictionsTable, calibrationModelsTable } from "@workspace/db";
 import {
   ListPredictionsQueryParams,
@@ -12,6 +12,10 @@ import {
   RecordPredictionOutcomeParams,
   RecordPredictionOutcomeBody,
   RecordPredictionOutcomeResponse,
+  DeletePredictionParams,
+  BulkDeletePredictionsBody,
+  BulkDeletePredictionsResponse,
+  GradePendingLedgerPredictionsResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
@@ -20,6 +24,7 @@ import { buildPlayerProfileWarnings } from "../services/predictionEngine/playerP
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
 import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
+import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrading";
 
 const router: IRouter = Router();
 
@@ -180,6 +185,54 @@ router.get("/predictions/:predictionId", async (req, res): Promise<void> => {
   }
 
   res.json(GetPredictionResponse.parse(row));
+});
+
+router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {
+  const params = DeletePredictionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const deleted = await db
+    .delete(predictionsTable)
+    .where(eq(predictionsTable.id, params.data.predictionId))
+    .returning({ id: predictionsTable.id });
+
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "Prediction not found" });
+    return;
+  }
+
+  res.status(204).end();
+});
+
+router.post("/predictions/bulk-delete", async (req, res): Promise<void> => {
+  const parsed = BulkDeletePredictionsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const deleted = await db
+    .delete(predictionsTable)
+    .where(inArray(predictionsTable.id, parsed.data.ids))
+    .returning({ id: predictionsTable.id });
+
+  res.json(BulkDeletePredictionsResponse.parse({ deletedCount: deleted.length }));
+});
+
+router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {
+  try {
+    const summary = await gradePendingLedgerPredictions();
+    res.json(GradePendingLedgerPredictionsResponse.parse(summary));
+  } catch (err) {
+    if (err instanceof ProviderUnavailableError) {
+      res.status(502).json({ error: "Tennis data provider unavailable", detail: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 router.patch("/predictions/:predictionId/outcome", async (req, res): Promise<void> => {

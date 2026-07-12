@@ -283,6 +283,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProviderError"
+    delete:
+      operationId: deletePrediction
+      tags: [predictions]
+      summary: Permanently delete a single saved prediction from the Ledger
+      parameters:
+        - name: predictionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Prediction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /predictions/bulk-delete:
+    post:
+      operationId: bulkDeletePredictions
+      tags: [predictions]
+      summary: Permanently delete multiple saved predictions from the Ledger at once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkDeletePredictionsInput"
+      responses:
+        "200":
+          description: Number of predictions actually deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkDeletePredictionsResult"
+
+  /predictions/grade-pending:
+    post:
+      operationId: gradePendingLedgerPredictions
+      tags: [predictions]
+      summary: Check every still-pending Ledger prediction against real completed-match data and mark Win/Loss automatically (also runs on a schedule; this triggers an on-demand check, e.g. from a "Refresh Outcomes" button)
+      responses:
+        "200":
+          description: Grading summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerGradingSummary"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
 
   /predictions/{predictionId}/outcome:
     patch:
@@ -1105,6 +1162,44 @@ components:
         simulatorNote:
           type: string
           description: Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.
+        modelConflict:
+          type: boolean
+          description: True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration/specialist/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.
+        modelConflictNote:
+          type: ["string", "null"]
+          description: Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there's no conflict, absent on predictions made before this field existed.
+
+    BulkDeletePredictionsInput:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+
+    BulkDeletePredictionsResult:
+      type: object
+      required: [deletedCount]
+      properties:
+        deletedCount:
+          type: integer
+
+    LedgerGradingSummary:
+      type: object
+      required: [checked, graded, errors]
+      properties:
+        checked:
+          type: integer
+          description: Pending predictions old enough to check for a real result
+        graded:
+          type: integer
+          description: Predictions actually marked Win/Loss this run
+        errors:
+          type: array
+          items:
+            type: string
 
     SetScoreOutcome:
       type: object

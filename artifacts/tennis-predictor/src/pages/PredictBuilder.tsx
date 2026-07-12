@@ -100,12 +100,19 @@ export default function PredictBuilderPage() {
   
   const p1 = searchParams.get('p1')
   const p2 = searchParams.get('p2')
+  // Auto-detected from the real fixture when arriving via "Custom Match" on Today's Fixtures --
+  // still fully editable below, this only changes the starting values.
+  const prefillSurface = searchParams.get('surface') as Surface | null
+  const prefillFormat = searchParams.get('format') as MatchFormat | null
+  const prefillLevel = searchParams.get('level') as TournamentLevel | null
+  const prefillTournamentName = searchParams.get('tournamentName')
 
   const [player1Id, setPlayer1Id] = useState<string | null>(p1)
   const [player2Id, setPlayer2Id] = useState<string | null>(p2)
-  const [surface, setSurface] = useState<Surface>('Hard')
-  const [format, setFormat] = useState<MatchFormat>('BestOf3')
-  const [level, setLevel] = useState<TournamentLevel>('ATP250')
+  const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
+  const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
+  const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
+  const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
   const createPrediction = useCreatePrediction()
 
@@ -118,7 +125,8 @@ export default function PredictBuilderPage() {
         player2Id,
         surface,
         matchFormat: format,
-        tournamentLevel: level
+        tournamentLevel: level,
+        tournamentName: prefillTournamentName ?? undefined
       }
     }, {
       onSuccess: (prediction) => {
@@ -130,8 +138,12 @@ export default function PredictBuilderPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold tracking-tighter">BUILD MATCHUP</h1>
-        <p className="text-muted-foreground mt-1">Configure parameters and run the prediction engine.</p>
+        <h1 className="text-3xl font-bold tracking-tighter">{wasAutoDetected ? "CUSTOM MATCH" : "BUILD MATCHUP"}</h1>
+        <p className="text-muted-foreground mt-1">
+          {wasAutoDetected
+            ? "Terrain and tournament auto-detected from the fixture -- adjust anything below before running the engine."
+            : "Configure parameters and run the prediction engine."}
+        </p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-8">
@@ -176,7 +188,10 @@ export default function PredictBuilderPage() {
           <CardContent className="p-6">
             <div className="grid sm:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <label className="text-xs font-mono font-bold text-muted-foreground">SURFACE</label>
+                <label className="text-xs font-mono font-bold text-muted-foreground flex items-center gap-1.5">
+                  SURFACE
+                  {prefillSurface && <Badge variant="secondary" className="text-[9px] px-1 py-0">AUTO-DETECTED</Badge>}
+                </label>
                 <Select value={surface} onChange={(e) => setSurface(e.target.value as Surface)}>
                   <option value="Hard">Hard Court</option>
                   <option value="Clay">Clay</option>

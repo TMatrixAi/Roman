@@ -345,7 +345,9 @@ export const CreatePredictionResponse = zod.object({
   "note": zod.string()
 }).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
-  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
+  "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -516,12 +518,49 @@ export const GetPredictionResponse = zod.object({
   "note": zod.string()
 }).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
-  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
+  "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "resolvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Permanently delete a single saved prediction from the Ledger
+ */
+export const DeletePredictionParams = zod.object({
+  "predictionId": zod.coerce.number()
+})
+
+export const DeletePredictionResponse = zod.void()
+
+
+/**
+ * @summary Permanently delete multiple saved predictions from the Ledger at once
+ */
+
+
+
+export const BulkDeletePredictionsBody = zod.object({
+  "ids": zod.array(zod.number()).min(1)
+})
+
+export const BulkDeletePredictionsResponse = zod.object({
+  "deletedCount": zod.number()
+})
+
+
+/**
+ * @summary Check every still-pending Ledger prediction against real completed-match data and mark Win/Loss automatically (also runs on a schedule; this triggers an on-demand check, e.g. from a "Refresh Outcomes" button)
+ */
+export const GradePendingLedgerPredictionsResponse = zod.object({
+  "checked": zod.number().describe('Pending predictions old enough to check for a real result'),
+  "graded": zod.number().describe('Predictions actually marked Win\/Loss this run'),
+  "errors": zod.array(zod.string())
 })
 
 
@@ -676,7 +715,9 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "note": zod.string()
 }).optional().describe('Phase 7 point-by-point Monte Carlo simulation -- point\/game\/set\/tiebreak scoring simulated thousands of times per match, with input service-point probabilities jittered within their measured reliability to produce a genuine confidence range rather than one falsely-precise number.'),
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
-  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.')
+  "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
+  "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),

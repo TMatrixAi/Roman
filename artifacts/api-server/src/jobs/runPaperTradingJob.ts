@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { db, jobRunsTable } from "@workspace/db";
 import { runPaperTradingCycle, type PaperTradingCycleSummary } from "../services/evaluation/paperTrading";
+import { gradePendingLedgerPredictions, type LedgerGradingSummary } from "../services/evaluation/ledgerGrading";
 import { logger } from "../lib/logger";
 import { PAPER_TRADING_JOB_NAME } from "./paperTradingJobName";
 
@@ -34,16 +35,22 @@ export { PAPER_TRADING_JOB_NAME };
 const MAX_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = [5_000, 30_000];
 
+interface CombinedCycleSummary extends PaperTradingCycleSummary {
+  /** Ledger (user-facing "Custom Match"/"Predict Now") predictions graded this same cycle -- piggybacks on this job's cadence rather than needing its own separate Scheduled Deployment. */
+  ledgerGrading: LedgerGradingSummary;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runWithRetry(): Promise<{ attempts: number; summary: PaperTradingCycleSummary } | { attempts: number; error: unknown }> {
+async function runWithRetry(): Promise<{ attempts: number; summary: CombinedCycleSummary } | { attempts: number; error: unknown }> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const summary = await runPaperTradingCycle();
-      return { attempts: attempt, summary };
+      const ledgerGrading = await gradePendingLedgerPredictions();
+      return { attempts: attempt, summary: { ...summary, ledgerGrading } };
     } catch (err) {
       lastError = err;
       logger.error({ err, attempt, maxAttempts: MAX_ATTEMPTS }, "Paper-trading cycle attempt failed");

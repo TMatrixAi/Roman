@@ -15,7 +15,10 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
 
   try {
     const fixtures = await getTennisDataProvider().getUpcomingFixtures(date);
-    res.json(GetUpcomingFixturesResponse.parse(fixtures));
+    // Today's Fixtures is always shown in real chronological order (earliest start time first) --
+    // sorted here so every consumer of this endpoint gets the same order without re-implementing it.
+    const sorted = [...fixtures].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    res.json(GetUpcomingFixturesResponse.parse(sorted));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {
       res.status(502).json({ error: "Tennis data provider unavailable", detail: err.message });

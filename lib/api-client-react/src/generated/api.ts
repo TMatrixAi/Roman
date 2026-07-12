@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BulkDeletePredictionsInput,
+  BulkDeletePredictionsResult,
   EvaluationDashboard,
   EvaluationPrediction,
   EvaluationRun,
@@ -29,6 +31,7 @@ import type {
   HeadToHeadRecord,
   HealthStatus,
   JobRun,
+  LedgerGradingSummary,
   ListCalibrationRefitJobRunsParams,
   ListEvaluationPredictionsParams,
   ListPaperTradingJobRunsParams,
@@ -949,6 +952,219 @@ export function useGetPrediction<TData = Awaited<ReturnType<typeof getPrediction
 
 
 
+
+export const getDeletePredictionUrl = (predictionId: number,) => {
+
+
+
+
+  return `/api/predictions/${predictionId}`
+}
+
+/**
+ * @summary Permanently delete a single saved prediction from the Ledger
+ */
+export const deletePrediction = async (predictionId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePredictionUrl(predictionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePredictionMutationOptions = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePrediction>>, TError,{predictionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePrediction>>, TError,{predictionId: number}, TContext> => {
+
+const mutationKey = ['deletePrediction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePrediction>>, {predictionId: number}> = (props) => {
+          const {predictionId} = props ?? {};
+
+          return  deletePrediction(predictionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePredictionMutationResult = NonNullable<Awaited<ReturnType<typeof deletePrediction>>>
+
+    export type DeletePredictionMutationError = ErrorType<ProviderError>
+
+    /**
+ * @summary Permanently delete a single saved prediction from the Ledger
+ */
+export const useDeletePrediction = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePrediction>>, TError,{predictionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePrediction>>,
+        TError,
+        {predictionId: number},
+        TContext
+      > => {
+      return useMutation(getDeletePredictionMutationOptions(options));
+    }
+
+export const getBulkDeletePredictionsUrl = () => {
+
+
+
+
+  return `/api/predictions/bulk-delete`
+}
+
+/**
+ * @summary Permanently delete multiple saved predictions from the Ledger at once
+ */
+export const bulkDeletePredictions = async (bulkDeletePredictionsInput: BulkDeletePredictionsInput, options?: RequestInit): Promise<BulkDeletePredictionsResult> => {
+
+  return customFetch<BulkDeletePredictionsResult>(getBulkDeletePredictionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bulkDeletePredictionsInput)
+  }
+);}
+
+
+
+
+
+export const getBulkDeletePredictionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkDeletePredictions>>, TError,{data: BodyType<BulkDeletePredictionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkDeletePredictions>>, TError,{data: BodyType<BulkDeletePredictionsInput>}, TContext> => {
+
+const mutationKey = ['bulkDeletePredictions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkDeletePredictions>>, {data: BodyType<BulkDeletePredictionsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkDeletePredictions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkDeletePredictionsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkDeletePredictions>>>
+    export type BulkDeletePredictionsMutationBody = BodyType<BulkDeletePredictionsInput>
+    export type BulkDeletePredictionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Permanently delete multiple saved predictions from the Ledger at once
+ */
+export const useBulkDeletePredictions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkDeletePredictions>>, TError,{data: BodyType<BulkDeletePredictionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkDeletePredictions>>,
+        TError,
+        {data: BodyType<BulkDeletePredictionsInput>},
+        TContext
+      > => {
+      return useMutation(getBulkDeletePredictionsMutationOptions(options));
+    }
+
+export const getGradePendingLedgerPredictionsUrl = () => {
+
+
+
+
+  return `/api/predictions/grade-pending`
+}
+
+/**
+ * @summary Check every still-pending Ledger prediction against real completed-match data and mark Win/Loss automatically (also runs on a schedule; this triggers an on-demand check, e.g. from a "Refresh Outcomes" button)
+ */
+export const gradePendingLedgerPredictions = async ( options?: RequestInit): Promise<LedgerGradingSummary> => {
+
+  return customFetch<LedgerGradingSummary>(getGradePendingLedgerPredictionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getGradePendingLedgerPredictionsMutationOptions = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof gradePendingLedgerPredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof gradePendingLedgerPredictions>>, TError,void, TContext> => {
+
+const mutationKey = ['gradePendingLedgerPredictions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof gradePendingLedgerPredictions>>, void> = () => {
+
+
+          return  gradePendingLedgerPredictions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GradePendingLedgerPredictionsMutationResult = NonNullable<Awaited<ReturnType<typeof gradePendingLedgerPredictions>>>
+
+    export type GradePendingLedgerPredictionsMutationError = ErrorType<ProviderError>
+
+    /**
+ * @summary Check every still-pending Ledger prediction against real completed-match data and mark Win/Loss automatically (also runs on a schedule; this triggers an on-demand check, e.g. from a "Refresh Outcomes" button)
+ */
+export const useGradePendingLedgerPredictions = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof gradePendingLedgerPredictions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof gradePendingLedgerPredictions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getGradePendingLedgerPredictionsMutationOptions(options));
+    }
 
 export const getRecordPredictionOutcomeUrl = (predictionId: number,) => {
 

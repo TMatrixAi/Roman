@@ -457,6 +457,30 @@ export interface EngineBreakdown {
   simulatorApplied?: boolean;
   /** Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent. */
   simulatorNote?: string;
+  /** True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration/specialist/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed. */
+  modelConflict?: boolean;
+  /**
+     * Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there's no conflict, absent on predictions made before this field existed.
+     * @nullable
+     */
+  modelConflictNote?: string | null;
+}
+
+export interface BulkDeletePredictionsInput {
+  /** @minItems 1 */
+  ids: number[];
+}
+
+export interface BulkDeletePredictionsResult {
+  deletedCount: number;
+}
+
+export interface LedgerGradingSummary {
+  /** Pending predictions old enough to check for a real result */
+  checked: number;
+  /** Predictions actually marked Win/Loss this run */
+  graded: number;
+  errors: string[];
 }
 
 /**

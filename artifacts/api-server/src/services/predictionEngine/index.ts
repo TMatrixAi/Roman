@@ -44,6 +44,18 @@ export interface EngineBreakdown {
   simulatorApplied: boolean;
   /** Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent. */
   simulatorNote: string;
+  /**
+   * True only when the final calibrated pick crosses the 50% line in the OPPOSITE direction from
+   * the raw, reliability-weighted feature-module vote (surface Elo, serve/return, recent form,
+   * fatigue, availability, head-to-head) -- i.e. calibration/specialist/simulator blending
+   * overrode what the underlying evidence alone pointed to. This is disclosed, never suppressed:
+   * calibration is a real, validated statistical process (fitted on actual graded outcomes), so
+   * it is not blocked from overriding raw feature consensus, but the override itself is always
+   * surfaced with an explanation of which stage flipped it and how each metric voted.
+   */
+  modelConflict: boolean;
+  /** Concise, always-non-null-when-modelConflict-is-true explanation of which metrics favored the other side and which stage of the pipeline (general calibration, segment specialist, or simulator) flipped the final pick. Null when there's no conflict. */
+  modelConflictNote: string | null;
 }
 
 export interface EngineOutput {
@@ -253,6 +265,32 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     segmentNote = `No segment specialist for ${segment.label} yet -- only ${segment.historicalMatchCount} historical match(es) and ${segment.validationSampleSize} validation prediction(s) recorded so far (needs at least ${segment.minHistoricalMatches} matches and ${segment.minValidationSamples} validation predictions). Using the general model only.`;
   }
 
+  // Model Conflict: compare the final pick against the raw, reliability-weighted vote of the
+  // underlying evidence modules alone (ensembleProbability, before any calibration/specialist/
+  // simulator blending). If calibration flips which side of 50% the pick lands on, that's a real,
+  // disclosable event -- never silently absorbed into a single probability number.
+  const rawFavorsPlayer1 = ensembleProbability >= 50;
+  const finalFavorsPlayer1 = calibratedProbability >= 50;
+  const modelConflict = rawFavorsPlayer1 !== finalFavorsPlayer1;
+
+  let modelConflictNote: string | null = null;
+  if (modelConflict) {
+    const metricVotes = featureModels
+      .map((m) => `${m.modelName} \u2192 ${m.player1Probability >= 50 ? input.player1.name : input.player2.name} (${m.player1Probability.toFixed(0)}%, weight ${m.weightUsed.toFixed(2)})`)
+      .join("; ");
+
+    let flipStage = "an unidentified stage";
+    if ((generalProbability >= 50) !== rawFavorsPlayer1) {
+      flipStage = "the fitted probability calibration (isotonic mapping learned from real graded outcomes)";
+    } else if (specialistApplied && (preSimulatorProbability >= 50) !== (generalProbability >= 50)) {
+      flipStage = `the ${segment?.label ?? "segment"} specialist blend`;
+    } else if (simulatorApplied && (calibratedProbability >= 50) !== (preSimulatorProbability >= 50)) {
+      flipStage = "the Monte Carlo simulator blend";
+    }
+
+    modelConflictNote = `The raw, reliability-weighted evidence (${metricVotes}) favored ${rawFavorsPlayer1 ? input.player1.name : input.player2.name}, but ${flipStage} shifted the final pick to ${finalFavorsPlayer1 ? input.player1.name : input.player2.name}. This is a real statistical adjustment, not an error -- but treat the edge with extra caution.`;
+  }
+
   const upsetRisk = computeUpsetRisk(calibratedProbability, modelAgreement);
   const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement);
 
@@ -300,6 +338,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.push("Probability is close to a coin flip and the underlying models don't agree -- there is no strong signal either way for this matchup.");
   }
 
+  if (modelConflict && modelConflictNote) {
+    risks.unshift(`MODEL CONFLICT: ${modelConflictNote}`);
+  }
+
   const warnings = [
     ...surfaceElo.warnings,
     ...serveReturn.warnings,
@@ -337,6 +379,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     simulation,
     simulatorApplied,
     simulatorNote,
+    modelConflict,
+    modelConflictNote,
   };
 
   return {

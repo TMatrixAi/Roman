@@ -94,15 +94,28 @@ function SegmentCard({ segment }: { segment: EvaluationDashboardSegment }) {
 }
 
 function SpecialistSegmentTable({ segments }: { segments: SpecialistSegmentSummary[] }) {
+  const activeCount = segments.filter((s) => s.meetsThreshold).length
+  const mostRecentRefit = segments.reduce<string | null>((latest, s) => {
+    if (!s.computedAt) return latest
+    if (!latest || new Date(s.computedAt).getTime() > new Date(latest).getTime()) return s.computedAt
+    return latest
+  }, null)
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <Layers className="w-4 h-4" /> Specialist Segments (Phase 6)
+          <Layers className="w-4 h-4" /> Self-Learning Report: Specialist Segments (Phase 6)
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Each tour/surface segment's own calibration vs. the general model, on the SAME validation-segment points. Sample
-          sizes are always shown alongside accuracy so a small sample is never presented as a strong result.
+          This is the engine's real self-learning signal: each tour/surface segment's trust (blend weight) is re-derived
+          from its own measured log loss and accuracy vs. the general model on the SAME validation points, every
+          calibration refit -- not a fixed rule. Sample sizes are always shown alongside accuracy so a small sample is
+          never presented as a strong result.
+        </p>
+        <p className="text-xs font-mono text-muted-foreground">
+          {activeCount} of {segments.length} segments actively trusted this cycle
+          {mostRecentRefit && <> · last recomputed {formatDate(mostRecentRefit)}</>}
         </p>
       </CardHeader>
       <CardContent>
@@ -116,6 +129,8 @@ function SpecialistSegmentTable({ segments }: { segments: SpecialistSegmentSumma
                 <th className="py-2 pr-4">Validation N</th>
                 <th className="py-2 pr-4">Specialist Acc.</th>
                 <th className="py-2 pr-4">General Acc.</th>
+                <th className="py-2 pr-4">Specialist Log Loss</th>
+                <th className="py-2 pr-4">General Log Loss</th>
                 <th className="py-2 pr-4">Blend Weight</th>
               </tr>
             </thead>
@@ -132,6 +147,8 @@ function SpecialistSegmentTable({ segments }: { segments: SpecialistSegmentSumma
                   <td className="py-2 pr-4 font-mono">{s.validationSampleSize}</td>
                   <td className="py-2 pr-4 font-mono">{s.accuracy !== null && s.accuracy !== undefined ? `${s.accuracy}%` : "—"}</td>
                   <td className="py-2 pr-4 font-mono">{s.generalAccuracy !== null && s.generalAccuracy !== undefined ? `${s.generalAccuracy}%` : "—"}</td>
+                  <td className="py-2 pr-4 font-mono">{s.logLoss !== null && s.logLoss !== undefined ? s.logLoss.toFixed(3) : "—"}</td>
+                  <td className="py-2 pr-4 font-mono">{s.generalLogLoss !== null && s.generalLogLoss !== undefined ? s.generalLogLoss.toFixed(3) : "—"}</td>
                   <td className="py-2 pr-4 font-mono">{s.meetsThreshold ? s.weight.toFixed(2) : "0.00 (fallback to general)"}</td>
                 </tr>
               ))}

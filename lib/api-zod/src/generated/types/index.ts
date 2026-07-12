@@ -7,6 +7,8 @@
  */
 
 export * from './availabilityResult';
+export * from './bulkDeletePredictionsInput';
+export * from './bulkDeletePredictionsResult';
 export * from './calibrationBucket';
 export * from './calibrationKnot';
 export * from './engineBreakdown';
@@ -27,6 +29,7 @@ export * from './headToHeadResult';
 export * from './healthStatus';
 export * from './jobRun';
 export * from './jobRunStatus';
+export * from './ledgerGradingSummary';
 export * from './listCalibrationRefitJobRunsParams';
 export * from './listEvaluationPredictionsParams';
 export * from './listPaperTradingJobRunsParams';
