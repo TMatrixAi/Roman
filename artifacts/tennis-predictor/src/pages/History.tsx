@@ -291,7 +291,7 @@ export default function HistoryPage() {
           <h1 className="text-3xl font-bold tracking-tighter">LEDGER</h1>
           <p className="text-muted-foreground mt-1">Historical prediction performance and raw results.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             size="sm"
