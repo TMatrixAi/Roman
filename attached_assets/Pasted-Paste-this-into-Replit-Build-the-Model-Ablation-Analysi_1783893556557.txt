@@ -1,0 +1,390 @@
+Paste this into Replit:
+
+Build the Model Ablation Analysis as a reusable Developer Tool inside the app. Add access to it from the Main Page through a new button that opens a separate page dedicated only to this analysis.
+
+Do not change the live prediction engine, model weights, calibration, stored predictions, or ledger outcomes. This task should only add the reusable analysis tool and its page.
+
+Main Page button placement
+
+On the Main Page, add a new button called:
+
+MODEL ANALYSIS
+
+Place it in the same control area as:
+
+* VIEW LEDGER
+* ALL MATCHES
+
+The new button should be visually aligned next to those controls and match the app’s current design style.
+
+On mobile:
+
+* Keep all three controls readable.
+* Do not allow the buttons to overflow the screen.
+* Stack or wrap the controls cleanly if necessary.
+* Do not shrink the text until it becomes difficult to read.
+
+Pressing MODEL ANALYSIS must open a new dedicated page called:
+
+Developer Model Analysis
+
+This page should have a clear Back to Main Page button.
+
+Dedicated analysis page
+
+The page should contain one section:
+
+Model Ablation Analysis
+
+This is an on-demand Developer Tool. It must only run when I manually press the button.
+
+Add:
+
+* Dataset selector
+* Run Analysis button
+* Progress display
+* Results
+* Previous reports
+* Download report
+
+Dataset selector
+
+Include:
+
+1. Historical Backtest Corpus
+2. Graded Paper-Trading Ledger
+
+Default to:
+
+Historical Backtest Corpus
+
+Use the approximately 18,600 real graded historical matches with frozen pre-match snapshots.
+
+Disable the paper-trading option until there are at least 100 graded predictions.
+
+When disabled, show:
+
+Not enough graded paper-trading predictions. Minimum 100 required.
+
+Never use ungraded ledger predictions.
+
+Run button
+
+Add a button:
+
+RUN ABLATION ANALYSIS
+
+Before starting, show:
+
+This analysis may take several minutes and use significant computing resources. Continue?
+
+It must not run:
+
+* On page load
+* On app startup
+* During normal predictions
+* After grading a match
+* On a schedule
+
+Only run after manual confirmation.
+
+Models to analyze
+
+Test these model sources:
+
+* Surface Elo
+* Serve & Return
+* Recent Form
+* Fatigue
+* Availability
+* Head-to-Head
+* General Ensemble
+* Active Segment Specialist
+
+Show complete model names. Do not abbreviate them.
+
+Ablation method
+
+First run the baseline evaluation with every model active.
+
+Then replay the same frozen historical matches multiple times, removing one model source per run.
+
+For each removed model:
+
+* Remove only that model’s vote.
+* Keep every other input and rule unchanged.
+* Re-normalize the remaining weights using the engine’s existing production method.
+* Use only frozen pre-match snapshots.
+* Do not fetch current player data.
+* Do not use post-match information.
+* Do not retrain models during the analysis.
+* Do not alter the historical records.
+
+The result should answer:
+
+Does accuracy improve or decline when this model is removed?
+
+Main results
+
+Display a mobile-friendly results table or stacked cards with:
+
+* Model removed
+* Baseline accuracy
+* Accuracy without the model
+* Accuracy change
+* Matches analyzed
+* Recommendation
+
+Example:
+
+Fatigue
+
+Baseline accuracy: 67.4%
+Accuracy without Fatigue: 69.1%
+Change: +1.7 percentage points
+Recommendation: Candidate for lower weight
+
+Interpret the results correctly:
+
+* Accuracy drops when removed = model is helping.
+* Accuracy stays nearly unchanged = model is neutral.
+* Accuracy improves when removed = model may be hurting.
+
+Use these recommendation labels:
+
+* Keep
+* Review
+* Candidate for lower weight
+* Potential removal candidate
+* Insufficient sample
+
+Do not automatically change anything based on the recommendation.
+
+Segment breakdown
+
+For each model, include expandable results for:
+
+Tour
+
+* ATP
+* WTA
+* Challenger
+* ITF
+
+Surface
+
+* Hard
+* Clay
+* Grass
+* Indoor Hard
+
+Data Quality
+
+* High
+* Medium
+* Low
+
+Use the app’s current Data Quality thresholds.
+
+Prediction side
+
+* Final predicted player
+* Opposing player
+
+Do not introduce sportsbook odds or market sentiment.
+
+Show sample size beside every segment result.
+
+Additional diagnostics
+
+Add these sections:
+
+Most Valuable Models
+
+Rank models from:
+
+* Most Valuable
+* Valuable
+* Neutral
+* Weak
+* Harmful
+
+Models Associated With Losses
+
+Show:
+
+* Number of losing predictions the model supported
+* Percentage of total losses it supported
+* Average weight during those losses
+
+Include this warning:
+
+Being present in losing predictions does not prove the model caused the loss. The ablation accuracy change is the stronger measurement.
+
+Strong Vote Failure Rate
+
+A strong vote is a model probability of at least 65%, unless the engine already has a documented strong-vote threshold.
+
+Show:
+
+* Strong votes
+* Strong votes correct
+* Strong votes wrong
+* Strong-vote accuracy
+
+Overconfidence
+
+Compare each model’s predicted confidence against its real result rate using these buckets:
+
+* 50–54%
+* 55–59%
+* 60–64%
+* 65–69%
+* 70–79%
+* 80%+
+
+Show:
+
+* Average predicted probability
+* Actual win rate
+* Calibration difference
+
+Dissenting but Correct
+
+Show:
+
+* How often each model opposed the final engine pick
+* How often that opposition was correct
+* Accuracy when disagreeing with the final prediction
+
+Model combinations
+
+Test only these useful combinations:
+
+* Everything active
+* Core signals only: Surface Elo, Serve & Return, Recent Form
+* Core signals plus Fatigue
+* Segment Specialists disabled
+* Availability and Head-to-Head disabled
+* General Ensemble disabled
+
+Do not test every possible combination.
+
+Sample-size safety
+
+Require:
+
+* At least 100 graded matches for an overall recommendation.
+* At least 50 graded matches for a segment recommendation.
+
+Show smaller results but label them:
+
+Insufficient sample — do not act on this result yet.
+
+When practical, show a 95% confidence interval and flag small accuracy changes that may be random noise.
+
+Progress and performance
+
+Run the analysis as a background job.
+
+Show progress such as:
+
+* Loading frozen snapshots
+* Running baseline
+* Testing Surface Elo — 1 of 8
+* Testing Serve & Return — 2 of 8
+* Building report
+
+Also:
+
+* Prevent multiple runs from starting simultaneously.
+* Allow me to leave the page while it runs.
+* Do not block normal prediction requests.
+* Cache the completed report.
+* Show a clear error if the job fails.
+
+Previous reports
+
+Save every completed report with:
+
+* Report date
+* Dataset used
+* Number of matches
+* Engine version
+* Model configuration version
+* Calibration version
+* Data Quality methodology version
+* Full results
+
+Add:
+
+* View Previous Reports
+* Download Report
+* Delete Report
+
+Support JSON and Markdown downloads if practical.
+
+Opening a previous report must not rerun the analysis.
+
+Mobile design
+
+The entire Developer Model Analysis page must work correctly on an iPhone.
+
+Requirements:
+
+* No horizontal page scrolling
+* Full model names visible
+* Results become stacked cards on narrow screens
+* Expandable segment details
+* Large readable buttons
+* Clear progress status
+* Back button remains easy to reach
+
+Match the existing Tennis Quant visual design.
+
+Do not change
+
+Do not:
+
+* Remove a model
+* Disable a model
+* Change model weights
+* Change calibration
+* Change the winner of any prediction
+* Regrade outcomes
+* Modify stored historical snapshots
+* Change the Main Page except for adding the new button
+* Rebuild unrelated components
+* Run the analysis automatically
+
+Validation
+
+Add tests confirming:
+
+* The Main Page button opens the correct second page.
+* The Back button returns to the Main Page.
+* Baseline accuracy matches the existing walk-forward evaluation.
+* Only one model is removed during each ablation run.
+* Remaining weights are normalized correctly.
+* Only frozen pre-match data is used.
+* No live or post-match data is fetched.
+* Reports save and reopen without rerunning.
+* The tool cannot alter the live engine configuration.
+* The analysis does not run unless manually started.
+* The Main Page controls display correctly on mobile.
+
+Completion report
+
+When finished, tell me:
+
+* Files changed
+* Exact location of the new MODEL ANALYSIS button
+* Route or URL of the dedicated analysis page
+* How to return to the Main Page
+* Whether the analysis was run
+* Matches analyzed
+* Runtime
+* Whether baseline matched the existing evaluation
+* Whether any prediction logic or weights were changed
+
+Keep this task limited to adding the Main Page button and the separate reusable Model Ablation Analysis page.
