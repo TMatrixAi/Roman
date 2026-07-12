@@ -5,7 +5,7 @@ import { computeFatigueModule } from "./fatigue";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
-import { computeDataQuality } from "./dataQuality";
+import { computeDataQuality, MODULE_IMPORTANCE } from "./dataQuality";
 import { buildEnsemble, agreementFromSpread, worseAgreement, type ModelVote } from "./ensemble";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
@@ -156,27 +156,46 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const headToHead = computeHeadToHeadModule(input.headToHead, input.surface);
 
   const moduleEdges = [
-    { name: "Surface Elo", player1Edge: surfaceElo.eloDifference / 8, reliability: surfaceElo.reliability },
+    { name: "Surface Elo", player1Edge: surfaceElo.eloDifference / 8, reliability: surfaceElo.reliability, importance: MODULE_IMPORTANCE.surfaceElo },
     {
       name: "Serve & Return",
       player1Edge: serveReturn.player1ServeRating + serveReturn.player1ReturnRating - serveReturn.player2ServeRating - serveReturn.player2ReturnRating,
       reliability: serveReturn.reliability,
+      importance: MODULE_IMPORTANCE.serveReturn,
     },
-    { name: "Recent Form", player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2, reliability: recentForm.reliability },
-    { name: "Fatigue", player1Edge: (fatigue.player2FatigueScore - fatigue.player1FatigueScore) / 2, reliability: fatigue.reliability },
-    { name: "Availability (rest/travel/injury)", player1Edge: computeAvailabilityEdge(availability), reliability: availability.reliability },
+    {
+      name: "Recent Form",
+      player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2,
+      reliability: recentForm.reliability,
+      importance: MODULE_IMPORTANCE.recentForm,
+    },
+    {
+      name: "Fatigue",
+      player1Edge: (fatigue.player2FatigueScore - fatigue.player1FatigueScore) / 2,
+      reliability: fatigue.reliability,
+      importance: MODULE_IMPORTANCE.fatigue,
+    },
+    {
+      name: "Availability (rest/travel/injury)",
+      player1Edge: computeAvailabilityEdge(availability),
+      reliability: availability.reliability,
+      importance: MODULE_IMPORTANCE.availability,
+    },
     {
       name: "Head-to-Head",
       player1Edge: headToHead.player1Wins + headToHead.player2Wins > 0
         ? ((headToHead.player1Wins - headToHead.player2Wins) / (headToHead.player1Wins + headToHead.player2Wins)) * 25 + headToHead.weightedEdge * 15
         : 0,
       reliability: headToHead.reliability,
+      importance: MODULE_IMPORTANCE.headToHead,
     },
   ];
 
   const { models: featureModels, ensembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
 
-  const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(moduleEdges.map((m) => m.reliability));
+  const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
+    moduleEdges.map((m) => ({ reliability: m.reliability, importance: m.importance })),
+  );
 
   // Phase 7: point-by-point Monte Carlo simulation, always computed for display/transparency.
   const servicePointEstimate = deriveServicePointEstimate(surfaceElo, serveReturn);
