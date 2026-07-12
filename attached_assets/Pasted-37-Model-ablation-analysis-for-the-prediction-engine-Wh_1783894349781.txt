@@ -1,0 +1,37 @@
+37 - Model ablation analysis for the prediction engine
+
+What & Why
+
+We don't know which of the engine's eight vote sources (Surface Elo, Serve & Return, Recent Form, Fatigue, Availability, Head-to-Head, the General ensemble model, and the active Segment Specialists) are actually earning their place versus quietly hurting accuracy. This task builds a repeatable "leave-one-out" ablation report: for each model, replay real historical matches with that model removed (all other weights unchanged) and measure how accuracy moves overall and across the segments we care about, then rank every model and surface the interesting failure patterns (biggest loss contributor, overconfidence, most-often-dissenting-but-correct, best/worst model combinations).
+
+This runs against the historical backtest corpus (~18.6k real, graded ATP/WTA/Challenger/ITF matches with frozen pre-match snapshots), not the live paper-trading ledger -- the ledger has no graded predictions yet (blocked on the still-open "turn on scheduled paper trading" task), while the backtest corpus already has real outcomes, full tour/surface diversity, and no hindsight-leakage risk since features are frozen pre-match.
+
+This is a one-time analysis deliverable (a report), not a permanent dashboard feature and not an automatic change to the engine's models or weights.
+
+Done looks like
+
+A single report (e.g. a markdown or JSON artifact, or a route/page if that's a more natural fit given the existing evaluation tooling) showing, for each of the 8 model types:
+Current accuracy (all models active) vs. accuracy with that model removed, and the delta
+The same delta broken out by: favorite vs. underdog picks, ATP/WTA/Challenger/ITF, each surface (Hard/Clay/Grass/Indoor), and high vs. low Data Quality matches
+A recommendation bucket: Keep / Review / Candidate for lower weight (matching the delta sign and magnitude)
+An overall ranking of every model into: Most Valuable, Valuable, Neutral, Weak, Harmful
+Answers, with supporting numbers, to:
+Which model's predictions most often coincide with a losing final prediction
+Which model is most often wrong specifically when it strongly favors a player (i.e. gave a lopsided vote and the favored player lost)
+Which model's confidence (vote strength) is systematically miscalibrated relative to its real hit rate (overconfident)
+Which model most often disagrees with the final blended prediction, and how often that dissent would have been the correct call
+Which small combinations of models (not full leave-one-out, but a handful of meaningful groupings such as "core signals only", "specialists off", "everything") produce the best and worst overall win rates
+No engine code, weights, or active models are changed by this task -- it produces evidence and recommendations only, for a human to act on afterward.
+Out of scope
+
+Automatically removing, disabling, or re-weighting any model based on the findings
+Running this against the live paper-trading ledger (that requires Task #12 to be live and producing graded results first)
+Building a permanent, ongoing dashboard for this -- a one-time report is sufficient
+Exhaustive power-set testing of every possible model combination (combinatorially large and not needed to answer the questions above)
+Steps
+
+Extend the evaluation metrics with the missing segment splits. The existing walk-forward evaluation already segments by tour/surface; add favorite-vs-underdog (derived from which side the calibrated probability favored) and a high/low Data Quality split as reusable segment dimensions.
+Build the ablation harness. For each of the 8 model types, replay every match in the historical backtest corpus through the engine with that one model's vote removed (and ensemble weights re-normalized across the remaining models, as the ensemble already does automatically) while keeping every other model and weight unchanged. Reuse the existing frozen pre-match snapshots so there's no hindsight leakage and no live-data refetching.
+Compute and assemble the full comparison report: baseline accuracy vs. each ablated run, broken out by every required segment, plus the Keep/Review/Candidate-for-lower-weight recommendation and the Most Valuable through Harmful ranking.
+Compute the diagnostic questions: losing-prediction attribution, overconfidence-when-strongly-favoring, dissent-but-correct rate, and the handful of meaningful multi-model combination comparisons (core signals only, specialists off, everything on, etc.).
+Deliver the report in a clear, readable format and present the findings and recommendations to the user without making any changes to the live engine

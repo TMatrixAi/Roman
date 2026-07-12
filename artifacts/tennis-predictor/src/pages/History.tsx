@@ -173,14 +173,14 @@ function PredictionRow({
 
       <Link href={`/predictions/${prediction.id}`} className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
         <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-muted-foreground">
             <span>{formatDate(prediction.createdAt)}</span>
             <span>•</span>
             <span className="uppercase">{prediction.surface}</span>
             {prediction.tournamentName && (
               <>
                 <span>•</span>
-                <span className="truncate max-w-[150px]">{prediction.tournamentName}</span>
+                <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
               </>
             )}
           </div>

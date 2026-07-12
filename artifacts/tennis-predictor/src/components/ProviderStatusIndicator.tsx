@@ -24,7 +24,7 @@ export function ProviderStatusIndicator() {
   }
 
   return (
-    <div className="flex items-center gap-4 text-xs font-mono">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-4 text-xs font-mono">
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground">PROVIDER:</span>
         <span className="font-bold tracking-tight">{status.provider.toUpperCase()}</span>

@@ -89,7 +89,7 @@ export default function PredictionResultPage() {
     <div className="space-y-8 animate-in fade-in duration-500 max-w-6xl mx-auto">
       {/* HEADER MATCHUP */}
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-        <div className="flex items-center gap-4 text-sm font-mono text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
           <Badge variant="secondary" className="uppercase">{prediction.surface}</Badge>
           <span className="uppercase">{prediction.matchFormat}</span>
           {prediction.tournamentLevel && <Badge variant="outline" className="uppercase">{prediction.tournamentLevel}</Badge>}

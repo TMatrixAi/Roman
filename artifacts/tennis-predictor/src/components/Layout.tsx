@@ -6,10 +6,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background text-foreground font-sans">
+    <div className="min-h-[100dvh] flex flex-col bg-background text-foreground font-sans overflow-x-hidden">
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-8">
+        <div className="app-container min-h-14 py-2 flex flex-wrap items-center justify-between gap-y-1.5 gap-x-3">
+          <div className="flex items-center gap-4 sm:gap-8 min-w-0">
             <Link href="/" className="flex items-center gap-2 font-bold tracking-tighter text-lg">
               <div className="w-6 h-6 bg-accent rounded-sm flex items-center justify-center text-accent-foreground">
                 <ActivitySquare className="w-4 h-4" />
@@ -57,12 +57,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className="flex-1 app-container py-8">
         {children}
       </main>
       
       <footer className="border-t border-border py-6 mt-12">
-        <div className="container mx-auto px-4 text-center text-xs font-mono text-muted-foreground">
+        <div className="app-container text-center text-xs font-mono text-muted-foreground">
           <p>TENNIS QUANT PREDICTION ENGINE v1.0.0</p>
           <p className="mt-1 opacity-50">PROBABILITIES CALIBRATED DAILY. USE AT OWN RISK.</p>
         </div>

@@ -147,11 +147,11 @@ export function FixturesList({ filter = "all" }: { filter?: TourFilter }) {
         <Card key={fixture.id} className="overflow-hidden hover:border-primary/50 transition-colors">
           <div className="flex flex-col sm:flex-row">
             <div className="flex-1 p-4 flex flex-col justify-center">
-              <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground mb-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-muted-foreground mb-3">
                 <Badge variant="secondary" className="rounded-sm font-mono text-[10px] px-1.5 py-0">
                   {fixture.tournamentLevel || 'TOURNAMENT'}
                 </Badge>
-                {fixture.tournamentName && <span className="truncate max-w-[200px]">{fixture.tournamentName}</span>}
+                {fixture.tournamentName && <span className="truncate max-w-[45vw] sm:max-w-[200px]">{fixture.tournamentName}</span>}
                 <span>•</span>
                 <span>{fixture.surface} {fixture.indoor ? '(Indoor)' : ''}</span>
                 <span>•</span>
