@@ -1191,6 +1191,13 @@ components:
         modelAgreement:
           type: string
           enum: [Strong, Moderate, Mixed, HighDisagreement]
+        disagreementNote:
+          type: ["string", "null"]
+          description: Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is "Strong". Absent on predictions made before this field existed.
+        matchupCloseness:
+          type: string
+          enum: [VeryClose, Close, Moderate, Clear]
+          description: How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed.
         reasons:
           type: array
           items:

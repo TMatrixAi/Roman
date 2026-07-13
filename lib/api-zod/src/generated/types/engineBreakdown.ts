@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AvailabilityResult } from './availabilityResult';
+import type { EngineBreakdownMatchupCloseness } from './engineBreakdownMatchupCloseness';
 import type { EngineBreakdownModelAgreement } from './engineBreakdownModelAgreement';
 import type { FatigueResult } from './fatigueResult';
 import type { HeadToHeadResult } from './headToHeadResult';
@@ -30,6 +31,13 @@ export interface EngineBreakdown {
   headToHead: HeadToHeadResult;
   models: ModelVote[];
   modelAgreement?: EngineBreakdownModelAgreement;
+  /**
+     * Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is "Strong". Absent on predictions made before this field existed.
+     * @nullable
+     */
+  disagreementNote?: string | null;
+  /** How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed. */
+  matchupCloseness?: EngineBreakdownMatchupCloseness;
   reasons?: string[];
   risks?: string[];
   /** Aggregated low-sample/low-coverage warnings from every module */

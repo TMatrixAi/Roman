@@ -386,6 +386,19 @@ export const EngineBreakdownModelAgreement = {
   HighDisagreement: 'HighDisagreement',
 } as const;
 
+/**
+ * How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed.
+ */
+export type EngineBreakdownMatchupCloseness = typeof EngineBreakdownMatchupCloseness[keyof typeof EngineBreakdownMatchupCloseness];
+
+
+export const EngineBreakdownMatchupCloseness = {
+  VeryClose: 'VeryClose',
+  Close: 'Close',
+  Moderate: 'Moderate',
+  Clear: 'Clear',
+} as const;
+
 export type SetScoreOutcomeFavors = typeof SetScoreOutcomeFavors[keyof typeof SetScoreOutcomeFavors];
 
 
@@ -439,6 +452,13 @@ export interface EngineBreakdown {
   headToHead: HeadToHeadResult;
   models: ModelVote[];
   modelAgreement?: EngineBreakdownModelAgreement;
+  /**
+     * Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is "Strong". Absent on predictions made before this field existed.
+     * @nullable
+     */
+  disagreementNote?: string | null;
+  /** How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed. */
+  matchupCloseness?: EngineBreakdownMatchupCloseness;
   reasons?: string[];
   risks?: string[];
   /** Aggregated low-sample/low-coverage warnings from every module */

@@ -13,3 +13,4 @@
 - [Sandbox background process limits](sandbox-background-process-limits.md) — nohup/setsid background shell jobs die when the ShellExec call ends; run long jobs via HTTP against an already-running workflow instead.
 - [evaluation_predictions immutability trigger](evaluation-predictions-immutability-trigger.md) — DB trigger enforces settle-once; calibratedProbability/foldId are legitimately exempt; raw SQL applied via lib/db push scripts (no drizzle trigger API).
 - [Calibration method selection (isotonic vs Platt)](calibration-method-selection.md) — both methods fit on the same holdout-excluded slice, winner picked by holdout log loss, stored as plain knots so downstream code needs no per-method branching.
+- [Weighted model disagreement scoring](disagreement-scoring-design.md) — gate disagreement categories on meaningfully-weighted core-module conflicts, not raw spread; disagreement and closeness-to-50% are independent signals.

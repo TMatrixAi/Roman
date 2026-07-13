@@ -1,3 +1,5 @@
+import { computeWeightedDisagreement, type ModelAgreement } from "./disagreement";
+
 export interface ModelVote {
   modelName: string;
   player1Probability: number;
@@ -5,19 +7,11 @@ export interface ModelVote {
   reliability: number;
 }
 
-export type ModelAgreement = "Strong" | "Moderate" | "Mixed" | "HighDisagreement";
-
-const AGREEMENT_ORDER: ModelAgreement[] = ["Strong", "Moderate", "Mixed", "HighDisagreement"];
-
-/** Same spread->label thresholds used for the level-1 feature-module vote, reused for the level-2 general-vs-specialist vote so both agreement signals mean the same thing. */
-export function agreementFromSpread(spread: number): ModelAgreement {
-  return spread <= 10 ? "Strong" : spread <= 25 ? "Moderate" : spread <= 40 ? "Mixed" : "HighDisagreement";
-}
-
-/** The more cautious (worse) of two agreement readings -- used to fold the general-vs-specialist vote into the overall agreement without ever letting one good reading paper over a bad one. */
-export function worseAgreement(a: ModelAgreement, b: ModelAgreement): ModelAgreement {
-  return AGREEMENT_ORDER.indexOf(a) >= AGREEMENT_ORDER.indexOf(b) ? a : b;
-}
+// Re-exported so existing callers (`recommendation.ts`, `upsetRisk.ts`, `index.ts`) can keep
+// importing agreement-related symbols from "./ensemble" -- the actual weighted-disagreement math
+// now lives in `./disagreement.ts` (see that file for the full recalibration rationale).
+export type { ModelAgreement };
+export { worseAgreement, AGREEMENT_ORDER } from "./disagreement";
 
 /** Converts a signed edge (roughly -50..50, toward player 1) into a 0-100 win probability for player 1. */
 export function edgeToProbability(edge: number): number {
@@ -68,8 +62,10 @@ export function buildEnsemble(modules: EnsembleModuleInput[]): { models: ModelVo
 
   const ensembleProbability = models.reduce((sum, m) => sum + m.player1Probability * m.weightUsed, 0);
 
-  const spread = Math.max(...models.map((m) => m.player1Probability)) - Math.min(...models.map((m) => m.player1Probability));
-  const modelAgreement = agreementFromSpread(spread);
+  // Recalibrated (2026-07-13 disagreement spec): weighted standard deviation + directional
+  // support over each model's own effective weight, gated so a low-reliability/low-weight module
+  // can't single-handedly flip the category -- see `./disagreement.ts`.
+  const { modelAgreement } = computeWeightedDisagreement(models);
 
   return { models, ensembleProbability: Math.round(ensembleProbability * 10) / 10, modelAgreement };
 }

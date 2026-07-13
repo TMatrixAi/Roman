@@ -6,7 +6,8 @@ import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
 import { computeDataQuality, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, CONFIDENCE_SHRINK } from "./dataQuality";
-import { buildEnsemble, agreementFromSpread, worseAgreement, type ModelVote } from "./ensemble";
+import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
+import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
@@ -27,6 +28,10 @@ export interface EngineBreakdown {
   headToHead: ReturnType<typeof computeHeadToHeadModule>;
   models: ModelVote[];
   modelAgreement: ReturnType<typeof buildEnsemble>["modelAgreement"];
+  /** Always present when modelAgreement isn't "Strong" -- names the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights (2026-07-13 disagreement recalibration, Part A.F). Null when modelAgreement is "Strong". See `./disagreement.ts`. */
+  disagreementNote: string | null;
+  /** How near the FINAL probability sits to a coin flip -- deliberately separate from modelAgreement: a match can be close while every model agrees (low disagreement), or genuinely disagree while the blend lands well away from 50 (2026-07-13 spec, Part A.E). Not present on predictions made before this field existed. */
+  matchupCloseness: MatchupCloseness;
   reasons: string[];
   risks: string[];
   warnings: string[];
@@ -200,6 +205,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   ].filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
 
   const { models: featureModels, ensembleProbability: rawEnsembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
+  // Recomputed (pure, deterministic) so we keep the full weighted-disagreement breakdown --
+  // stddev/support/conflicting models -- for the disagreement explanation below, not just the
+  // category buildEnsemble already returned.
+  let governingDisagreement = computeWeightedDisagreement(featureModels);
 
   // Requirement 6/7 of the fix-the-engine spec: when the core signals are genuinely close to a
   // coin flip, use an explicit priority cascade instead of just accepting an uninformative ~50/50
@@ -299,8 +308,16 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       // capped at 100 -- a specialist barely over threshold is voted on, but not trusted blindly.
       reliability: Math.min(100, Math.round((segment.validationSampleSize / segment.minValidationSamples) * 50)),
     });
-    const generalVsSpecialistSpread = Math.abs(generalProbability - specialistProbability);
-    modelAgreement = worseAgreement(featureAgreement, agreementFromSpread(generalVsSpecialistSpread));
+    // Weighted the same way as the level-1 feature vote (see disagreement.ts) using the actual
+    // general/specialist blend weights as effective weight, instead of a flat two-way spread.
+    const generalVsSpecialistDisagreement = computeWeightedDisagreement([
+      { modelName: "General Model", player1Probability: generalProbability, weightUsed: 1 - specialistWeight },
+      { modelName: `Segment Specialist (${segment.label})`, player1Probability: specialistProbability, weightUsed: specialistWeight },
+    ]);
+    if (AGREEMENT_ORDER.indexOf(generalVsSpecialistDisagreement.modelAgreement) > AGREEMENT_ORDER.indexOf(governingDisagreement.modelAgreement)) {
+      governingDisagreement = generalVsSpecialistDisagreement;
+    }
+    modelAgreement = worseAgreement(featureAgreement, generalVsSpecialistDisagreement.modelAgreement);
   }
 
   if (simulatorApplied) {
@@ -310,9 +327,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       weightUsed: Math.round(simulatorWeight * 1000) / 1000,
       reliability: simulation.inputReliability,
     });
-    const preSimulatorVsSimulatorSpread = Math.abs(preSimulatorProbability - simulation.player1WinProbability);
-    modelAgreement = worseAgreement(modelAgreement, agreementFromSpread(preSimulatorVsSimulatorSpread));
+    const preSimulatorVsSimulatorDisagreement = computeWeightedDisagreement([
+      { modelName: "Pre-Simulator Blend", player1Probability: preSimulatorProbability, weightUsed: 1 - simulatorWeight },
+      { modelName: "Monte Carlo Simulator", player1Probability: simulation.player1WinProbability, weightUsed: simulatorWeight },
+    ]);
+    if (AGREEMENT_ORDER.indexOf(preSimulatorVsSimulatorDisagreement.modelAgreement) > AGREEMENT_ORDER.indexOf(governingDisagreement.modelAgreement)) {
+      governingDisagreement = preSimulatorVsSimulatorDisagreement;
+    }
+    modelAgreement = worseAgreement(modelAgreement, preSimulatorVsSimulatorDisagreement.modelAgreement);
   }
+
+  const disagreementNote = buildDisagreementNote(governingDisagreement, input.player1.name, input.player2.name);
+  const matchupCloseness = computeMatchupCloseness(calibratedProbability);
 
   const simulatorNote = simulatorAdoption?.note ??
     `The Monte Carlo simulator has not been validated against enough real graded outcomes yet (needs a minimum sample; see the evaluation dashboard) -- shown for transparency only and not yet voted into the final probability.`;
@@ -394,9 +420,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.push("No prior head-to-head meetings found -- this matchup has no direct precedent.");
   }
 
-  if (modelAgreement === "HighDisagreement" || modelAgreement === "Mixed") {
-    const agreementLabel = modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
-    risks.push(`Engine models disagree (${agreementLabel}) -- treat the edge with caution.`);
+  if (disagreementNote) {
+    risks.push(disagreementNote);
   }
 
   if (recommendation === "NO_STRONG_SIGNAL") {
@@ -441,6 +466,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     headToHead,
     models,
     modelAgreement,
+    disagreementNote,
+    matchupCloseness,
     reasons,
     risks,
     warnings,

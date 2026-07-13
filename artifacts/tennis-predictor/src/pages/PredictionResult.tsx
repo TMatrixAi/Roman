@@ -17,6 +17,13 @@ const AGREEMENT_STYLES: Record<string, string> = {
   HighDisagreement: "text-destructive",
 }
 
+const CLOSENESS_LABELS: Record<string, string> = {
+  VeryClose: "Very close to a coin flip",
+  Close: "Close matchup",
+  Moderate: "Moderate lean",
+  Clear: "Clear favorite",
+}
+
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
   const total = p1Value + p2Value;
   const p1Pct = total > 0 ? (p1Value / total) * 100 : 50;
@@ -252,6 +259,19 @@ export default function PredictionResultPage() {
                 {engine.modelAgreement ? engine.modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "—"}
               </span>
             </div>
+            {engine.matchupCloseness && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-muted-foreground">MATCHUP CLOSENESS</span>
+                <span className="text-sm font-bold font-mono text-foreground">
+                  {CLOSENESS_LABELS[engine.matchupCloseness] ?? engine.matchupCloseness}
+                </span>
+              </div>
+            )}
+            {engine.disagreementNote && (
+              <div className="p-3 bg-secondary/40 rounded-lg text-xs text-muted-foreground">
+                {engine.disagreementNote}
+              </div>
+            )}
             <div className="space-y-2">
               {engine.models.map((vote, i) => (
                 <div key={i} className="flex items-center gap-3 text-sm">

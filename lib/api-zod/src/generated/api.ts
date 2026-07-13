@@ -318,6 +318,8 @@ export const CreatePredictionResponse = zod.object({
   "reliability": zod.number()
 })),
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
+  "disagreementNote": zod.string().nullish().describe('Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is \"Strong\". Absent on predictions made before this field existed.'),
+  "matchupCloseness": zod.enum(['VeryClose', 'Close', 'Moderate', 'Clear']).optional().describe('How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed.'),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
@@ -497,6 +499,8 @@ export const GetPredictionResponse = zod.object({
   "reliability": zod.number()
 })),
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
+  "disagreementNote": zod.string().nullish().describe('Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is \"Strong\". Absent on predictions made before this field existed.'),
+  "matchupCloseness": zod.enum(['VeryClose', 'Close', 'Moderate', 'Clear']).optional().describe('How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed.'),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
@@ -732,6 +736,8 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "reliability": zod.number()
 })),
   "modelAgreement": zod.enum(['Strong', 'Moderate', 'Mixed', 'HighDisagreement']).optional(),
+  "disagreementNote": zod.string().nullish().describe('Recalibrated (2026-07-13) weighted-disagreement explanation naming the specific meaningfully-weighted models actually in conflict, their probabilities, and their weights. Null when modelAgreement is \"Strong\". Absent on predictions made before this field existed.'),
+  "matchupCloseness": zod.enum(['VeryClose', 'Close', 'Moderate', 'Clear']).optional().describe('How near the final probability sits to a coin flip -- deliberately independent of modelAgreement (a match can be close while every model agrees, or genuinely disagree while the blend lands well away from 50). Absent on predictions made before this field existed.'),
   "reasons": zod.array(zod.string()).optional(),
   "risks": zod.array(zod.string()).optional(),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
