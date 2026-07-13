@@ -35,6 +35,7 @@ import type {
   HealthStatus,
   JobRun,
   LedgerGradingSummary,
+  LedgerPlayerSummary,
   ListCalibrationRefitJobRunsParams,
   ListEvaluationPredictionsParams,
   ListPaperTradingJobRunsParams,
@@ -55,6 +56,7 @@ import type {
   RunWalkForwardRequest,
   ScreenshotMatchupInput,
   ScreenshotMatchupResult,
+  SearchLedgerPlayersParams,
   SearchPlayersParams,
   SimulatorValidation,
   UpdatePredictionSettingsRequest,
@@ -943,6 +945,169 @@ export function useGetPredictionStats<TData = Awaited<ReturnType<typeof getPredi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPredictionStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSearchLedgerPlayersUrl = (params: SearchLedgerPlayersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/predictions/players/search?${stringifiedParams}` : `/api/predictions/players/search`
+}
+
+/**
+ * Distinct from /players/search (which searches the live tennis-data provider) -- this only returns players actually found among saved Ledger predictions, for jumping straight to a player's recorded history.
+ * @summary Search players who have at least one recorded prediction in the Ledger
+ */
+export const searchLedgerPlayers = async (params: SearchLedgerPlayersParams, options?: RequestInit): Promise<LedgerPlayerSummary[]> => {
+
+  return customFetch<LedgerPlayerSummary[]>(getSearchLedgerPlayersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchLedgerPlayersQueryKey = (params?: SearchLedgerPlayersParams,) => {
+    return [
+    `/api/predictions/players/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchLedgerPlayersQueryOptions = <TData = Awaited<ReturnType<typeof searchLedgerPlayers>>, TError = ErrorType<unknown>>(params: SearchLedgerPlayersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchLedgerPlayers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchLedgerPlayersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchLedgerPlayers>>> = ({ signal }) => searchLedgerPlayers(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchLedgerPlayers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchLedgerPlayersQueryResult = NonNullable<Awaited<ReturnType<typeof searchLedgerPlayers>>>
+export type SearchLedgerPlayersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Search players who have at least one recorded prediction in the Ledger
+ */
+
+export function useSearchLedgerPlayers<TData = Awaited<ReturnType<typeof searchLedgerPlayers>>, TError = ErrorType<unknown>>(
+ params: SearchLedgerPlayersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchLedgerPlayers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchLedgerPlayersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLedgerPlayerPredictionsUrl = (playerId: string,) => {
+
+
+
+
+  return `/api/predictions/players/${playerId}`
+}
+
+/**
+ * Not capped by the main list's page size -- returns the player's complete Ledger history so the Ledger's player-navigation control can step through every one of their predictions, including any older than what the main "recent predictions" list currently shows.
+ * @summary Every recorded Ledger prediction involving a specific player, oldest first
+ */
+export const getLedgerPlayerPredictions = async (playerId: string, options?: RequestInit): Promise<PredictionSummary[]> => {
+
+  return customFetch<PredictionSummary[]>(getGetLedgerPlayerPredictionsUrl(playerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLedgerPlayerPredictionsQueryKey = (playerId: string,) => {
+    return [
+    `/api/predictions/players/${playerId}`
+    ] as const;
+    }
+
+
+export const getGetLedgerPlayerPredictionsQueryOptions = <TData = Awaited<ReturnType<typeof getLedgerPlayerPredictions>>, TError = ErrorType<unknown>>(playerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLedgerPlayerPredictions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLedgerPlayerPredictionsQueryKey(playerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLedgerPlayerPredictions>>> = ({ signal }) => getLedgerPlayerPredictions(playerId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: playerId !== null && playerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLedgerPlayerPredictions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLedgerPlayerPredictionsQueryResult = NonNullable<Awaited<ReturnType<typeof getLedgerPlayerPredictions>>>
+export type GetLedgerPlayerPredictionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Every recorded Ledger prediction involving a specific player, oldest first
+ */
+
+export function useGetLedgerPlayerPredictions<TData = Awaited<ReturnType<typeof getLedgerPlayerPredictions>>, TError = ErrorType<unknown>>(
+ playerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLedgerPlayerPredictions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLedgerPlayerPredictionsQueryOptions(playerId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

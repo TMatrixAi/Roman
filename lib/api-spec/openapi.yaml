@@ -307,6 +307,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/PredictionStats"
 
+  /predictions/players/search:
+    get:
+      operationId: searchLedgerPlayers
+      tags: [predictions]
+      summary: Search players who have at least one recorded prediction in the Ledger
+      description: >-
+        Distinct from /players/search (which searches the live tennis-data provider) -- this only
+        returns players actually found among saved Ledger predictions, for jumping straight to a
+        player's recorded history.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+      responses:
+        "200":
+          description: Matching players with at least one Ledger prediction
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LedgerPlayerSummary"
+
+  /predictions/players/{playerId}:
+    get:
+      operationId: getLedgerPlayerPredictions
+      tags: [predictions]
+      summary: Every recorded Ledger prediction involving a specific player, oldest first
+      description: >-
+        Not capped by the main list's page size -- returns the player's complete Ledger history so
+        the Ledger's player-navigation control can step through every one of their predictions,
+        including any older than what the main "recent predictions" list currently shows.
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: All predictions involving this player, ordered oldest to newest
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PredictionSummary"
+
   /predictions/{predictionId}:
     get:
       operationId: getPrediction
@@ -766,6 +817,18 @@ components:
             standings feed (rank/tour are live). "historical-match" means they were found only in
             our own previously-fetched real match history -- a genuinely real player, but rank/tour
             here reflect their last known match, not a live ranking. Omitted for legacy rows.
+
+    LedgerPlayerSummary:
+      type: object
+      required: [id, name, predictionCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        predictionCount:
+          type: integer
+          description: Total number of recorded Ledger predictions involving this player
 
     PlayerProfile:
       type: object
@@ -1739,7 +1802,9 @@ components:
       required:
         [
           id,
+          player1Id,
           player1Name,
+          player2Id,
           player2Name,
           surface,
           predictedWinnerName,
@@ -1753,7 +1818,11 @@ components:
       properties:
         id:
           type: integer
+        player1Id:
+          type: string
         player1Name:
+          type: string
+        player2Id:
           type: string
         player2Name:
           type: string

@@ -83,6 +83,13 @@ export interface PlayerSummary {
   source?: PlayerSummarySource;
 }
 
+export interface LedgerPlayerSummary {
+  id: string;
+  name: string;
+  /** Total number of recorded Ledger predictions involving this player */
+  predictionCount: number;
+}
+
 /**
  * How tour/rank were resolved. "live-standings" means the current ATP/WTA standings feed had this player. "historical-match" means the standings feed didn't have them, but a real, previously-fetched match record did (tour reflects their last known match, not a live ranking). Omitted when neither source could resolve tour/rank at all.
  */
@@ -749,7 +756,9 @@ export interface Prediction {
 
 export interface PredictionSummary {
   id: number;
+  player1Id: string;
   player1Name: string;
+  player2Id: string;
   player2Name: string;
   surface: Surface;
   /** @nullable */
@@ -1250,6 +1259,13 @@ export type ListPredictionsParams = {
  * @maximum 100
  */
 limit?: number;
+};
+
+export type SearchLedgerPlayersParams = {
+/**
+ * @minLength 2
+ */
+query: string;
 };
 
 export type ListEvaluationPredictionsParams = {

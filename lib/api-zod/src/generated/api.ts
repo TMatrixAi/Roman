@@ -224,7 +224,9 @@ export const ListPredictionsQueryParams = zod.object({
 
 export const ListPredictionsResponseItem = zod.object({
   "id": zod.number(),
+  "player1Id": zod.string(),
   "player1Name": zod.string(),
+  "player2Id": zod.string(),
   "player2Name": zod.string(),
   "surface": zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),
   "tournamentName": zod.string().nullish(),
@@ -457,6 +459,54 @@ export const GetPredictionStatsResponse = zod.object({
   "count": zod.number()
 }))
 })
+
+
+/**
+ * Distinct from /players/search (which searches the live tennis-data provider) -- this only returns players actually found among saved Ledger predictions, for jumping straight to a player's recorded history.
+ * @summary Search players who have at least one recorded prediction in the Ledger
+ */
+export const searchLedgerPlayersQueryQueryMin = 2;
+
+
+
+export const SearchLedgerPlayersQueryParams = zod.object({
+  "query": zod.string().min(searchLedgerPlayersQueryQueryMin)
+})
+
+export const SearchLedgerPlayersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "predictionCount": zod.number().describe('Total number of recorded Ledger predictions involving this player')
+})
+export const SearchLedgerPlayersResponse = zod.array(SearchLedgerPlayersResponseItem)
+
+
+/**
+ * Not capped by the main list's page size -- returns the player's complete Ledger history so the Ledger's player-navigation control can step through every one of their predictions, including any older than what the main "recent predictions" list currently shows.
+ * @summary Every recorded Ledger prediction involving a specific player, oldest first
+ */
+export const GetLedgerPlayerPredictionsParams = zod.object({
+  "playerId": zod.string()
+})
+
+export const GetLedgerPlayerPredictionsResponseItem = zod.object({
+  "id": zod.number(),
+  "player1Id": zod.string(),
+  "player1Name": zod.string(),
+  "player2Id": zod.string(),
+  "player2Name": zod.string(),
+  "surface": zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),
+  "tournamentName": zod.string().nullish(),
+  "predictedWinnerName": zod.string(),
+  "calibratedProbability": zod.number(),
+  "predictedWinnerProbability": zod.number().describe('The predicted winner\'s own win probability (always >= 50) -- see the field doc on Prediction. Use this for display instead of calibratedProbability.'),
+  "dataQuality": zod.number(),
+  "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
+  "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
+  "actualWinnerName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const GetLedgerPlayerPredictionsResponse = zod.array(GetLedgerPlayerPredictionsResponseItem)
 
 
 /**

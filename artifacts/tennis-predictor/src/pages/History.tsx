@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useGetPredictionStats,
@@ -8,16 +8,21 @@ import {
   useGradePendingLedgerPredictions,
   usePreviewDuplicatePredictions,
   useRemoveDuplicatePredictions,
+  useGetLedgerPlayerPredictions,
   getListPredictionsQueryKey,
   getGetPredictionStatsQueryKey,
+  getGetLedgerPlayerPredictionsQueryKey,
   type PredictionSummary,
   type DuplicatePredictionsPreviewResult,
+  type LedgerPlayerSummary,
 } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +34,21 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Link } from "wouter"
-import { Target, CheckCircle2, XCircle, Clock, AlertTriangle, TrendingUp, ChevronRight, Trash2, RefreshCw, Copy } from "lucide-react"
+import {
+  Target,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  TrendingUp,
+  ChevronRight,
+  ChevronLeft,
+  Trash2,
+  RefreshCw,
+  Copy,
+  X,
+  UserSearch,
+} from "lucide-react"
 
 function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
   const [preview, setPreview] = useState<DuplicatePredictionsPreviewResult | null>(null)
@@ -253,15 +272,158 @@ function PredictionRow({
   )
 }
 
+/** Read-only rendering of a single prediction, used for the player-navigation focus panel --
+ * shares the same layout language as PredictionRow but drops the select checkbox and delete
+ * action, since focus mode is purely for jumping around a player's history. */
+function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
+  const isResolved = !!prediction.actualWinnerName;
+  const isCorrect = prediction.actualWinnerName === prediction.predictedWinnerName;
+
+  const renderRecommendationBadge = () => {
+    switch (prediction.recommendation) {
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success">STRONG</Badge>
+      case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
+      case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
+      case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
+      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">NO REC</Badge>
+      default: return null
+    }
+  }
+
+  return (
+    <Link
+      href={`/predictions/${prediction.id}`}
+      className="flex flex-col md:flex-row md:items-center justify-between p-4 border-2 border-primary rounded-md bg-card ring-2 ring-primary/40 hover:border-primary transition-colors gap-4"
+    >
+      <div className="flex-1 space-y-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-muted-foreground">
+          <span>{formatDate(prediction.createdAt)}</span>
+          <span>•</span>
+          <span className="uppercase">{prediction.surface}</span>
+          {prediction.tournamentName && (
+            <>
+              <span>•</span>
+              <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-lg font-bold">
+          <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary" : "text-muted-foreground"}>
+            {prediction.player1Name}
+          </span>
+          <span className="text-sm font-mono font-normal text-muted-foreground">vs</span>
+          <span className={prediction.predictedWinnerName === prediction.player2Name ? "text-primary" : "text-muted-foreground"}>
+            {prediction.player2Name}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 md:gap-6 md:justify-end border-t md:border-t-0 pt-3 md:pt-0">
+        <div className="flex flex-col md:items-end gap-1">
+          <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
+          <div className="font-bold flex items-center gap-2">
+            {prediction.predictedWinnerName}
+            <Badge variant="outline" className="font-mono">{formatProbability(prediction.predictedWinnerProbability)}</Badge>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:items-end gap-1">
+          <div className="text-xs font-mono text-muted-foreground">RECOMMENDATION</div>
+          {renderRecommendationBadge()}
+        </div>
+
+        <div className="flex flex-col md:items-end gap-1 w-24">
+          <div className="text-xs font-mono text-muted-foreground">STATUS</div>
+          {isResolved ? (
+            isCorrect ? (
+              <span className="flex items-center gap-1 text-sm font-bold text-green-600 dark:text-green-500">
+                <CheckCircle2 className="w-4 h-4" /> WON
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sm font-bold text-destructive">
+                <XCircle className="w-4 h-4" /> LOST
+              </span>
+            )
+          ) : (
+            <span className="flex items-center gap-1 text-sm font-bold text-muted-foreground">
+              <Clock className="w-4 h-4" /> PENDING
+            </span>
+          )}
+        </div>
+
+        <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />
+      </div>
+    </Link>
+  )
+}
+
 export default function HistoryPage() {
   const queryClient = useQueryClient()
   const { data: stats, isLoading: statsLoading } = useGetPredictionStats()
   const { data: predictions, isLoading: predictionsLoading } = useListPredictions({ limit: 50 })
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
+  // Player search + navigation: selecting a player loads that player's *entire* chronological
+  // Ledger history (never capped by the main list's 50-row limit) and jumps focus to their most
+  // recent prediction. `playerIndex` walks that array; the floating back/next control only shows
+  // once there's more than one prediction to step through.
+  const [activePlayer, setActivePlayer] = useState<{ id: string; name: string } | null>(null)
+  const [playerIndex, setPlayerIndex] = useState(0)
+  const [activeTab, setActiveTab] = useState<"recent" | "search">("recent")
+  const focusRef = useRef<HTMLDivElement>(null)
+
+  const playerPredictionsQuery = useGetLedgerPlayerPredictions(activePlayer?.id ?? "", {
+    query: {
+      queryKey: getGetLedgerPlayerPredictionsQueryKey(activePlayer?.id ?? ""),
+      enabled: !!activePlayer,
+    },
+  })
+  const playerPredictions = activePlayer ? playerPredictionsQuery.data : undefined
+  // Defensive clamp: never index past the end of the currently-loaded array. This matters right
+  // after switching from a player with more predictions to one with fewer, in the window before
+  // the jump-to-most-recent effect below has had a chance to run.
+  const safePlayerIndex = playerPredictions && playerPredictions.length > 0
+    ? Math.min(playerIndex, playerPredictions.length - 1)
+    : 0
+
+  // Jump to the most recent prediction the first time a newly-selected player's history finishes
+  // loading. Tracked via a ref (not just activePlayer?.id in the dependency array) because data
+  // for the new player is almost never available on the same render as the id change -- this
+  // must re-run once the query resolves, while still leaving playerIndex alone on later re-runs
+  // (e.g. from an unrelated cache invalidation) once the user has started stepping back/next.
+  const jumpedForPlayerId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!activePlayer) {
+      jumpedForPlayerId.current = null
+      return
+    }
+    if (!playerPredictions || playerPredictions.length === 0) return
+    if (jumpedForPlayerId.current === activePlayer.id) return
+    jumpedForPlayerId.current = activePlayer.id
+    setPlayerIndex(playerPredictions.length - 1)
+    const raf = requestAnimationFrame(() => {
+      focusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activePlayer, playerPredictions])
+
+  const clearPlayerNavigation = () => {
+    setActivePlayer(null)
+    setPlayerIndex(0)
+    jumpedForPlayerId.current = null
+  }
+
+  const selectPlayer = (player: LedgerPlayerSummary) => {
+    setActivePlayer({ id: player.id, name: player.name })
+    setActiveTab("recent")
+  }
+
   const invalidateLedger = () => {
     queryClient.invalidateQueries({ queryKey: getListPredictionsQueryKey({ limit: 50 }) })
     queryClient.invalidateQueries({ queryKey: getGetPredictionStatsQueryKey() })
+    if (activePlayer) {
+      queryClient.invalidateQueries({ queryKey: getGetLedgerPlayerPredictionsQueryKey(activePlayer.id) })
+    }
   }
 
   const deletePrediction = useDeletePrediction({ mutation: { onSuccess: invalidateLedger } })
@@ -349,65 +511,137 @@ export default function HistoryPage() {
         </div>
       ) : null}
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            RECENT PREDICTIONS
-          </h2>
-          {predictions && predictions.length > 0 && (
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  className="w-4 h-4 accent-primary cursor-pointer"
-                />
-                SELECT ALL
-              </label>
-              {selectedIds.size > 0 && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="font-mono"
-                  disabled={bulkDelete.isPending}
-                  onClick={() => bulkDelete.mutate({ data: { ids: Array.from(selectedIds) } })}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  DELETE {selectedIds.size}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recent" | "search")}>
+        <TabsList>
+          <TabsTrigger value="recent" className="font-mono">RECENT PREDICTIONS</TabsTrigger>
+          <TabsTrigger value="search" className="font-mono">
+            <UserSearch className="w-4 h-4 mr-2" />
+            SEARCH PLAYERS
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="search">
+          <LedgerPlayerSearch onSelect={selectPlayer} onQueryChange={clearPlayerNavigation} />
+        </TabsContent>
+
+        <TabsContent value="recent" className="space-y-4">
+          {activePlayer && (
+            <div ref={focusRef} className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
+                  <UserSearch className="w-4 h-4" />
+                  PLAYER FOCUS: {activePlayer.name}
+                  {playerPredictions && playerPredictions.length > 0 && (
+                    <span className="text-muted-foreground/70">
+                      ({safePlayerIndex + 1} of {playerPredictions.length})
+                    </span>
+                  )}
+                </h3>
+                <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPlayerNavigation}>
+                  <X className="w-4 h-4 mr-1" />
+                  CLEAR
                 </Button>
+              </div>
+
+              {playerPredictionsQuery.isLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : playerPredictions && playerPredictions.length > 0 ? (
+                <PlayerFocusRow prediction={playerPredictions[safePlayerIndex]} />
+              ) : (
+                <div className="p-4 border border-dashed rounded-md text-center text-sm font-mono text-muted-foreground">
+                  NO PREDICTIONS FOUND FOR THIS PLAYER
+                </div>
               )}
             </div>
           )}
+
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              RECENT PREDICTIONS
+            </h2>
+            {predictions && predictions.length > 0 && (
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 accent-primary cursor-pointer"
+                  />
+                  SELECT ALL
+                </label>
+                {selectedIds.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="font-mono"
+                    disabled={bulkDelete.isPending}
+                    onClick={() => bulkDelete.mutate({ data: { ids: Array.from(selectedIds) } })}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    DELETE {selectedIds.size}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {predictionsLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+            </div>
+          ) : predictions && predictions.length > 0 ? (
+            <div className="space-y-3">
+              {predictions.map(pred => (
+                <PredictionRow
+                  key={pred.id}
+                  prediction={pred}
+                  selected={selectedIds.has(pred.id)}
+                  onToggleSelect={() => toggleSelect(pred.id)}
+                  onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
+                  isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 border border-dashed rounded-lg text-center text-muted-foreground">
+              <Target className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <p className="font-mono text-sm">NO PREDICTIONS SAVED YET</p>
+              <Link href="/predict">
+                <Button variant="outline" className="mt-4 font-mono">RUN FIRST PREDICTION</Button>
+              </Link>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {activePlayer && playerPredictions && playerPredictions.length > 1 && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={safePlayerIndex === 0}
+            onClick={() => setPlayerIndex(Math.max(0, safePlayerIndex - 1))}
+            aria-label="Previous prediction for this player"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <span className="text-xs font-mono text-muted-foreground px-1 min-w-[3.5rem] text-center">
+            {safePlayerIndex + 1} / {playerPredictions.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={safePlayerIndex === playerPredictions.length - 1}
+            onClick={() => setPlayerIndex(Math.min(playerPredictions.length - 1, safePlayerIndex + 1))}
+            aria-label="Next prediction for this player"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </Button>
         </div>
-        
-        {predictionsLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
-          </div>
-        ) : predictions && predictions.length > 0 ? (
-          <div className="space-y-3">
-            {predictions.map(pred => (
-              <PredictionRow
-                key={pred.id}
-                prediction={pred}
-                selected={selectedIds.has(pred.id)}
-                onToggleSelect={() => toggleSelect(pred.id)}
-                onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
-                isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="p-12 border border-dashed rounded-lg text-center text-muted-foreground">
-            <Target className="w-12 h-12 mx-auto mb-4 opacity-20" />
-            <p className="font-mono text-sm">NO PREDICTIONS SAVED YET</p>
-            <Link href="/predict">
-              <Button variant="outline" className="mt-4 font-mono">RUN FIRST PREDICTION</Button>
-            </Link>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }

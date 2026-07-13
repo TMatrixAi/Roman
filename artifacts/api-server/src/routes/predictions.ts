@@ -18,6 +18,10 @@ import {
   GradePendingLedgerPredictionsResponse,
   PreviewDuplicatePredictionsResponse,
   RemoveDuplicatePredictionsResponse,
+  SearchLedgerPlayersQueryParams,
+  SearchLedgerPlayersResponse,
+  GetLedgerPlayerPredictionsParams,
+  GetLedgerPlayerPredictionsResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
@@ -29,6 +33,7 @@ import { resolveSegmentSpecialistInput } from "../services/evaluation/specialist
 import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
 import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrading";
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
+import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evaluation/ledgerPlayers";
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
 
 const router: IRouter = Router();
@@ -86,6 +91,31 @@ router.get("/predictions/stats", async (_req, res): Promise<void> => {
       byRecommendation: byRecommendationRows,
     }),
   );
+});
+
+// Registered before /predictions/:predictionId and /predictions/players/:playerId so that
+// "/predictions/players/search" resolves as this literal route rather than being swallowed by
+// the :playerId param route below.
+router.get("/predictions/players/search", async (req, res): Promise<void> => {
+  const parsed = SearchLedgerPlayersQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const players = await searchLedgerPlayers(parsed.data.query);
+  res.json(SearchLedgerPlayersResponse.parse(players));
+});
+
+router.get("/predictions/players/:playerId", async (req, res): Promise<void> => {
+  const params = GetLedgerPlayerPredictionsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const rows = await getPredictionsForPlayer(params.data.playerId);
+  res.json(GetLedgerPlayerPredictionsResponse.parse(rows));
 });
 
 router.post("/predictions", async (req, res): Promise<void> => {

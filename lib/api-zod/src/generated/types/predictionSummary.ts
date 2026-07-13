@@ -11,7 +11,9 @@ import type { UpsetRisk } from './upsetRisk';
 
 export interface PredictionSummary {
   id: number;
+  player1Id: string;
   player1Name: string;
+  player2Id: string;
   player2Name: string;
   surface: Surface;
   /** @nullable */
