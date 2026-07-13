@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { useGetUpcomingFixtures, useCreatePrediction, type Fixture } from "@workspace/api-client-react"
 import { useLocation } from "wouter"
 import { Card } from "@/components/ui/card"
@@ -40,19 +40,20 @@ function timeSortKey(fixture: Fixture): number {
   return fixture.scheduledStart ? new Date(fixture.scheduledStart).getTime() : new Date(`${fixture.date}T23:59:59.999Z`).getTime()
 }
 
-function sortFixtures(fixtures: Fixture[], filter: TourFilter): Fixture[] {
+/**
+ * All fixtures stay visible -- nothing is hidden. Fixtures matching the applied priority tour
+ * float to the top as a group; within each group (priority and non-priority), the existing
+ * time-based order is preserved. When priorityFilter is "all", every fixture matches, so this
+ * collapses back to a plain chronological sort.
+ */
+function sortFixtures(fixtures: Fixture[], priorityFilter: TourFilter): Fixture[] {
   const list = [...fixtures]
-  if (filter === "atp" || filter === "wta") {
-    // Alphabetical by tournament name, then by date/time as a tiebreaker, per request.
-    return list.sort((a, b) => {
-      const nameCompare = (a.tournamentName ?? "").localeCompare(b.tournamentName ?? "")
-      if (nameCompare !== 0) return nameCompare
-      return timeSortKey(a) - timeSortKey(b)
-    })
-  }
-  // "All" and "ITF" keep chronological order (earliest confirmed start time first), as already
-  // sorted by the API.
-  return list.sort((a, b) => timeSortKey(a) - timeSortKey(b))
+  return list.sort((a, b) => {
+    const aPriority = matchesFilter(a, priorityFilter) ? 0 : 1
+    const bPriority = matchesFilter(b, priorityFilter) ? 0 : 1
+    if (aPriority !== bPriority) return aPriority - bPriority
+    return timeSortKey(a) - timeSortKey(b)
+  })
 }
 
 /** Formats a fixture's real start time in the viewer's local timezone, or "Time TBD" when the provider hasn't confirmed one. */
@@ -70,17 +71,27 @@ function buildCustomMatchUrl(fixture: Fixture): string {
   return `/predict?${params.toString()}`
 }
 
-export function FixturesList({ filter = "all" }: { filter?: TourFilter }) {
+export type FixturesListHandle = {
+  /** Refetches fixtures from the server. Used by the Home page's "Go" button. */
+  refetch: () => void
+}
+
+export const FixturesList = forwardRef<FixturesListHandle, { priorityFilter?: TourFilter }>(
+  function FixturesList({ priorityFilter = "all" }, ref) {
   const { data: fixtures, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures()
   const [, setLocation] = useLocation()
   const createPrediction = useCreatePrediction()
   const [predictNowFixtureId, setPredictNowFixtureId] = useState<string | null>(null)
   const [predictNowError, setPredictNowError] = useState<string | null>(null)
 
+  useImperativeHandle(ref, () => ({
+    refetch: () => { refetch() },
+  }), [refetch])
+
   const visibleFixtures = useMemo(() => {
     if (!fixtures) return []
-    return sortFixtures(fixtures.filter((f) => matchesFilter(f, filter)), filter)
-  }, [fixtures, filter])
+    return sortFixtures(fixtures, priorityFilter)
+  }, [fixtures, priorityFilter])
 
   const handlePredictNow = (fixture: Fixture) => {
     setPredictNowError(null)
@@ -140,7 +151,7 @@ export function FixturesList({ filter = "all" }: { filter?: TourFilter }) {
 
       {visibleFixtures.length === 0 ? (
         <div className="p-8 border border-dashed rounded-lg text-center text-muted-foreground font-mono text-sm">
-          {fixtures && fixtures.length > 0 ? "NO FIXTURES MATCH THIS FILTER" : "NO UPCOMING FIXTURES TODAY"}
+          NO UPCOMING FIXTURES TODAY
         </div>
       ) : (
         visibleFixtures.map((fixture) => (
@@ -206,4 +217,4 @@ export function FixturesList({ filter = "all" }: { filter?: TourFilter }) {
       )}
     </div>
   )
-}
+})

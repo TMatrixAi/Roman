@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useLocation } from "wouter"
 import { Card, CardContent } from "@/components/ui/card"
-import { FixturesList, type TourFilter } from "@/components/FixturesList"
+import { FixturesList, type FixturesListHandle, type TourFilter } from "@/components/FixturesList"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { Select } from "@/components/ui/select"
-import { ActivitySquare, PlaySquare, Swords } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { ActivitySquare, ArrowRight, PlaySquare, Swords } from "lucide-react"
 
 const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
   { value: "all", label: "All Matches" },
@@ -16,6 +17,13 @@ const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
 export default function Home() {
   const [, setLocation] = useLocation()
   const [tourFilter, setTourFilter] = useState<TourFilter>("all")
+  const [priorityFilter, setPriorityFilter] = useState<TourFilter>("all")
+  const fixturesRef = useRef<FixturesListHandle>(null)
+
+  const handleGo = () => {
+    setPriorityFilter(tourFilter)
+    fixturesRef.current?.refetch()
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -30,30 +38,41 @@ export default function Home() {
           <p className="text-primary-foreground/80 text-lg md:text-xl font-medium max-w-xl">
             Multi-model prediction engine based on real ATP/WTA data. Surface Elo, serve/return strength, fatigue, and head-to-head.
           </p>
-          <div className="pt-4 flex flex-wrap gap-4">
-            <button 
-              onClick={() => setLocation("/predict")}
-              className="bg-accent text-accent-foreground px-6 py-3 rounded-md font-bold font-mono text-sm hover:brightness-110 transition-all flex items-center gap-2"
-            >
-              <PlaySquare className="w-4 h-4" />
-              BUILD MATCHUP
-            </button>
-            <button 
+          <div className="pt-4 flex flex-wrap items-center gap-4">
+            <button
               onClick={() => setLocation("/history")}
               className="bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20 px-6 py-3 rounded-md font-bold font-mono text-sm transition-all"
             >
               VIEW LEDGER
             </button>
+            <button
+              onClick={() => setLocation("/predict")}
+              className="bg-accent text-accent-foreground px-6 py-3 rounded-md font-bold font-mono text-sm hover:brightness-110 transition-all flex items-center gap-2 ml-auto"
+            >
+              <PlaySquare className="w-4 h-4" />
+              BUILD MATCHUP
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <Select
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value as TourFilter)}
               className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
-              aria-label="Filter today's fixtures by tour"
+              aria-label="Prioritize today's fixtures by tour"
             >
               {TOUR_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
               ))}
             </Select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleGo}
+              className="font-mono font-bold gap-1.5"
+            >
+              GO
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </div>
       </section>
@@ -65,7 +84,7 @@ export default function Home() {
             <h2 className="text-xl font-bold">TODAY'S FIXTURES</h2>
           </div>
           <p className="text-sm text-muted-foreground font-mono mb-4">QUICK START PREDICTIONS</p>
-          <FixturesList filter={tourFilter} />
+          <FixturesList ref={fixturesRef} priorityFilter={priorityFilter} />
         </section>
 
         <section className="space-y-4">

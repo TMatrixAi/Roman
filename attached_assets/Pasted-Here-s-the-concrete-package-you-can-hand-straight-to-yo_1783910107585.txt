@@ -1,0 +1,72 @@
+Here's the concrete package you can hand straight to your Replit engine (or paste into the coding agent) to move accuracy up.
+
+## Step 1: Kill the Availability drag
+
+Your own ablation proved this is the highest-leverage single change — removing it gains +1.7pt overall and up to +2.6pt on some surfaces, and its "strong confidence" votes are wrong 54% of the time. Set its weight to 0 in the ensemble config rather than deleting the module, so you can revisit it later with better rest/travel data.
+
+## Step 2: Add a real calibration layer
+
+This is the fix for your 76.6%→62.6% and 88.7%→76.5% gaps. Don't hand-tune the confidence formula — fit a proper calibrator on held-out data. sklearn's `IsotonicRegression` is the standard tool for this exact problem:[1][2]
+
+```python
+from sklearn.isotonic import IsotonicRegression
+from sklearn.calibration import calibration_curve
+
+# raw_probs, outcomes = your model's OOS predictions and actual results
+prob_true, prob_pred = calibration_curve(outcomes, raw_probs, n_bins=10)
+
+iso = IsotonicRegression(out_of_bounds='clip')
+iso.fit(prob_pred, prob_true)   # fit on binned reliability curve, not raw points
+
+calibrated_prob = iso.predict(raw_probs)  # apply to future predictions
+```
+
+Important details specific to your setup:
+
+- Fit the isotonic curve against the binned reliability curve (prob_pred/prob_true), not raw individual predictions — fitting directly on 0/1 outcomes tends to produce a jagged, overfit curve, especially with your ~4,000-sample OOS set.[3]
+- sklearn's own guidance is that isotonic needs a decent sample size (roughly 1,000+) to avoid overfitting; with 4,081 out-of-sample predictions you're right at the edge, so also compute Platt/sigmoid scaling as a fallback and use whichever generalizes better on a fresh holdout.[2]
+- Refit the calibrator periodically (e.g., every few hundred new graded matches) since your model's confidence distribution will shift as you remove Availability and reweight things.
+- Track Expected Calibration Error (ECE) before/after — under 0.03 is well-calibrated, above 0.05 means bet sizing off your confidence numbers is still misleading:[4][5]
+
+```python
+def compute_ece(y_true, y_prob, n_bins=10):
+    bins = np.linspace(0, 1, n_bins + 1)
+    ece = 0
+    for lo, hi in zip(bins[:-1], bins[1:]):
+        mask = (y_prob > lo) & (y_prob <= hi)
+        if mask.sum() > 0:
+            acc = y_true[mask].mean()
+            conf = y_prob[mask].mean()
+            ece += (mask.sum() / len(y_true)) * abs(acc - conf)
+    return ece
+```
+
+## Step 3: Re-audit data quality tiers
+
+Rerun the poor/limited/strong breakdown *after* zeroing Availability. If Availability was disproportionately active on "strong" data-quality matches (more historical data = more triggers), that alone likely explains the inversion, and it should resolve or shrink once Availability's weight is gone.
+
+## Step 4: Give Elite tier a real sample
+
+n=0 means the gating threshold is too strict to ever fire. Loosen the threshold temporarily (or log "near-Elite" matches that miss by a small margin) so you accumulate enough graded matches to actually backtest it — you can't validate a tier with zero observations no matter how good its logic is.
+
+## What to skip for now
+
+Richer serve/return point-level stats and expanded surface-specific history are good long-term investments, but your own ablation shows the ceiling right now is calibration and the Availability bug — not data richness. Fixing those two first, then re-running the full 18,242-match backtest, will tell you whether the remaining gap is really a data problem or something else.
+
+Sources
+[1] IsotonicRegression — scikit-learn 1.9.0 documentation https://scikit-learn.org/stable/modules/generated/sklearn.isotonic.IsotonicRegression.html
+[2] sklearn.calibration.CalibratedClassifierCV https://scikit-learn.sourceforge.net/dev/modules/generated/sklearn.calibration.CalibratedClassifierCV.html
+[3] Should Scikit-Learn CalibratedClassifierCV isotonic mode use bucketed rates instead of the actual targets? https://stats.stackexchange.com/questions/493393/should-scikit-learn-calibratedclassifiercv-isotonic-mode-use-bucketed-rates-inst
+[4] Expected Calibration Error (ECE) https://insightful-data-lab.com/2025/08/19/expected-calibration-error-ece/
+[5] Sports Betting Model Calibration: Why It Matters... - ZenHodl https://zenhodl.net/blog/sports-betting-model-calibration
+[6] scikit-learn/sklearn/calibration.py at main · scikit-learn/scikit-learn https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/calibration.py
+[7] MiSLAS/reliability_diagrams.py at main · dvlab-research/MiSLAS https://github.com/dvlab-research/MiSLAS/blob/main/reliability_diagrams.py
+[8] Expected Calibration Error (ECE): A Step-by-Step Visual Explanation | by Maja Pavlovic | TDS Archive | Medium https://medium.com/data-science/expected-calibration-error-ece-a-step-by-step-visual-explanation-with-python-code-c3e9aa12937d
+[9] sklearn 0.22-0.1.3 · OCaml Package https://ocaml.org/p/sklearn/0.22-0.1.3/sklearn/Sklearn/Calibration/IsotonicRegression/index.html
+[10] Model Calibration: Deep Dive - Medium https://medium.com/@heet10/machine-learning-model-calibration-deep-dive-8e9c586ad756
+[11] Isotonic calibration changes rank-based test metrics values · Issue #16321 · scikit-learn/scikit-learn https://github.com/scikit-learn/scikit-learn/issues/16321
+[12] [PDF] SMOOTH ECE: PRINCIPLED RELIABILITY DIAGRAMS https://proceedings.iclr.cc/paper_files/paper/2024/file/06cf4bae7ccb6ea37b968a394edc2e33-Paper-Conference.pdf
+[13] Probability Calibration curves — scikit-learn 1.9.0 documentation https://scikit-learn.org/stable/auto_examples/calibration/plot_calibration_curve.html
+[14] Isotonic Regression — scikit-learn 1.9.0 documentation https://scikit-learn.org/stable/auto_examples/miscellaneous/plot_isotonic_regression.html
+[15] sklearn.calibration — scikit-learn 1.9.0 documentation https://scikit-learn.org/stable/api/sklearn.calibration.html
+[16] GitHub - marcoromanelli-github/ReliabilityDiagrams: Create reliability diagrams to quantify ML calibration. https://github.com/marcoromanelli-github/ReliabilityDiagrams
