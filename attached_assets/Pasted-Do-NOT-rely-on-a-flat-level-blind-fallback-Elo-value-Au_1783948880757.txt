@@ -1,0 +1,71 @@
+Do NOT rely on a flat, level-blind fallback Elo value.
+
+Audit the entire opponent-resolution pipeline before touching any fallback 
+value. Do NOT auto-import new data files or rebuild the player index as 
+part of this task without a separate review step — flag if missing data 
+coverage is the root cause, but treat importing new source files as a 
+follow-up task, not an inline auto-action.
+
+1. Attempt to resolve every historical opponent using: official player ID, 
+   alternate IDs, normalized names, accented/non-accented names, aliases, 
+   date of birth, country, historical ranking records, match-history 
+   cross-references.
+
+2. If resolved, reconstruct pre-match Elo by replaying historical matches 
+   chronologically. This MUST be memoized/cached per player — do not 
+   recompute the same player's history repeatedly, and cap recursion depth 
+   to avoid runaway computation. Report the max replay depth and any 
+   players that hit the cap.
+
+3. Never skip Elo calculation just because a player is "unranked." An 
+   unranked player with historical matches still gets a calculated Elo.
+
+4. When a player CANNOT be resolved (no record, no matches, no valid 
+   mapping), do not default to a flat neutral value. Instead, use a 
+   level-aware baseline derived from real aggregate data: average Elo-at-
+   entry for players at that specific tour/level (ATP/Challenger/ITF/WTA 
+   equivalent), computed from a stated sample size and time window. Report 
+   that sample size and window explicitly.
+
+5. When a player IS resolved but has low opponent coverage (a large share 
+   of their own opponents were unresolved), shrink their computed Elo 
+   toward the level-aware baseline from step 4, proportional to their 
+   coverage fraction. State the exact shrinkage formula used and confirm 
+   it behaves monotonically (more coverage = less shrinkage).
+
+6. Log every case where a level-aware baseline or shrinkage was applied: 
+   player, opponent, tournament, level, date, reason, and which baseline/
+   shrinkage value was used.
+
+7. If more than 1% of professional matches require the last-resort 
+   baseline, report this as a DATA QUALITY FLAG in the output — do NOT 
+   silently continue, but also do NOT halt live predictions. Surface it 
+   as a visible warning in the existing dataQuality/warnings structure.
+
+8. If the issue is incomplete historical data coverage, report which 
+   specific data files/date ranges are missing as a recommendation — do 
+   not auto-import and rebuild inline as part of this fix.
+
+9. If the issue is player identity resolution, fix the identity mapping 
+   rather than estimating opponent strength.
+
+10. Before rebuilding anything, back up the current Elo database/index 
+    state so it can be reverted if the rebuild introduces regressions.
+
+11. Rebuild the Elo database after these fixes. Rerun the six flagged 
+    matches AND run the full backtest/walk-forward evaluation to confirm 
+    no regression elsewhere — report before/after accuracy, Brier score, 
+    and calibration-by-bucket broken down by tour/level.
+
+12. Add tests: player-order symmetry (swapping player1/player2 mirrors 
+    probability exactly), identical-player inputs land at ~50/50, a 
+    missing-opponent case no longer silently defaults to neutral for a 
+    known-lower-level match, and shrinkage behaves monotonically as 
+    coverage improves.
+
+13. Produce a report containing: total opponents resolved, total 
+    unresolved, last-resort-baseline percentage, root causes of 
+    unresolved players, level-aware baseline values and their sample 
+    sizes, shrinkage formula used, files modified, before/after 
+    probabilities for the six matchups, full backtest before/after 
+    numbers, and confirmation no player-specific hard-coding was added.

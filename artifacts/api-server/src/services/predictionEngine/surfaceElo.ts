@@ -27,6 +27,11 @@ export interface SurfaceEloResult {
   /** 0-1: how much of `player1SurfaceElo`/`player2SurfaceElo` came from the overall-Elo fallback rather than the player's own surface-only rating. 0 = pure surface Elo, 1 = pure overall Elo. Fades smoothly toward 0 as the player's effective surface sample grows. */
   player1BlendWeight: number;
   player2BlendWeight: number;
+  /** 0-1 share of each player's OVERALL (cross-surface) effective sample that came from genuine
+   * tour-level competition (ATP/WTA main tour or above), not Challenger/ITF/Other. Low share
+   * means their rating leans on `tourLevelCredibility` shrink toward the corpus baseline. */
+  player1TourLevelShare: number;
+  player2TourLevelShare: number;
   warnings: string[];
 }
 
@@ -34,6 +39,58 @@ const STARTING_ELO = 1500;
 /** Base K-factor for a full-weight (most-recent, mid-tier-competition) match -- scaled per-match by `recencyWeight()` and `levelMultiplier()` below. */
 const BASE_K = 32;
 const MIN_SAMPLE_FOR_NO_WARNING = 5;
+
+/**
+ * Real corpus-wide average `eloOverall` (see `matchFeatureSnapshotsTable`, written by the Phase 3
+ * backfill's chronological Elo replay) as of 2026-07-13, across ~29.4k feature rows: mean 1523.1,
+ * median 1516. Used two ways below: (1) `LEVEL_BASELINE_ELO` replaces the old flat `STARTING_ELO`
+ * assumption for an opponent this system has never seen, with the REAL average rating actually
+ * observed at that match's own level, instead of a single made-up neutral constant; (2)
+ * `CORPUS_BASELINE_ELO` anchors the tour-level-credibility shrink below.
+ *
+ * Root cause this addresses: a player whose rating is built almost entirely from beating other
+ * Challenger/ITF players can rise well above 1500 *within that pool's own reference frame* even
+ * though the pool's real average strength is far below tour level -- because most of their
+ * matches never touch a tour-level opponent, there's nothing to pull their number back toward a
+ * real cross-level anchor. This let e.g. a Challenger/ITF-only player's surface Elo (1619) read
+ * as stronger than an established ATP tour player's (1545), despite the tour player facing
+ * objectively tougher competition throughout their own history.
+ */
+const CORPUS_BASELINE_ELO = 1520;
+/** Real average `eloOverall` observed at matches of each level, from the same 2026-07-13 query,
+ * grouped by that match's own `tournamentLevel` (rounded). Missing/"Other" levels use the
+ * corpus-wide baseline -- never a fabricated per-level number. */
+const LEVEL_BASELINE_ELO: Partial<Record<TournamentLevel, number>> = {
+  GrandSlam: 1523,
+  Masters1000: 1537,
+  WTA1000: 1528,
+  ATP500: 1533,
+  WTA500: 1533, // no WTA500 rows in the corpus yet -- shares ATP500's real average as the closest same-tier analog.
+  ATP250: 1524,
+  WTA250: 1522,
+  Challenger: 1524,
+  ITF: 1522,
+  Other: 1507,
+};
+
+function levelBaselineElo(level: TournamentLevel | null): number {
+  if (!level) return CORPUS_BASELINE_ELO;
+  return LEVEL_BASELINE_ELO[level] ?? CORPUS_BASELINE_ELO;
+}
+
+/** Levels considered genuine tour-level competition (main ATP/WTA tour and above). Challenger,
+ * ITF, "Other", and unresolved levels are sub-tour -- a rating built mostly from beating sub-tour
+ * fields shouldn't earn full credit for deviating from the baseline; see `tourLevelCredibility`. */
+const TOUR_LEVELS = new Set<TournamentLevel>(["GrandSlam", "Masters1000", "WTA1000", "ATP500", "WTA500", "ATP250", "WTA250"]);
+
+function isTourLevel(level: TournamentLevel | null): boolean {
+  return level !== null && TOUR_LEVELS.has(level);
+}
+
+/** Floor on how much a rating's deviation from `CORPUS_BASELINE_ELO` is trusted when NONE of a
+ * player's effective sample came from tour-level competition -- real sub-tour wins still count
+ * for something (never zero), just heavily discounted, mirroring `MIN_RECENCY_WEIGHT`'s floor. */
+const TOUR_CREDIBILITY_FLOOR = 0.35;
 
 /**
  * Recency half-life: a match this many days old counts for half as much toward the Elo update
@@ -98,16 +155,28 @@ function replayElo(
   matches: MatchRecord[],
   opponentElo: OpponentEloLookup,
   referenceDate: string,
-): { elo: number; sampleSize: number; effectiveSampleSize: number; opponentCoverage: number } {
+): {
+  elo: number;
+  sampleSize: number;
+  effectiveSampleSize: number;
+  effectiveTourSampleSize: number;
+  effectiveKnownLevelSampleSize: number;
+  opponentCoverage: number;
+} {
   const sorted = [...matches].sort((a, b) => (a.date > b.date ? 1 : -1));
   let elo = STARTING_ELO;
   let covered = 0;
   let effectiveSampleSize = 0;
+  let effectiveTourSampleSize = 0;
+  let effectiveKnownLevelSampleSize = 0;
 
   for (const match of sorted) {
     const knownOpponentElo = opponentElo.get(match.id);
     if (knownOpponentElo !== undefined) covered += 1;
-    const opponentReference = knownOpponentElo ?? STARTING_ELO;
+    // An opponent this system has never seen is assumed to be an AVERAGE player at THIS match's
+    // own level -- not a flat, level-blind 1500 -- so a run of wins against unresolved Challenger
+    // or ITF opponents isn't silently scored as "beat a string of tour-average players".
+    const opponentReference = knownOpponentElo ?? levelBaselineElo(match.tournamentLevel);
     const expected = 1 / (1 + Math.pow(10, (opponentReference - elo) / 400));
     const actual = match.result === "W" ? 1 : 0;
 
@@ -115,9 +184,23 @@ function replayElo(
     const k = BASE_K * recency * levelMultiplier(match.tournamentLevel);
     elo += k * (actual - expected);
     effectiveSampleSize += recency;
+    // Tour-level share is judged only from matches whose level is actually KNOWN -- a match with
+    // no reported level is absent information, not evidence of weak competition, so it's excluded
+    // from both the numerator and denominator here rather than counted against the player.
+    if (match.tournamentLevel !== null) {
+      effectiveKnownLevelSampleSize += recency;
+      if (isTourLevel(match.tournamentLevel)) effectiveTourSampleSize += recency;
+    }
   }
 
-  return { elo, sampleSize: sorted.length, effectiveSampleSize, opponentCoverage: sorted.length > 0 ? covered / sorted.length : 0 };
+  return {
+    elo,
+    sampleSize: sorted.length,
+    effectiveSampleSize,
+    effectiveTourSampleSize,
+    effectiveKnownLevelSampleSize,
+    opponentCoverage: sorted.length > 0 ? covered / sorted.length : 0,
+  };
 }
 
 interface PlayerSurfaceEloResult {
@@ -128,6 +211,14 @@ interface PlayerSurfaceEloResult {
   sampleSize: number;
   effectiveSampleSize: number;
   confidence: number;
+  /** 0-1 share of the player's OVERALL (cross-surface) effective sample that came from genuine
+   * tour-level competition (ATP/WTA main tour or above) rather than Challenger/ITF/Other. Drives
+   * `tourLevelCredibility` below. */
+  tourLevelShare: number;
+  /** 0-1: how much of this player's deviation from `CORPUS_BASELINE_ELO` is trusted, given their
+   * tour-level share. 1 = fully trusted (rating earned mostly at tour level), floored at
+   * `TOUR_CREDIBILITY_FLOOR` for a player whose rating comes almost entirely from sub-tour play. */
+  tourLevelCredibility: number;
 }
 
 /**
@@ -156,7 +247,23 @@ function computePlayerSurfaceElo(matches: MatchRecord[], surface: Surface, oppon
   const overallResult = replayElo(matches, opponentElo, referenceDate);
 
   const blendWeight = Math.exp(-surfaceResult.effectiveSampleSize / BLEND_EFFECTIVE_SAMPLE_SCALE);
-  const blendedElo = blendWeight * overallResult.elo + (1 - blendWeight) * surfaceResult.elo;
+  const rawBlendedElo = blendWeight * overallResult.elo + (1 - blendWeight) * surfaceResult.elo;
+
+  // Tour-level credibility is judged from the player's OVERALL (cross-surface) history, not the
+  // surface-only slice -- a thin surface sample shouldn't by itself make an otherwise
+  // tour-proven player look uncredible. Judged only against matches with a KNOWN level -- when
+  // level is never reported, there's no real evidence of weak competition, so credibility
+  // defaults to fully trusted (1) rather than penalized.
+  const tourLevelShare =
+    overallResult.effectiveKnownLevelSampleSize > 0 ? overallResult.effectiveTourSampleSize / overallResult.effectiveKnownLevelSampleSize : 1;
+  const tourLevelCredibility = TOUR_CREDIBILITY_FLOOR + (1 - TOUR_CREDIBILITY_FLOOR) * tourLevelShare;
+
+  // Shrink the rating's deviation from the real corpus baseline toward that baseline in
+  // proportion to how little of it is backed by genuine tour-level competition -- this is what
+  // stops a Challenger/ITF-only grinder's rating (built almost entirely against sub-tour fields)
+  // from reading as strong as a rating built by actually beating tour-level opponents. Applied
+  // symmetrically (works the same whether the raw rating sits above or below baseline).
+  const blendedElo = CORPUS_BASELINE_ELO + (rawBlendedElo - CORPUS_BASELINE_ELO) * tourLevelCredibility;
 
   return {
     blendedElo,
@@ -166,6 +273,8 @@ function computePlayerSurfaceElo(matches: MatchRecord[], surface: Surface, oppon
     sampleSize: surfaceResult.sampleSize,
     effectiveSampleSize: surfaceResult.effectiveSampleSize,
     confidence: confidenceFromEffectiveSampleSize(surfaceResult.effectiveSampleSize),
+    tourLevelShare,
+    tourLevelCredibility,
   };
 }
 
@@ -205,6 +314,12 @@ export function computeSurfaceEloModule(
   if (surface === "Hard") {
     warnings.push("Indoor vs outdoor hard-court split is only known for major tournaments; most Hard matches are treated as one pool.");
   }
+  const minTourShare = Math.min(p1.tourLevelShare, p2.tourLevelShare);
+  if (minTourShare < 0.25) {
+    const lowPlayer = p1.tourLevelShare <= p2.tourLevelShare ? "Player 1" : "Player 2";
+    const pct = Math.round(minTourShare * 100);
+    warnings.push(`${lowPlayer}'s rating is backed mostly by sub-tour (Challenger/ITF) competition (only ${pct}% tour-level) -- their Elo is shrunk toward the corpus baseline to avoid overcrediting wins against weaker fields.`);
+  }
 
   return {
     player1SurfaceElo: Math.round(p1.blendedElo),
@@ -223,6 +338,8 @@ export function computeSurfaceEloModule(
     player2SurfaceOnlyElo: Math.round(p2.surfaceOnlyElo),
     player1BlendWeight: Math.round(p1.blendWeight * 1000) / 1000,
     player2BlendWeight: Math.round(p2.blendWeight * 1000) / 1000,
+    player1TourLevelShare: Math.round(p1.tourLevelShare * 1000) / 1000,
+    player2TourLevelShare: Math.round(p2.tourLevelShare * 1000) / 1000,
     warnings,
   };
 }

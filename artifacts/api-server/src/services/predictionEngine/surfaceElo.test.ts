@@ -32,12 +32,12 @@ function baseMatch(
   };
 }
 
-function wins(count: number, surface: MatchRecord["surface"] = "Hard"): MatchRecord[] {
-  return Array.from({ length: count }, (_, i) => baseMatch(`w${i}`, i, surface, "W"));
+function wins(count: number, surface: MatchRecord["surface"] = "Hard", tournamentLevel: MatchRecord["tournamentLevel"] = null): MatchRecord[] {
+  return Array.from({ length: count }, (_, i) => baseMatch(`w${i}`, i, surface, "W", { tournamentLevel }));
 }
 
-function losses(count: number, surface: MatchRecord["surface"] = "Hard"): MatchRecord[] {
-  return Array.from({ length: count }, (_, i) => baseMatch(`l${i}`, i, surface, "L"));
+function losses(count: number, surface: MatchRecord["surface"] = "Hard", tournamentLevel: MatchRecord["tournamentLevel"] = null): MatchRecord[] {
+  return Array.from({ length: count }, (_, i) => baseMatch(`l${i}`, i, surface, "L", { tournamentLevel }));
 }
 
 test("eloWinProbabilityPlayer1 stays within [0, 100] for a roughly even matchup", () => {
@@ -92,6 +92,68 @@ test("a recent high-level win moves the rating more than an old low-level win of
   assert.ok(
     recentResult.player1SurfaceOnlyElo > oldResult.player1SurfaceOnlyElo,
     `expected a recent Grand Slam win (${recentResult.player1SurfaceOnlyElo}) to move the surface-only rating more than an old ITF win (${oldResult.player1SurfaceOnlyElo})`,
+  );
+});
+
+test("swapping player1/player2 mirrors the win probability exactly (order symmetry)", () => {
+  const p1 = [...wins(15, "Hard"), ...losses(5, "Hard")];
+  const p2 = [...wins(6, "Hard"), ...losses(12, "Hard")];
+
+  const forward = computeSurfaceEloModule(p1, p2, "Hard");
+  const reversed = computeSurfaceEloModule(p2, p1, "Hard");
+
+  assert.ok(
+    Math.abs(forward.eloWinProbabilityPlayer1 - (100 - reversed.eloWinProbabilityPlayer1)) < 0.15,
+    `expected forward (${forward.eloWinProbabilityPlayer1}) and reversed (${reversed.eloWinProbabilityPlayer1}) probabilities to mirror around 50`,
+  );
+  assert.ok(
+    Math.abs(forward.rawEloWinProbabilityPlayer1 - (100 - reversed.rawEloWinProbabilityPlayer1)) < 0.15,
+    "raw (un-shrunk) probability must mirror too",
+  );
+  assert.equal(forward.eloDifference, -reversed.eloDifference, "the rating gap must flip sign exactly when the players are swapped");
+});
+
+test("identical histories for both players land at exactly 50/50", () => {
+  const identical = [...wins(10, "Hard", "ATP250"), ...losses(4, "Hard", "ATP250")];
+  const result = computeSurfaceEloModule(identical, [...identical], "Hard");
+  assert.equal(result.eloWinProbabilityPlayer1, 50, `expected exactly 50, got ${result.eloWinProbabilityPlayer1}`);
+  assert.equal(result.eloDifference, 0);
+});
+
+test("a missing-opponent lower-level (ITF) win no longer inflates a player's rating as if they'd beaten a tour-average (1500) opponent", () => {
+  // No opponentElo lookup is supplied (empty map -- every opponent is "unresolved"), so every
+  // match falls back to the level-aware baseline. An ITF-level win streak should land BELOW what
+  // the exact same win streak would score if it had (incorrectly) used the flat, level-blind
+  // STARTING_ELO=1500 fallback, since the real ITF-level baseline (1522) is used for the *expected
+  // score* calc -- but more importantly, the tour-level-credibility shrink should keep the whole
+  // rating close to the corpus baseline rather than letting it run away upward.
+  const itfWinStreak = wins(20, "Hard", "ITF");
+  const result = computeSurfaceEloModule(itfWinStreak, [], "Hard");
+
+  assert.ok(result.player1TourLevelShare === 0, "an all-ITF history has zero genuine tour-level share");
+  // Even after 20 straight (unresolved-opponent) wins, the sub-tour shrink keeps the rating from
+  // running far above the real corpus baseline the way an unshrunk flat-1500-fallback Elo would.
+  assert.ok(
+    result.player1SurfaceElo < 1620,
+    `expected the sub-tour-shrunk rating (${result.player1SurfaceElo}) to stay well below what an unshrunk 20-match win streak would reach`,
+  );
+});
+
+test("tour-level credibility shrinks a rating's deviation from baseline monotonically as tour-level share increases", () => {
+  const baseline = 1520; // CORPUS_BASELINE_ELO
+  const allItf = computeSurfaceEloModule(wins(20, "Hard", "ITF"), [], "Hard");
+  const mixed = computeSurfaceEloModule([...wins(10, "Hard", "ITF"), ...wins(10, "Hard", "ATP250")], [], "Hard");
+  const allTour = computeSurfaceEloModule(wins(20, "Hard", "ATP250"), [], "Hard");
+
+  const devAllItf = Math.abs(allItf.player1SurfaceElo - baseline);
+  const devMixed = Math.abs(mixed.player1SurfaceElo - baseline);
+  const devAllTour = Math.abs(allTour.player1SurfaceElo - baseline);
+
+  assert.ok(allItf.player1TourLevelShare < mixed.player1TourLevelShare, "mixed history must show a higher tour-level share than all-ITF");
+  assert.ok(mixed.player1TourLevelShare < allTour.player1TourLevelShare, "all-tour-level history must show a higher tour-level share than mixed");
+  assert.ok(
+    devAllItf <= devMixed + 0.5 && devMixed <= devAllTour + 0.5,
+    `expected monotonically increasing trust in the rating's deviation from baseline as tour-level share grows: allItf=${devAllItf}, mixed=${devMixed}, allTour=${devAllTour}`,
   );
 });
 

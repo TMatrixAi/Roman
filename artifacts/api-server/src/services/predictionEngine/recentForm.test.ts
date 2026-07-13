@@ -93,6 +93,53 @@ test("a strong serve/return stat line lifts the form score above a plain loss wi
   assert.ok(plainResult.player1ServeReturnCoverage === 0);
 });
 
+test("swapping player1/player2 mirrors the form score exactly (order symmetry)", () => {
+  const p1 = [...wins(6, "Hard", { tournamentLevel: "ATP250" }), ...losses(2, "Hard", { tournamentLevel: "ATP250" })];
+  const p2 = [...wins(3, "Hard", { tournamentLevel: "ATP250" }), ...losses(5, "Hard", { tournamentLevel: "ATP250" })];
+
+  const forward = computeRecentFormModule(p1, p2, "Hard");
+  const reversed = computeRecentFormModule(p2, p1, "Hard");
+
+  assert.equal(forward.player1Form, reversed.player2Form, "player 1's form when forward must equal player 2's form when swapped");
+  assert.equal(forward.player2Form, reversed.player1Form, "player 2's form when forward must equal player 1's form when swapped");
+});
+
+test("identical histories for both players land at the same form score", () => {
+  const identical = [...wins(6, "Hard", { tournamentLevel: "ATP250" }), ...losses(2, "Hard", { tournamentLevel: "ATP250" })];
+  const result = computeRecentFormModule(identical, [...identical], "Hard");
+  assert.equal(result.player1Form, result.player2Form, `expected identical histories to produce identical form scores, got ${result.player1Form} vs ${result.player2Form}`);
+});
+
+test("a win streak backed almost entirely by sub-tour (ITF) matches is shrunk toward neutral (50) versus the same streak at tour level", () => {
+  const itfStreak = wins(8, "Hard", { tournamentLevel: "ITF" });
+  const tourStreak = wins(8, "Hard", { tournamentLevel: "ATP250" });
+
+  const itfResult = computeRecentFormModule(itfStreak, [], "Hard");
+  const tourResult = computeRecentFormModule(tourStreak, [], "Hard");
+
+  assert.ok(itfResult.player1TourLevelShare === 0, "an all-ITF window has zero tour-level share");
+  assert.ok(tourResult.player1TourLevelShare === 1, "an all-ATP250 window has full tour-level share");
+  assert.ok(
+    Math.abs(itfResult.player1Form - 50) < Math.abs(tourResult.player1Form - 50),
+    `expected the sub-tour-only streak (${itfResult.player1Form}) to sit closer to neutral than the tour-level streak (${tourResult.player1Form})`,
+  );
+});
+
+test("form's shrink toward neutral is monotonic as tour-level share increases", () => {
+  const allItf = computeRecentFormModule(wins(8, "Hard", { tournamentLevel: "ITF" }), [], "Hard");
+  const mixed = computeRecentFormModule([...wins(4, "Hard", { tournamentLevel: "ITF" }), ...wins(4, "Hard", { tournamentLevel: "ATP250" })], [], "Hard");
+  const allTour = computeRecentFormModule(wins(8, "Hard", { tournamentLevel: "ATP250" }), [], "Hard");
+
+  const devAllItf = Math.abs(allItf.player1Form - 50);
+  const devMixed = Math.abs(mixed.player1Form - 50);
+  const devAllTour = Math.abs(allTour.player1Form - 50);
+
+  assert.ok(
+    devAllItf <= devMixed + 0.5 && devMixed <= devAllTour + 0.5,
+    `expected monotonically increasing deviation from neutral as tour-level share grows: allItf=${devAllItf}, mixed=${devMixed}, allTour=${devAllTour}`,
+  );
+});
+
 test("a short 2-3 match streak alone cannot flip the trend label off stable", () => {
   // Only 5 total matches -- under TREND_MIN_SAMPLE (6), so the label must stay "stable" no matter
   // how large the shape's delta is.

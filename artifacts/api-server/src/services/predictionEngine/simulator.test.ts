@@ -101,6 +101,8 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
     player2SurfaceOnlyElo: 1500,
     player1BlendWeight: 0.05,
     player2BlendWeight: 0.05,
+    player1TourLevelShare: 1,
+    player2TourLevelShare: 1,
     warnings: [],
   };
   const emptyPointLevel = { firstServeWinPct: null, breakPointsSavedPct: null, breakPointsConvertedPct: null, serviceGamesHeldPct: null, sampleSize: 0 };

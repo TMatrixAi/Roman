@@ -14,6 +14,11 @@ export interface RecentFormResult {
   /** Share (0-100) of each player's recent matches for which a real serve/return point-stat line was available and factored into the score. 0 means form is based on outcomes (opponent-adjusted where possible) alone -- never fabricated. */
   player1ServeReturnCoverage: number;
   player2ServeReturnCoverage: number;
+  /** 0-1 share of each player's recent-form window that came from genuine tour-level competition
+   * (ATP/WTA main tour or above), not Challenger/ITF/Other. Low share means the form score is
+   * shrunk toward neutral (50) -- see `TOUR_CREDIBILITY_FLOOR`. */
+  player1TourLevelShare: number;
+  player2TourLevelShare: number;
   warnings: string[];
 }
 
@@ -37,6 +42,20 @@ const LEVEL_WEIGHT: Partial<Record<TournamentLevel, number>> = {
   Other: 0.85,
 };
 const DEFAULT_LEVEL_WEIGHT = 0.85;
+
+// Same tour-level set surfaceElo.ts uses for its own tour-level-credibility shrink -- kept as a
+// separate local copy for the same reason LEVEL_WEIGHT above is (recentForm pools levels rather
+// than filtering by surface). A hot streak built entirely against Challenger/ITF fields shouldn't
+// earn the same trust as one built against tour-level opponents, mirroring the same shrink-toward-
+// neutral pattern already used for the trend label and surfaceElo's rating.
+const TOUR_LEVELS = new Set<TournamentLevel>(["GrandSlam", "Masters1000", "WTA1000", "ATP500", "WTA500", "ATP250", "WTA250"]);
+function isTourLevel(level: TournamentLevel | null): boolean {
+  return level !== null && TOUR_LEVELS.has(level);
+}
+/** Floor on how much a form score's deviation from neutral (50) is trusted when NONE of a
+ * player's recent-form window came from tour-level competition -- mirrors surfaceElo.ts's
+ * `TOUR_CREDIBILITY_FLOOR`. */
+const TOUR_CREDIBILITY_FLOOR = 0.35;
 
 // A match played on a DIFFERENT surface than the upcoming fixture still carries real signal about
 // the player (it's the same person, same underlying game) -- just less of it for THIS matchup's
@@ -98,9 +117,9 @@ function formScore(
   matches: MatchRecord[],
   surface: Surface,
   opponentElo: OpponentEloLookup,
-): { form: number; trend: "improving" | "stable" | "declining"; sample: number; coverage: number; serveReturnCoverage: number } {
+): { form: number; trend: "improving" | "stable" | "declining"; sample: number; coverage: number; serveReturnCoverage: number; tourLevelShare: number } {
   const recent = matches.slice(0, WINDOW); // matches are already sorted most-recent-first
-  if (recent.length === 0) return { form: 50, trend: "stable", sample: 0, coverage: 0, serveReturnCoverage: 0 };
+  if (recent.length === 0) return { form: 50, trend: "stable", sample: 0, coverage: 0, serveReturnCoverage: 0, tourLevelShare: 0 };
 
   const performances = computeMatchPerformances(recent, opponentElo);
   const coverage = opponentAdjustedCoverage(performances);
@@ -130,7 +149,21 @@ function formScore(
 
   const weightTotal = weights.reduce((a, b) => a + b, 0);
   const weighted = weights.reduce((sum, w, i) => sum + w * contributions[i], 0);
-  const form = Math.round((weighted / weightTotal) * 100);
+  const rawForm = (weighted / weightTotal) * 100;
+
+  // Tour-level credibility: what share of the (recency-weighted, but NOT level-weighted) window
+  // came from genuine tour-level matches, judged only against matches with a KNOWN level -- an
+  // unreported level is absent information, not evidence of weak competition, so it's excluded
+  // from both the numerator and denominator (defaults to fully trusted when no level is known at
+  // all). A form score built almost entirely from beating Challenger/ITF fields shouldn't deviate
+  // from neutral (50) with full confidence -- shrink its distance from 50 in proportion to how
+  // little tour-level evidence backs it, same mechanism surfaceElo.ts uses for its rating.
+  const recencyWeights = recent.map((_, i) => Math.pow(0.85, i));
+  const knownLevelRecencyTotal = recencyWeights.reduce((sum, w, i) => sum + (recent[i].tournamentLevel !== null ? w : 0), 0);
+  const tourRecencyTotal = recencyWeights.reduce((sum, w, i) => sum + (isTourLevel(recent[i].tournamentLevel) ? w : 0), 0);
+  const tourLevelShare = knownLevelRecencyTotal > 0 ? tourRecencyTotal / knownLevelRecencyTotal : 1;
+  const tourLevelCredibility = TOUR_CREDIBILITY_FLOOR + (1 - TOUR_CREDIBILITY_FLOOR) * tourLevelShare;
+  const form = Math.round(50 + (rawForm - 50) * tourLevelCredibility);
 
   // Trend: compare the same weighted, opponent-/serve-return-adjusted contribution across the
   // newer vs. older half of the window -- see TREND_DELTA_THRESHOLD's comment for why this
@@ -151,7 +184,14 @@ function formScore(
   const trend: "improving" | "stable" | "declining" =
     recent.length >= TREND_MIN_SAMPLE && delta > TREND_DELTA_THRESHOLD ? "improving" : recent.length >= TREND_MIN_SAMPLE && delta < -TREND_DELTA_THRESHOLD ? "declining" : "stable";
 
-  return { form, trend, sample: recent.length, coverage, serveReturnCoverage: recent.length > 0 ? serveReturnResolved / recent.length : 0 };
+  return {
+    form,
+    trend,
+    sample: recent.length,
+    coverage,
+    serveReturnCoverage: recent.length > 0 ? serveReturnResolved / recent.length : 0,
+    tourLevelShare,
+  };
 }
 
 export function computeRecentFormModule(
@@ -178,6 +218,12 @@ export function computeRecentFormModule(
   if (minSample < TREND_MIN_SAMPLE) {
     warnings.push(`Trend label needs at least ${TREND_MIN_SAMPLE} recent matches to move off "stable" -- one or both players have fewer.`);
   }
+  const minTourShare = Math.min(p1.tourLevelShare, p2.tourLevelShare);
+  if (minTourShare < 0.25) {
+    const lowPlayer = p1.tourLevelShare <= p2.tourLevelShare ? "Player 1" : "Player 2";
+    const pct = Math.round(minTourShare * 100);
+    warnings.push(`${lowPlayer}'s recent form is backed mostly by sub-tour (Challenger/ITF) matches (only ${pct}% tour-level) -- their form score is shrunk toward neutral to avoid overcrediting a streak against weaker fields.`);
+  }
 
   return {
     player1Form: p1.form,
@@ -189,6 +235,8 @@ export function computeRecentFormModule(
     player2OpponentAdjustedCoverage: Math.round(p2.coverage * 100),
     player1ServeReturnCoverage: Math.round(p1.serveReturnCoverage * 100),
     player2ServeReturnCoverage: Math.round(p2.serveReturnCoverage * 100),
+    player1TourLevelShare: Math.round(p1.tourLevelShare * 1000) / 1000,
+    player2TourLevelShare: Math.round(p2.tourLevelShare * 1000) / 1000,
     warnings,
   };
 }
