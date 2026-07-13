@@ -1,0 +1,92 @@
+Fix the flat, level-blind fallback Elo bug across the entire player 
+database, not just the six flagged matches.
+
+1. Resolve every historical opponent using all available identifiers 
+   (player ID, alternate IDs, normalized/accented name variants, aliases, 
+   date of birth, country, ranking history, match-history cross-reference) 
+   before falling back to anything.
+
+2. If resolved, reconstruct pre-match Elo by replaying their historical 
+   matches chronologically. Cache this per player so it's not recomputed 
+   repeatedly.
+
+3. Never skip Elo calculation just because a player is unranked — if they 
+   have match history, calculate a real Elo.
+
+4. If a player truly cannot be resolved, do not default to a flat neutral 
+   value (like 1500). Use a level-aware baseline (average Elo for that 
+   specific tour/level: ATP, WTA, Challenger, or ITF) instead of a 
+   one-size-fits-all number.
+
+5. If a player IS resolved but most of their opponents are not, shrink 
+   their computed Elo toward the level-aware baseline from step 4, 
+   proportional to how much opponent coverage is missing — the same 
+   logic already used for thin same-surface-sample shrinkage. Confirm 
+   this shrinkage behaves monotonically (more coverage = less shrinkage).
+
+6. Log every case where a fallback baseline or shrinkage was applied: 
+   player, opponent, tournament, level, date, and reason.
+
+7. If more than 1% of matches require the last-resort fallback, flag it 
+   as a data quality warning in the existing warnings/disclosures output. 
+   Do not silently continue, and do not halt the app either.
+
+8. Back up the current Elo database/index state before rebuilding, so it 
+   can be reverted if the rebuild introduces regressions.
+
+9. Rebuild Elo across the full player database (not just the six flagged 
+   matches), then rerun the six flagged matchups specifically to confirm 
+   they are corrected. Report before/after probabilities for whichever of 
+   the six still have live or recent predictions; note any that no longer 
+   apply.
+
+10. Run a backtest capped at 4,000 matches to sanity-check accuracy, 
+    Brier score, and calibration before/after the fix. Before running it, 
+    confirm and report that the 4,000-match sample is stratified across 
+    all tour levels (ATP, WTA, Challenger, ITF) in proportion to their 
+    representation in the historical data — not pulled randomly or from 
+    a single segment. Since this bug is level-specific, an unstratified 
+    sample could miss whether the fix actually worked at the lower tiers 
+    where the problem originated. Report the exact match count per tier 
+    used in the sample. Do not run a full-corpus backtest.
+
+11. Add tests covering: player-order symmetry (swapping player1/player2 
+    exactly mirrors the probability), identical-player inputs land at 
+    approximately 50/50, a missing lower-level opponent no longer 
+    silently defaults to a neutral 1500 baseline, and small-sample 
+    shrinkage behaves monotonically as coverage improves.
+
+12. Do a targeted spot-check (not a full audit) of tieBreakers.ts's 
+    null-rank handling and player-identity resolution for the six 
+    reported players specifically: confirm null/missing currentRank is 
+    never treated as strong or neutral-favorable, and confirm the correct 
+    player record loads for each (no duplicate/accented-name mixups). 
+    Fix anything found wrong; otherwise document it as checked-and-fine.
+
+13. Produce a report containing: before/after probabilities for the six 
+    flagged matchups, the 4,000-match backtest before/after numbers 
+    broken down by tour level, fallback percentage, files modified, and 
+    explicit confirmation that no player-specific hard-coded adjustment 
+    was added anywhere.
+
+Do not auto-import new external data files as part of this task. If 
+missing historical data coverage turns out to be a root cause, report it 
+as a finding and flag it as a separate follow-up task rather than 
+importing inline. Keep the backtest scoped to the 4,000-match sample 
+described in step 10 — do not expand it to the full historical corpus.
+
+Out of scope for this task — do not touch:
+- Broad unit-test coverage for the whole prediction engine, specialist-
+  blend math tests, or a general regression harness (tracked separately 
+  as Task #15 and Task #16).
+- Re-tuning confidence/Elite-tier thresholds against the shifted data 
+  quality distribution (tracked as Task #75).
+- Near-Elite-tier miscalibration or match-simulator signal visibility 
+  (tracked as Task #66 and Task #61).
+- Recalibrating Recent Form's trend labels (tracked as Task #71).
+- Building a new standalone diagnostic UI page — extend the existing 
+  engine.warnings/engine.disclosures/dataQuality structure with any new 
+  coverage figures instead.
+- Changing the calibration method (Platt scaling/isotonic) — only revisit 
+  this if the backtest results from step 10 show it's warranted; do not 
+  swap methods speculatively.
