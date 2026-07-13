@@ -1,0 +1,62 @@
+Root cause investigation confirmed several architecture-level bugs, not 
+isolated UI issues. Fix these in order:
+
+1. IMMUTABLE DECISION OBJECT (primary fix)
+   Create one backend prediction object per match containing: final win 
+   probability, recommendation tier, Elite eligibility, model agreement 
+   level, upset risk level, explanation text, projected set score, 
+   Surface Elo comparison, model version, prediction timestamp, and 
+   input snapshot hash. Every UI component and every badge/label must 
+   read exclusively from this object — no independent recalculation of 
+   Elite status, upset risk, or agreement level anywhere else in the 
+   codebase. Audit every place a badge, tier, or risk label is currently 
+   computed and redirect it to read from this single object.
+
+2. IDEMPOTENT PREDICTION RECORDS
+   Prevent duplicate predictions for the same match/input snapshot from 
+   being created as separate records with potentially different engine 
+   versions or snapshots. Use a uniqueness constraint keyed on match + 
+   input snapshot hash. If a prediction is regenerated, it should update 
+   the existing record (versioned) rather than create a new one.
+
+3. FIX REVERSED ELO DISPLAY
+   Confirm and fix: the UI is displaying Surface Elo comparisons where 
+   the LOWER-rated player appears "favored" (seen with A. Martin: 1516 
+   shown favored over 1523; F. Balshaw: 1540 shown favored over 1571). 
+   This is a real logic bug in the favored-player calculation or display 
+   mapping, not just a labeling issue — find and fix the actual 
+   comparison logic.
+
+4. THRESHOLD ENFORCEMENT
+   Add explicit rule: a prediction can never be labeled Elite or Strong 
+   Recommendation if upset risk is High/Extreme OR model agreement is 
+   Mixed/High Disagreement. Define exact thresholds and enforce them 
+   inside the same decision object logic from step 1 — not as a separate 
+   downstream check.
+
+5. MONTE CARLO LABELING
+   Rename "95% input reliability" to something accurate like "95% input 
+   completeness" since the simulator is explicitly unvalidated and 
+   should not imply statistical reliability. Confirm it truly does not 
+   feed into the final probability anywhere.
+
+6. SET SCORE ORDER
+   Clarify and fix which player's score appears first in projected set 
+   scores. Confirm the predicted winner's score is never displayed in a 
+   way that reads as a loss (e.g. winner shown with fewer sets won).
+
+7. VALIDATION TESTS
+   Add automated tests that fail the build if any of these occur:
+   - Elite/Strong Recommendation paired with No Strong Signal
+   - Elite paired with High/Extreme Upset Risk
+   - Elite paired with Mixed/High Model Disagreement
+   - A lower Elo rating displayed as "favored"
+   - Predicted winner paired with a set score implying a loss
+   - Unvalidated Monte Carlo output labeled with a reliability score
+   - Two predictions for the same match/input snapshot producing 
+     different recommendation tiers
+
+8. REPORT
+   After fixing, report: root cause(s) confirmed, files changed, 
+   before/after examples for Miyoshi/Poling, A. Martin, and F. Balshaw 
+   specifically, and confirmation all seven validation tests pass.
