@@ -18,10 +18,11 @@ export type DataQualityLabel = "Excellent" | "Strong" | "Acceptable" | "Limited"
  *
  * Head-to-Head's reliability collapses toward its floor whenever two players simply haven't met
  * before -- the NORMAL case for most real matchups (especially first rounds and lower tiers), not
- * a fixable data gap. Weighting it at parity with the core signals would let this expected rarity
- * single-handedly cap an otherwise well-supported prediction's Data Quality. Weighting it low
- * still lets it meaningfully lift the score once real meetings exist, without letting its absence
- * drag down matches that are otherwise strongly supported.
+ * a fixable data gap. A low importance weight was tried first (parity would let this expected
+ * rarity single-handedly cap an otherwise well-supported prediction), but even a low, non-zero
+ * weight still let the common "no meetings yet" case drag down an otherwise strong score across
+ * the whole corpus. See `EXCLUDED_FROM_DATA_QUALITY` below -- Head-to-Head is now fully excluded
+ * from this blend, the same way Availability is excluded from the ensemble vote.
  *
  * Fatigue's reliability is currently a fixed constant (see fatigue.ts) rather than a real
  * per-match signal of data richness -- it is weighted low enough that this constant can't
@@ -35,6 +36,21 @@ export const MODULE_IMPORTANCE = {
   fatigue: 0.7,
   headToHead: 0.5,
 } as const;
+
+/**
+ * Modules excluded from the numeric Data Quality BLEND entirely (but still fully computed and
+ * shown in `EngineBreakdown` for transparency -- reliability/notes/warnings are never hidden).
+ *
+ * Head-to-Head was excluded per the 2026-07-13 "stop low-value signals from dragging down
+ * quality scores" audit: most real matchups (especially first rounds and lower tiers) have no
+ * prior meeting on record at all, which is the NORMAL case, not a fixable data gap -- yet its
+ * reliability collapses toward its floor exactly then, so even a low importance weight (see
+ * `MODULE_IMPORTANCE.headToHead` above) let this expected rarity visibly drag down an otherwise
+ * well-supported prediction's Data Quality score. Head-to-Head keeps voting in the ensemble
+ * probability (`ENSEMBLE_WEIGHT_PRIOR.headToHead`) and stays fully visible in the UI -- only its
+ * effect on the numeric Data Quality score is removed.
+ */
+export const EXCLUDED_FROM_DATA_QUALITY = new Set(["headToHead"]);
 
 /**
  * Fixed prior on how much each module's vote counts toward the ACTUAL blended probability

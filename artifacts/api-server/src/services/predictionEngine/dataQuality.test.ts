@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE } from "./dataQuality";
+import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, EXCLUDED_FROM_DATA_QUALITY } from "./dataQuality";
 
 function modules(overrides: Partial<Record<keyof typeof MODULE_IMPORTANCE, number>>) {
   const defaults: Record<keyof typeof MODULE_IMPORTANCE, number> = {
@@ -47,11 +47,25 @@ test("strong data across every module still scores Excellent", () => {
   assert.equal(label, "Excellent");
 });
 
-test("Head-to-Head data still meaningfully lifts the score once real meetings exist", () => {
+test("Head-to-Head is excluded from the real Data Quality blend (2026-07-13 'stop low-value signals' fix) -- its reliability can no longer move the score at all once filtered the way index.ts actually does", () => {
+  const withoutHeadToHead = (overrides: Partial<Record<keyof typeof MODULE_IMPORTANCE, number>>) =>
+    modules(overrides).filter((_, i) => !EXCLUDED_FROM_DATA_QUALITY.has((Object.keys(MODULE_IMPORTANCE) as Array<keyof typeof MODULE_IMPORTANCE>)[i]));
+
+  const noMeetings = computeDataQuality(withoutHeadToHead({ surfaceElo: 60, serveReturn: 60, recentForm: 60, fatigue: 70, availability: 60, headToHead: 5 }));
+  const manyMeetings = computeDataQuality(withoutHeadToHead({ surfaceElo: 60, serveReturn: 60, recentForm: 60, fatigue: 70, availability: 60, headToHead: 90 }));
+
+  assert.equal(
+    manyMeetings.score,
+    noMeetings.score,
+    "with Head-to-Head correctly filtered out before calling computeDataQuality (as index.ts now does), its reliability must have zero effect on the score",
+  );
+});
+
+test("computeDataQuality itself still accepts a Head-to-Head-shaped input (defensive -- the exclusion lives at the call site in index.ts, not inside this pure blend function)", () => {
   const noMeetings = computeDataQuality(modules({ surfaceElo: 60, serveReturn: 60, recentForm: 60, fatigue: 70, availability: 60, headToHead: 5 }));
   const manyMeetings = computeDataQuality(modules({ surfaceElo: 60, serveReturn: 60, recentForm: 60, fatigue: 70, availability: 60, headToHead: 90 }));
 
-  assert.ok(manyMeetings.score > noMeetings.score, "real head-to-head history should still raise the score, just not dominate its absence");
+  assert.ok(manyMeetings.score >= noMeetings.score, "the underlying weighted-blend math is unchanged -- only the real pipeline's call site now omits Head-to-Head");
 });
 
 test("an all-zero input produces the lowest score without dividing by zero", () => {

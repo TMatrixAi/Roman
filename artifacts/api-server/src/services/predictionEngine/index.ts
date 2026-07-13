@@ -5,7 +5,7 @@ import { computeFatigueModule } from "./fatigue";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
-import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, CONFIDENCE_SHRINK } from "./dataQuality";
+import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, EXCLUDED_FROM_DATA_QUALITY, CONFIDENCE_SHRINK } from "./dataQuality";
 import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
 import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
@@ -35,6 +35,15 @@ export interface EngineBreakdown {
   matchupCloseness: MatchupCloseness;
   reasons: string[];
   risks: string[];
+  /**
+   * Informational disclosures that are real, worth showing, but NOT evidence this specific match
+   * is more upset-prone or lower-quality -- e.g. "no prior head-to-head meetings" (the normal case
+   * for most matchups) or "not enough matches to tag a surface specialist" (a coverage gap, not a
+   * red flag). Added by the 2026-07-13 "stop low-value signals" audit so this information keeps
+   * showing up (never hidden) without being styled/counted like a real risk. Not present on
+   * predictions made before this field existed.
+   */
+  disclosures: string[];
   warnings: string[];
   availabilityNote: string;
   conditionsNote: string;
@@ -255,8 +264,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // but excluded from both the ensemble vote and the Data Quality blend -- see
   // `EXCLUDED_FROM_ENSEMBLE`'s rationale: its own leave-one-out removal measurably improved
   // accuracy in the 2026-07-13 ablation report, so it is disabled rather than merely down-weighted.
+  // Head-to-Head is additionally excluded from the Data Quality blend ONLY (it still votes in the
+  // ensemble above) -- see `EXCLUDED_FROM_DATA_QUALITY`'s rationale: the common "no prior
+  // meetings" case isn't a fixable data gap, so it shouldn't be able to drag the score down.
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
-    moduleEdges.map((m) => ({ reliability: m.reliability, importance: m.importance })),
+    moduleEdges.filter((m) => !EXCLUDED_FROM_DATA_QUALITY.has(m.key)).map((m) => ({ reliability: m.reliability, importance: m.importance })),
   );
 
   // Requirement 2 of this phase: expose the surface sample-depth count that `surfaceElo.ts`
@@ -405,13 +417,17 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     modelConflictNote = `The raw, reliability-weighted evidence (${metricVotes}) favored ${rawFavorsPlayer1 ? input.player1.name : input.player2.name}, but ${flipStage} shifted the final pick to ${finalFavorsPlayer1 ? input.player1.name : input.player2.name}. This is a real statistical adjustment, not an error -- but treat the edge with extra caution.`;
   }
 
-  // Uncertainty warnings feeding the upset-risk `uncertainty` component -- deliberately excludes
-  // surfaceElo.warnings (already counted once, in the `sampleDepth` component) and
-  // headToHead.warnings (a missing/thin H2H is the common case for most matchups, not a real
-  // outlier signal -- same reasoning `dataQuality.ts`'s importance weighting already applies).
+  // Uncertainty warnings feeding the upset-risk `uncertainty` component -- deliberately excludes:
+  // - surfaceElo.warnings (already counted once, in the `sampleDepth` component)
+  // - headToHead.warnings (a missing/thin H2H is the common case for most matchups, not a real
+  //   outlier signal -- same reasoning `dataQuality.ts`'s exclusion already applies)
+  // - availability.warnings (travel distance / venue-lookup gaps -- these track venue-coverage
+  //   limits, not a genuine per-match upset signal; 2026-07-13 "stop low-value signals" audit)
+  // - styleMatchup.warnings (thin-sample surface-specialist / indoor-outdoor split -- same
+  //   reasoning: a coverage gap, not evidence this specific match is more upset-prone)
   // Player-identity warnings (`buildPlayerProfileWarnings`) are appended by callers AFTER this
   // function returns, so they aren't visible here yet -- an honest gap, not a fabricated count.
-  const upsetRiskUncertaintyWarnings = [...serveReturn.warnings, ...availability.warnings, ...fatigue.warnings, ...styleMatchup.warnings];
+  const upsetRiskUncertaintyWarnings = [...serveReturn.warnings, ...fatigue.warnings];
   const upsetRiskBreakdown = computeUpsetRisk({
     calibratedProbability,
     disagreement: governingDisagreement,
@@ -434,6 +450,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
 
   const reasons: string[] = [];
   const risks: string[] = [];
+  const disclosures: string[] = [];
 
   if (surfaceElo.sampleSizePlayer1 >= 3 && surfaceElo.sampleSizePlayer2 >= 3) {
     reasons.push(
@@ -458,9 +475,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
         `Head-to-head: ${leader} leads ${Math.max(headToHead.player1Wins, headToHead.player2Wins)}-${Math.min(headToHead.player1Wins, headToHead.player2Wins)}.`,
       );
     }
-  } else {
-    risks.push("No prior head-to-head meetings found -- this matchup has no direct precedent.");
   }
+  // A missing or thin head-to-head record is the NORMAL case for most matchups (first rounds,
+  // lower tiers) -- real information worth disclosing, but not evidence this specific match is
+  // riskier, so it's a plain disclosure rather than a risk (see `EngineBreakdown.disclosures`).
+  disclosures.push(...headToHead.warnings);
 
   if (disagreementNote) {
     risks.push(disagreementNote);
@@ -496,14 +515,16 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     upsetRisk,
   });
 
+  // A thin-sample surface-specialist tag is a coverage gap (not enough matches yet to tag a
+  // style), not evidence of real risk in this specific match -- disclosed, not risk-styled.
+  disclosures.push(...styleMatchup.warnings);
+
   const warnings = [
     ...surfaceElo.warnings,
     ...serveReturn.warnings,
     ...recentForm.warnings,
     ...fatigue.warnings,
     ...availability.warnings,
-    ...styleMatchup.warnings,
-    ...headToHead.warnings,
   ];
 
   const weather = input.weather ?? null;
@@ -545,6 +566,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     matchupCloseness,
     reasons,
     risks,
+    disclosures,
     warnings,
     availabilityNote: buildAvailabilityNote(availability),
     conditionsNote: weather

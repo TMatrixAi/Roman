@@ -22,3 +22,17 @@ whether its reliability is a genuine per-match data-richness signal or a structu
 value. Don't revert to a flat average — re-validate `calibration.ts`'s dataQuality-based shrink
 curve and `recommendation.ts`'s dataQuality thresholds against the walk-forward evaluation suite
 (`test:evaluation`) whenever the blend's typical output range shifts.
+
+**Update (2026-07-13):** a low-but-nonzero importance weight still wasn't enough for Head-to-Head —
+because "no prior meetings" is the NORMAL case for most real matchups (first rounds, lower tiers),
+even a small weight visibly dragged down an otherwise strong score across the whole corpus. Fully
+excluded it from the blend via `EXCLUDED_FROM_DATA_QUALITY` (mirrors the existing
+`EXCLUDED_FROM_ENSEMBLE` pattern) rather than just down-weighting further. It still votes in the
+ensemble (`ENSEMBLE_WEIGHT_PRIOR.headToHead` unaffected) — only its effect on the *score* is gone.
+Same audit also stopped Availability's and Style-Matchup's coverage-gap warnings (travel/venue
+unresolved, thin surface sample) from feeding the Upset Risk `uncertainty` component, and moved
+"no head-to-head" / "not enough matches for a specialist tag" out of risk-styled UI into a new
+neutral `EngineBreakdown.disclosures` field — a structurally-common absence of data is real
+information worth showing, but isn't evidence a specific match is riskier or lower-quality, so it
+shouldn't be scored or styled like one. Apply this same distinction (quality/risk-worthy vs.
+merely-disclosable) whenever a new "gap" signal is added to either Data Quality or Upset Risk.

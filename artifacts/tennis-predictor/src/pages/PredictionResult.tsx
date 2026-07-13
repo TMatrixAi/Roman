@@ -421,6 +421,16 @@ export default function PredictionResultPage() {
           </div>
         )}
 
+        {!!engine.disclosures?.length && (
+          <div className="mb-6 p-4 border border-border bg-secondary/30 rounded-lg space-y-2">
+            {engine.disclosures.map((d, i) => (
+              <div key={i} className="flex gap-2 text-xs text-muted-foreground">
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>{d}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           
           <ModuleCard title="SURFACE ELO" reliability={engine.surfaceElo.reliability} icon={ActivitySquare}>
