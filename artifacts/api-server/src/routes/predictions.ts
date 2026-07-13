@@ -146,6 +146,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       // intentionally omitted here -- see paperTrading.ts for genuinely upcoming fixtures.
       weather: null,
       tournamentName: body.tournamentName ?? null,
+      tournamentLevel: body.tournamentLevel ?? null,
       segment,
       simulatorAdoption,
     });

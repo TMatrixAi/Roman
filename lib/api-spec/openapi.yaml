@@ -1259,6 +1259,54 @@ components:
         eliteTierReason:
           type: string
           description: Always present -- explains why a prediction is or isn't elite tier. Never silent.
+        upsetRiskBreakdown:
+          $ref: "#/components/schemas/UpsetRiskResult"
+          description: Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.
+
+    UpsetRiskComponents:
+      type: object
+      description: Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.
+      required: [modelConflict, favoriteWeakness, uncertainty, sampleDepth, volatility, matchupHazard]
+      properties:
+        modelConflict:
+          type: number
+          description: Core-model direction conflict + modelAgreement band.
+        favoriteWeakness:
+          type: number
+          description: How close the final probability sits to a coin flip.
+        uncertainty:
+          type: number
+          description: Missing/weak inputs not already covered by sampleDepth, plus raw-vs-calibrated divergence.
+        sampleDepth:
+          type: number
+          description: Thin surface-Elo sample for either player.
+        volatility:
+          type: number
+          description: Tournament-level favorite-loss deviation from this engine's own evaluation corpus, for levels with enough real sample to trust it.
+        matchupHazard:
+          type: number
+          description: Always 0 today -- no genuinely validated match-hazard signal exists yet; shown, not fabricated.
+
+    UpsetRiskResult:
+      type: object
+      required: [upsetRisk, score, components, topContributors, note]
+      properties:
+        upsetRisk:
+          type: string
+          enum: [LOW, MODERATE, HIGH, EXTREME]
+        score:
+          type: number
+          description: Raw combined component score behind the tier -- not itself shown to users, exposed for auditability/testing.
+        components:
+          $ref: "#/components/schemas/UpsetRiskComponents"
+        topContributors:
+          type: array
+          items:
+            type: string
+          description: Names of the components that meaningfully contributed, most-contributing first.
+        note:
+          type: string
+          description: Always present -- names the actual top contributors behind the tier. Never a silent label.
 
     BulkDeletePredictionsInput:
       type: object

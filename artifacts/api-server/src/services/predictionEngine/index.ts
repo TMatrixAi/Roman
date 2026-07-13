@@ -10,7 +10,7 @@ import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
 import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
-import { computeUpsetRisk } from "./upsetRisk";
+import { computeUpsetRisk, type UpsetRiskResult } from "./upsetRisk";
 import { computeRecommendation } from "./recommendation";
 import { deriveServicePointEstimate, runMatchSimulation, deriveMatchSeed, type MatchSimulationResult } from "./simulator";
 import { applyTieBreaker } from "./tieBreakers";
@@ -73,6 +73,8 @@ export interface EngineBreakdown {
   isEliteTier: boolean;
   /** Always present -- explains why a prediction is or isn't elite tier. Never silent. */
   eliteTierReason: string;
+  /** Recalibrated upset-risk breakdown (2026-07-13 disagreement/upset-risk spec, Part 2) -- see `upsetRisk.ts`. `EngineOutput.upsetRisk` stays the plain LOW/MODERATE/HIGH/EXTREME tier for existing API/DB consumers; this is the full auditable component breakdown behind it. Not present on predictions made before this field existed. */
+  upsetRiskBreakdown: UpsetRiskResult;
 }
 
 export interface EngineOutput {
@@ -93,7 +95,7 @@ export interface EngineOutput {
   rawEnsembleProbability: number;
   dataQuality: number;
   dataQualityLabel: ReturnType<typeof computeDataQuality>["label"];
-  upsetRisk: ReturnType<typeof computeUpsetRisk>;
+  upsetRisk: UpsetRiskResult["upsetRisk"];
   recommendation: ReturnType<typeof computeRecommendation>;
   predictedSetScore: string;
   engine: EngineBreakdown;
@@ -378,7 +380,22 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     modelConflictNote = `The raw, reliability-weighted evidence (${metricVotes}) favored ${rawFavorsPlayer1 ? input.player1.name : input.player2.name}, but ${flipStage} shifted the final pick to ${finalFavorsPlayer1 ? input.player1.name : input.player2.name}. This is a real statistical adjustment, not an error -- but treat the edge with extra caution.`;
   }
 
-  const upsetRisk = computeUpsetRisk(calibratedProbability, modelAgreement);
+  // Uncertainty warnings feeding the upset-risk `uncertainty` component -- deliberately excludes
+  // surfaceElo.warnings (already counted once, in the `sampleDepth` component) and
+  // headToHead.warnings (a missing/thin H2H is the common case for most matchups, not a real
+  // outlier signal -- same reasoning `dataQuality.ts`'s importance weighting already applies).
+  // Player-identity warnings (`buildPlayerProfileWarnings`) are appended by callers AFTER this
+  // function returns, so they aren't visible here yet -- an honest gap, not a fabricated count.
+  const upsetRiskUncertaintyWarnings = [...serveReturn.warnings, ...availability.warnings, ...fatigue.warnings, ...styleMatchup.warnings];
+  const upsetRiskBreakdown = computeUpsetRisk({
+    calibratedProbability,
+    disagreement: governingDisagreement,
+    rawVsCalibratedConflict: modelConflict,
+    uncertaintyWarningCount: upsetRiskUncertaintyWarnings.length,
+    minSurfaceSampleSize: Math.min(surfaceElo.sampleSizePlayer1, surfaceElo.sampleSizePlayer2),
+    tournamentLevel: input.tournamentLevel ?? null,
+  });
+  const upsetRisk = upsetRiskBreakdown.upsetRisk;
   const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement);
 
   const favorsPlayer1 = calibratedProbability >= 50;
@@ -428,12 +445,20 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.push("Probability is close to a coin flip and the underlying models don't agree -- there is no strong signal either way for this matchup.");
   }
 
+  // Auditable upset-risk explanation (2026-07-13 spec, Part 2D) -- named top contributors, never
+  // a silent tier label. Shown whenever the tier is above LOW.
+  if (upsetRisk !== "LOW") {
+    risks.push(upsetRiskBreakdown.note);
+  }
+
   if (modelConflict && modelConflictNote) {
     risks.unshift(`MODEL CONFLICT: ${modelConflictNote}`);
   }
 
   // Requirement 8 of the fix-the-engine spec: a strictly narrower "Elite Prediction" tier -- see
-  // `eliteTier.ts` for the exact gating conditions.
+  // `eliteTier.ts` for the exact gating conditions. Extended by the 2026-07-13 spec's Elite-vs-
+  // risk consistency guardrail (Part 2E): Elite additionally requires modelAgreement not to be
+  // High Disagreement and upsetRisk not to be High/Extreme.
   const { isEliteTier, reason: eliteTierReason } = computeEliteTier({
     dataQuality,
     surfaceEloFavorsPlayer1: voteFavorsPlayer1(featureModels, "Surface Elo"),
@@ -442,6 +467,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     specialistApplied,
     segmentLabel: segment?.label ?? null,
     modelConflict,
+    modelAgreement,
+    upsetRisk,
   });
 
   const warnings = [
@@ -490,6 +517,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     tieBreakerNote: tieBreaker.applied ? tieBreaker.note : null,
     isEliteTier,
     eliteTierReason,
+    upsetRiskBreakdown,
   };
 
   return {

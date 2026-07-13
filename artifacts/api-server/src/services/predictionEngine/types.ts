@@ -41,6 +41,14 @@ export interface PredictionEngineInput {
    */
   tournamentName?: string | null;
   /**
+   * Tournament level label (e.g. "ATP250", "Challenger", "ITF") when known, used only by the
+   * upset-risk volatility component (`upsetRisk.ts`) -- a small, historically-measured adjustment
+   * for levels this engine's own evaluation corpus showed a real (not fabricated) deviation for.
+   * Omit/null when unknown -- the volatility component simply reports 0 for this match rather
+   * than guessing.
+   */
+  tournamentLevel?: string | null;
+  /**
    * The currently active Phase 4 isotonic calibration mapping (fitted from real walk-forward
    * validation data), pre-fetched by the caller. When present, this is used in place of the
    * engine's own dataQuality-based heuristic shrink -- a real, data-validated calibration beats a

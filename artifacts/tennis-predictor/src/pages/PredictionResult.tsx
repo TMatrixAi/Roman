@@ -163,7 +163,9 @@ export default function PredictionResultPage() {
                 <div className="p-4 bg-secondary/50 rounded-lg">
                   <p className="text-xs font-mono text-muted-foreground mb-1">UPSET RISK</p>
                   <p className="text-xl font-bold">{prediction.upsetRisk}</p>
-                  <p className="text-xs mt-1 text-muted-foreground">Volatility warning</p>
+                  <p className="text-xs mt-1 text-muted-foreground">
+                    {engine.upsetRiskBreakdown?.note ?? "Not available for predictions made before this breakdown existed."}
+                  </p>
                 </div>
               </div>
 

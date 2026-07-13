@@ -1,0 +1,99 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { computeUpsetRisk, type UpsetRiskInput } from "./upsetRisk";
+import type { WeightedDisagreement } from "./disagreement";
+
+function disagreement(overrides: Partial<WeightedDisagreement> = {}): WeightedDisagreement {
+  return {
+    modelAgreement: "Strong",
+    weightedStdDev: 2,
+    leadingSupportPercent: 90,
+    coreModelsConflict: false,
+    conflictingModels: [],
+    ...overrides,
+  };
+}
+
+function input(overrides: Partial<UpsetRiskInput> = {}): UpsetRiskInput {
+  return {
+    calibratedProbability: 75, // a clear, comfortable favorite by default
+    disagreement: disagreement(),
+    rawVsCalibratedConflict: false,
+    uncertaintyWarningCount: 0,
+    minSurfaceSampleSize: 10,
+    tournamentLevel: null,
+    ...overrides,
+  };
+}
+
+test("a comfortable favorite with clean data and full agreement is LOW risk with no contributors", () => {
+  const result = computeUpsetRisk(input());
+  assert.equal(result.upsetRisk, "LOW");
+  assert.deepEqual(result.topContributors, []);
+  assert.match(result.note, /LOW/);
+});
+
+test("a near-coin-flip probability alone (no other real signal) cannot reach EXTREME -- caps at HIGH", () => {
+  // margin < 3 alone maxes favoriteWeakness at 45 (< HIGH_MAX of 55 already caps it at HIGH
+  // territory), and the explicit gate additionally refuses EXTREME without a second real signal.
+  const result = computeUpsetRisk(input({ calibratedProbability: 51 }));
+  assert.notEqual(result.upsetRisk, "EXTREME", "a single weak/missing field must never alone produce EXTREME");
+  assert.equal(result.components.favoriteWeakness, 45);
+  assert.equal(result.topContributors[0], "favoriteWeakness");
+});
+
+test("a genuine core-model conflict (>=2 validated core models pointing at different players) pushes toward EXTREME even with a merely close probability", () => {
+  const result = computeUpsetRisk(
+    input({
+      calibratedProbability: 52,
+      disagreement: disagreement({ modelAgreement: "HighDisagreement", coreModelsConflict: true }),
+    }),
+  );
+  assert.equal(result.upsetRisk, "EXTREME");
+  assert.equal(result.components.modelConflict, 33); // 8 band + 25 core-conflict bonus
+});
+
+test("severe sample-depth gap (zero real matches on this surface for a player) can gate EXTREME alongside a close probability", () => {
+  const result = computeUpsetRisk(
+    input({
+      calibratedProbability: 51,
+      minSurfaceSampleSize: 0,
+    }),
+  );
+  assert.equal(result.components.sampleDepth, 10);
+  // favoriteWeakness(45) + sampleDepth(10) = 55 -> crosses HIGH_MAX -> EXTREME, and the explicit
+  // gate allows it because minSurfaceSampleSize === 0 (severeSampleGap).
+  assert.equal(result.upsetRisk, "EXTREME");
+});
+
+test("modelAgreement alone (Strong vs HighDisagreement, no core conflict) only nudges the score slightly -- it is not a strong standalone driver", () => {
+  const strong = computeUpsetRisk(input({ disagreement: disagreement({ modelAgreement: "Strong" }) }));
+  const highDisagreement = computeUpsetRisk(input({ disagreement: disagreement({ modelAgreement: "HighDisagreement" }) }));
+  assert.ok(highDisagreement.score - strong.score <= 8, "non-core-conflict modelAgreement bands should only contribute a small amount, per the calibration analysis");
+});
+
+test("volatility component only applies to clear favorites (margin>=15) and only for levels with a validated deviation", () => {
+  const challengerClear = computeUpsetRisk(input({ calibratedProbability: 80, tournamentLevel: "Challenger" }));
+  const challengerClose = computeUpsetRisk(input({ calibratedProbability: 55, tournamentLevel: "Challenger" }));
+  const unknownLevel = computeUpsetRisk(input({ calibratedProbability: 80, tournamentLevel: "SomeUnvalidatedLevel" }));
+
+  assert.equal(challengerClear.components.volatility, 7);
+  assert.equal(challengerClose.components.volatility, 0, "volatility should not apply when the favorite isn't clear");
+  assert.equal(unknownLevel.components.volatility, 0, "unvalidated levels must stay at 0, never a guessed adjustment");
+});
+
+test("uncertainty component combines warning count and raw-vs-calibrated conflict, capped at 15", () => {
+  const result = computeUpsetRisk(input({ uncertaintyWarningCount: 10, rawVsCalibratedConflict: true }));
+  assert.equal(result.components.uncertainty, 15);
+});
+
+test("matchupHazard is always 0 -- no fabricated hazard signal", () => {
+  const result = computeUpsetRisk(input());
+  assert.equal(result.components.matchupHazard, 0);
+});
+
+test("note names the real top contributors, never a generic placeholder, whenever risk is above LOW", () => {
+  const result = computeUpsetRisk(input({ calibratedProbability: 52, minSurfaceSampleSize: 0 }));
+  assert.notEqual(result.upsetRisk, "LOW");
+  assert.match(result.note, /favorite's edge is thin|thin surface-history sample/);
+});

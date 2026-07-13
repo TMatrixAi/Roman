@@ -16,6 +16,7 @@ import type { RecentFormResult } from './recentFormResult';
 import type { ServeReturnResult } from './serveReturnResult';
 import type { StyleMatchupResult } from './styleMatchupResult';
 import type { SurfaceEloResult } from './surfaceEloResult';
+import type { UpsetRiskResult } from './upsetRiskResult';
 import type { WeatherConditions } from './weatherConditions';
 
 /**
@@ -84,4 +85,6 @@ export interface EngineBreakdown {
   isEliteTier?: boolean;
   /** Always present -- explains why a prediction is or isn't elite tier. Never silent. */
   eliteTierReason?: string;
+  /** Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present. */
+  upsetRiskBreakdown?: UpsetRiskResult;
 }

@@ -363,7 +363,21 @@ export const CreatePredictionResponse = zod.object({
   "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
   "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
   "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
-  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.'),
+  "upsetRiskBreakdown": zod.object({
+  "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
+  "score": zod.number().describe('Raw combined component score behind the tier -- not itself shown to users, exposed for auditability\/testing.'),
+  "components": zod.object({
+  "modelConflict": zod.number().describe('Core-model direction conflict + modelAgreement band.'),
+  "favoriteWeakness": zod.number().describe('How close the final probability sits to a coin flip.'),
+  "uncertainty": zod.number().describe('Missing\/weak inputs not already covered by sampleDepth, plus raw-vs-calibrated divergence.'),
+  "sampleDepth": zod.number().describe('Thin surface-Elo sample for either player.'),
+  "volatility": zod.number().describe('Tournament-level favorite-loss deviation from this engine\'s own evaluation corpus, for levels with enough real sample to trust it.'),
+  "matchupHazard": zod.number().describe('Always 0 today -- no genuinely validated match-hazard signal exists yet; shown, not fabricated.')
+}).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
+  "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
+  "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -544,7 +558,21 @@ export const GetPredictionResponse = zod.object({
   "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
   "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
   "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
-  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.'),
+  "upsetRiskBreakdown": zod.object({
+  "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
+  "score": zod.number().describe('Raw combined component score behind the tier -- not itself shown to users, exposed for auditability\/testing.'),
+  "components": zod.object({
+  "modelConflict": zod.number().describe('Core-model direction conflict + modelAgreement band.'),
+  "favoriteWeakness": zod.number().describe('How close the final probability sits to a coin flip.'),
+  "uncertainty": zod.number().describe('Missing\/weak inputs not already covered by sampleDepth, plus raw-vs-calibrated divergence.'),
+  "sampleDepth": zod.number().describe('Thin surface-Elo sample for either player.'),
+  "volatility": zod.number().describe('Tournament-level favorite-loss deviation from this engine\'s own evaluation corpus, for levels with enough real sample to trust it.'),
+  "matchupHazard": zod.number().describe('Always 0 today -- no genuinely validated match-hazard signal exists yet; shown, not fabricated.')
+}).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
+  "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
+  "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -781,7 +809,21 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
   "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
   "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
-  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.'),
+  "upsetRiskBreakdown": zod.object({
+  "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
+  "score": zod.number().describe('Raw combined component score behind the tier -- not itself shown to users, exposed for auditability\/testing.'),
+  "components": zod.object({
+  "modelConflict": zod.number().describe('Core-model direction conflict + modelAgreement band.'),
+  "favoriteWeakness": zod.number().describe('How close the final probability sits to a coin flip.'),
+  "uncertainty": zod.number().describe('Missing\/weak inputs not already covered by sampleDepth, plus raw-vs-calibrated divergence.'),
+  "sampleDepth": zod.number().describe('Thin surface-Elo sample for either player.'),
+  "volatility": zod.number().describe('Tournament-level favorite-loss deviation from this engine\'s own evaluation corpus, for levels with enough real sample to trust it.'),
+  "matchupHazard": zod.number().describe('Always 0 today -- no genuinely validated match-hazard signal exists yet; shown, not fabricated.')
+}).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
+  "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
+  "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),

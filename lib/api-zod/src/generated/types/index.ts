@@ -89,5 +89,8 @@ export * from './tournamentLevel';
 export * from './updatePredictionSettingsRequest';
 export * from './updatePredictionSettingsRequestRetirementRule';
 export * from './upsetRisk';
+export * from './upsetRiskComponents';
+export * from './upsetRiskResult';
+export * from './upsetRiskResultUpsetRisk';
 export * from './walkForwardSummary';
 export * from './weatherConditions';

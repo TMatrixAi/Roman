@@ -439,6 +439,45 @@ export interface MatchSimulationResult {
   note: string;
 }
 
+export type UpsetRiskResultUpsetRisk = typeof UpsetRiskResultUpsetRisk[keyof typeof UpsetRiskResultUpsetRisk];
+
+
+export const UpsetRiskResultUpsetRisk = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+  EXTREME: 'EXTREME',
+} as const;
+
+/**
+ * Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.
+ */
+export interface UpsetRiskComponents {
+  /** Core-model direction conflict + modelAgreement band. */
+  modelConflict: number;
+  /** How close the final probability sits to a coin flip. */
+  favoriteWeakness: number;
+  /** Missing/weak inputs not already covered by sampleDepth, plus raw-vs-calibrated divergence. */
+  uncertainty: number;
+  /** Thin surface-Elo sample for either player. */
+  sampleDepth: number;
+  /** Tournament-level favorite-loss deviation from this engine's own evaluation corpus, for levels with enough real sample to trust it. */
+  volatility: number;
+  /** Always 0 today -- no genuinely validated match-hazard signal exists yet; shown, not fabricated. */
+  matchupHazard: number;
+}
+
+export interface UpsetRiskResult {
+  upsetRisk: UpsetRiskResultUpsetRisk;
+  /** Raw combined component score behind the tier -- not itself shown to users, exposed for auditability/testing. */
+  score: number;
+  components: UpsetRiskComponents;
+  /** Names of the components that meaningfully contributed, most-contributing first. */
+  topContributors: string[];
+  /** Always present -- names the actual top contributors behind the tier. Never a silent label. */
+  note: string;
+}
+
 /**
  * Full module-by-module output of the prediction engine
  */
@@ -505,6 +544,8 @@ export interface EngineBreakdown {
   isEliteTier?: boolean;
   /** Always present -- explains why a prediction is or isn't elite tier. Never silent. */
   eliteTierReason?: string;
+  /** Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present. */
+  upsetRiskBreakdown?: UpsetRiskResult;
 }
 
 export interface BulkDeletePredictionsInput {

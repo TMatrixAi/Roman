@@ -1,4 +1,6 @@
 import type { ModelVote } from "./ensemble";
+import type { ModelAgreement } from "./disagreement";
+import type { UpsetRisk } from "./upsetRisk";
 
 const ELITE_DATA_QUALITY_THRESHOLD = 65; // matches the engine's own "Strong" data-quality label floor
 
@@ -21,6 +23,16 @@ export interface EliteTierInputs {
    * to ever earn during backtesting).
    */
   modelConflict: boolean;
+  /**
+   * Elite-vs-risk consistency guardrail (2026-07-13 disagreement/upset-risk spec, Part 2E): a
+   * prediction cannot be Elite while the governing disagreement reading is High Disagreement, or
+   * while the recalibrated upset risk is High/Extreme -- "top-tier confidence" and "genuine
+   * conflict/upset danger" are contradictory claims about the same prediction. The risk label
+   * itself is never suppressed when this fires -- only the Elite badge is withheld, with a
+   * visible reason (see the "not elite" branch below).
+   */
+  modelAgreement: ModelAgreement;
+  upsetRisk: UpsetRisk;
 }
 
 export interface EliteTierResult {
@@ -51,6 +63,9 @@ export function computeEliteTier(input: EliteTierInputs): EliteTierResult {
   if (!input.specialistApplied) reasons.push(`no validated segment specialist${input.segmentLabel ? ` for ${input.segmentLabel}` : ""} is backing this prediction with real historical accuracy`);
 
   if (input.modelConflict) reasons.push("calibration/specialist blending flipped the pick away from the raw evidence (model conflict) -- calibration did not pass");
+
+  if (input.modelAgreement === "HighDisagreement") reasons.push("model agreement is High Disagreement -- the risk label is not suppressed, only the Elite badge is withheld");
+  if (input.upsetRisk === "HIGH" || input.upsetRisk === "EXTREME") reasons.push(`upset risk is ${input.upsetRisk} -- the risk label is not suppressed, only the Elite badge is withheld`);
 
   if (reasons.length === 0) {
     return { isEliteTier: true, reason: "Elite: high data quality, Surface Elo/Serve & Return/Recent Form all agree, a validated segment specialist backs the call, and the calibrated pick agrees with the raw evidence (no model conflict)." };

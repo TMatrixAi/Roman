@@ -164,6 +164,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         activeCalibration: activeCalibration?.mapping ?? null,
         weather,
         tournamentName: fixture.tournamentName,
+        tournamentLevel: fixture.tournamentLevel,
         segment,
         simulatorAdoption,
       });
