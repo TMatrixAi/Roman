@@ -201,6 +201,33 @@ export function computeDisagreementTierMetrics(rows: EvaluationPredictionRow[]):
   });
 }
 
+export interface MarketEdgeSummary {
+  /** How many graded/void rows actually had a market-edge value (odds were available at lock time). */
+  n: number;
+  /**
+   * Average market edge (percentage points), oriented to the model's OWN pick -- positive means
+   * the model found more value in its pick than the market priced in, negative means the market
+   * was more bullish on the model's pick than the model itself was. Null when n=0. This is a
+   * metric distinct from accuracy/logLoss/Brier/ECE: it measures agreement with the market, not
+   * with the eventual real-world outcome.
+   */
+  averageEdge: number | null;
+}
+
+/**
+ * Rolling average of `marketEdge` across graded/void rows that actually have one -- rows with no
+ * odds available at lock time are excluded from both the count and the average, never treated as
+ * a 0 edge (that would silently understate real average edge whenever odds coverage is partial).
+ */
+export function computeMarketEdgeSummary(rows: EvaluationPredictionRow[]): MarketEdgeSummary {
+  const graded = rows.filter((r) => r.status === "graded" || r.status === "void");
+  const withEdge = graded.filter((r): r is EvaluationPredictionRow & { marketEdge: number } => r.marketEdge !== null && r.marketEdge !== undefined);
+  if (withEdge.length === 0) return { n: 0, averageEdge: null };
+
+  const sum = withEdge.reduce((acc, r) => acc + r.marketEdge, 0);
+  return { n: withEdge.length, averageEdge: Math.round((sum / withEdge.length) * 100) / 100 };
+}
+
 export interface StreakSummary {
   currentStreakType: "win" | "loss" | null;
   currentStreakLength: number;

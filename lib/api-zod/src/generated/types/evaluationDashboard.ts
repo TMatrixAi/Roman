@@ -9,6 +9,7 @@ import type { DisagreementTierMetrics } from './disagreementTierMetrics';
 import type { EliteTierBacktest } from './eliteTierBacktest';
 import type { EvaluationDashboardActiveCalibrationMethod } from './evaluationDashboardActiveCalibrationMethod';
 import type { EvaluationDashboardSegment } from './evaluationDashboardSegment';
+import type { MarketEdgeSummary } from './marketEdgeSummary';
 import type { SpecialistSegmentSummary } from './specialistSegmentSummary';
 import type { UpsetRiskTierMetrics } from './upsetRiskTierMetrics';
 
@@ -35,4 +36,5 @@ export interface EvaluationDashboard {
   eliteTierBacktest: EliteTierBacktest;
   upsetRiskTierMetrics: UpsetRiskTierMetrics[];
   disagreementTierMetrics: DisagreementTierMetrics[];
+  marketEdge: MarketEdgeSummary;
 }

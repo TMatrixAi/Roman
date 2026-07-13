@@ -129,6 +129,24 @@ export const evaluationPredictionsTable = pgTable(
     // prediction_settings (default: excluded, reported separately).
     includedInAccuracy: boolean("included_in_accuracy"),
     gradedAt: timestamp("graded_at", { withTimezone: true }),
+
+    // Task 47: real pre-match market odds captured at lock time (never backfilled or refreshed
+    // afterwards -- "at prediction time" is the whole point of a market-edge metric). Null on
+    // every row where neither odds provider had this matchup available at lock time; never
+    // faked or defaulted. `oddsProvider` records which of the two providers (The Odds API or
+    // Odds-API.io) actually supplied the quote, for auditability.
+    oddsProvider: text("odds_provider"),
+    oddsPlayer1Decimal: real("odds_player1_decimal"),
+    oddsPlayer2Decimal: real("odds_player2_decimal"),
+    oddsFetchedAt: timestamp("odds_fetched_at", { withTimezone: true }),
+    // Vig-adjusted implied probability of PLAYER1 winning (0-100), derived from the odds above --
+    // kept player1-relative like rawProbability/calibratedProbability for consistency/auditability.
+    impliedProbability: real("implied_probability"),
+    // Market edge, oriented to the model's own pick (not player1): predictedWinnerProbability -
+    // (the implied probability for whichever side predictedWinnerId actually is). Positive means
+    // the model found more value in its own pick than the market priced in. Null whenever
+    // impliedProbability is null -- never computed from a fabricated implied probability.
+    marketEdge: real("market_edge"),
   },
   (table) => [
     uniqueIndex("evaluation_predictions_historical_match_idx").on(table.runKind, table.historicalMatchId),

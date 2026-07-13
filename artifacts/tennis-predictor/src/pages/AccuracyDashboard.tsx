@@ -9,6 +9,7 @@ import {
   type SpecialistSegmentSummary,
   type EliteTierBacktest,
   type SegmentMetrics,
+  type MarketEdgeSummary,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,7 @@ import { Switch } from "@/components/ui/switch"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart } from "lucide-react"
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
@@ -249,6 +250,43 @@ function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
   )
 }
 
+function MarketEdgeCard({ marketEdge }: { marketEdge: MarketEdgeSummary }) {
+  const hasData = marketEdge.n > 0 && marketEdge.averageEdge !== null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <LineChart className="w-4 h-4" /> Market Edge (Task 47)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Compares the model's calibrated probability against real, vig-adjusted implied probability from live
+          bookmaker odds (The Odds API, falling back to Odds-API.io), captured at the moment each paper-trade
+          prediction was locked. This is a distinct metric from accuracy/ECE above -- it measures agreement with the
+          market, not with the eventual real-world outcome. Predictions with no odds available at lock time are left
+          out entirely, never counted as zero edge.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-4">
+          <MetricStat label={`AVERAGE EDGE (n=${marketEdge.n})`} value={hasData ? `${marketEdge.averageEdge! > 0 ? "+" : ""}${marketEdge.averageEdge}pp` : "—"} />
+          <div className="space-y-1">
+            <div className="text-xs font-mono text-muted-foreground">READING</div>
+            <div className="text-sm text-muted-foreground">
+              {hasData
+                ? marketEdge.averageEdge! > 0
+                  ? "Model is finding more value in its picks than the market prices in, on average."
+                  : marketEdge.averageEdge! < 0
+                    ? "Market has been pricing the model's picks more favorably than the model itself, on average."
+                    : "Model and market agree on average."
+                : "No graded paper-trade predictions with odds available yet."}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
@@ -335,6 +373,7 @@ export default function AccuracyDashboardPage() {
       ) : dashboard ? (
         <div className="space-y-6">
           <EliteTierBacktestCard backtest={dashboard.eliteTierBacktest} />
+          <MarketEdgeCard marketEdge={dashboard.marketEdge} />
           {dashboard.segments.map((segment) => (
             <SegmentCard key={segment.key} segment={segment} />
           ))}

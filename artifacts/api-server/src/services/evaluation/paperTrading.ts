@@ -10,6 +10,8 @@ import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
 import { resolveSimulatorAdoption } from "./simulatorValidation";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
+import { fetchMarketOdds } from "../oddsData";
+import { computeVigAdjustedImpliedProbability } from "../oddsData/impliedProbability";
 import { logger } from "../../lib/logger";
 
 /**
@@ -183,6 +185,24 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         preCalibrationProbability: rawProbability,
       };
 
+      // Task 47: real market odds, looked up AT LOCK TIME (never refreshed or backfilled
+      // afterwards) so the resulting edge genuinely reflects what the market priced in when this
+      // prediction was actually made. A matchup with no odds from either provider yields no odds
+      // fields at all -- never a fabricated quote or a defaulted edge of 0.
+      let oddsQuote = null;
+      try {
+        oddsQuote = await fetchMarketOdds(player1.name, player2.name, scheduledStartAt);
+      } catch (err) {
+        logger.warn({ err, fixtureId: fixture.id }, "Market odds lookup failed for this fixture, locking prediction without odds");
+      }
+      const impliedProbability = oddsQuote
+        ? computeVigAdjustedImpliedProbability(oddsQuote.player1DecimalOdds, oddsQuote.player2DecimalOdds)
+        : null;
+      // Oriented to the model's own pick, not to player1 -- see schema comment on marketEdge.
+      const impliedProbabilityForPick =
+        impliedProbability === null ? null : favorsPlayer1 ? impliedProbability : 100 - impliedProbability;
+      const marketEdge = impliedProbabilityForPick === null ? null : output.predictedWinnerProbability - impliedProbabilityForPick;
+
       await db.insert(evaluationPredictionsTable).values({
         runKind: "paper_trade",
         provider: provider.name,
@@ -207,6 +227,12 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         predictedWinnerId: favorsPlayer1 ? player1.id : player2.id,
         predictedWinnerName: favorsPlayer1 ? player1.name : player2.name,
         status: "pending",
+        oddsProvider: oddsQuote?.provider ?? null,
+        oddsPlayer1Decimal: oddsQuote?.player1DecimalOdds ?? null,
+        oddsPlayer2Decimal: oddsQuote?.player2DecimalOdds ?? null,
+        oddsFetchedAt: oddsQuote ? new Date(oddsQuote.fetchedAt) : null,
+        impliedProbability,
+        marketEdge,
       });
       summary.locked += 1;
     } catch (err) {

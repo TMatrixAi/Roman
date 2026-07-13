@@ -64,4 +64,31 @@ export interface EvaluationPrediction {
   includedInAccuracy?: boolean | null;
   /** @nullable */
   gradedAt?: Date | null;
+  /**
+     * Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time
+     * @nullable
+     */
+  oddsProvider?: string | null;
+  /**
+     * Real decimal odds for player1, captured at lock time
+     * @nullable
+     */
+  oddsPlayer1Decimal?: number | null;
+  /**
+     * Real decimal odds for player2, captured at lock time
+     * @nullable
+     */
+  oddsPlayer2Decimal?: number | null;
+  /** @nullable */
+  oddsFetchedAt?: Date | null;
+  /**
+     * Vig-adjusted implied probability of player1 winning, 0-100
+     * @nullable
+     */
+  impliedProbability?: number | null;
+  /**
+     * Market edge oriented to the model's own pick (predictedWinnerProbability minus the implied probability for that same side). Positive means the model found more value than the market priced in.
+     * @nullable
+     */
+  marketEdge?: number | null;
 }

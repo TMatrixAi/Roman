@@ -1043,7 +1043,13 @@ export const ListEvaluationPredictionsResponseItem = zod.object({
   "actualWinnerName": zod.string().nullish(),
   "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
   "includedInAccuracy": zod.boolean().nullish(),
-  "gradedAt": zod.coerce.date().nullish()
+  "gradedAt": zod.coerce.date().nullish(),
+  "oddsProvider": zod.string().nullish().describe('Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time'),
+  "oddsPlayer1Decimal": zod.number().nullish().describe('Real decimal odds for player1, captured at lock time'),
+  "oddsPlayer2Decimal": zod.number().nullish().describe('Real decimal odds for player2, captured at lock time'),
+  "oddsFetchedAt": zod.coerce.date().nullish(),
+  "impliedProbability": zod.number().nullish().describe('Vig-adjusted implied probability of player1 winning, 0-100'),
+  "marketEdge": zod.number().nullish().describe('Market edge oriented to the model\'s own pick (predictedWinnerProbability minus the implied probability for that same side). Positive means the model found more value than the market priced in.')
 })
 export const ListEvaluationPredictionsResponse = zod.array(ListEvaluationPredictionsResponseItem)
 
@@ -1085,7 +1091,13 @@ export const GetEvaluationPredictionResponse = zod.object({
   "actualWinnerName": zod.string().nullish(),
   "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
   "includedInAccuracy": zod.boolean().nullish(),
-  "gradedAt": zod.coerce.date().nullish()
+  "gradedAt": zod.coerce.date().nullish(),
+  "oddsProvider": zod.string().nullish().describe('Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time'),
+  "oddsPlayer1Decimal": zod.number().nullish().describe('Real decimal odds for player1, captured at lock time'),
+  "oddsPlayer2Decimal": zod.number().nullish().describe('Real decimal odds for player2, captured at lock time'),
+  "oddsFetchedAt": zod.coerce.date().nullish(),
+  "impliedProbability": zod.number().nullish().describe('Vig-adjusted implied probability of player1 winning, 0-100'),
+  "marketEdge": zod.number().nullish().describe('Market edge oriented to the model\'s own pick (predictedWinnerProbability minus the implied probability for that same side). Positive means the model found more value than the market priced in.')
 })
 
 
@@ -1190,7 +1202,11 @@ export const GetEvaluationDashboardResponse = zod.object({
   "n": zod.number(),
   "accuracy": zod.number().nullable(),
   "errorRate": zod.number().nullable()
-}).describe('Accuracy\/error-rate for one model-agreement tier (Strong\/Moderate\/Mixed\/ HighDisagreement), same scoping as UpsetRiskTierMetrics. computeWeightedDisagreement is also a pure downstream classifier -- accuracy should fall (error rate rise) from Strong toward HighDisagreement if the tier is doing real work.'))
+}).describe('Accuracy\/error-rate for one model-agreement tier (Strong\/Moderate\/Mixed\/ HighDisagreement), same scoping as UpsetRiskTierMetrics. computeWeightedDisagreement is also a pure downstream classifier -- accuracy should fall (error rate rise) from Strong toward HighDisagreement if the tier is doing real work.')),
+  "marketEdge": zod.object({
+  "n": zod.number().describe('How many graded\/void paper-trade rows actually had real odds (and therefore an edge value) at lock time'),
+  "averageEdge": zod.number().nullable().describe('Average market edge in percentage points; null when n=0. Positive means the model found more value in its pick than the market priced in.')
+}).describe('Task 47: rolling average edge between the model\'s calibrated probability and real, vig-adjusted market-implied probability, oriented to the model\'s own pick. A distinct metric from accuracy\/logLoss\/Brier\/ECE -- it measures agreement with the market, not with the eventual real-world outcome.')
 })
 
 

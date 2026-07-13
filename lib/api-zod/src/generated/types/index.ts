@@ -43,6 +43,7 @@ export * from './listCalibrationRefitJobRunsParams';
 export * from './listEvaluationPredictionsParams';
 export * from './listPaperTradingJobRunsParams';
 export * from './listPredictionsParams';
+export * from './marketEdgeSummary';
 export * from './matchFormat';
 export * from './matchRecord';
 export * from './matchRecordResult';

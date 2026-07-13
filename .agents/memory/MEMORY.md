@@ -18,3 +18,4 @@
 - [DB schema drift surfaces as unrelated test failures](db-schema-drift-in-tests.md) — "column does not exist" during tests often means the dev DB needs `drizzle-kit push`, not a bug in your diff.
 - [Retroactive tier reconstruction from stored engine breakdowns](retroactive-tier-reconstruction.md) — a new prediction "tier"/classification for already-graded rows can be rebuilt from stored featureSnapshot data alone; avoids touching the live scoring path at all.
 - [Recent Form trend-label validation](recent-form-trend-validation.md) — plain win-rate streak deltas showed ~0 real predictive spread; opponent-adjusted delta + sample floor gave genuine separation. Validate any trend label against real subsequent outcomes before shipping.
+- [Market odds & edge tracking design](market-odds-edge-tracking.md) — orient averaged cross-side edge metrics to the model's pick, not a fixed player slot; real Odds-API.io/The Odds API response shapes diverge from docs.

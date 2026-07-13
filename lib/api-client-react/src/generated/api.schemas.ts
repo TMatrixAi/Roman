@@ -951,6 +951,33 @@ export interface EvaluationPrediction {
   includedInAccuracy?: boolean | null;
   /** @nullable */
   gradedAt?: string | null;
+  /**
+     * Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time
+     * @nullable
+     */
+  oddsProvider?: string | null;
+  /**
+     * Real decimal odds for player1, captured at lock time
+     * @nullable
+     */
+  oddsPlayer1Decimal?: number | null;
+  /**
+     * Real decimal odds for player2, captured at lock time
+     * @nullable
+     */
+  oddsPlayer2Decimal?: number | null;
+  /** @nullable */
+  oddsFetchedAt?: string | null;
+  /**
+     * Vig-adjusted implied probability of player1 winning, 0-100
+     * @nullable
+     */
+  impliedProbability?: number | null;
+  /**
+     * Market edge oriented to the model's own pick (predictedWinnerProbability minus the implied probability for that same side). Positive means the model found more value than the market priced in.
+     * @nullable
+     */
+  marketEdge?: number | null;
 }
 
 export interface CalibrationBucket {
@@ -1064,6 +1091,19 @@ export interface DisagreementTierMetrics {
 }
 
 /**
+ * Task 47: rolling average edge between the model's calibrated probability and real, vig-adjusted market-implied probability, oriented to the model's own pick. A distinct metric from accuracy/logLoss/Brier/ECE -- it measures agreement with the market, not with the eventual real-world outcome.
+ */
+export interface MarketEdgeSummary {
+  /** How many graded/void paper-trade rows actually had real odds (and therefore an edge value) at lock time */
+  n: number;
+  /**
+     * Average market edge in percentage points; null when n=0. Positive means the model found more value in its pick than the market priced in.
+     * @nullable
+     */
+  averageEdge: number | null;
+}
+
+/**
  * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
  * @nullable
  */
@@ -1098,6 +1138,7 @@ export interface EvaluationDashboard {
   eliteTierBacktest: EliteTierBacktest;
   upsetRiskTierMetrics: UpsetRiskTierMetrics[];
   disagreementTierMetrics: DisagreementTierMetrics[];
+  marketEdge: MarketEdgeSummary;
 }
 
 export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];

@@ -33,6 +33,7 @@ import {
   computeStreaks,
   computeUpsetRiskTierMetrics,
   computeDisagreementTierMetrics,
+  computeMarketEdgeSummary,
 } from "../services/evaluation/metrics";
 import { computeEliteTierBacktest } from "../services/evaluation/eliteTierBacktest";
 import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
@@ -161,6 +162,12 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
   const upsetRiskTierMetrics = computeUpsetRiskTierMetrics(unseenRows);
   const disagreementTierMetrics = computeDisagreementTierMetrics(unseenRows);
 
+  // Task 47: rolling average market edge. Only paper_trade/live rows ever have real market odds
+  // (historical_test replays past matches, for which no live odds source can honestly provide a
+  // contemporaneous quote), so this is scoped to paper trading -- computeMarketEdgeSummary already
+  // excludes rows with no edge value rather than treating them as 0.
+  const marketEdge = computeMarketEdgeSummary(paperTradeRows);
+
   res.json(
     GetEvaluationDashboardResponse.parse({
       segments,
@@ -172,6 +179,7 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
       eliteTierBacktest,
       upsetRiskTierMetrics,
       disagreementTierMetrics,
+      marketEdge,
     }),
   );
 });

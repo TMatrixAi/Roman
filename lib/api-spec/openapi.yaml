@@ -2055,6 +2055,24 @@ components:
         gradedAt:
           type: ["string", "null"]
           format: date-time
+        oddsProvider:
+          type: ["string", "null"]
+          description: Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time
+        oddsPlayer1Decimal:
+          type: ["number", "null"]
+          description: Real decimal odds for player1, captured at lock time
+        oddsPlayer2Decimal:
+          type: ["number", "null"]
+          description: Real decimal odds for player2, captured at lock time
+        oddsFetchedAt:
+          type: ["string", "null"]
+          format: date-time
+        impliedProbability:
+          type: ["number", "null"]
+          description: Vig-adjusted implied probability of player1 winning, 0-100
+        marketEdge:
+          type: ["number", "null"]
+          description: Market edge oriented to the model's own pick (predictedWinnerProbability minus the implied probability for that same side). Positive means the model found more value than the market priced in.
 
     CalibrationBucket:
       type: object
@@ -2209,6 +2227,22 @@ components:
         errorRate:
           type: ["number", "null"]
 
+    MarketEdgeSummary:
+      type: object
+      description: >-
+        Task 47: rolling average edge between the model's calibrated probability and real,
+        vig-adjusted market-implied probability, oriented to the model's own pick. A distinct
+        metric from accuracy/logLoss/Brier/ECE -- it measures agreement with the market, not with
+        the eventual real-world outcome.
+      required: [n, averageEdge]
+      properties:
+        n:
+          type: integer
+          description: How many graded/void paper-trade rows actually had real odds (and therefore an edge value) at lock time
+        averageEdge:
+          type: ["number", "null"]
+          description: Average market edge in percentage points; null when n=0. Positive means the model found more value in its pick than the market priced in.
+
     EvaluationDashboard:
       type: object
       required:
@@ -2220,6 +2254,7 @@ components:
           eliteTierBacktest,
           upsetRiskTierMetrics,
           disagreementTierMetrics,
+          marketEdge,
         ]
       properties:
         segments:
@@ -2253,6 +2288,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DisagreementTierMetrics"
+        marketEdge:
+          $ref: "#/components/schemas/MarketEdgeSummary"
 
     PredictionSettings:
       type: object
