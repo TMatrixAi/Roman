@@ -411,7 +411,7 @@ export default function PredictionResultPage() {
             />
             <div className="mt-2 text-sm text-muted-foreground flex justify-between font-mono bg-background p-2 rounded">
               <span>WIN PROB (ELO):</span>
-              <span className="font-bold text-foreground">{(engine.surfaceElo.eloWinProbabilityPlayer1 * 100).toFixed(1)}%</span>
+              <span className="font-bold text-foreground">{engine.surfaceElo.eloWinProbabilityPlayer1.toFixed(1)}%</span>
             </div>
           </ModuleCard>
 
