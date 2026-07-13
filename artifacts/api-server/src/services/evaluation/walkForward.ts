@@ -1,7 +1,7 @@
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, historicalMatchesTable } from "@workspace/db";
 import { asc, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { fitIsotonicCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
+import { fitBestCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
 import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
 import { computeAndStoreSpecialistSegments } from "./specialistWeights";
@@ -101,7 +101,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     const foldValidationPoints: CalibrationPoint[] = validationRows
       .filter((r) => r.includedInAccuracy && r.rawProbability !== null)
       .map((r) => ({ rawProbability: r.rawProbability as number, outcome: r.player1Won ? 1 : 0 }));
-    const mapping = fitIsotonicCalibration(foldValidationPoints);
+    const mapping = fitBestCalibration(foldValidationPoints).knots;
     allValidationPoints.push(...foldValidationPoints);
 
     // Re-apply the fold's own calibration to its validation rows (in-sample, documented as such)
@@ -147,15 +147,19 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   // Refit the single "live" calibration model from every fold's pooled validation data -- this
   // is what future paper-trade/live predictions will be calibrated with.
   await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
-  const liveMapping = fitIsotonicCalibration(allValidationPoints);
+  const liveFit = fitBestCalibration(allValidationPoints);
+  const liveMapping = liveFit.knots;
   const dates = allMatches.map((m) => m.scheduledStartAt.getTime());
   await db.insert(calibrationModelsTable).values({
-    method: "isotonic",
+    method: liveFit.method,
     mapping: liveMapping,
     validationSampleSize: allValidationPoints.length,
     validationDateRangeStart: dates.length ? new Date(Math.min(...dates)) : null,
     validationDateRangeEnd: dates.length ? new Date(Math.max(...dates)) : null,
     active: true,
+    isotonicHoldoutLogLoss: liveFit.isotonicHoldoutLogLoss,
+    plattHoldoutLogLoss: liveFit.plattHoldoutLogLoss,
+    holdoutSampleSize: liveFit.holdoutSampleSize,
   });
 
   // Phase 6: recompute every tour/surface specialist segment from the fold's freshly-written

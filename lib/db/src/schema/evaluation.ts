@@ -142,12 +142,21 @@ export type EvaluationPredictionRow = typeof evaluationPredictionsTable.$inferSe
  */
 export const calibrationModelsTable = pgTable("calibration_models", {
   id: serial("id").primaryKey(),
+  // 'isotonic' | 'platt' -- whichever generalized better on the held-out comparison slice at fit
+  // time (see services/evaluation/calibration.ts `fitBestCalibration`). Never hand-picked.
   method: text("method").notNull().default("isotonic"),
   mapping: jsonb("mapping").$type<CalibrationKnotJson[]>().notNull(),
   validationSampleSize: integer("validation_sample_size").notNull(),
   validationDateRangeStart: timestamp("validation_date_range_start", { withTimezone: true }),
   validationDateRangeEnd: timestamp("validation_date_range_end", { withTimezone: true }),
   active: boolean("active").notNull().default(true),
+  // Log loss of each method on the genuinely held-out comparison slice (never used to fit
+  // either method) -- both recorded regardless of which method was actually activated, so the
+  // choice is auditable rather than silently picked. Null when there wasn't enough data to hold
+  // out a meaningful comparison slice (isotonic is used by default in that case).
+  isotonicHoldoutLogLoss: real("isotonic_holdout_log_loss"),
+  plattHoldoutLogLoss: real("platt_holdout_log_loss"),
+  holdoutSampleSize: integer("holdout_sample_size").notNull().default(0),
   fittedAt: timestamp("fitted_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

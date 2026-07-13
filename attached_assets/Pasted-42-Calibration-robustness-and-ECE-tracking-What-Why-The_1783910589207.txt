@@ -1,0 +1,41 @@
+42 - Calibration robustness and ECE tracking
+
+What & Why
+
+The prediction engine already fits a real isotonic calibration curve from walk-forward validation outcomes and refits it periodically (Phase 4/5 work, already shipped). Two gaps remain that a recent accuracy-improvement review flagged as the next real lever: (1) the curve is fit directly on raw individual validation points, which risks overfitting/jaggedness at the ~4,000-sample scale this project's OOS set is currently at, and (2) there is no headline "how well-calibrated are we, really" number — reliability buckets are shown on the Accuracy dashboard, but nothing distills them into a single tracked metric an operator can watch over time or compare before/after a model change.
+
+Done looks like
+
+The calibration refit fits against the binned reliability curve (grouped observed-accuracy-vs-predicted-probability, matching the existing bucket boundaries already used for display) rather than raw per-point outcomes, reducing curve jaggedness at current sample sizes. Pooling within PAVA is weighted by each bucket's sample count (N), not a flat average of bucket rates, so small/noisy buckets don't distort the curve as much as large, reliable ones.
+
+Before any binning happens, a genuinely held-out slice is carved out of each fit's validation data — fixed at 20-25% (or a fixed minimum count, whichever is larger) — and reserved purely for comparing the isotonic and Platt/sigmoid methods. Binning for the isotonic fit happens only on the remaining (non-holdout) data, so neither method's holdout evaluation is contaminated by information used in fitting.
+
+A Platt/sigmoid-style scaling fit is computed alongside the isotonic fit during every refit, using the same non-holdout data. Both methods are evaluated on the held-out slice via log loss, and whichever generalizes better is the one actually activated — with the choice and both methods' holdout scores recorded on the persisted calibration model row, not silently picked.
+
+Expected Calibration Error (ECE) is computed for both the raw (pre-calibration) and calibrated probabilities on every walk-forward run, using a fixed, explicitly named bucket-boundary constant (decoupled from whatever computeCalibrationBuckets uses for display, or frozen via shared reference so UI-driven bucket changes can't silently break ECE comparability over time), and stored alongside the run's other metrics.
+
+The Accuracy dashboard shows the current ECE value(s) with a plain-language "well-calibrated" (<0.03), "borderline" (0.03-0.05), or "miscalibrated" (>0.05) read, next to the existing reliability bucket table.
+
+Existing behavior (per-fold validation-only fitting, live model activation, specialist segment fitting) continues to work unchanged; only the fitting method and the added metric change.
+
+Out of scope
+
+Changing the Availability module's exclusion from the ensemble, the confidence-shrink values, or the ensemble weight priors — those were already fixed in a prior pass (see LIVE_MODEL_VERSION history in services/evaluation/types.ts).
+
+Any change to the Elite Prediction tier's gating logic or specialist-segment sample-size thresholds (covered separately).
+
+Building a general-purpose Python/sklearn pipeline — this stays in the existing TypeScript evaluation service.
+
+Steps
+
+1. Holdout split before binning — At the start of every refit, split validation data into a fit set and a held-out comparison set (20-25% or a fixed minimum count, whichever is larger). All subsequent fitting (both methods) uses only the fit set; the holdout is touched only for the final method comparison.
+
+2. Bin-then-fit isotonic calibration — Add a binning step (reusing the same bucket boundaries computeCalibrationBuckets already uses for display) that reduces the fit set's validation points to per-bucket (avg predicted, observed rate, N) triples before running PAVA, weighting the pooling step by each bucket's N. Use this for both per-fold and pooled/live fits.
+
+3. Platt/sigmoid fallback with holdout comparison — Implement a simple logistic (Platt) scaling fit on the same fit set as a second calibration method. Evaluate both methods' log loss on the held-out comparison set (never used in fitting either method) and activate whichever wins. Record the chosen method and both methods' holdout scores on the persisted calibration model row.
+
+4. ECE computation and storage — Add an ECE calculation using a fixed, explicitly named bucket-boundary constant, covering both raw and calibrated probabilities, computed during every walk-forward run, and persisted on the run's summary metrics so it's queryable after the fact.
+
+5. Surface ECE on the Accuracy dashboard — Display the latest ECE value(s) and their well-calibrated/borderline/miscalibrated read next to the existing reliability bucket table, using the same data source the dashboard already reads from.
+
+Sources

@@ -1,5 +1,5 @@
 import type { EvaluationPredictionRow } from "@workspace/db";
-import { brierScore, logLoss, type CalibrationPoint } from "./calibration";
+import { BUCKET_EDGES, brierScore, logLoss, type CalibrationPoint } from "./calibration";
 
 export interface SegmentMetrics {
   n: number;
@@ -12,6 +12,10 @@ export interface SegmentMetrics {
   retiredAccuracy: number | null;
   voidCount: number;
   missedCount: number;
+  /** Expected Calibration Error on raw (pre-calibration) probabilities. Null when n=0. */
+  eceRaw: number | null;
+  /** Expected Calibration Error on calibrated probabilities. Null when n=0. */
+  eceCalibrated: number | null;
 }
 
 function toPoint(row: EvaluationPredictionRow): CalibrationPoint | null {
@@ -19,6 +23,45 @@ function toPoint(row: EvaluationPredictionRow): CalibrationPoint | null {
   const outcome: 0 | 1 = row.actualWinnerId === row.player1Id ? 1 : 0;
   // calibratedProbability is stored 0-100 (player1 win %); logLoss/brier math expects 0-1.
   return { rawProbability: row.calibratedProbability / 100, outcome };
+}
+
+function toRawPoint(row: EvaluationPredictionRow): CalibrationPoint | null {
+  if (row.rawProbability === null || row.actualWinnerId === null) return null;
+  const outcome: 0 | 1 = row.actualWinnerId === row.player1Id ? 1 : 0;
+  return { rawProbability: row.rawProbability / 100, outcome };
+}
+
+/**
+ * Fixed bucket boundaries for Expected Calibration Error, deliberately independent of
+ * `BUCKET_EDGES` (the display reliability-bucket boundaries used by `computeCalibrationBuckets`
+ * and by the binned isotonic calibration fit). If the dashboard's display buckets ever change,
+ * ECE stays comparable release over release instead of silently shifting with them.
+ */
+export const ECE_BUCKET_EDGES = [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
+
+/**
+ * Expected Calibration Error: the sample-size-weighted average gap between confidence (distance
+ * from a coin flip toward the predicted winner) and observed accuracy, across `ECE_BUCKET_EDGES`.
+ * 0 = perfectly calibrated. Returns null when there are no points to bucket.
+ */
+export function computeECE(points: CalibrationPoint[]): number | null {
+  if (points.length === 0) return null;
+  const edges = ECE_BUCKET_EDGES.map((e) => e / 100);
+  const total = points.length;
+  let ece = 0;
+  for (let i = 0; i < edges.length - 1; i++) {
+    const min = edges[i];
+    const max = edges[i + 1];
+    const inBucket = points.filter((p) => {
+      const confidence = Math.max(p.rawProbability, 1 - p.rawProbability);
+      return confidence >= min && (max === 1 ? confidence <= 1 : confidence < max);
+    });
+    if (inBucket.length === 0) continue;
+    const avgConfidence = inBucket.reduce((sum, p) => sum + Math.max(p.rawProbability, 1 - p.rawProbability), 0) / inBucket.length;
+    const accuracy = inBucket.filter((p) => (p.rawProbability >= 0.5 ? 1 : 0) === p.outcome).length / inBucket.length;
+    ece += (inBucket.length / total) * Math.abs(avgConfidence - accuracy);
+  }
+  return Math.round(ece * 10000) / 10000;
 }
 
 /**
@@ -31,6 +74,7 @@ export function computeSegmentMetrics(rows: EvaluationPredictionRow[]): SegmentM
   const graded = rows.filter((r) => r.status === "graded" || r.status === "void");
   const included = graded.filter((r) => r.includedInAccuracy);
   const points = included.map(toPoint).filter((p): p is CalibrationPoint => p !== null);
+  const rawPoints = included.map(toRawPoint).filter((p): p is CalibrationPoint => p !== null);
 
   const correct = included.filter((r) => r.actualWinnerId === r.predictedWinnerId).length;
   const retired = graded.filter((r) => r.resultType === "retired");
@@ -51,6 +95,8 @@ export function computeSegmentMetrics(rows: EvaluationPredictionRow[]): SegmentM
     retiredAccuracy: retired.length > 0 ? Math.round((retiredCorrect / retired.length) * 1000) / 10 : null,
     voidCount: rows.filter((r) => r.status === "void").length,
     missedCount: rows.filter((r) => r.status === "missed").length,
+    eceRaw: computeECE(rawPoints),
+    eceCalibrated: computeECE(points),
   };
 }
 
@@ -62,8 +108,6 @@ export interface CalibrationBucket {
   avgPredicted: number | null;
   observedAccuracy: number | null;
 }
-
-const BUCKET_EDGES = [50, 55, 60, 65, 70, 75, 80, 100];
 
 /** Buckets predictions by "distance from a coin flip toward the predicted winner", 50-54.9%, ..., 80%+. */
 export function computeCalibrationBuckets(rows: EvaluationPredictionRow[]): CalibrationBucket[] {

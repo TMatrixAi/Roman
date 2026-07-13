@@ -5,6 +5,7 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { EvaluationDashboardActiveCalibrationMethod } from './evaluationDashboardActiveCalibrationMethod';
 import type { EvaluationDashboardSegment } from './evaluationDashboardSegment';
 import type { SpecialistSegmentSummary } from './specialistSegmentSummary';
 
@@ -12,5 +13,20 @@ export interface EvaluationDashboard {
   segments: EvaluationDashboardSegment[];
   /** How many validation-segment predictions the live paper-trading calibration was fit on */
   activeCalibrationSampleSize: number;
+  /**
+     * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
+     * @nullable
+     */
+  activeCalibrationMethod: EvaluationDashboardActiveCalibrationMethod;
+  /**
+     * Isotonic method's log loss on the held-out comparison slice at the last refit
+     * @nullable
+     */
+  activeCalibrationIsotonicHoldoutLogLoss?: number | null;
+  /**
+     * Platt method's log loss on the held-out comparison slice at the last refit
+     * @nullable
+     */
+  activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
 }

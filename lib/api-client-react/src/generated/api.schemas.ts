@@ -718,6 +718,16 @@ export interface SegmentMetrics {
   /** Walkovers and cancellations, always excluded from accuracy */
   voidCount: number;
   missedCount: number;
+  /**
+     * Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.
+     * @nullable
+     */
+  eceRaw: number | null;
+  /**
+     * Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.
+     * @nullable
+     */
+  eceCalibrated: number | null;
 }
 
 export interface EvaluationRun {
@@ -885,10 +895,37 @@ export interface SpecialistSegmentSummary {
   computedAt?: string;
 }
 
+/**
+ * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
+ * @nullable
+ */
+export type EvaluationDashboardActiveCalibrationMethod = typeof EvaluationDashboardActiveCalibrationMethod[keyof typeof EvaluationDashboardActiveCalibrationMethod] | null;
+
+
+export const EvaluationDashboardActiveCalibrationMethod = {
+  isotonic: 'isotonic',
+  platt: 'platt',
+} as const;
+
 export interface EvaluationDashboard {
   segments: EvaluationDashboardSegment[];
   /** How many validation-segment predictions the live paper-trading calibration was fit on */
   activeCalibrationSampleSize: number;
+  /**
+     * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
+     * @nullable
+     */
+  activeCalibrationMethod: EvaluationDashboardActiveCalibrationMethod;
+  /**
+     * Isotonic method's log loss on the held-out comparison slice at the last refit
+     * @nullable
+     */
+  activeCalibrationIsotonicHoldoutLogLoss?: number | null;
+  /**
+     * Platt method's log loss on the held-out comparison slice at the last refit
+     * @nullable
+     */
+  activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
 }
 

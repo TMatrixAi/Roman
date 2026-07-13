@@ -20,6 +20,7 @@ export * from './engineBreakdown';
 export * from './engineBreakdownModelAgreement';
 export * from './engineModelOutput';
 export * from './evaluationDashboard';
+export * from './evaluationDashboardActiveCalibrationMethod';
 export * from './evaluationDashboardSegment';
 export * from './evaluationPrediction';
 export * from './evaluationRun';

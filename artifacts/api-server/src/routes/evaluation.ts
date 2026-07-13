@@ -144,6 +144,9 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
     GetEvaluationDashboardResponse.parse({
       segments,
       activeCalibrationSampleSize: activeCalibration?.validationSampleSize ?? 0,
+      activeCalibrationMethod: activeCalibration?.method ?? null,
+      activeCalibrationIsotonicHoldoutLogLoss: activeCalibration?.isotonicHoldoutLogLoss ?? null,
+      activeCalibrationPlattHoldoutLogLoss: activeCalibration?.plattHoldoutLogLoss ?? null,
       specialistSegments,
     }),
   );

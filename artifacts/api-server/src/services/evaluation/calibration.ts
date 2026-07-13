@@ -8,31 +8,49 @@ export interface CalibrationPoint {
 }
 
 /**
- * Fits an isotonic (monotonically non-decreasing) calibration curve via the Pool Adjacent
- * Violators Algorithm (PAVA) -- the standard non-parametric calibration method (used by
- * scikit-learn's IsotonicRegression). Input must be validation-only points; the caller is
- * responsible for never mixing in test/live data here.
- *
- * Returns knots sorted ascending by x (raw probability). Apply with `applyCalibration`, which
- * linearly interpolates between knots and clamps outside the observed range -- so calibration
- * never extrapolates into unobserved probability territory.
+ * The reliability-bucket boundaries the Accuracy dashboard uses for display (distance from a
+ * coin flip toward the predicted winner: 50-54.9%, ..., 80%+). Defined here (not in metrics.ts)
+ * so calibration fitting can reuse the exact same boundaries without a circular import --
+ * metrics.ts imports this constant back for its own display bucketing.
  */
-export function fitIsotonicCalibration(points: CalibrationPoint[]): CalibrationKnot[] {
-  if (points.length === 0) {
-    // No validation data yet -- identity mapping (no adjustment) rather than a fabricated curve.
+export const BUCKET_EDGES = [50, 55, 60, 65, 70, 75, 80, 100];
+
+/**
+ * Same interval structure as `BUCKET_EDGES`, mirrored around 50 so it spans the full 0-1
+ * raw-probability range that calibration fitting operates on (the display buckets only cover
+ * 50-100 "confidence"). E.g. [0, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 100].
+ */
+const FULL_RANGE_BUCKET_EDGES: number[] = (() => {
+  const upper = BUCKET_EDGES;
+  const lower = [0, ...upper.slice(1, -1).map((e) => 100 - e).reverse()];
+  return [...lower, ...upper];
+})();
+
+interface WeightedPoint {
+  x: number;
+  y: number;
+  weight: number;
+}
+
+/**
+ * Weighted Pool Adjacent Violators Algorithm (PAVA) -- the standard non-parametric isotonic
+ * regression method (used by scikit-learn's IsotonicRegression). Each input "point" carries a
+ * weight (sample count), so a binned reliability curve pools correctly (a bucket built from 400
+ * points pulls the fit harder than one built from 8) instead of every bucket counting equally.
+ * Anchors the ends to the full [0,1] domain so `applyCalibration` never has to extrapolate.
+ */
+function pavaFit(weighted: WeightedPoint[]): CalibrationKnot[] {
+  if (weighted.length === 0) {
     return [
       { x: 0, y: 0 },
       { x: 1, y: 1 },
     ];
   }
 
-  const sorted = [...points].sort((a, b) => a.rawProbability - b.rawProbability);
-
-  // PAVA: each pooled block tracks {sumX, sumY, count}; merge adjacent blocks while the running
-  // mean would otherwise decrease.
+  const sorted = [...weighted].sort((a, b) => a.x - b.x);
   const blocks: Array<{ sumX: number; sumY: number; count: number }> = [];
   for (const p of sorted) {
-    blocks.push({ sumX: p.rawProbability, sumY: p.outcome, count: 1 });
+    blocks.push({ sumX: p.x * p.weight, sumY: p.y * p.weight, count: p.weight });
     while (blocks.length > 1) {
       const last = blocks[blocks.length - 1];
       const prev = blocks[blocks.length - 2];
@@ -47,12 +65,191 @@ export function fitIsotonicCalibration(points: CalibrationPoint[]): CalibrationK
   }
 
   const knots: CalibrationKnot[] = blocks.map((b) => ({ x: b.sumX / b.count, y: b.sumY / b.count }));
-
-  // Anchor the ends to the full observed range so interpolation covers every raw probability
-  // that was actually seen in validation.
   if (knots[0].x > 0) knots.unshift({ x: 0, y: knots[0].y });
   if (knots[knots.length - 1].x < 1) knots.push({ x: 1, y: knots[knots.length - 1].y });
+  return knots;
+}
 
+/**
+ * Fits an isotonic calibration curve directly on raw per-point outcomes (each point weighted
+ * equally). Input must be validation-only points; the caller is responsible for never mixing in
+ * test/live data here. Kept alongside `fitIsotonicCalibrationBinned` for callers (e.g. Phase 6
+ * specialist segments) that intentionally fit on raw points at smaller per-segment sample sizes.
+ *
+ * Returns knots sorted ascending by x (raw probability). Apply with `applyCalibration`, which
+ * linearly interpolates between knots and clamps outside the observed range.
+ */
+export function fitIsotonicCalibration(points: CalibrationPoint[]): CalibrationKnot[] {
+  if (points.length === 0) {
+    return [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ];
+  }
+  return pavaFit(points.map((p) => ({ x: p.rawProbability, y: p.outcome, weight: 1 })));
+}
+
+/**
+ * Reduces validation points to per-bucket (avg predicted, observed rate, N) triples using
+ * `FULL_RANGE_BUCKET_EDGES` before returning them as PAVA-ready weighted points. This is what
+ * makes the binned isotonic fit reuse "the same bucket boundaries computeCalibrationBuckets
+ * already uses for display" -- just mirrored to cover the full raw-probability domain.
+ */
+export function binCalibrationPoints(points: CalibrationPoint[]): WeightedPoint[] {
+  const edges = FULL_RANGE_BUCKET_EDGES.map((e) => e / 100);
+  const bins: WeightedPoint[] = [];
+  for (let i = 0; i < edges.length - 1; i++) {
+    const min = edges[i];
+    const max = edges[i + 1];
+    const inBucket = points.filter((p) => p.rawProbability >= min && (max === 1 ? p.rawProbability <= 1 : p.rawProbability < max));
+    if (inBucket.length === 0) continue;
+    const avgX = inBucket.reduce((sum, p) => sum + p.rawProbability, 0) / inBucket.length;
+    const avgY = inBucket.reduce((sum, p) => sum + p.outcome, 0) / inBucket.length;
+    bins.push({ x: avgX, y: avgY, weight: inBucket.length });
+  }
+  return bins;
+}
+
+/**
+ * Bin-then-fit isotonic calibration: groups validation points into the reliability-bucket
+ * structure (see `binCalibrationPoints`), then runs PAVA on those per-bucket (avg predicted,
+ * observed rate) pairs weighted by each bucket's own N. This reduces curve jaggedness at current
+ * sample sizes compared to fitting on thousands of raw individual points. Used for both per-fold
+ * and pooled/live fits (see `fitBestCalibration`).
+ */
+export function fitIsotonicCalibrationBinned(points: CalibrationPoint[]): CalibrationKnot[] {
+  if (points.length === 0) {
+    return [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ];
+  }
+  const binned = binCalibrationPoints(points);
+  if (binned.length === 0) {
+    return [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ];
+  }
+  return pavaFit(binned);
+}
+
+export interface CalibrationSplit {
+  fitPoints: CalibrationPoint[];
+  holdoutPoints: CalibrationPoint[];
+}
+
+/** Fraction of validation data reserved purely for comparing calibration methods -- never used to fit either. */
+const HOLDOUT_FRACTION = 0.2;
+/** Fixed floor so small per-fold validation sets still hold back a comparison-worthy slice. */
+const MIN_HOLDOUT_COUNT = 100;
+
+/**
+ * Splits validation points into a fit-only slice and a genuinely held-out comparison slice
+ * (20% or `MIN_HOLDOUT_COUNT`, whichever is larger). The holdout slice is never touched by
+ * either calibration method's fitting step -- it exists purely so the isotonic-vs-Platt
+ * comparison in `fitBestCalibration` isn't measuring a method against data it already saw.
+ *
+ * Splits by predicted-probability rank (not insertion/chronological order, which could bias the
+ * holdout toward one time window) so the held-out slice samples the full probability range --
+ * deterministic, no RNG/seed needed.
+ */
+export function splitForCalibrationHoldout(points: CalibrationPoint[]): CalibrationSplit {
+  if (points.length === 0) return { fitPoints: [], holdoutPoints: [] };
+
+  const holdoutSize = Math.max(MIN_HOLDOUT_COUNT, Math.ceil(points.length * HOLDOUT_FRACTION));
+  if (holdoutSize >= points.length) {
+    // Too little data to genuinely hold anything back -- fit on everything and skip the
+    // comparison (caller falls back to isotonic, the already-shipped default) rather than trust
+    // a comparison made on a near-empty or fully-overlapping slice.
+    return { fitPoints: points, holdoutPoints: [] };
+  }
+
+  const sorted = [...points].sort((a, b) => a.rawProbability - b.rawProbability);
+  const stride = points.length / holdoutSize;
+  const holdoutPoints: CalibrationPoint[] = [];
+  const fitPoints: CalibrationPoint[] = [];
+  let nextHoldoutMark = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (holdoutPoints.length < holdoutSize && i >= Math.round(nextHoldoutMark)) {
+      holdoutPoints.push(sorted[i]);
+      nextHoldoutMark += stride;
+    } else {
+      fitPoints.push(sorted[i]);
+    }
+  }
+  return { fitPoints, holdoutPoints };
+}
+
+export interface PlattParams {
+  a: number;
+  b: number;
+}
+
+/**
+ * Fits a Platt/sigmoid calibration curve: P(y=1) = sigmoid(a * logit(x) + b), via batch gradient
+ * descent (this is a convex 2-parameter logistic regression, so plain gradient descent converges
+ * reliably). Internally standardizes the logit inputs (zero mean, unit variance) purely to
+ * condition the gradient descent -- the returned `a`/`b` are transformed back to operate on raw
+ * `logit(x)` directly, so `applyPlattScaling` needs no knowledge of the standardization.
+ */
+export function fitPlattScaling(points: CalibrationPoint[]): PlattParams {
+  if (points.length === 0) return { a: 1, b: 0 };
+
+  const eps = 1e-3;
+  const zs = points.map((p) => {
+    const x = Math.max(eps, Math.min(1 - eps, p.rawProbability));
+    return Math.log(x / (1 - x));
+  });
+  const ys = points.map((p) => p.outcome);
+  const n = zs.length;
+
+  const mean = zs.reduce((sum, z) => sum + z, 0) / n;
+  const variance = zs.reduce((sum, z) => sum + (z - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance) || 1;
+  const standardized = zs.map((z) => (z - mean) / std);
+
+  let aPrime = 1;
+  let bPrime = 0;
+  const learningRate = 0.3;
+  const iterations = 400;
+  for (let iter = 0; iter < iterations; iter++) {
+    let gradA = 0;
+    let gradB = 0;
+    for (let i = 0; i < n; i++) {
+      const pred = 1 / (1 + Math.exp(-(aPrime * standardized[i] + bPrime)));
+      const err = pred - ys[i];
+      gradA += err * standardized[i];
+      gradB += err;
+    }
+    aPrime -= (learningRate * gradA) / n;
+    bPrime -= (learningRate * gradB) / n;
+  }
+
+  return { a: aPrime / std, b: bPrime - (aPrime * mean) / std };
+}
+
+/** Applies a fitted Platt/sigmoid mapping to a new raw probability, clamped to [eps, 1-eps] before the logit transform. */
+export function applyPlattScaling(params: PlattParams, rawProbability: number): number {
+  const eps = 1e-3;
+  const x = Math.max(eps, Math.min(1 - eps, rawProbability));
+  const z = Math.log(x / (1 - x));
+  const logit = params.a * z + params.b;
+  return 1 / (1 + Math.exp(-logit));
+}
+
+/**
+ * Samples the fitted Platt sigmoid onto a fixed knot grid so it can be stored/applied through
+ * the exact same `CalibrationKnot[]` + `applyCalibration` machinery every downstream consumer
+ * (specialist segments, live prediction engine, recalibration) already uses -- no separate
+ * "if method is platt" branch needed anywhere outside this module.
+ */
+export function plattToKnots(params: PlattParams, resolution = 100): CalibrationKnot[] {
+  const knots: CalibrationKnot[] = [];
+  for (let i = 0; i <= resolution; i++) {
+    const x = i / resolution;
+    knots.push({ x, y: applyPlattScaling(params, x) });
+  }
   return knots;
 }
 
@@ -90,4 +287,72 @@ export function brierScore(points: CalibrationPoint[]): number | null {
   if (points.length === 0) return null;
   const sum = points.reduce((acc, p) => acc + (p.rawProbability - p.outcome) ** 2, 0);
   return sum / points.length;
+}
+
+export interface CalibrationFitResult {
+  knots: CalibrationKnot[];
+  method: "isotonic" | "platt";
+  isotonicHoldoutLogLoss: number | null;
+  plattHoldoutLogLoss: number | null;
+  fitSampleSize: number;
+  holdoutSampleSize: number;
+}
+
+/**
+ * Fits both a binned isotonic curve and a Platt/sigmoid curve on the same fit-only slice of
+ * validation data (see `splitForCalibrationHoldout`), evaluates both on the genuinely held-out
+ * slice via log loss, and activates whichever generalizes better -- the choice is never
+ * hand-picked. When there isn't enough data to hold out a meaningful comparison slice, isotonic
+ * (the already-shipped default) is used without a comparison, and that is recorded explicitly
+ * (`holdoutSampleSize: 0`, both holdout log losses `null`) rather than silently guessed.
+ */
+export function fitBestCalibration(points: CalibrationPoint[]): CalibrationFitResult {
+  if (points.length === 0) {
+    return {
+      knots: [
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      method: "isotonic",
+      isotonicHoldoutLogLoss: null,
+      plattHoldoutLogLoss: null,
+      fitSampleSize: 0,
+      holdoutSampleSize: 0,
+    };
+  }
+
+  const { fitPoints, holdoutPoints } = splitForCalibrationHoldout(points);
+  const isotonicKnots = fitIsotonicCalibrationBinned(fitPoints);
+
+  if (holdoutPoints.length === 0) {
+    return {
+      knots: isotonicKnots,
+      method: "isotonic",
+      isotonicHoldoutLogLoss: null,
+      plattHoldoutLogLoss: null,
+      fitSampleSize: fitPoints.length,
+      holdoutSampleSize: 0,
+    };
+  }
+
+  const plattParams = fitPlattScaling(fitPoints);
+  const plattKnots = plattToKnots(plattParams);
+
+  const isotonicHoldoutLogLoss = logLoss(
+    holdoutPoints.map((p) => ({ rawProbability: applyCalibration(isotonicKnots, p.rawProbability), outcome: p.outcome })),
+  );
+  const plattHoldoutLogLoss = logLoss(
+    holdoutPoints.map((p) => ({ rawProbability: applyCalibration(plattKnots, p.rawProbability), outcome: p.outcome })),
+  );
+
+  const plattWins = plattHoldoutLogLoss !== null && (isotonicHoldoutLogLoss === null || plattHoldoutLogLoss < isotonicHoldoutLogLoss);
+
+  return {
+    knots: plattWins ? plattKnots : isotonicKnots,
+    method: plattWins ? "platt" : "isotonic",
+    isotonicHoldoutLogLoss,
+    plattHoldoutLogLoss,
+    fitSampleSize: fitPoints.length,
+    holdoutSampleSize: holdoutPoints.length,
+  };
 }

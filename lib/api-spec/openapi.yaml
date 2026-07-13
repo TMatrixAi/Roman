@@ -1600,7 +1600,20 @@ components:
     SegmentMetrics:
       type: object
       required:
-        [n, accuracy, logLoss, brier, dateRangeStart, dateRangeEnd, retiredCount, retiredAccuracy, voidCount, missedCount]
+        [
+          n,
+          accuracy,
+          logLoss,
+          brier,
+          dateRangeStart,
+          dateRangeEnd,
+          retiredCount,
+          retiredAccuracy,
+          voidCount,
+          missedCount,
+          eceRaw,
+          eceCalibrated,
+        ]
       properties:
         n:
           type: integer
@@ -1627,6 +1640,12 @@ components:
           description: Walkovers and cancellations, always excluded from accuracy
         missedCount:
           type: integer
+        eceRaw:
+          type: ["number", "null"]
+          description: Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.
+        eceCalibrated:
+          type: ["number", "null"]
+          description: Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.
 
     EvaluationRun:
       type: object
@@ -1896,7 +1915,7 @@ components:
 
     EvaluationDashboard:
       type: object
-      required: [segments, activeCalibrationSampleSize, specialistSegments]
+      required: [segments, activeCalibrationSampleSize, activeCalibrationMethod, specialistSegments]
       properties:
         segments:
           type: array
@@ -1905,6 +1924,16 @@ components:
         activeCalibrationSampleSize:
           type: integer
           description: How many validation-segment predictions the live paper-trading calibration was fit on
+        activeCalibrationMethod:
+          type: ["string", "null"]
+          enum: [isotonic, platt, null]
+          description: Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
+        activeCalibrationIsotonicHoldoutLogLoss:
+          type: ["number", "null"]
+          description: Isotonic method's log loss on the held-out comparison slice at the last refit
+        activeCalibrationPlattHoldoutLogLoss:
+          type: ["number", "null"]
+          description: Platt method's log loss on the held-out comparison slice at the last refit
         specialistSegments:
           type: array
           items:

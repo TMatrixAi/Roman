@@ -1,0 +1,41 @@
+43 - Feature depth, Elite tier validation, and market edge tracking
+
+What & Why
+
+Calibration and ensemble weighting are now fixed (Phase 42). The remaining accuracy ceiling is driven by three things calibration cannot touch: (1) feature richness is generic — Surface Elo, Serve & Return, and Recent Form work but lack point-level granularity and surface-specific depth; (2) the Elite Prediction tier has n=0 validated matches, so its gating logic is unproven; (3) there is no tracked comparison between the model's calibrated probabilities and actual market/sportsbook odds, so "accurate" is not yet connected to "profitable."
+
+Done looks like
+
+Point-level serve/return inputs (first-serve win %, break points saved/converted, service games held, at minimum) are added as features to the Serve & Return module, sourced from existing match-level data already available to the engine.
+
+Surface-specific historical sample depth is tracked and exposed per matchup (e.g., number of prior meetings/matches on that specific surface within the lookback window), so low-sample surface predictions are visibly distinguishable from high-sample ones.
+
+The Availability module (rest days/travel/injury) is reworked using richer inputs rather than left at zero weight — re-evaluated via the same walk-forward validation process used elsewhere, and only re-enabled in the live ensemble if it clears a positive-impact bar (net accuracy gain, not just non-negative) on that validation.
+
+The Elite Prediction tier's gating threshold is temporarily loosened (or a "near-Elite" logging path is added for matches just below threshold) so that a real sample of graded matches accumulates, and the tier is backtested against that sample with results (n, accuracy, calibration) recorded and displayed alongside the existing Elite tier UI.
+
+A market-edge metric is computed and stored per graded prediction: calibrated model probability minus the implied probability from the actual sportsbook odds available at prediction time (vig-adjusted). This is aggregated into a rolling average edge and surfaced on the Accuracy dashboard, separate from the accuracy/ECE metrics.
+
+Existing behavior (calibration pipeline, ensemble weights, per-fold validation, dashboard structure) continues to work unchanged; only new features, Elite tier sample accumulation, and the market-edge metric are added.
+
+Out of scope
+
+Any further changes to the isotonic/Platt calibration methodology or ECE computation — that pipeline is considered done (Phase 42).
+
+Changing core ensemble weight priors for Surface Elo, Serve & Return, Recent Form, Head-to-Head, or General Ensemble.
+
+Building a live odds-scraping/ingestion pipeline if one does not already exist — use whatever odds data source the engine currently has access to; if none exists, flag this as a blocker rather than building new data infrastructure under this task.
+
+Steps
+
+1. Point-level serve/return features — Extend the Serve & Return module's input schema with first-serve win %, break points saved/converted, and service games held, computed from existing match-level data. Re-run walk-forward validation to confirm inclusion improves or does not degrade module-level accuracy before activating in the live ensemble.
+
+2. Surface-sample-depth tracking — Add a per-matchup count of prior meetings/matches on the relevant surface within the current lookback window. Expose this alongside existing Data Quality tier output so low-sample surface predictions are visibly flagged, not silently blended in.
+
+3. Availability module rework — Redesign inputs (e.g., more granular travel distance, rest-day thresholds, confirmed injury status) rather than reusing the prior version. Validate via walk-forward on held-out data; require a net positive accuracy delta (not merely non-negative) before re-enabling in the live ensemble, and record the validation result whether or not it's re-enabled.
+
+4. Elite tier sample accumulation and backtest — Temporarily loosen the Elite gating threshold or add near-Elite logging to accumulate a real n. Backtest Elite-tier predictions against this sample once a meaningful n is reached (define minimum n before starting) and surface n, accuracy, and calibration for the tier on the existing Elite tier UI.
+
+5. Market-edge tracking — For every graded prediction with available sportsbook odds at prediction time, compute vig-adjusted implied probability and store (calibrated model probability − implied probability) as the edge. Aggregate into a rolling average and display on the Accuracy dashboard as a distinct metric from accuracy/ECE.
+
+Sources

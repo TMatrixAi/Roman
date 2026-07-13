@@ -28,4 +28,14 @@ export interface SegmentMetrics {
   /** Walkovers and cancellations, always excluded from accuracy */
   voidCount: number;
   missedCount: number;
+  /**
+     * Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.
+     * @nullable
+     */
+  eceRaw: number | null;
+  /**
+     * Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.
+     * @nullable
+     */
+  eceCalibrated: number | null;
 }

@@ -802,7 +802,9 @@ export const ListEvaluationRunsResponseItem = zod.object({
   "retiredCount": zod.number(),
   "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
   "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
-  "missedCount": zod.number()
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
 }),
   "testMetrics": zod.object({
   "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
@@ -814,7 +816,9 @@ export const ListEvaluationRunsResponseItem = zod.object({
   "retiredCount": zod.number(),
   "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
   "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
-  "missedCount": zod.number()
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
 }),
   "createdAt": zod.coerce.date()
 })
@@ -952,7 +956,9 @@ export const GetEvaluationDashboardResponse = zod.object({
   "retiredCount": zod.number(),
   "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
   "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
-  "missedCount": zod.number()
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
 }),
   "calibrationBuckets": zod.array(zod.object({
   "label": zod.string(),
@@ -970,6 +976,9 @@ export const GetEvaluationDashboardResponse = zod.object({
 })
 })),
   "activeCalibrationSampleSize": zod.number().describe('How many validation-segment predictions the live paper-trading calibration was fit on'),
+  "activeCalibrationMethod": zod.union([zod.literal('isotonic'),zod.literal('platt'),zod.literal(null)]).nullable().describe('Which method (isotonic or Platt\/sigmoid) won the holdout comparison and is currently active'),
+  "activeCalibrationIsotonicHoldoutLogLoss": zod.number().nullish().describe('Isotonic method\'s log loss on the held-out comparison slice at the last refit'),
+  "activeCalibrationPlattHoldoutLogLoss": zod.number().nullish().describe('Platt method\'s log loss on the held-out comparison slice at the last refit'),
   "specialistSegments": zod.array(zod.object({
   "segmentKey": zod.string(),
   "tour": zod.string(),

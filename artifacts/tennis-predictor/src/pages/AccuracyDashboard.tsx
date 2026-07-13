@@ -27,6 +27,26 @@ function MetricStat({ label, value }: { label: string; value: string }) {
   )
 }
 
+function eceRead(ece: number | null | undefined): { label: string; variant: "success" | "warning" | "destructive" | "outline" } {
+  if (ece === null || ece === undefined) return { label: "NO DATA", variant: "outline" }
+  if (ece < 0.03) return { label: "WELL-CALIBRATED", variant: "success" }
+  if (ece <= 0.05) return { label: "BORDERLINE", variant: "warning" }
+  return { label: "MISCALIBRATED", variant: "destructive" }
+}
+
+function ECEStat({ label, ece }: { label: string; ece: number | null | undefined }) {
+  const read = eceRead(ece)
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-mono text-muted-foreground">{label}</div>
+      <div className="flex items-baseline gap-2">
+        <div className="text-2xl font-bold tracking-tighter">{ece !== null && ece !== undefined ? ece.toFixed(3) : "—"}</div>
+        <Badge variant={read.variant} className="font-mono text-[10px]">{read.label}</Badge>
+      </div>
+    </div>
+  )
+}
+
 function SegmentCard({ segment }: { segment: EvaluationDashboardSegment }) {
   const m = segment.metrics
   const dateRange =
@@ -59,6 +79,11 @@ function SegmentCard({ segment }: { segment: EvaluationDashboardSegment }) {
         <div className="flex gap-4 text-xs font-mono text-muted-foreground">
           <span>VOID (walkover/cancelled): {m.voidCount}</span>
           <span>MISSED CUTOFF: {m.missedCount}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <ECEStat label="ECE (RAW)" ece={m.eceRaw} />
+          <ECEStat label="ECE (CALIBRATED)" ece={m.eceCalibrated} />
         </div>
 
         <div className="space-y-2">
@@ -233,6 +258,7 @@ export default function AccuracyDashboardPage() {
             </div>
             <div className="text-sm text-muted-foreground font-mono">
               LIVE CALIBRATION FIT ON: {dashboard?.activeCalibrationSampleSize ?? 0} validation predictions
+              {dashboard?.activeCalibrationMethod && <> · method: {dashboard.activeCalibrationMethod}</>}
             </div>
           </CardContent>
         </Card>
