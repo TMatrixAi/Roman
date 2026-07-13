@@ -1,0 +1,58 @@
+Build a Python tennis match win-probability calculator that fixes a calibration 
+bug in an existing prediction app. Requirements:
+
+1. INPUTS (per match):
+   - player_a_surface_elo, player_b_surface_elo (raw Elo ratings, same surface)
+   - serve_return_prob_a (0-1, player A's modeled win prob from serve/return stats alone)
+   - recent_form_prob_a (0-1, player A's modeled win prob from recent form alone)
+   - weight_elo, weight_serve_return, weight_form (must sum to 1.0)
+   - home_advantage_bonus (optional, small additive adjustment, default 0)
+
+2. CORE LOGIC:
+   - Convert Elo difference to win probability using the standard logistic Elo 
+     formula: P = 1 / (1 + 10^(-(elo_a - elo_b)/400))
+   - Compute a weighted linear blend of the three component probabilities 
+     (Elo-derived, serve/return, recent form) using the provided weights. 
+     Do NOT apply any multiplicative "confidence bonus" or non-linear boost 
+     when signals agree — no compounding effects. Pure weighted average only.
+   - Apply shrinkage toward 0.5 proportional to a "model disagreement" score: 
+     if the three component probabilities have high variance (std dev > 0.10), 
+     shrink the blended probability 15-20% of the way toward 0.5 to reflect 
+     genuine uncertainty.
+   - Add home_advantage_bonus only if explicitly provided, capped at +/-3%.
+   - Clip final probability to a realistic band: never output above 75% or 
+     below 25% for single matches below the ATP 250 level (Challenger/ITF), 
+     since data quality and sample size at that level don't support extreme 
+     confidence. Allow up to 85% ceiling only for ATP 500+/Masters/Slam-level 
+     matches with high data quality (>90%).
+
+3. VALIDATION / SANITY CHECKS (critical - flag these explicitly):
+   - Verify the "favored" direction from Elo matches the higher Elo number. 
+     Raise a warning if the labeled favorite doesn't correspond to the higher 
+     Elo rating.
+   - Verify predicted set score direction is consistent with the predicted 
+     winner. Raise a warning if they contradict (e.g., predicted winner is 
+     Player A but set score implies Player A lost).
+   - Verify "upset risk" label matches the underlying variance/disagreement 
+     score. Raise a warning if risk is labeled LOW while component signals 
+     disagree or historical upset rate at that tier is elevated.
+
+4. OUTPUT:
+   - Print raw component probabilities, the weighted blend before shrinkage, 
+     the final calibrated probability after shrinkage and clipping, and any 
+     validation warnings triggered.
+   - Also print a plain-English one-line explanation of how far the final 
+     number moved from the naive blend and why.
+
+5. Include a test case using these exact numbers to verify the fix:
+   - Surface Elo: Player A 1557, Player B 1648
+   - Serve/Return prob favoring Player A: 0.64
+   - Recent form prob favoring Player A: 0.52
+   - Weights: Elo 0.33, Serve/Return 0.32, Form 0.29
+   - Tier: Challenger (below ATP 250)
+   Confirm the tool correctly flags that Elo (1648 > 1557) actually favors 
+   Player B, not Player A, and recalculate the corrected blended probability 
+   accordingly.
+
+Write clean, commented Python with a simple CLI or function interface so I 
+can plug in new match data easily.
