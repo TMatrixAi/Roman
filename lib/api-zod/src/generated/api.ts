@@ -1137,7 +1137,40 @@ export const GetEvaluationDashboardResponse = zod.object({
   "generalBrier": zod.number().nullish(),
   "weight": zod.number().describe('This segment\'s measured blend weight (0-1) against the general model in live predictions; 0 when meetsThreshold is false'),
   "computedAt": zod.coerce.date().optional()
-}).describe('Phase 6 tour\/surface specialist segment breakdown, always shown with its sample sizes so a small sample is never presented as a strong result'))
+}).describe('Phase 6 tour\/surface specialist segment breakdown, always shown with its sample sizes so a small sample is never presented as a strong result')),
+  "eliteTierBacktest": zod.object({
+  "minSampleSize": zod.number().describe('Minimum n before either group\'s numbers are considered meaningful (matches the project\'s existing 30-sample convention for specialist segments and simulator validation)'),
+  "elite": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
+}),
+  "eliteMeetsMinSample": zod.boolean(),
+  "nearElite": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
+}),
+  "nearEliteMeetsMinSample": zod.boolean()
+}).describe('Task 46: real backtest of the Elite Prediction tier against genuinely-unseen graded outcomes (historical_test test-segment + paper_trade\/live), scored with the exact same accuracy\/logLoss\/brier\/ECE methodology as every other segment. \"nearElite\" is a backtest-only comparison group -- every Elite gate met except segment-specialist support, which is structurally unobservable during historical walk-forward scoring -- and never affects which tier is shown as \"Elite\" in the live prediction UI.')
 })
 
 

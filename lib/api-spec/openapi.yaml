@@ -2127,9 +2127,32 @@ components:
           type: string
           format: date-time
 
+    EliteTierBacktest:
+      type: object
+      description: >-
+        Task 46: real backtest of the Elite Prediction tier against genuinely-unseen graded
+        outcomes (historical_test test-segment + paper_trade/live), scored with the exact same
+        accuracy/logLoss/brier/ECE methodology as every other segment. "nearElite" is a
+        backtest-only comparison group -- every Elite gate met except segment-specialist support,
+        which is structurally unobservable during historical walk-forward scoring -- and never
+        affects which tier is shown as "Elite" in the live prediction UI.
+      required: [minSampleSize, elite, eliteMeetsMinSample, nearElite, nearEliteMeetsMinSample]
+      properties:
+        minSampleSize:
+          type: integer
+          description: Minimum n before either group's numbers are considered meaningful (matches the project's existing 30-sample convention for specialist segments and simulator validation)
+        elite:
+          $ref: "#/components/schemas/SegmentMetrics"
+        eliteMeetsMinSample:
+          type: boolean
+        nearElite:
+          $ref: "#/components/schemas/SegmentMetrics"
+        nearEliteMeetsMinSample:
+          type: boolean
+
     EvaluationDashboard:
       type: object
-      required: [segments, activeCalibrationSampleSize, activeCalibrationMethod, specialistSegments]
+      required: [segments, activeCalibrationSampleSize, activeCalibrationMethod, specialistSegments, eliteTierBacktest]
       properties:
         segments:
           type: array
@@ -2152,6 +2175,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SpecialistSegmentSummary"
+        eliteTierBacktest:
+          $ref: "#/components/schemas/EliteTierBacktest"
 
     PredictionSettings:
       type: object

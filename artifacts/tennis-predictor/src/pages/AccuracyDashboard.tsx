@@ -7,6 +7,8 @@ import {
   useUpdateEvaluationSettings,
   type EvaluationDashboardSegment,
   type SpecialistSegmentSummary,
+  type EliteTierBacktest,
+  type SegmentMetrics,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +18,7 @@ import { Switch } from "@/components/ui/switch"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown } from "lucide-react"
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
@@ -185,6 +187,68 @@ function SpecialistSegmentTable({ segments }: { segments: SpecialistSegmentSumma
   )
 }
 
+function EliteTierGroupStats({ label, description, metrics, minSampleSize, meetsMinSample }: { label: string; description: string; metrics: SegmentMetrics; minSampleSize: number; meetsMinSample: boolean }) {
+  return (
+    <div className="space-y-3 border rounded-md p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{label}</div>
+          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        </div>
+        <Badge variant={meetsMinSample ? "success" : "outline"} className="font-mono text-[10px] whitespace-nowrap">
+          {meetsMinSample ? "SAMPLE SUFFICIENT" : `n < ${minSampleSize}`}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MetricStat label={`ACCURACY (n=${metrics.n})`} value={metrics.accuracy !== null ? `${metrics.accuracy}%` : "—"} />
+        <MetricStat label="LOG LOSS" value={metrics.logLoss !== null ? metrics.logLoss.toFixed(3) : "—"} />
+        <MetricStat label="BRIER SCORE" value={metrics.brier !== null ? metrics.brier.toFixed(3) : "—"} />
+        <ECEStat label="ECE (CALIBRATED)" ece={metrics.eceCalibrated} />
+      </div>
+      {!meetsMinSample && (
+        <p className="text-xs text-muted-foreground">
+          Fewer than {minSampleSize} graded matches so far -- these numbers will keep firming up as more real outcomes are graded.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Crown className="w-4 h-4" /> Elite Tier Backtest
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          The "Elite Prediction" tier requires high data quality, Surface Elo/Serve &amp; Return/Recent Form all agreeing,
+          a validated segment specialist backing the call, and a calibrated pick that agrees with the raw evidence (no
+          model conflict, no High Disagreement, no High/Extreme upset risk). Scored against genuinely-unseen graded
+          outcomes only (historical test-segment + paper trading), with the same accuracy/logLoss/Brier/ECE methodology
+          used everywhere else on this dashboard.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <EliteTierGroupStats
+          label="Real Elite Tier"
+          description="Every gate genuinely met, including a real segment specialist."
+          metrics={backtest.elite}
+          minSampleSize={backtest.minSampleSize}
+          meetsMinSample={backtest.eliteMeetsMinSample}
+        />
+        <EliteTierGroupStats
+          label="Near-Elite (backtest-only comparison group)"
+          description={'Every Elite gate met except segment-specialist support -- unobservable in historical backtests, since specialist segments are themselves fit FROM this same data. Never shown as "Elite" anywhere in the live app.'}
+          metrics={backtest.nearElite}
+          minSampleSize={backtest.minSampleSize}
+          meetsMinSample={backtest.nearEliteMeetsMinSample}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
@@ -270,6 +334,7 @@ export default function AccuracyDashboardPage() {
         </div>
       ) : dashboard ? (
         <div className="space-y-6">
+          <EliteTierBacktestCard backtest={dashboard.eliteTierBacktest} />
           {dashboard.segments.map((segment) => (
             <SegmentCard key={segment.key} segment={segment} />
           ))}

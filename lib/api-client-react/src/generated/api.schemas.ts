@@ -1025,6 +1025,18 @@ export interface SpecialistSegmentSummary {
 }
 
 /**
+ * Task 46: real backtest of the Elite Prediction tier against genuinely-unseen graded outcomes (historical_test test-segment + paper_trade/live), scored with the exact same accuracy/logLoss/brier/ECE methodology as every other segment. "nearElite" is a backtest-only comparison group -- every Elite gate met except segment-specialist support, which is structurally unobservable during historical walk-forward scoring -- and never affects which tier is shown as "Elite" in the live prediction UI.
+ */
+export interface EliteTierBacktest {
+  /** Minimum n before either group's numbers are considered meaningful (matches the project's existing 30-sample convention for specialist segments and simulator validation) */
+  minSampleSize: number;
+  elite: SegmentMetrics;
+  eliteMeetsMinSample: boolean;
+  nearElite: SegmentMetrics;
+  nearEliteMeetsMinSample: boolean;
+}
+
+/**
  * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
  * @nullable
  */
@@ -1056,6 +1068,7 @@ export interface EvaluationDashboard {
      */
   activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
+  eliteTierBacktest: EliteTierBacktest;
 }
 
 export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];

@@ -16,3 +16,4 @@
 - [Weighted model disagreement scoring](disagreement-scoring-design.md) — gate disagreement categories on meaningfully-weighted core-module conflicts, not raw spread; disagreement and closeness-to-50% are independent signals.
 - [Ablation leave-one-out on already-excluded modules](ablation-leave-one-out-already-excluded-modules.md) — measuring "should we re-include X" needs the exclusion cleared first; a no-op ablation on an already-off module looks like "no effect" but means nothing.
 - [DB schema drift surfaces as unrelated test failures](db-schema-drift-in-tests.md) — "column does not exist" during tests often means the dev DB needs `drizzle-kit push`, not a bug in your diff.
+- [Retroactive tier reconstruction from stored engine breakdowns](retroactive-tier-reconstruction.md) — a new prediction "tier"/classification for already-graded rows can be rebuilt from stored featureSnapshot data alone; avoids touching the live scoring path at all.

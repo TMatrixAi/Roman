@@ -28,6 +28,7 @@ import { runWalkForwardEvaluation } from "../services/evaluation/walkForward";
 import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
 import { computeSegmentMetrics, computeCalibrationBuckets, computeStreaks } from "../services/evaluation/metrics";
+import { computeEliteTierBacktest } from "../services/evaluation/eliteTierBacktest";
 import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
 import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
@@ -140,6 +141,11 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
   const [activeCalibration] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1);
   const specialistSegments = await getActiveSpecialistSegments();
 
+  // Task 46: Elite tier backtest, scoped to the SAME genuinely-unseen rows the dashboard already
+  // separates out (historical_test test-segment + paper_trade/live) -- never the validation
+  // segment, which was used to fit calibration.
+  const eliteTierBacktest = computeEliteTierBacktest([...historicalTestRows, ...paperTradeRows]);
+
   res.json(
     GetEvaluationDashboardResponse.parse({
       segments,
@@ -148,6 +154,7 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
       activeCalibrationIsotonicHoldoutLogLoss: activeCalibration?.isotonicHoldoutLogLoss ?? null,
       activeCalibrationPlattHoldoutLogLoss: activeCalibration?.plattHoldoutLogLoss ?? null,
       specialistSegments,
+      eliteTierBacktest,
     }),
   );
 });

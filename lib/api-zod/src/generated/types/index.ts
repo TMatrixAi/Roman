@@ -16,6 +16,7 @@ export * from './calibrationBucket';
 export * from './calibrationKnot';
 export * from './duplicatePredictionGroup';
 export * from './duplicatePredictionsPreviewResult';
+export * from './eliteTierBacktest';
 export * from './engineBreakdown';
 export * from './engineBreakdownMatchupCloseness';
 export * from './engineBreakdownModelAgreement';

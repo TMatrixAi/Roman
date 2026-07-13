@@ -5,6 +5,7 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { EliteTierBacktest } from './eliteTierBacktest';
 import type { EvaluationDashboardActiveCalibrationMethod } from './evaluationDashboardActiveCalibrationMethod';
 import type { EvaluationDashboardSegment } from './evaluationDashboardSegment';
 import type { SpecialistSegmentSummary } from './specialistSegmentSummary';
@@ -29,4 +30,5 @@ export interface EvaluationDashboard {
      */
   activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
+  eliteTierBacktest: EliteTierBacktest;
 }

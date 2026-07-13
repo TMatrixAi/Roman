@@ -40,6 +40,11 @@ export interface EliteTierResult {
   reason: string;
 }
 
+export interface NearEliteTierResult {
+  isNearEliteTier: boolean;
+  reason: string;
+}
+
 /**
  * "Elite Prediction" tier (see the fix-the-engine spec, requirement 8): a strictly narrower, more
  * demanding bar than STRONG_RECOMMENDATION, gated on ALL of:
@@ -77,4 +82,32 @@ export function computeEliteTier(input: EliteTierInputs): EliteTierResult {
 export function voteFavorsPlayer1(models: ModelVote[], modelName: string): boolean {
   const vote = models.find((m) => m.modelName === modelName);
   return vote ? vote.player1Probability >= 50 : false;
+}
+
+/**
+ * "Near-Elite" (backtest-only, task 46): identical to `computeEliteTier` except the segment-
+ * specialist requirement is relaxed to "satisfied" rather than checked. This exists purely to
+ * accumulate a meaningful backtest sample: historical walk-forward scoring (`historicalScoring.ts`)
+ * always runs with `segment: null` (segment specialists are themselves FIT from walk-forward
+ * validation output, so feeding one back into the scoring that produces that same output would be
+ * circular -- see the comment on `scoreHistoricalMatch`), so `specialistApplied` is structurally
+ * always false there and real Elite tier can never be earned by a historical_test row. That's a
+ * limitation of the backtesting context, not evidence the other three Elite gates (data quality,
+ * signal agreement, calibration integrity, and the disagreement/upset-risk guardrail) are unsound.
+ *
+ * Never used to decide what tier is shown in the live/paper-trade prediction UI -- only to
+ * classify already-graded rows for the Elite tier backtest (`eliteTierBacktest.ts`). A row that is
+ * genuinely Elite tier (real `computeEliteTier` says so) is never double-counted as "near-Elite" by
+ * that classifier.
+ */
+export function computeNearEliteTier(input: EliteTierInputs): NearEliteTierResult {
+  const { isEliteTier, reason } = computeEliteTier({ ...input, specialistApplied: true });
+  if (isEliteTier) {
+    return {
+      isNearEliteTier: true,
+      reason:
+        "Near-Elite (backtest only): every Elite gate except segment-specialist support is met -- specialist support can't be honestly evaluated in this scoring context (see computeNearEliteTier doc).",
+    };
+  }
+  return { isNearEliteTier: false, reason };
 }
