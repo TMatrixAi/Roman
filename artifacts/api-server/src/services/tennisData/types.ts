@@ -182,4 +182,11 @@ export interface TennisDataProvider {
    */
   getCompletedMatchesByDateRange(dateStart: string, dateStop: string): Promise<HistoricalFixture[]>;
   getStatus(): ProviderStatusInfo;
+  /**
+   * Name-only fallback surface/level lookup for callers with no `tournament_key` (currently just
+   * the screenshot-import flow, which only ever has OCR'd event text). Returns null when no
+   * confident single-surface match exists -- never a guess. Optional so providers other than
+   * API-Tennis aren't forced to implement a real name search they may not have.
+   */
+  findTournamentSurfaceByName?(name: string): Promise<{ surface: Surface | null; level: TournamentLevel | null } | null>;
 }

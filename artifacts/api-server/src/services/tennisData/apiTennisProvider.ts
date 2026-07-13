@@ -1,8 +1,8 @@
 import { logger } from "../../lib/logger";
 import { TtlCache } from "./cache";
-import { normalizeProviderSurface, resolveSurfaceAndLevel } from "./surfaceMap";
+import { inferLevelFromEventType, normalizeProviderSurface, resolveSurfaceAndLevel } from "./surfaceMap";
 import { resolveTournamentTimezone } from "./timezoneMap";
-import type { Surface } from "./types";
+import type { Surface, TournamentLevel } from "./types";
 import {
   ProviderUnavailableError,
   type Fixture,
@@ -16,6 +16,16 @@ import {
   type ProviderStatusInfo,
   type TennisDataProvider,
 } from "./types";
+
+function normalizeTournamentNameForSearch(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 const BASE_URL = "https://api.api-tennis.com/tennis/";
 const STANDINGS_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -381,14 +391,50 @@ export class ApiTennisProvider implements TennisDataProvider {
    * an explicit "not available" for that tournament_key, not a fabricated guess.
    */
   private async getTournamentSurfaceMap(): Promise<Map<string, Surface | null>> {
-    return this.cache.getOrFetch("tournamentSurfaces", TOURNAMENTS_TTL_MS, async () => {
+    const rows = await this.getTournamentRows();
+    const map = new Map<string, Surface | null>();
+    for (const row of rows) {
+      map.set(str(row.tournament_key), normalizeProviderSurface(row.tournament_sourface));
+    }
+    return map;
+  }
+
+  /** Shared cached fetch of every `get_tournaments` row -- backs both the tournament_key -> surface
+   * map above and the name-based lookup below, so a name search never issues a second real API call. */
+  private async getTournamentRows(): Promise<RawTournamentRow[]> {
+    return this.cache.getOrFetch("tournamentRows", TOURNAMENTS_TTL_MS, async () => {
       const rows = await this.call<RawTournamentRow[]>("get_tournaments");
-      const map = new Map<string, Surface | null>();
-      for (const row of rows ?? []) {
-        map.set(str(row.tournament_key), normalizeProviderSurface(row.tournament_sourface));
-      }
-      return map;
+      return rows ?? [];
     });
+  }
+
+  /**
+   * Name-based fallback for callers with no `tournament_key` to work with -- currently just the
+   * screenshot-import flow, which only ever has OCR'd event text, never a real fixture object.
+   * Confirmed live (2026-07-13): `tournament_name` here is just the bare city/event name (e.g.
+   * "Pozoblanco"), NOT the full "ATP Challenger Pozoblanco" label a screenshot shows -- that
+   * tour/tier prefix comes from `event_type_type` instead. So matching runs the other way from a
+   * first guess: every word of the (short) candidate `tournament_name` must appear in the
+   * (longer) recognized text, not the reverse. Genuinely ambiguous (multiple candidates
+   * disagreeing on surface) or absent matches return null rather than guessing.
+   */
+  async findTournamentSurfaceByName(name: string): Promise<{ surface: Surface | null; level: TournamentLevel | null } | null> {
+    const rows = await this.getTournamentRows();
+    const recognizedWords = new Set(normalizeTournamentNameForSearch(name).split(" ").filter(Boolean));
+    if (recognizedWords.size === 0) return null;
+
+    const candidates = rows.filter((row) => {
+      const rowWords = normalizeTournamentNameForSearch(row.tournament_name ?? "").split(" ").filter(Boolean);
+      return rowWords.length > 0 && rowWords.every((w) => recognizedWords.has(w));
+    });
+    if (candidates.length === 0) return null;
+
+    const surfaces = new Set(candidates.map((row) => normalizeProviderSurface(row.tournament_sourface)).filter((s) => s !== null));
+    if (surfaces.size > 1) return null; // genuinely ambiguous across matching rows -- never guess which one
+
+    const surface = surfaces.size === 1 ? [...surfaces][0] : null;
+    const level = inferLevelFromEventType(candidates[0]?.event_type_type ?? null);
+    return { surface, level };
   }
 
   /**

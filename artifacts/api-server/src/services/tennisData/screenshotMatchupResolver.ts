@@ -101,7 +101,22 @@ export async function resolveScreenshotMatchup(
     player2 = { recognizedName: player2.recognizedName, player: null };
   }
 
-  const { surface, level } = inferSurfaceAndLevel(raw.eventName);
+  let { surface, level } = inferSurfaceAndLevel(raw.eventName);
+
+  // The named table above deliberately never resolves Challenger/ITF-level events by name (see
+  // surfaceMap.ts) because live fixtures get a much more reliable tournament_key -> surface
+  // lookup instead. A screenshot import has no tournament_key at all -- only OCR'd text -- so
+  // that reliable path is unavailable here. Fall back to a real name search against the
+  // provider's own tournament data before giving up, rather than leaving every Challenger/ITF
+  // screenshot import surface-less.
+  if (raw.eventName && surface === null && provider.findTournamentSurfaceByName) {
+    const found = await provider.findTournamentSurfaceByName(raw.eventName);
+    if (found) {
+      surface = found.surface;
+      level = found.level ?? level;
+    }
+  }
+
   if (raw.eventName && surface === null) {
     warnings.push(`Read event "${raw.eventName}", but couldn't determine its surface -- please set surface/level manually.`);
   } else if (!raw.eventName) {
