@@ -89,17 +89,70 @@ test("findDuplicatePredictionGroups: tournament-name comparison is trim/case-ins
   }
 });
 
-test("findDuplicatePredictionGroups: never merges genuinely different matches (different surface)", async () => {
+test("findDuplicatePredictionGroups: never merges genuinely different matches (different surface, far apart in time)", async () => {
+  // Different surface AND far enough apart in time to fall outside the time-proximity fallback
+  // window too -- this is the "same pair meets again weeks later" case, never a duplicate.
+  const early = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  const late = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const inserted = await db
     .insert(predictionsTable)
-    .values([baseRow({ surface: "Hard" }), baseRow({ surface: "Clay" })])
+    .values([baseRow({ surface: "Hard", createdAt: early }), baseRow({ surface: "Clay", createdAt: late })])
     .returning({ id: predictionsTable.id });
   const ids = inserted.map((r) => r.id);
 
   try {
     const groups = await findDuplicatePredictionGroups();
     const ourGroup = groups.find((g) => ids.includes(g.keepId) || g.removeIds.some((id) => ids.includes(id)));
-    assert.equal(ourGroup, undefined, "a different surface must never be treated as the same match");
+    assert.equal(ourGroup, undefined, "a different surface far apart in time must never be treated as the same match");
+  } finally {
+    await cleanup(ids);
+  }
+});
+
+test("findDuplicatePredictionGroups: flags same pair as duplicate when created minutes apart, even with different tournament/surface/format", async () => {
+  // Mirrors the real unresolved-duplicate complaint: predicted once via Predict Now (no
+  // tournament, Hard/BestOf3 defaults), then again minutes later via Custom Match with the
+  // tournament filled in and the surface corrected.
+  const first = new Date(Date.now() - 5 * 60 * 1000);
+  const second = new Date();
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({ tournamentName: null, surface: "Hard", matchFormat: "BestOf3", createdAt: first }),
+      baseRow({ tournamentName: "Test Open", surface: "Clay", matchFormat: "BestOf5", createdAt: second }),
+    ])
+    .returning({ id: predictionsTable.id });
+  const ids = inserted.map((r) => r.id);
+
+  try {
+    const groups = await findDuplicatePredictionGroups();
+    const ourGroup = groups.find((g) => ids.includes(g.keepId));
+    assert.ok(ourGroup, "same-pair predictions created minutes apart must be flagged as duplicates despite differing tournament/surface/format");
+    assert.equal(ourGroup!.keepId, ids[0], "the earliest-created row must be the one kept");
+    assert.deepEqual(ourGroup!.removeIds, [ids[1]]);
+  } finally {
+    await cleanup(ids);
+  }
+});
+
+test("findDuplicatePredictionGroups: does not flag same pair as duplicate when created hours apart with different tournament/surface/format", async () => {
+  // Outside the time-proximity window and no exact-key match -- must not be merged, even though
+  // it's the same two players.
+  const early = new Date(Date.now() - 6 * 60 * 60 * 1000);
+  const late = new Date();
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({ tournamentName: null, surface: "Hard", matchFormat: "BestOf3", createdAt: early }),
+      baseRow({ tournamentName: "Test Open", surface: "Clay", matchFormat: "BestOf5", createdAt: late }),
+    ])
+    .returning({ id: predictionsTable.id });
+  const ids = inserted.map((r) => r.id);
+
+  try {
+    const groups = await findDuplicatePredictionGroups();
+    const ourGroup = groups.find((g) => ids.includes(g.keepId) || g.removeIds.some((id) => ids.includes(id)));
+    assert.equal(ourGroup, undefined, "same pair hours apart with differing tournament/surface/format must not be treated as a duplicate");
   } finally {
     await cleanup(ids);
   }
