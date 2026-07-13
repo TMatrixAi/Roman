@@ -45,6 +45,16 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
   { match: /\bdoha\b|\bqatar\b/i, surface: "Hard", level: "WTA1000" },
   { match: /\bwuhan\b/i, surface: "Hard", level: "WTA1000" },
   { match: /\bbeijing\b/i, surface: "Hard", level: "WTA1000" },
+  // ATP250/WTA250 grass/clay swing events -- single fixed venue and surface every year, so a
+  // name match is as reliable as the majors/Masters entries above. Level intentionally omitted
+  // (falls back to inferLevelFromEventType's ATP250/WTA250 default) since these aren't 500-level.
+  { match: /\bnewport\b/i, surface: "Grass" },
+  { match: /\bbastad\b|b\u00e5stad/i, surface: "Clay" },
+  { match: /\bumag\b/i, surface: "Clay" },
+  { match: /\bgstaad\b/i, surface: "Clay" },
+  { match: /\biasi\b/i, surface: "Clay" },
+  { match: /\bkitzbuhel\b|kitzb\u00fchel/i, surface: "Clay" },
+  { match: /\bathens\b/i, surface: "Hard" },
 ];
 
 // Verified live (2026-07-11): tournament names for lower-tier events routinely contain
@@ -56,6 +66,14 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
 // 500-level tournament is ever named with these words, so this can only prevent false positives,
 // never suppress a real match.
 const NEVER_NAMED_TABLE = /challenger|\bitf\b|\bqualif|\bjunior|\bboys\b|\bgirls\b/i;
+
+// Deliberately never added to the named table above, even when a specific single-surface city is
+// known for a given edition: any "ATP Challenger <city>"/"ITF <event>" name is caught by
+// NEVER_NAMED_TABLE and resolved via the real tournament_key -> surface lookup instead (already
+// near-complete coverage, per the note at the top of this file). Generic "ATP"/"WTA"/"ITF
+// Doubles" tour-wide labels and multi-surface/varies-by-edition events (e.g. a 125K event that
+// alternates between clay and hard) have no single correct surface to hardcode -- guessing one
+// would violate the "absent, not faked" rule this table follows everywhere else.
 
 /** Legacy name-only lookup -- kept for callers that don't have a tournament_key. Only ever
  * resolves the ~26 majors/Masters/500-level events in the table above. */
