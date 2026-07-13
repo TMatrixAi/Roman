@@ -333,6 +333,9 @@ export interface RecentFormResult {
   /** Share (0-100) of player1's recent matches with a real opponent-strength estimate available */
   player1OpponentAdjustedCoverage?: number;
   player2OpponentAdjustedCoverage?: number;
+  /** Share (0-100) of player1's recent matches with a real serve/return point-stat line factored into the score. Not present on predictions made before this field existed. */
+  player1ServeReturnCoverage?: number;
+  player2ServeReturnCoverage?: number;
   warnings?: string[];
 }
 

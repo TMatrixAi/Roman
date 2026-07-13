@@ -1132,6 +1132,11 @@ components:
           description: Share (0-100) of player1's recent matches with a real opponent-strength estimate available
         player2OpponentAdjustedCoverage:
           type: number
+        player1ServeReturnCoverage:
+          type: number
+          description: Share (0-100) of player1's recent matches with a real serve/return point-stat line factored into the score. Not present on predictions made before this field existed.
+        player2ServeReturnCoverage:
+          type: number
         warnings:
           type: array
           items:

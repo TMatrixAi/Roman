@@ -309,6 +309,8 @@ export const CreatePredictionResponse = zod.object({
   "reliability": zod.number(),
   "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
   "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "player1ServeReturnCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real serve\/return point-stat line factored into the score. Not present on predictions made before this field existed.'),
+  "player2ServeReturnCoverage": zod.number().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({
@@ -519,6 +521,8 @@ export const GetPredictionResponse = zod.object({
   "reliability": zod.number(),
   "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
   "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "player1ServeReturnCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real serve\/return point-stat line factored into the score. Not present on predictions made before this field existed.'),
+  "player2ServeReturnCoverage": zod.number().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({
@@ -785,6 +789,8 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "reliability": zod.number(),
   "player1OpponentAdjustedCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real opponent-strength estimate available'),
   "player2OpponentAdjustedCoverage": zod.number().optional(),
+  "player1ServeReturnCoverage": zod.number().optional().describe('Share (0-100) of player1\'s recent matches with a real serve\/return point-stat line factored into the score. Not present on predictions made before this field existed.'),
+  "player2ServeReturnCoverage": zod.number().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
   "fatigue": zod.object({

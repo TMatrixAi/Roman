@@ -153,7 +153,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
 
   const surfaceElo = computeSurfaceEloModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
-  const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
+  const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches);
   const availability = computeAvailabilityModule(input.player1Matches, input.player2Matches, input.tournamentName ?? null);
   const styleMatchup = computeStyleMatchupModule(input.player1Matches, input.player2Matches);

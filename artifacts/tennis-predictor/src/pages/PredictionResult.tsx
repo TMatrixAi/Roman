@@ -498,6 +498,22 @@ export default function PredictionResultPage() {
                 <Badge variant="outline" className="text-[10px]">{engine.recentForm.player2Trend}</Badge>
               </div>
             </div>
+            {typeof engine.recentForm.player1OpponentAdjustedCoverage === "number" && typeof engine.recentForm.player2OpponentAdjustedCoverage === "number" && (
+              <div className="mt-2 flex items-center justify-between text-xs font-mono">
+                <span className="text-muted-foreground" title="Share of recent matches with a real opponent-strength estimate">OPPONENT-ADJUSTED:</span>
+                <span className="text-foreground">
+                  {engine.recentForm.player1OpponentAdjustedCoverage}%/{engine.recentForm.player2OpponentAdjustedCoverage}%
+                </span>
+              </div>
+            )}
+            {typeof engine.recentForm.player1ServeReturnCoverage === "number" && typeof engine.recentForm.player2ServeReturnCoverage === "number" && (
+              <div className="mt-1 flex items-center justify-between text-xs font-mono">
+                <span className="text-muted-foreground" title="Share of recent matches with a real serve/return stat line factored in">SERVE/RETURN SIGNAL:</span>
+                <span className="text-foreground">
+                  {engine.recentForm.player1ServeReturnCoverage}%/{engine.recentForm.player2ServeReturnCoverage}%
+                </span>
+              </div>
+            )}
           </ModuleCard>
 
           <ModuleCard title="FATIGUE INDEX" reliability={engine.fatigue.reliability} icon={Activity}>
