@@ -133,7 +133,7 @@ export const GetUpcomingFixturesQueryParams = zod.object({
 export const GetUpcomingFixturesResponseItem = zod.object({
   "id": zod.string(),
   "date": zod.coerce.date().describe('Calendar date the match is scheduled for (YYYY-MM-DD). Always present.'),
-  "scheduledStart": zod.union([zod.coerce.date(),zod.null()]).optional().describe('Full real start instant (UTC) for this exact fixture, combining the provider\'s per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show \"Time TBD\" when null.'),
+  "scheduledStart": zod.union([zod.null(),zod.coerce.date()]).optional().describe('Full real start instant (UTC) for this exact fixture, combining the provider\'s per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show \"Time TBD\" when null. IMPORTANT -- null must be listed first in this oneOf union. The generated zod.coerce.date() silently accepts a null input as epoch 1970 instead of failing, so if the date branch were checked first a real null would be miscoerced into a fake timestamp.'),
   "timeConfirmed": zod.boolean().describe('True only when scheduledStart reflects a real provider-supplied time for this exact fixture.'),
   "tournamentName": zod.string().nullish(),
   "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),

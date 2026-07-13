@@ -91,3 +91,19 @@ convention seen in `BulkDeletePredictionsResult`) fixes it with no behavior chan
 **How to apply:** always suffix new response/body component schema names with `Result`
 (not `Response`/`Body`) so they can never textually match the operationId-derived zod const
 name — the zod const alone is what routes import to `.parse(...)`.
+
+## A nullable date field's `oneOf` order controls whether `null` survives parsing
+
+For `oneOf: [{type: string, format: date-time}, {type: "null"}]`, orval generates
+`zod.union([zod.coerce.date(), zod.null()])`. `zod.coerce.date()` calls `new Date(null)`,
+which succeeds (epoch 1970-01-01) instead of failing, so a real `null` silently becomes a
+fake timestamp — `zod.union` never even reaches the `zod.null()` branch. Confirmed live:
+an unresolvable fixture time meant to serialize as `scheduledStart: null` came back as
+`"1970-01-01T00:00:00.000Z"` with `timeConfirmed: false`, defeating the whole "null means
+unconfirmed" contract for any client that doesn't also check `timeConfirmed`.
+
+**How to apply:** for any nullable date/date-time field, list `type: "null"` **first** in
+the `oneOf` — orval preserves array order, so this produces `zod.union([zod.null(),
+zod.coerce.date()])` and a real `null` matches correctly. After changing, regenerate and
+grep the actual `lib/api-zod/src/generated/api.ts` union order to confirm — don't just trust
+the `openapi.yaml` edit took effect.

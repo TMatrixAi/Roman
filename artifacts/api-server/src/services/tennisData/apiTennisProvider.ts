@@ -1,6 +1,7 @@
 import { logger } from "../../lib/logger";
 import { TtlCache } from "./cache";
 import { normalizeProviderSurface, resolveSurfaceAndLevel } from "./surfaceMap";
+import { resolveTournamentTimezone } from "./timezoneMap";
 import type { Surface } from "./types";
 import {
   ProviderUnavailableError,
@@ -35,22 +36,69 @@ function str(value: string | number): string {
 }
 
 /**
+ * Returns this IANA timezone's real UTC offset (in ms) at the given UTC instant, via
+ * `Intl.DateTimeFormat` -- there is no simpler standard-library way to ask "what is timezone X's
+ * offset at instant Y" in Node without a database dependency, and this needs to be genuinely
+ * DST-aware (a fixed year-round offset would misplace matches near a DST transition).
+ */
+function timezoneOffsetMs(timezone: string, atUtcMs: number): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date(atUtcMs));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  // Treat the timezone's local wall-clock reading at `atUtcMs` as if it were itself a UTC
+  // instant. The gap between that value and the real UTC instant IS the timezone's offset.
+  const wallClockAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return wallClockAsUtc - atUtcMs;
+}
+
+/**
+ * Converts a real local wall-clock date+time in a given IANA timezone into the correct UTC
+ * instant, DST-aware. Two-pass: the offset can itself depend on the (still-unknown) UTC instant
+ * near a DST transition, so the first-pass offset (computed as if the naive wall-clock reading
+ * were already UTC) is used to get a close UTC estimate, then the offset is re-checked at that
+ * estimate and applied again -- the standard technique for zoned-to-UTC conversion.
+ */
+function zonedWallTimeToUtcMs(naiveUtcMs: number, timezone: string): number {
+  const firstPassOffset = timezoneOffsetMs(timezone, naiveUtcMs);
+  const estimate = naiveUtcMs - firstPassOffset;
+  const secondPassOffset = timezoneOffsetMs(timezone, estimate);
+  return naiveUtcMs - secondPassOffset;
+}
+
+/**
  * Combines the provider's per-fixture `event_date` ("YYYY-MM-DD") and `event_time` ("HH:MM") into
  * a real UTC instant. Confirmed live (2026-07-12): fixtures on the same date routinely carry
  * different `event_time` values (e.g. "14:10", "16:10", "13:10", "17:10" all on one day) -- this
  * is a genuine per-match field, not a shared/derived value, so it must never be dropped or
- * defaulted to a placeholder. API-Tennis does not expose an explicit timezone field for this
- * value; per this provider family's convention we treat it as UTC. Returns null (never a guessed
- * time) when the date/time strings are missing or don't match the expected shape -- callers must
- * show "Time TBD" rather than inventing a time.
+ * defaulted to a placeholder.
+ *
+ * `event_time` is the tournament venue's real LOCAL wall-clock time, not UTC (confirmed live
+ * 2026-07-13 -- see `timezoneMap.ts`'s header for the exact evidence: several matches already
+ * live/mid-set had raw `event_time` values that, read as literal UTC, would place their start in
+ * the future). `timezone` -- resolved by the caller via `resolveTournamentTimezone` -- is
+ * required to convert correctly; when it's null (venue not confidently identified), this returns
+ * null rather than guessing, and callers must show "Time TBD".
  */
-export function combineDateTimeUtc(eventDate: string | undefined, eventTime: string | undefined): string | null {
+export function combineDateTimeUtc(eventDate: string | undefined, eventTime: string | undefined, timezone: string | null): string | null {
   if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return null;
   if (!eventTime || !/^\d{2}:\d{2}$/.test(eventTime)) return null;
-  const iso = `${eventDate}T${eventTime}:00Z`;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
+  if (!timezone) return null;
+  const [year, month, day] = eventDate.split("-").map(Number);
+  const [hour, minute] = eventTime.split(":").map(Number);
+  const naiveUtcMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+  if (Number.isNaN(naiveUtcMs)) return null;
+  const realUtcMs = zonedWallTimeToUtcMs(naiveUtcMs, timezone);
+  if (Number.isNaN(realUtcMs)) return null;
+  return new Date(realUtcMs).toISOString();
 }
 
 interface RawStandingRow {
@@ -498,7 +546,8 @@ export class ApiTennisProvider implements TennisDataProvider {
           eventTypeType: m.event_type_type,
           surfaceByTournamentKey,
         });
-        const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time);
+        const timezone = resolveTournamentTimezone(m.tournament_name);
+        const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time, timezone);
         return {
           id: str(m.event_key),
           date: m.event_date,

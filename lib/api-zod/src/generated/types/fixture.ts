@@ -13,8 +13,8 @@ export interface Fixture {
   id: string;
   /** Calendar date the match is scheduled for (YYYY-MM-DD). Always present. */
   date: Date;
-  /** Full real start instant (UTC) for this exact fixture, combining the provider's per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show "Time TBD" when null. */
-  scheduledStart?: Date | null;
+  /** Full real start instant (UTC) for this exact fixture, combining the provider's per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show "Time TBD" when null. IMPORTANT -- null must be listed first in this oneOf union. The generated zod.coerce.date() silently accepts a null input as epoch 1970 instead of failing, so if the date branch were checked first a real null would be miscoerced into a fake timestamp. */
+  scheduledStart?: null | Date;
   /** True only when scheduledStart reflects a real provider-supplied time for this exact fixture. */
   timeConfirmed: boolean;
   /** @nullable */
