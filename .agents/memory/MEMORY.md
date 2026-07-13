@@ -11,3 +11,4 @@
 - [Data Quality module weighting](data-quality-module-weighting.md) — score is importance-weighted, not a flat average, so structurally-rare gaps (no h2h, fixed-constant fatigue) can't cap an otherwise strong prediction.
 - [Walk-forward historical scoring performance](walkforward-historical-scoring-perf.md) — full-engine backtest scoring must preload match history/elo into memory once, never query per match; full runs legitimately take ~10-15 min.
 - [Sandbox background process limits](sandbox-background-process-limits.md) — nohup/setsid background shell jobs die when the ShellExec call ends; run long jobs via HTTP against an already-running workflow instead.
+- [evaluation_predictions immutability trigger](evaluation-predictions-immutability-trigger.md) — DB trigger enforces settle-once; calibratedProbability/foldId are legitimately exempt; raw SQL applied via lib/db push scripts (no drizzle trigger API).
