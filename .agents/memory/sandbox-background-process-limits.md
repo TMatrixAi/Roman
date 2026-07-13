@@ -21,3 +21,12 @@ Express/Node handler keeps running server-side to completion even if the `curl` 
 gets killed or times out (a plain route with no abort-on-disconnect handling doesn't cancel the
 in-flight work). Poll completion by querying the database or workflow logs from later, separate
 ShellExec calls instead of waiting on the original process.
+
+**CPU contention while polling:** a single-threaded CPU-bound job (e.g. replaying ~18k matches
+through a synchronous prediction engine many times) can peg the sandbox's single core near 100%
+for an hour+ even with periodic `setImmediate` yields between chunks. This starves the shell's own
+`curl` polling commands, which can time out or return `HTTP:000`/empty body purely from scheduling
+delay -- not because the server hung. Workflow logs still show the request completing (low
+`responseTime`) around when the stuck curl gave up. Don't diagnose this as a crashed job: retry
+with a generous `--max-time` (60-120s) before assuming failure, and cross-check workflow request
+logs, which are unaffected by the client-side timeout.

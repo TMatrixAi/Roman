@@ -65,7 +65,28 @@ export interface PredictionEngineInput {
    * into calibratedProbability.
    */
   simulatorAdoption?: SimulatorAdoptionInput | null;
+  /**
+   * Ablation-analysis only (see `services/evaluation/ablation.ts`). When present, each named
+   * model source is removed from the ensemble for this single call: the remaining feature
+   * modules' weights are re-normalized by the ensemble's own existing method (nothing special
+   * added for this), "generalEnsemble" skips the general-model calibration step (falls back to
+   * the raw ensemble probability as the blend base), and "segmentSpecialist" forces the segment
+   * specialist off regardless of `segment`. Omit/undefined in every real (non-ablation) call --
+   * this never changes live prediction behavior.
+   */
+  excludedModels?: ReadonlySet<AblationModelKey>;
 }
+
+/** The 8 named vote sources the ablation analysis can remove one (or a few) of at a time. */
+export type AblationModelKey =
+  | "surfaceElo"
+  | "serveReturn"
+  | "recentForm"
+  | "fatigue"
+  | "availability"
+  | "headToHead"
+  | "generalEnsemble"
+  | "segmentSpecialist";
 
 export interface SimulatorAdoptionInput {
   /** True only once the simulator has cleared its own sample-size threshold AND measurably improved on the general model's logLoss on real graded outcomes. */

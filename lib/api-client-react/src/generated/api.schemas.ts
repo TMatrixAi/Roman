@@ -913,6 +913,32 @@ export interface PaperTradingCycleSummary {
   errors: string[];
 }
 
+export interface AblationRunResponse {
+  started: boolean;
+  reason?: string | null;
+}
+
+export type AblationStatusState = typeof AblationStatusState[keyof typeof AblationStatusState];
+
+
+export const AblationStatusState = {
+  idle: 'idle',
+  running: 'running',
+  done: 'done',
+  error: 'error',
+} as const;
+
+export interface AblationStatus {
+  state: AblationStatusState;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  progress?: unknown | null;
+  report?: unknown | null;
+  reportPath?: string | null;
+  markdownPath?: string | null;
+  error?: string | null;
+}
+
 export type JobRunStatus = typeof JobRunStatus[keyof typeof JobRunStatus];
 
 

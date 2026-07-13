@@ -601,6 +601,32 @@ paths:
                 items:
                   $ref: "#/components/schemas/JobRun"
 
+  /evaluation/ablation/run:
+    post:
+      operationId: runAblationAnalysis
+      tags: [evaluation]
+      summary: Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+      responses:
+        "200":
+          description: Whether the run was started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AblationRunResponse"
+
+  /evaluation/ablation/status:
+    get:
+      operationId: getAblationStatus
+      tags: [evaluation]
+      summary: Poll the status/progress/result of the model ablation analysis job
+      responses:
+        "200":
+          description: Current job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AblationStatus"
+
   /evaluation/calibration-refit/job-runs:
     get:
       operationId: listCalibrationRefitJobRuns
@@ -1904,6 +1930,47 @@ components:
           type: array
           items:
             type: string
+
+    AblationRunResponse:
+      type: object
+      required: [started]
+      properties:
+        started:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+
+    AblationStatus:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [idle, running, done, error]
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        # Free-form: { phase, variantIndex, variantCount, matchIndex, matchCount } while running.
+        progress:
+          nullable: true
+        # Free-form: the full AblationReport (baseline/modelDeltas/combinations/diagnostics) once state is "done".
+        report:
+          nullable: true
+        reportPath:
+          type: string
+          nullable: true
+        markdownPath:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
 
     JobRun:
       type: object

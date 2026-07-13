@@ -19,6 +19,8 @@ import {
   ListCalibrationRefitJobRunsQueryParams,
   ListCalibrationRefitJobRunsResponse,
   GetSimulatorValidationResponse,
+  RunAblationAnalysisResponse,
+  GetAblationStatusResponse,
 } from "@workspace/api-zod";
 import { PAPER_TRADING_JOB_NAME } from "../jobs/paperTradingJobName";
 import { CALIBRATION_REFIT_JOB_NAME } from "../jobs/calibrationRefitJobName";
@@ -29,6 +31,7 @@ import { computeSegmentMetrics, computeCalibrationBuckets, computeStreaks } from
 import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
 import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
+import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
 
 const router: IRouter = Router();
 
@@ -239,6 +242,15 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
     .limit(parsed.data.limit);
 
   res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
+});
+
+router.post("/evaluation/ablation/run", async (_req, res): Promise<void> => {
+  const result = startAblationJob();
+  res.json(RunAblationAnalysisResponse.parse(result));
+});
+
+router.get("/evaluation/ablation/status", async (_req, res): Promise<void> => {
+  res.json(GetAblationStatusResponse.parse(getAblationJobStatus()));
 });
 
 export default router;

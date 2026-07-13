@@ -155,33 +155,40 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const styleMatchup = computeStyleMatchupModule(input.player1Matches, input.player2Matches);
   const headToHead = computeHeadToHeadModule(input.headToHead, input.surface);
 
+  const excludedModels = input.excludedModels ?? null;
+
   const moduleEdges = [
-    { name: "Surface Elo", player1Edge: surfaceElo.eloDifference / 8, reliability: surfaceElo.reliability, importance: MODULE_IMPORTANCE.surfaceElo },
+    { key: "surfaceElo" as const, name: "Surface Elo", player1Edge: surfaceElo.eloDifference / 8, reliability: surfaceElo.reliability, importance: MODULE_IMPORTANCE.surfaceElo },
     {
+      key: "serveReturn" as const,
       name: "Serve & Return",
       player1Edge: serveReturn.player1ServeRating + serveReturn.player1ReturnRating - serveReturn.player2ServeRating - serveReturn.player2ReturnRating,
       reliability: serveReturn.reliability,
       importance: MODULE_IMPORTANCE.serveReturn,
     },
     {
+      key: "recentForm" as const,
       name: "Recent Form",
       player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2,
       reliability: recentForm.reliability,
       importance: MODULE_IMPORTANCE.recentForm,
     },
     {
+      key: "fatigue" as const,
       name: "Fatigue",
       player1Edge: (fatigue.player2FatigueScore - fatigue.player1FatigueScore) / 2,
       reliability: fatigue.reliability,
       importance: MODULE_IMPORTANCE.fatigue,
     },
     {
+      key: "availability" as const,
       name: "Availability (rest/travel/injury)",
       player1Edge: computeAvailabilityEdge(availability),
       reliability: availability.reliability,
       importance: MODULE_IMPORTANCE.availability,
     },
     {
+      key: "headToHead" as const,
       name: "Head-to-Head",
       player1Edge: headToHead.player1Wins + headToHead.player2Wins > 0
         ? ((headToHead.player1Wins - headToHead.player2Wins) / (headToHead.player1Wins + headToHead.player2Wins)) * 25 + headToHead.weightedEdge * 15
@@ -189,7 +196,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       reliability: headToHead.reliability,
       importance: MODULE_IMPORTANCE.headToHead,
     },
-  ];
+  ].filter((m) => !excludedModels?.has(m.key));
 
   const { models: featureModels, ensembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
 
@@ -205,8 +212,13 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // validation outcomes) whenever one exists. Only fall back to the hand-tuned dataQuality-shrink
   // heuristic before any evaluation run has ever produced a fitted model -- that heuristic is a
   // documented stand-in, not the validated calibration this engine should prefer.
-  const generalProbability =
-    input.activeCalibration && input.activeCalibration.length > 0
+  // Ablation-only: "generalEnsemble" removed means skip the calibration transform entirely and
+  // use the raw, reliability-weighted ensemble probability as the blend base below -- there is no
+  // other honest stand-in for "the general model didn't vote".
+  const generalEnsembleExcluded = !!excludedModels?.has("generalEnsemble");
+  const generalProbability = generalEnsembleExcluded
+    ? ensembleProbability
+    : input.activeCalibration && input.activeCalibration.length > 0
       ? Math.round(applyCalibration(input.activeCalibration, ensembleProbability / 100) * 1000) / 10
       : calibrateProbability(ensembleProbability, dataQuality);
 
@@ -214,7 +226,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // probability run through a SEGMENT-ONLY isotonic calibration instead of the pooled one -- when
   // (and only when) that segment has cleared its own data-sufficiency thresholds. Everything else
   // falls back to the general model alone, with a visible reason why (never silently).
-  const segment = input.segment ?? null;
+  // Ablation-only: "segmentSpecialist" removed forces the specialist off regardless of `segment`.
+  const segment = excludedModels?.has("segmentSpecialist") ? null : (input.segment ?? null);
   const specialistApplied = !!(segment?.meetsThreshold && segment.calibrationMapping && segment.calibrationMapping.length > 0 && typeof segment.weight === "number");
 
   let specialistProbability: number | null = null;

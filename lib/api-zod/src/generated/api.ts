@@ -1077,6 +1077,30 @@ export const ListPaperTradingJobRunsResponse = zod.array(ListPaperTradingJobRuns
 
 
 /**
+ * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+ */
+export const RunAblationAnalysisResponse = zod.object({
+  "started": zod.boolean(),
+  "reason": zod.string().nullish()
+})
+
+
+/**
+ * @summary Poll the status/progress/result of the model ablation analysis job
+ */
+export const GetAblationStatusResponse = zod.object({
+  "state": zod.enum(['idle', 'running', 'done', 'error']),
+  "startedAt": zod.coerce.date().nullish(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "progress": zod.unknown().nullish(),
+  "report": zod.unknown().nullish(),
+  "reportPath": zod.string().nullish(),
+  "markdownPath": zod.string().nullish(),
+  "error": zod.string().nullish()
+})
+
+
+/**
  * @summary Recent invocations of the standalone calibration-refit scheduled job, for monitoring gaps or failures
  */
 export const listCalibrationRefitJobRunsQueryLimitDefault = 20;

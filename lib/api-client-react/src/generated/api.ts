@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AblationRunResponse,
+  AblationStatus,
   BulkDeletePredictionsInput,
   BulkDeletePredictionsResult,
   DuplicatePredictionsPreviewResult,
@@ -2207,6 +2209,154 @@ export function useListPaperTradingJobRuns<TData = Awaited<ReturnType<typeof lis
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPaperTradingJobRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunAblationAnalysisUrl = () => {
+
+
+
+
+  return `/api/evaluation/ablation/run`
+}
+
+/**
+ * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+ */
+export const runAblationAnalysis = async ( options?: RequestInit): Promise<AblationRunResponse> => {
+
+  return customFetch<AblationRunResponse>(getRunAblationAnalysisUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunAblationAnalysisMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext> => {
+
+const mutationKey = ['runAblationAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAblationAnalysis>>, void> = () => {
+
+
+          return  runAblationAnalysis(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunAblationAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof runAblationAnalysis>>>
+
+    export type RunAblationAnalysisMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+ */
+export const useRunAblationAnalysis = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runAblationAnalysis>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunAblationAnalysisMutationOptions(options));
+    }
+
+export const getGetAblationStatusUrl = () => {
+
+
+
+
+  return `/api/evaluation/ablation/status`
+}
+
+/**
+ * @summary Poll the status/progress/result of the model ablation analysis job
+ */
+export const getAblationStatus = async ( options?: RequestInit): Promise<AblationStatus> => {
+
+  return customFetch<AblationStatus>(getGetAblationStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAblationStatusQueryKey = () => {
+    return [
+    `/api/evaluation/ablation/status`
+    ] as const;
+    }
+
+
+export const getGetAblationStatusQueryOptions = <TData = Awaited<ReturnType<typeof getAblationStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAblationStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAblationStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAblationStatus>>> = ({ signal }) => getAblationStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAblationStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAblationStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getAblationStatus>>>
+export type GetAblationStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Poll the status/progress/result of the model ablation analysis job
+ */
+
+export function useGetAblationStatus<TData = Awaited<ReturnType<typeof getAblationStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAblationStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAblationStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
