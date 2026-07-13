@@ -1,5 +1,6 @@
 import type { MatchRecord, Surface, TournamentLevel } from "../tennisData/types";
 import type { OpponentEloLookup } from "./opponentStrength";
+import { eloFallbackTracker } from "./fallbackTracking";
 
 export interface SurfaceEloResult {
   /** Final rating actually used for the win-probability edge -- a recency/competition-level-weighted surface-only Elo, blended toward the player's overall (cross-surface) Elo when their surface-specific sample is shallow. */
@@ -56,7 +57,7 @@ const MIN_SAMPLE_FOR_NO_WARNING = 5;
  * as stronger than an established ATP tour player's (1545), despite the tour player facing
  * objectively tougher competition throughout their own history.
  */
-const CORPUS_BASELINE_ELO = 1520;
+export const CORPUS_BASELINE_ELO = 1520;
 /** Real average `eloOverall` observed at matches of each level, from the same 2026-07-13 query,
  * grouped by that match's own `tournamentLevel` (rounded). Missing/"Other" levels use the
  * corpus-wide baseline -- never a fabricated per-level number. */
@@ -73,7 +74,13 @@ const LEVEL_BASELINE_ELO: Partial<Record<TournamentLevel, number>> = {
   Other: 1507,
 };
 
-function levelBaselineElo(level: TournamentLevel | null): number {
+/**
+ * Exported for reuse (Task #77) -- any code that needs "the real, level-aware average rating to
+ * assume for a genuinely unresolved opponent" should call this rather than re-deriving its own
+ * copy; the level-aware baseline value itself is owned here by #76 and is never re-implemented
+ * elsewhere.
+ */
+export function levelBaselineElo(level: TournamentLevel | null): number {
   if (!level) return CORPUS_BASELINE_ELO;
   return LEVEL_BASELINE_ELO[level] ?? CORPUS_BASELINE_ELO;
 }
@@ -155,6 +162,13 @@ function replayElo(
   matches: MatchRecord[],
   opponentElo: OpponentEloLookup,
   referenceDate: string,
+  /**
+   * When provided, every match replayed here records a fallback-tracker attempt (Task #77) --
+   * pass this only from the ONE replay pass that iterates every one of the player's matches
+   * exactly once (the overall, cross-surface replay), never from the surface-scoped replay too,
+   * or a single match would be double-counted toward the run's fallback rate.
+   */
+  subjectPlayerId?: string,
 ): {
   elo: number;
   sampleSize: number;
@@ -172,7 +186,24 @@ function replayElo(
 
   for (const match of sorted) {
     const knownOpponentElo = opponentElo.get(match.id);
-    if (knownOpponentElo !== undefined) covered += 1;
+    const usedFallback = knownOpponentElo === undefined;
+    if (!usedFallback) covered += 1;
+    if (subjectPlayerId !== undefined) {
+      eloFallbackTracker.record(
+        usedFallback,
+        usedFallback
+          ? {
+              player: subjectPlayerId,
+              opponent: match.opponentId,
+              opponentName: match.opponentName,
+              tournament: match.tournamentName,
+              level: match.tournamentLevel,
+              date: match.date,
+              reason: "opponent's real Elo history could not be resolved (even after identity cross-reference) -- level-aware baseline used",
+            }
+          : undefined,
+      );
+    }
     // An opponent this system has never seen is assumed to be an AVERAGE player at THIS match's
     // own level -- not a flat, level-blind 1500 -- so a run of wins against unresolved Challenger
     // or ITF opponents isn't silently scored as "beat a string of tour-average players".
@@ -239,12 +270,19 @@ function confidenceFromEffectiveSampleSize(effectiveSampleSize: number): number 
  * cutoff -- a player with 2 real surface matches leans heavily on their overall form, a player
  * with 20 barely leans on it at all.
  */
-function computePlayerSurfaceElo(matches: MatchRecord[], surface: Surface, opponentElo: OpponentEloLookup): PlayerSurfaceEloResult {
+function computePlayerSurfaceElo(
+  matches: MatchRecord[],
+  surface: Surface,
+  opponentElo: OpponentEloLookup,
+  subjectPlayerId?: string,
+): PlayerSurfaceEloResult {
   const referenceDate = matches.length > 0 ? matches.reduce((max, m) => (m.date > max ? m.date : max), matches[0].date) : "1970-01-01";
   const onSurface = matches.filter((m) => m.surface === surface);
 
   const surfaceResult = replayElo(onSurface, opponentElo, referenceDate);
-  const overallResult = replayElo(matches, opponentElo, referenceDate);
+  // Fallback tracking is attached to this pass only -- it iterates every one of the player's
+  // matches exactly once (see `replayElo`'s `subjectPlayerId` doc above).
+  const overallResult = replayElo(matches, opponentElo, referenceDate, subjectPlayerId);
 
   const blendWeight = Math.exp(-surfaceResult.effectiveSampleSize / BLEND_EFFECTIVE_SAMPLE_SCALE);
   const rawBlendedElo = blendWeight * overallResult.elo + (1 - blendWeight) * surfaceResult.elo;
@@ -284,9 +322,16 @@ export function computeSurfaceEloModule(
   surface: Surface,
   player1OpponentElo: OpponentEloLookup = new Map(),
   player2OpponentElo: OpponentEloLookup = new Map(),
+  /**
+   * Real player ids (Task #77), used ONLY to attribute fallback-tracker log entries to the right
+   * player -- optional and purely additive; omitting them (existing callers/tests) simply means
+   * fallback events from that call aren't attributed/tracked, with no other behavior change.
+   */
+  player1Id?: string,
+  player2Id?: string,
 ): SurfaceEloResult {
-  const p1 = computePlayerSurfaceElo(player1Matches, surface, player1OpponentElo);
-  const p2 = computePlayerSurfaceElo(player2Matches, surface, player2OpponentElo);
+  const p1 = computePlayerSurfaceElo(player1Matches, surface, player1OpponentElo, player1Id);
+  const p2 = computePlayerSurfaceElo(player2Matches, surface, player2OpponentElo, player2Id);
 
   // Round each player's displayed Elo FIRST, then derive `eloDifference` (and therefore which
   // player it says is "favored") from those same rounded numbers -- never from the raw, unrounded

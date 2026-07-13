@@ -7,6 +7,8 @@ import { getPredictionSettings } from "./settle";
 import { computeAndStoreSpecialistSegments } from "./specialistWeights";
 import { buildMatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
 import { buildEloHistoryIndex } from "../predictionEngine/opponentStrength";
+import { buildPlayerIdentityIndex } from "../tennisData/playerIdentity";
+import { eloFallbackTracker, fallbackRateWarning } from "../predictionEngine/fallbackTracking";
 import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "./types";
 import type { CalibrationKnot } from "./types";
 
@@ -21,6 +23,10 @@ export interface WalkForwardSummary {
   foldsRun: number;
   foldIds: number[];
   skippedNoEligibleMatches: boolean;
+  /** Share (0-1) of opponent Elo lookups across this run that hit #76's last-resort fallback baseline (Task #77). 0 when nothing was scored. */
+  fallbackRate: number;
+  /** Data-quality warnings for this run -- e.g. the fallback-rate threshold warning (Task #77) -- surfaced the same way per-prediction module warnings are, never a new UI surface. */
+  warnings: string[];
 }
 
 function classifyResult(match: { winnerId: string | null; retired: boolean; walkover: boolean; cancelled: boolean }): ResultType {
@@ -52,27 +58,35 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const eligible = allMatches.filter((m) => !m.cancelled); // cancelled matches never even reach scoring; walkovers/retirements are scored but voided/flagged downstream
   if (eligible.length < 20) {
     logger.warn({ count: eligible.length }, "Not enough historical matches to run a meaningful walk-forward evaluation");
-    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true };
+    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [] };
   }
 
   // Wipe prior historical_test evaluation state so a re-run never mixes fold generations.
   await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "historical_test"));
   await db.delete(evaluationRunsTable);
 
+  // Task #77: run-scoped fallback tracker, reset here so this run's rate never mixes with a
+  // prior run's (e.g. a live prediction request scored moments before).
+  eloFallbackTracker.reset();
+
   // Preload the whole corpus ONCE for this run -- a run scores thousands of matches, each
   // needing two players' full prior histories, their H2H, and opponent-Elo lookups. Re-querying
   // the DB per match would turn a run that should take seconds into one that takes hours; see
-  // `HistoricalScoringContext`.
+  // `HistoricalScoringContext`. The identity index is built once here too (Task #77) and reused
+  // both for `eloHistory`'s own canonicalized grouping and for every match's opponent-resolution
+  // lookup below, so a fragmented player's Elo trajectory is merged and resolved consistently.
+  const identityIndex = await buildPlayerIdentityIndex();
   const scoringContext: HistoricalScoringContext = {
     matchHistory: buildMatchHistoryIndex(allMatches),
-    eloHistory: await buildEloHistoryIndex(),
+    eloHistory: await buildEloHistoryIndex(identityIndex),
+    identityIndex,
   };
 
   const warmupEndIdx = Math.floor(eligible.length * warmupFraction);
   const scorable = eligible.slice(warmupEndIdx);
   if (scorable.length < foldCount * 6) {
     logger.warn({ scorable: scorable.length, foldCount }, "Not enough post-warmup matches for the requested fold count");
-    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true };
+    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [] };
   }
 
   const chunkSize = Math.floor(scorable.length / foldCount);
@@ -166,7 +180,18 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   // validation-segment data, comparing each against this SAME newly-fit general/pooled mapping.
   await computeAndStoreSpecialistSegments(liveMapping);
 
-  return { foldsRun: foldIds.length, foldIds, skippedNoEligibleMatches: false };
+  // Task #77: surface a data-quality warning through this run's own existing summary output
+  // (the same "warnings" shape every per-prediction module already uses) whenever more than 1%
+  // of this run's opponent Elo lookups needed the last-resort fallback -- the run still completes
+  // either way, it's never silently swallowed nor a reason to halt.
+  const fallbackStats = eloFallbackTracker.getStats();
+  const fallbackWarning = fallbackRateWarning(fallbackStats);
+  const warnings = fallbackWarning ? [fallbackWarning] : [];
+  if (fallbackWarning) {
+    logger.warn({ fallbackRate: fallbackStats.fallbackRate, fallbackCount: fallbackStats.fallbackCount, totalAttempts: fallbackStats.totalAttempts }, fallbackWarning);
+  }
+
+  return { foldsRun: foldIds.length, foldIds, skippedNoEligibleMatches: false, fallbackRate: fallbackStats.fallbackRate, warnings };
 
   // --- helpers (closures over allMatches context) ---
 

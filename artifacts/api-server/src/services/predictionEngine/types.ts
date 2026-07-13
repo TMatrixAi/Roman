@@ -28,6 +28,17 @@ export interface PredictionEngineInput {
   player1OpponentElo?: OpponentEloLookup;
   player2OpponentElo?: OpponentEloLookup;
   /**
+   * Task #77: opt-in only. When true, the engine's opponent-Elo replay records structured
+   * fallback-tracker events (see `fallbackTracking.ts`) for this call, keyed off `player1.id`/
+   * `player2.id`. Must be set ONLY by run-oriented, batch-scoped callers that `reset()` the
+   * tracker themselves at the start of their own run (walk-forward evaluation, the full-corpus
+   * rebuild script) -- NEVER by live per-fixture callers (prediction routes, paper trading,
+   * ablation, ledger regeneration). Defaulting to false/omitted keeps the tracker's global
+   * singleton from silently accumulating an unbounded event log across ordinary live traffic,
+   * which has no run boundary to reset it.
+   */
+  trackEloFallback?: boolean;
+  /**
    * Real forecast conditions for a genuinely upcoming fixture with a known venue, pre-resolved by
    * the caller via `getUpcomingConditions`. Informational only -- never used to adjust the
    * ensemble's probability. Null/omitted means "not available", never a guess.

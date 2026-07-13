@@ -26,6 +26,153 @@ function isSinglesName(name: string): boolean {
   return !name.includes("/");
 }
 
+/**
+ * Folds accents/diacritics, lowercases, strips punctuation, and collapses whitespace so the same
+ * real person spelled two different ways by different provider feeds ("Krumich" vs "Krúmich",
+ * "de Lange" vs "De Lange") compares equal. Used only as a real, structural identity signal (an
+ * exact match after normalization) -- never a fuzzy/approximate match.
+ */
+export function normalizePlayerName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Canonical player-identity resolution (Task #77). Built once per run by cross-referencing every
+ * singles player id/name pair ever recorded in `historical_matches`: when two or more distinct
+ * provider ids share the exact same normalized name, that is a real fragmentation signal (the
+ * same person issued multiple `player_key`s by the provider over time), not a fuzzy guess -- the
+ * most-recently-active id under that name is treated as canonical, and every other id/name variant
+ * sighted under that name is aliased to it. `canonicalIdById` also covers the overwhelmingly
+ * common non-fragmented case (an id maps to itself) so callers can always canonicalize
+ * unconditionally.
+ */
+export interface PlayerIdentityIndex {
+  /** normalizedName -> canonical playerId (most-recently-active id seen under that name). */
+  canonicalIdByName: Map<string, string>;
+  /** raw playerId (as reported by the provider) -> canonical playerId. Identity map for the common case. */
+  canonicalIdById: Map<string, string>;
+  /**
+   * Reverse of `canonicalIdById`: canonical playerId -> every raw id (including itself) ever
+   * sighted under that canonical identity. Required by any caller that queries a DIFFERENT table
+   * (e.g. `match_feature_snapshots`) keyed by the RAW provider id -- looking up only the canonical
+   * id in such a table silently misses every row stored under an alias id (see `opponentStrength.ts`'s
+   * `resolveOpponentStrength`, which merges history across the whole alias group, not just the
+   * canonical id, for exactly this reason).
+   */
+  aliasIdsByCanonicalId: Map<string, string[]>;
+}
+
+/** Builds a fresh `PlayerIdentityIndex` from every singles sighting in `historical_matches`. */
+export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
+  const [player1Rows, player2Rows] = await Promise.all([
+    db
+      .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, scheduledStartAt: historicalMatchesTable.scheduledStartAt })
+      .from(historicalMatchesTable),
+    db
+      .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, scheduledStartAt: historicalMatchesTable.scheduledStartAt })
+      .from(historicalMatchesTable),
+  ]);
+
+  // normalizedName -> (playerId -> most recent sighting timestamp under that name)
+  const byName = new Map<string, Map<string, number>>();
+  for (const row of [...player1Rows, ...player2Rows]) {
+    if (!isSinglesName(row.name)) continue;
+    const normalized = normalizePlayerName(row.name);
+    if (!normalized) continue;
+    const idMap = byName.get(normalized) ?? new Map<string, number>();
+    const seenAt = row.scheduledStartAt.getTime();
+    idMap.set(row.id, Math.max(idMap.get(row.id) ?? -Infinity, seenAt));
+    byName.set(normalized, idMap);
+  }
+
+  const canonicalIdByName = new Map<string, string>();
+  const canonicalIdById = new Map<string, string>();
+  const aliasIdsByCanonicalId = new Map<string, string[]>();
+  for (const [normalized, idMap] of byName) {
+    let canonicalId: string | null = null;
+    let mostRecent = -Infinity;
+    for (const [id, seenAt] of idMap) {
+      if (seenAt > mostRecent) {
+        mostRecent = seenAt;
+        canonicalId = id;
+      }
+    }
+    if (!canonicalId) continue;
+    canonicalIdByName.set(normalized, canonicalId);
+    const aliasIds = Array.from(idMap.keys());
+    aliasIdsByCanonicalId.set(canonicalId, aliasIds);
+    for (const id of idMap.keys()) canonicalIdById.set(id, canonicalId);
+  }
+
+  return { canonicalIdByName, canonicalIdById, aliasIdsByCanonicalId };
+}
+
+/**
+ * Resolves `id` to its canonical id: an exact id match first (covers the common non-fragmented
+ * case and, post-alias-resolution, any id already known to be a fragment), then falls back to a
+ * normalized-name lookup when `name` is supplied and the raw id itself was never sighted in
+ * `historical_matches` under any name (e.g. a live-only id the backfill hasn't seen yet, but whose
+ * name matches a player we do have real history for). Returns `id` unchanged when genuinely
+ * unresolvable -- never guesses.
+ */
+export function canonicalizePlayerId(index: PlayerIdentityIndex, id: string, name?: string | null): string {
+  const direct = index.canonicalIdById.get(id);
+  if (direct) return direct;
+  if (name) {
+    const normalized = normalizePlayerName(name);
+    const byName = index.canonicalIdByName.get(normalized);
+    if (byName) return byName;
+  }
+  return id;
+}
+
+/**
+ * Every raw id belonging to `canonicalId`'s alias group, always including `canonicalId` itself
+ * even when it has no recorded aliases (the common non-fragmented case). Use this -- not
+ * `canonicalId` alone -- whenever querying a table keyed by the RAW provider id (e.g.
+ * `match_feature_snapshots`), or rows stored under a historical alias id will be silently missed.
+ */
+export function getAliasIds(index: PlayerIdentityIndex, canonicalId: string): string[] {
+  return index.aliasIdsByCanonicalId.get(canonicalId) ?? [canonicalId];
+}
+
+let cachedIdentityIndex: { index: PlayerIdentityIndex; builtAt: number } | null = null;
+const IDENTITY_INDEX_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Cached accessor for live/per-fixture callers (e.g. `opponentStrength.ts`'s `resolveOpponentStrength`)
+ * -- rebuilding the whole-corpus identity index is real DB work, so it's computed once and reused
+ * for `IDENTITY_INDEX_CACHE_TTL_MS` rather than rebuilt on every single prediction request.
+ * Backtest/rebuild callers that already build one index per run (walk-forward, full-corpus
+ * rebuild) should call `buildPlayerIdentityIndex` directly instead, so their run-scoped index
+ * can't go stale mid-run.
+ */
+export async function getCachedPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
+  if (cachedIdentityIndex && Date.now() - cachedIdentityIndex.builtAt < IDENTITY_INDEX_CACHE_TTL_MS) {
+    return cachedIdentityIndex.index;
+  }
+  const index = await buildPlayerIdentityIndex();
+  cachedIdentityIndex = { index, builtAt: Date.now() };
+  return index;
+}
+
+/**
+ * Test-only escape hatch: forces the next `getCachedPlayerIdentityIndex()` call to rebuild from
+ * the DB instead of serving a stale in-memory cache. Integration tests that insert their own
+ * `historical_matches` fixture rows and then exercise a live caller (e.g. `resolveOpponentStrength`)
+ * must call this first, or an index already cached from an earlier test/request won't see the
+ * fixture. Never called from production code.
+ */
+export function invalidatePlayerIdentityCacheForTests(): void {
+  cachedIdentityIndex = null;
+}
+
 interface HistoricalPlayerRow {
   id: string;
   name: string;

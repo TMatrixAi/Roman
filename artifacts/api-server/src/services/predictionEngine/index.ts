@@ -181,7 +181,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const player1OpponentElo = input.player1OpponentElo ?? new Map();
   const player2OpponentElo = input.player2OpponentElo ?? new Map();
 
-  const surfaceElo = computeSurfaceEloModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
+  const surfaceElo = computeSurfaceEloModule(
+    input.player1Matches,
+    input.player2Matches,
+    input.surface,
+    player1OpponentElo,
+    player2OpponentElo,
+    // Task #77: fallback-tracker attribution ids are only ever passed for run-scoped callers that
+    // opt in via `trackEloFallback` (walk-forward/rebuild) -- never for live per-fixture traffic,
+    // which has no run boundary to `reset()` the tracker and would otherwise grow it unbounded.
+    input.trackEloFallback ? input.player1.id : undefined,
+    input.trackEloFallback ? input.player2.id : undefined,
+  );
   const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
   const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches);

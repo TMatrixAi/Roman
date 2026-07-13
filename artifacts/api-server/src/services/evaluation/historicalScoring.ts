@@ -4,6 +4,7 @@ import { resolveOpponentStrengthFromIndex, type EloHistoryIndex } from "../predi
 import { reconstructHeadToHead, reconstructPlayerMatchHistory, type MatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import type { MatchFormat, PlayerProfile, Surface } from "../tennisData/types";
+import type { PlayerIdentityIndex } from "../tennisData/playerIdentity";
 
 /**
  * Everything `scoreHistoricalMatch` needs that's shared across every match in a walk-forward
@@ -15,6 +16,14 @@ import type { MatchFormat, PlayerProfile, Surface } from "../tennisData/types";
 export interface HistoricalScoringContext {
   matchHistory: MatchHistoryIndex;
   eloHistory: EloHistoryIndex;
+  /**
+   * Task #77: whole-corpus canonical player-identity index, built ONCE per run (see
+   * `walkForward.ts`) and passed through here so opponent resolution can canonicalize aliased
+   * ids/name variants -- must be the SAME index used to build `eloHistory` (via
+   * `buildEloHistoryIndex(identityIndex)`), or a fragmented opponent's history would be
+   * canonicalized here but never actually merged in the index itself.
+   */
+  identityIndex: PlayerIdentityIndex;
 }
 
 function minimalProfile(id: string, name: string): PlayerProfile {
@@ -57,8 +66,8 @@ export function scoreHistoricalMatch(
   const player2Matches = reconstructPlayerMatchHistory(context.matchHistory, match.player2Id, match.cutoffAt);
   if (player1Matches.length === 0 || player2Matches.length === 0) return null;
 
-  const player1OpponentStrength = resolveOpponentStrengthFromIndex(player1Matches, context.eloHistory);
-  const player2OpponentStrength = resolveOpponentStrengthFromIndex(player2Matches, context.eloHistory);
+  const player1OpponentStrength = resolveOpponentStrengthFromIndex(player1Matches, context.eloHistory, context.identityIndex);
+  const player2OpponentStrength = resolveOpponentStrengthFromIndex(player2Matches, context.eloHistory, context.identityIndex);
   const headToHead = reconstructHeadToHead(context.matchHistory, match.player1Id, match.player2Id, match.cutoffAt);
 
   const output = runPredictionEngine({
@@ -76,6 +85,11 @@ export function scoreHistoricalMatch(
     segment: null,
     simulatorAdoption: null,
     activeCalibration: null,
+    // Task #77: this is the walk-forward evaluation's own run-scoped scoring path -- the caller
+    // (`walkForward.ts`) resets the fallback tracker once at the start of each run, so it's safe
+    // to attribute events here. Live/paper-trading/ablation callers must NOT set this (see
+    // `PredictionEngineInput.trackEloFallback`'s doc).
+    trackEloFallback: true,
   });
 
   const snapshot: LiveFeatureSnapshot = {

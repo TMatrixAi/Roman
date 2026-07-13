@@ -21,3 +21,4 @@
 - [Market odds & edge tracking design](market-odds-edge-tracking.md) — orient averaged cross-side edge metrics to the model's pick, not a fixed player slot; real Odds-API.io/The Odds API response shapes diverge from docs.
 - [Stale dist declarations under TS project references](drizzle-project-references-stale-dist.md) — rebuild a referenced package's dist/*.d.ts before trusting a dependent's `tsc --noEmit`; don't mix $inferInsert vs drizzle-zod insert types for the same table.
 - [Ledger duplicate detection widening](ledger-duplicate-detection-widening.md) — union-find merges rows by multiple independent rules (exact key OR time-proximity); widening a rule means re-auditing negative tests for the new dimension.
+- [Name/id opponent identity resolution ceiling](opponent-identity-resolution-ceiling.md) — name/id cross-referencing only recovers aliases of players already seen twice; single-appearance ITF players have nothing to cross-reference against.

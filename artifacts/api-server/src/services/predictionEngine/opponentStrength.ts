@@ -1,6 +1,7 @@
 import { db, matchFeatureSnapshotsTable } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 import type { MatchRecord } from "../tennisData/types";
+import { canonicalizePlayerId, getAliasIds, getCachedPlayerIdentityIndex, type PlayerIdentityIndex } from "../tennisData/playerIdentity";
 
 /**
  * Opponent-strength lookup for a set of live match records, keyed by `MatchRecord.id`. Value is
@@ -30,15 +31,25 @@ export type EloHistoryIndex = Map<string, Array<{ t: number; elo: number }>>;
  * just the opponents it needs from the DB) and the walk-forward backtest path (which preloads
  * the WHOLE `eloOverall` history once per run via `buildEloHistoryIndex`, then reuses it across
  * every match scored -- avoiding a fresh DB round-trip per match).
+ *
+ * Task #77: when `identity` is supplied, `match.opponentId` is canonicalized (normalized-name and
+ * historical-match cross-reference resolution -- see `playerIdentity.ts`) before the index lookup,
+ * so an opponent who is only identifiable through a name variant/alias -- not an exact id match --
+ * still resolves to their real Elo history instead of being silently treated as "unresolved" and
+ * handed to #76's fallback baseline more often than genuinely necessary. `index` itself must have
+ * been built with the SAME identity index (see `buildEloHistoryIndex`) for this to actually find
+ * anything for an aliased id -- passing `identity` here without also passing it to
+ * `buildEloHistoryIndex` would canonicalize the lookup key but not the index's own keys.
  */
-export function resolveOpponentStrengthFromIndex(matches: MatchRecord[], index: EloHistoryIndex): OpponentStrengthResolution {
+export function resolveOpponentStrengthFromIndex(matches: MatchRecord[], index: EloHistoryIndex, identity?: PlayerIdentityIndex): OpponentStrengthResolution {
   if (matches.length === 0) return EMPTY;
 
   const lookup: OpponentEloLookup = new Map();
   let resolved = 0;
 
   for (const match of matches) {
-    const history = index.get(match.opponentId);
+    const opponentKey = identity ? canonicalizePlayerId(identity, match.opponentId, match.opponentName) : match.opponentId;
+    const history = index.get(opponentKey);
     if (!history || history.length === 0) continue;
     const matchTime = new Date(match.date).getTime();
     if (Number.isNaN(matchTime)) continue;
@@ -65,8 +76,14 @@ export function resolveOpponentStrengthFromIndex(matches: MatchRecord[], index: 
  * be called ONCE per walk-forward run (the corpus is small enough, tens of thousands of rows, to
  * hold entirely in memory) and then reused for every match scored via
  * `resolveOpponentStrengthFromIndex`, instead of re-querying the DB per match.
+ *
+ * Task #77: when `identity` is supplied, each row's `playerId` is canonicalized before grouping,
+ * so a player whose real Elo history is fragmented across multiple provider ids/name variants has
+ * every one of those fragments' history points merged into ONE continuous, correctly-sorted
+ * timeline under their canonical id -- computed once here and reused for the rest of the run,
+ * never re-replayed per opponent lookup.
  */
-export async function buildEloHistoryIndex(): Promise<EloHistoryIndex> {
+export async function buildEloHistoryIndex(identity?: PlayerIdentityIndex): Promise<EloHistoryIndex> {
   const rows = await db
     .select({
       playerId: matchFeatureSnapshotsTable.playerId,
@@ -78,9 +95,10 @@ export async function buildEloHistoryIndex(): Promise<EloHistoryIndex> {
 
   const index: EloHistoryIndex = new Map();
   for (const row of rows) {
-    const list = index.get(row.playerId) ?? [];
+    const key = identity ? canonicalizePlayerId(identity, row.playerId, null) : row.playerId;
+    const list = index.get(key) ?? [];
     list.push({ t: row.sourceTimestamp.getTime(), elo: row.featureValue });
-    index.set(row.playerId, list);
+    index.set(key, list);
   }
   for (const list of index.values()) list.sort((a, b) => a.t - b.t);
   return index;
@@ -94,12 +112,27 @@ export async function buildEloHistoryIndex(): Promise<EloHistoryIndex> {
  * that point in time, never a snapshot from after the fact. Meant for live/paper-trade callers
  * scoring a handful of fixtures at a time -- see `buildEloHistoryIndex` for the walk-forward,
  * whole-corpus-preloaded equivalent.
+ *
+ * Task #77: canonicalizes each match's opponent id/name through the (cached, whole-corpus)
+ * player-identity index BEFORE deciding which ids to query, so an opponent who is only
+ * identifiable through a name variant or a historical-match cross-reference -- not an exact id
+ * match -- still has their real Elo history queried and resolved, instead of silently missing and
+ * falling through to #76's fallback baseline.
  */
 export async function resolveOpponentStrength(matches: MatchRecord[]): Promise<OpponentStrengthResolution> {
   if (matches.length === 0) return EMPTY;
 
-  const opponentIds = Array.from(new Set(matches.map((m) => m.opponentId)));
-  if (opponentIds.length === 0) return EMPTY;
+  const identity = await getCachedPlayerIdentityIndex();
+  const canonicalOpponentIds = Array.from(new Set(matches.map((m) => canonicalizePlayerId(identity, m.opponentId, m.opponentName))));
+  if (canonicalOpponentIds.length === 0) return EMPTY;
+
+  // `match_feature_snapshots` is keyed by the RAW provider id, which may be an alias of (not
+  // equal to) an opponent's canonical id -- querying by canonical id alone would silently miss
+  // every row stored under an older/alternate id for the same real person. Query the WHOLE alias
+  // group for each canonical opponent instead, then canonicalize the results below so they merge
+  // back onto one history under the canonical key, matching what `buildEloHistoryIndex` already
+  // does for the whole-corpus/backtest path.
+  const queryIds = Array.from(new Set(canonicalOpponentIds.flatMap((id) => getAliasIds(identity, id))));
 
   const rows = await db
     .select({
@@ -108,15 +141,16 @@ export async function resolveOpponentStrength(matches: MatchRecord[]): Promise<O
       sourceTimestamp: matchFeatureSnapshotsTable.sourceTimestamp,
     })
     .from(matchFeatureSnapshotsTable)
-    .where(and(inArray(matchFeatureSnapshotsTable.playerId, opponentIds), eq(matchFeatureSnapshotsTable.featureName, "eloOverall")));
+    .where(and(inArray(matchFeatureSnapshotsTable.playerId, queryIds), eq(matchFeatureSnapshotsTable.featureName, "eloOverall")));
 
   const index: EloHistoryIndex = new Map();
   for (const row of rows) {
-    const list = index.get(row.playerId) ?? [];
+    const key = canonicalizePlayerId(identity, row.playerId, null);
+    const list = index.get(key) ?? [];
     list.push({ t: row.sourceTimestamp.getTime(), elo: row.featureValue });
-    index.set(row.playerId, list);
+    index.set(key, list);
   }
   for (const list of index.values()) list.sort((a, b) => a.t - b.t);
 
-  return resolveOpponentStrengthFromIndex(matches, index);
+  return resolveOpponentStrengthFromIndex(matches, index, identity);
 }
