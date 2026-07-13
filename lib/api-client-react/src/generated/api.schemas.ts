@@ -469,6 +469,22 @@ export interface EngineBreakdown {
      * @nullable
      */
   modelConflictNote?: string | null;
+  /** True only when the raw core signals were genuinely close to a coin flip and the tie-break cascade picked a direction instead of leaving an uninformative ~50/50 average. Absent on predictions made before this field existed. */
+  tieBreakerApplied?: boolean;
+  /**
+     * Which cascade step decided the direction, or null when no tie-break was needed/possible.
+     * @nullable
+     */
+  tieBreakerDecidingStep?: string | null;
+  /**
+     * Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.
+     * @nullable
+     */
+  tieBreakerNote?: string | null;
+  /** True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo/Serve & Return/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed. */
+  isEliteTier?: boolean;
+  /** Always present -- explains why a prediction is or isn't elite tier. Never silent. */
+  eliteTierReason?: string;
 }
 
 export interface BulkDeletePredictionsInput {

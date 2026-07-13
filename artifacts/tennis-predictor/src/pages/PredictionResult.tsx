@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
 const AGREEMENT_STYLES: Record<string, string> = {
@@ -123,10 +123,18 @@ export default function PredictionResultPage() {
                   } className="text-sm">
                     {prediction.recommendation.replace(/_/g, ' ')}
                   </Badge>
+                  {engine.isEliteTier && (
+                    <Badge variant="success" className="text-sm gap-1">
+                      <Crown className="w-3.5 h-3.5" /> ELITE PREDICTION
+                    </Badge>
+                  )}
                   <Badge variant="outline" className="text-sm">
                     SET SCORE: {prediction.predictedSetScore}
                   </Badge>
                 </div>
+                {engine.eliteTierReason && (
+                  <p className="text-xs text-muted-foreground mt-2 max-w-md">{engine.eliteTierReason}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -222,6 +230,16 @@ export default function PredictionResultPage() {
             <div className="space-y-1">
               <div className="font-bold font-mono text-xs text-warning">MODEL CONFLICT</div>
               <div>{engine.modelConflictNote}</div>
+            </div>
+          </div>
+        )}
+
+        {engine.tieBreakerApplied && (
+          <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
+            <Scale className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
+            <div className="space-y-1">
+              <div className="font-bold font-mono text-xs text-foreground">TIE-BREAK CASCADE APPLIED{engine.tieBreakerDecidingStep ? ` -- DECIDED BY ${engine.tieBreakerDecidingStep.toUpperCase()}` : ""}</div>
+              <div>{engine.tieBreakerNote}</div>
             </div>
           </div>
         )}

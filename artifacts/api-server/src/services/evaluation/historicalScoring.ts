@@ -79,6 +79,8 @@ export function scoreHistoricalMatch(match: HistoricalMatchRow, context: Histori
     modelVersion: LIVE_MODEL_VERSION,
     engine: output.engine,
     preCalibrationProbability: output.rawEnsembleProbability,
+    dataQuality: output.dataQuality,
+    isEliteTier: output.engine.isEliteTier,
   };
 
   return { rawProbability: output.rawEnsembleProbability / 100, snapshot };

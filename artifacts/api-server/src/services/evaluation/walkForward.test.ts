@@ -60,6 +60,13 @@ test("walk-forward evaluation: locks immutable, correctly-segmented predictions 
     matches.push(makeMatch(i, { player1: p1, player2: p2, winner: p1, retired, walkover, cancelled }));
   }
 
+  // Snapshot pre-existing IDs first: this suite runs against the same database as real
+  // production usage (paper trading, prior walk-forward runs), which is never empty outside a
+  // fresh sandbox. Cleanup and assertions below only ever touch rows created by THIS run --
+  // never the whole table -- or a run here would silently destroy real evaluation history.
+  const preExistingRunIds = new Set((await db.select({ id: evaluationRunsTable.id }).from(evaluationRunsTable)).map((r) => r.id));
+  const preExistingCalibrationIds = new Set((await db.select({ id: calibrationModelsTable.id }).from(calibrationModelsTable)).map((r) => r.id));
+
   const inserted = await db.insert(historicalMatchesTable).values(matches).returning({ id: historicalMatchesTable.id, scheduledStartAt: historicalMatchesTable.scheduledStartAt, cutoffAt: historicalMatchesTable.cutoffAt });
 
   // Seed a reduced feature snapshot per (match, player) so scoreHistoricalMatch has real signal
@@ -80,9 +87,20 @@ test("walk-forward evaluation: locks immutable, correctly-segmented predictions 
   await db.insert(matchFeatureSnapshotsTable).values(snapshotRows);
 
   t.after(async () => {
-    await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "historical_test"));
-    await db.delete(evaluationRunsTable);
-    await db.delete(calibrationModelsTable);
+    await db.delete(evaluationPredictionsTable).where(
+      inArray(
+        evaluationPredictionsTable.historicalMatchId,
+        inserted.map((r) => r.id),
+      ),
+    );
+    const newRunIds = (await db.select({ id: evaluationRunsTable.id }).from(evaluationRunsTable))
+      .map((r) => r.id)
+      .filter((id) => !preExistingRunIds.has(id));
+    if (newRunIds.length > 0) await db.delete(evaluationRunsTable).where(inArray(evaluationRunsTable.id, newRunIds));
+    const newCalibrationIds = (await db.select({ id: calibrationModelsTable.id }).from(calibrationModelsTable))
+      .map((r) => r.id)
+      .filter((id) => !preExistingCalibrationIds.has(id));
+    if (newCalibrationIds.length > 0) await db.delete(calibrationModelsTable).where(inArray(calibrationModelsTable.id, newCalibrationIds));
     await db.delete(matchFeatureSnapshotsTable).where(
       inArray(
         matchFeatureSnapshotsTable.matchId,
@@ -100,11 +118,19 @@ test("walk-forward evaluation: locks immutable, correctly-segmented predictions 
   const summary = await runWalkForwardEvaluation({ foldCount: 2, warmupFraction: 0.3 });
   assert.ok(summary.foldsRun >= 1, `Expected at least one fold to run, got ${summary.foldsRun}`);
 
-  const folds = await db.select().from(evaluationRunsTable);
+  const allRunsAfter = await db.select().from(evaluationRunsTable);
+  const folds = allRunsAfter.filter((r) => !preExistingRunIds.has(r.id));
   assert.equal(folds.length, summary.foldsRun);
 
-  const predictions = await db.select().from(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "historical_test"));
+  const predictions = await db
+    .select()
+    .from(evaluationPredictionsTable)
+    .where(inArray(evaluationPredictionsTable.historicalMatchId, inserted.map((r) => r.id)));
   assert.ok(predictions.length > 0, "Expected locked evaluation predictions to be written");
+  assert.ok(
+    predictions.every((p) => p.runKind === "historical_test"),
+    "Expected every locked prediction from this run to be runKind historical_test",
+  );
 
   // Every locked prediction was written with a fold assignment and a lockedAt timestamp.
   for (const p of predictions) {
@@ -142,8 +168,14 @@ test("walk-forward evaluation: locks immutable, correctly-segmented predictions 
     assert.ok(fold, `Test row ${row.id} references a fold that doesn't exist`);
   }
 
-  // A live calibration model was fit from pooled validation data for future paper trading.
-  const [activeCalibration] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true));
+  // A live calibration model was fit from pooled validation data for future paper trading. Scope
+  // to rows created by this run -- calibrationModelsTable is shared with real production data,
+  // so an unscoped "active = true" lookup could pass by coincidentally matching a pre-existing
+  // real active model instead of actually verifying this run produced one.
+  const allCalibrationAfter = await db.select().from(calibrationModelsTable);
+  const newCalibrationRows = allCalibrationAfter.filter((r) => !preExistingCalibrationIds.has(r.id));
+  assert.ok(newCalibrationRows.length > 0, "Expected this walk-forward run to create at least one calibration model");
+  const activeCalibration = newCalibrationRows.find((r) => r.active);
   assert.ok(activeCalibration, "Expected an active calibration model after a walk-forward run");
   assert.ok(Array.isArray(activeCalibration.mapping) && (activeCalibration.mapping as unknown[]).length >= 2);
 

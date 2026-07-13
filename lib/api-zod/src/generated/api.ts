@@ -349,7 +349,12 @@ export const CreatePredictionResponse = zod.object({
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
   "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
   "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
-  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.'),
+  "tieBreakerApplied": zod.boolean().optional().describe('True only when the raw core signals were genuinely close to a coin flip and the tie-break cascade picked a direction instead of leaving an uninformative ~50\/50 average. Absent on predictions made before this field existed.'),
+  "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
+  "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
+  "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -522,7 +527,12 @@ export const GetPredictionResponse = zod.object({
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
   "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
   "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
-  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.'),
+  "tieBreakerApplied": zod.boolean().optional().describe('True only when the raw core signals were genuinely close to a coin flip and the tie-break cascade picked a direction instead of leaving an uninformative ~50\/50 average. Absent on predictions made before this field existed.'),
+  "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
+  "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
+  "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -751,7 +761,12 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "simulatorApplied": zod.boolean().optional().describe('True only when the Phase 7 Monte Carlo simulator\'s validated performance earned it a vote in calibratedProbability'),
   "simulatorNote": zod.string().optional().describe('Always present -- explains whether the simulator is voting, or exactly why not yet. Never silent.'),
   "modelConflict": zod.boolean().optional().describe('True only when the final calibrated pick crosses 50% in the opposite direction from the raw, reliability-weighted feature-module vote -- i.e. calibration\/specialist\/simulator blending overrode the underlying evidence. Not present on predictions made before this field existed.'),
-  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.')
+  "modelConflictNote": zod.string().nullish().describe('Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there\'s no conflict, absent on predictions made before this field existed.'),
+  "tieBreakerApplied": zod.boolean().optional().describe('True only when the raw core signals were genuinely close to a coin flip and the tie-break cascade picked a direction instead of leaving an uninformative ~50\/50 average. Absent on predictions made before this field existed.'),
+  "tieBreakerDecidingStep": zod.string().nullish().describe('Which cascade step decided the direction, or null when no tie-break was needed\/possible.'),
+  "tieBreakerNote": zod.string().nullish().describe('Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.'),
+  "isEliteTier": zod.boolean().optional().describe('True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo\/Serve & Return\/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.'),
+  "eliteTierReason": zod.string().optional().describe('Always present -- explains why a prediction is or isn\'t elite tier. Never silent.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),

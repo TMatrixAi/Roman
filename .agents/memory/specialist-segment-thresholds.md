@@ -21,3 +21,15 @@ segment's own fit vs. the general model on the SAME points, clamped to [0.1, 0.8
 hand-tuned. New API-facing engine fields added after a feature has shipped real historical
 data (e.g. `segmentNote`) must stay optional in the OpenAPI schema, or GetPredictionResponse
 validation breaks on every pre-existing row whose stored `engine` JSON predates the field.
+
+**Specialists never apply in historical/walk-forward scoring, only live/paper-trade:** the
+historical scoring path hardcodes `segment: null` when calling the engine, so
+`specialistApplied`/segment-specialist blending is architecturally always `false`/absent for every
+walk-forward or backtest prediction, regardless of engine correctness. Any feature gated on
+"specialist applied" (e.g. an elite-confidence tier requiring a validated segment specialist) will
+always report `n=0` in a walk-forward backtest even when the live-path logic is fully correct and
+working — this is a real evaluation-harness gap (historical scoring never resolves/passes a real
+segment), not a bug in the gated feature. **How to apply:** don't treat `n=0` for a
+specialist-gated metric in a backtest as evidence the feature is broken; verify by testing the live
+prediction path directly instead. A genuine backtest number for such a feature would require
+extending historical scoring to compute and pass a real segment first (currently unimplemented).

@@ -13,8 +13,14 @@ import type { EngineBreakdown } from "../predictionEngine";
  * genuinely different algorithm.
  */
 export const HISTORICAL_MODEL_VERSION = "phase8-historical-live-engine-v1";
-/** Bumped whenever the live ensemble engine (predictionEngine/index.ts) materially changes. */
-export const LIVE_MODEL_VERSION = "phase5-live-ensemble-v1";
+/**
+ * Bumped whenever the live ensemble engine (predictionEngine/index.ts) materially changes.
+ * v2 (2026-07-13): fix-the-engine pass driven by the ablation report -- Availability excluded
+ * from ensemble voting, Surface Elo/Serve & Return/Recent Form given a fixed higher voting-weight
+ * prior, Serve & Return/Recent Form individually confidence-shrunk, a tie-break cascade replaces
+ * pure averaging when core signals are close, and an Elite Prediction tier was added.
+ */
+export const LIVE_MODEL_VERSION = "phase9-fixed-ensemble-v2";
 
 export type RunKind = "historical_test" | "paper_trade" | "live";
 export type Segment = "validation" | "test";
@@ -56,6 +62,15 @@ export interface LiveFeatureSnapshot {
   modelVersion: typeof LIVE_MODEL_VERSION;
   engine: EngineBreakdown;
   preCalibrationProbability: number;
+  /**
+   * Denormalized copy of `EngineOutput.dataQuality`/`isEliteTier` at scoring time -- these already
+   * live inside `engine`/`EngineOutput`, but evaluation reporting (accuracy by data-quality
+   * bucket, elite-tier accuracy) reads `evaluation_predictions` rows directly without re-running
+   * the engine, so they're captured here explicitly rather than requiring every report to reach
+   * into the nested breakdown shape.
+   */
+  dataQuality?: number;
+  isEliteTier?: boolean;
 }
 
 export interface CalibrationKnot {

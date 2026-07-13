@@ -1230,6 +1230,21 @@ components:
         modelConflictNote:
           type: ["string", "null"]
           description: Explanation of which metrics favored the other side and which pipeline stage flipped the pick. Null when there's no conflict, absent on predictions made before this field existed.
+        tieBreakerApplied:
+          type: boolean
+          description: True only when the raw core signals were genuinely close to a coin flip and the tie-break cascade picked a direction instead of leaving an uninformative ~50/50 average. Absent on predictions made before this field existed.
+        tieBreakerDecidingStep:
+          type: ["string", "null"]
+          description: Which cascade step decided the direction, or null when no tie-break was needed/possible.
+        tieBreakerNote:
+          type: ["string", "null"]
+          description: Explanation of why the raw signals were tied and which step broke it. Null when tieBreakerApplied is false.
+        isEliteTier:
+          type: boolean
+          description: True only when this prediction clears the Elite Prediction bar (high data quality, Surface Elo/Serve & Return/Recent Form agreement, a validated segment specialist, and passing fitted calibration). Absent on predictions made before this field existed.
+        eliteTierReason:
+          type: string
+          description: Always present -- explains why a prediction is or isn't elite tier. Never silent.
 
     BulkDeletePredictionsInput:
       type: object

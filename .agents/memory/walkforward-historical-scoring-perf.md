@@ -19,3 +19,20 @@ cost; adding avoidable I/O per match on top of that is not.
 ask whether it can be loaded once (a single bulk query, held in memory for the run) instead of
 looked up inside the loop. If the corpus is small enough to hold entirely in memory, it almost
 certainly can be.
+
+**Destructive rebuild + can't finish inside a single shell tool call:** `runWalkForwardEvaluation`
+unconditionally deletes the ENTIRE `evaluationRunsTable` and every `historical_test`
+`evaluationPredictionsTable` row at the start of every call (a "rebuild the one true evaluation
+history from scratch" design, not an accumulating log). Once the corpus grew past ~18k real rows,
+a single call legitimately takes 8-12+ minutes end to end (preload + 4 folds), which exceeds a
+single ShellExec call's ~300s ceiling. `walkForward.test.ts` calls this same function directly (not
+mocked), so running that test now (a) can't complete inside one shell call and gets SIGTERM-killed
+mid-run, and (b) even a killed/interrupted attempt still executes the real delete-everything step
+at the top, silently wiping any real evaluation history that existed before you ran the test.
+**How to apply:** never re-run `walkForward.test.ts` (or call the walk-forward endpoint) casually
+to "just check it still passes/works" -- both destroy the current production evaluation history on
+every invocation. To validate engine changes, prefer the fast focused unit tests instead
+(serveReturn/dataQuality/calibration/etc., each <2s). If you must exercise a fresh walk-forward run
+for real reporting, trigger it via HTTP against the already-running workflow (background trigger +
+poll `GET /evaluation/runs`, per the sandbox-background-process-limits note) and only do it once
+you're ready to accept the old history being replaced.

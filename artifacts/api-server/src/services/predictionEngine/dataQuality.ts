@@ -36,6 +36,50 @@ export const MODULE_IMPORTANCE = {
   headToHead: 0.5,
 } as const;
 
+/**
+ * Fixed prior on how much each module's vote counts toward the ACTUAL blended probability
+ * (`ensembleProbability` in `ensemble.ts`) -- distinct from `MODULE_IMPORTANCE` above, which only
+ * feeds the Data Quality score. Before this existed, ensemble voting weight was driven purely by
+ * each module's own `reliability`, so `MODULE_IMPORTANCE`'s "Surface Elo/Serve&Return/Recent Form
+ * are the real signal" judgment never actually reached the prediction itself.
+ *
+ * Re-tuned from the 2026-07-13 ablation report's leave-one-out deltas: Surface Elo, Serve &
+ * Return, and Recent Form are the only modules whose removal measurably hurt accuracy (they are
+ * the real signal and are now the dominant vote); Fatigue and Head-to-Head were statistically
+ * neutral (kept as legitimate minor tie-breakers, not zeroed, in case future data proves them
+ * useful in specific segments); Availability is fully excluded from voting (see
+ * `EXCLUDED_FROM_ENSEMBLE` below) because removing it measurably IMPROVED accuracy.
+ */
+export const ENSEMBLE_WEIGHT_PRIOR = {
+  surfaceElo: 1.5,
+  serveReturn: 1.5,
+  recentForm: 1.3,
+  fatigue: 0.4,
+  headToHead: 0.4,
+} as const;
+
+/**
+ * Modules excluded from the ensemble VOTE entirely (but still fully computed and shown in
+ * `EngineBreakdown` for transparency -- warnings/notes/raw numbers are never hidden). Per the
+ * 2026-07-13 ablation report, Availability's leave-one-out removal improved overall accuracy --
+ * its signal is net-harmful, not merely weak, so it is disabled rather than just down-weighted.
+ */
+export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability"]);
+
+/**
+ * Per-model confidence shrink (see `EnsembleModuleInput.confidenceShrink`), derived directly from
+ * the 2026-07-13 ablation report's confidence-miscalibration numbers: Serve & Return's stated
+ * confidence overstated its real observed hit rate by ~9.5pts (66.8% stated vs 57.3% observed --
+ * deviation-from-50 ratio 7.3/16.8 ~= 0.43), Recent Form by ~8.8pts (63.2% vs 54.4% -- ratio
+ * 4.4/13.2 ~= 0.33). Rounded to 0.45 / 0.35. This shrinks each module's OWN vote toward its real
+ * hit rate without reducing its ensemble voting weight (see `ENSEMBLE_WEIGHT_PRIOR`) -- being a
+ * "primary" signal and being "recalibrated" are independent fixes.
+ */
+export const CONFIDENCE_SHRINK = {
+  serveReturn: 0.45,
+  recentForm: 0.35,
+} as const;
+
 export interface DataQualityModuleInput {
   reliability: number;
   /** One of the `MODULE_IMPORTANCE` weights above -- how much this module should count toward the blended score. */

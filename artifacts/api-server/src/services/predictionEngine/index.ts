@@ -5,13 +5,15 @@ import { computeFatigueModule } from "./fatigue";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
-import { computeDataQuality, MODULE_IMPORTANCE } from "./dataQuality";
+import { computeDataQuality, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, CONFIDENCE_SHRINK } from "./dataQuality";
 import { buildEnsemble, agreementFromSpread, worseAgreement, type ModelVote } from "./ensemble";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
 import { computeRecommendation } from "./recommendation";
 import { deriveServicePointEstimate, runMatchSimulation, type MatchSimulationResult } from "./simulator";
+import { applyTieBreaker } from "./tieBreakers";
+import { computeEliteTier, voteFavorsPlayer1 } from "./eliteTier";
 import type { PredictionEngineInput } from "./types";
 import type { WeatherConditions } from "./weather";
 
@@ -56,6 +58,16 @@ export interface EngineBreakdown {
   modelConflict: boolean;
   /** Concise, always-non-null-when-modelConflict-is-true explanation of which metrics favored the other side and which stage of the pipeline (general calibration, segment specialist, or simulator) flipped the final pick. Null when there's no conflict. */
   modelConflictNote: string | null;
+  /** True only when this match's raw core signals were genuinely close (within `TIE_BAND` of a coin flip) and the tie-break cascade (see `tieBreakers.ts`) picked a direction instead of leaving an uninformative ~50/50 average. Not present on predictions made before this field existed. */
+  tieBreakerApplied: boolean;
+  /** Which cascade step (Serve & Return, Surface Elo, Recent Form, surface history, ranking, Fatigue, Head-to-Head) decided the direction, or null when no tie-break was needed/possible. */
+  tieBreakerDecidingStep: string | null;
+  /** Always present when `tieBreakerApplied` is true -- explains why the raw signals were tied and which step broke it. Null otherwise. */
+  tieBreakerNote: string | null;
+  /** True only when this prediction clears the Elite Prediction bar -- see `eliteTier.ts`. Not present on predictions made before this field existed. */
+  isEliteTier: boolean;
+  /** Always present -- explains why a prediction is or isn't elite tier. Never silent. */
+  eliteTierReason: string;
 }
 
 export interface EngineOutput {
@@ -70,33 +82,6 @@ export interface EngineOutput {
   recommendation: ReturnType<typeof computeRecommendation>;
   predictedSetScore: string;
   engine: EngineBreakdown;
-}
-
-/**
- * Turns the availability module's real signals into a signed player1 edge. Each component only
- * contributes when its underlying data actually resolved for both players (or, for retirement,
- * for the player it fired on) -- missing data contributes exactly 0, it never gets treated as
- * "no disadvantage" vs. a fabricated default, which is why the module's own `reliability` (not
- * this edge) is what tells the ensemble how much to trust it.
- */
-function computeAvailabilityEdge(availability: ReturnType<typeof computeAvailabilityModule>): number {
-  let edge = 0;
-
-  const { player1, player2 } = availability;
-  if (player1.daysSinceLastMatch !== null && player2.daysSinceLastMatch !== null) {
-    const restDiff = player1.daysSinceLastMatch - player2.daysSinceLastMatch;
-    edge += Math.max(-7, Math.min(7, restDiff)) * 1.5;
-  }
-
-  if (player1.travelDistanceKm !== null && player2.travelDistanceKm !== null) {
-    const travelDiff = player2.travelDistanceKm - player1.travelDistanceKm; // positive favors player1 (they traveled less)
-    edge += Math.max(-10, Math.min(10, travelDiff / 500));
-  }
-
-  if (player1.recentRetirementOrWithdrawal) edge -= 15;
-  if (player2.recentRetirementOrWithdrawal) edge += 15;
-
-  return Math.max(-30, Math.min(30, edge));
 }
 
 /**
@@ -158,13 +143,22 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const excludedModels = input.excludedModels ?? null;
 
   const moduleEdges = [
-    { key: "surfaceElo" as const, name: "Surface Elo", player1Edge: surfaceElo.eloDifference / 8, reliability: surfaceElo.reliability, importance: MODULE_IMPORTANCE.surfaceElo },
+    {
+      key: "surfaceElo" as const,
+      name: "Surface Elo",
+      player1Edge: surfaceElo.eloDifference / 8,
+      reliability: surfaceElo.reliability,
+      importance: MODULE_IMPORTANCE.surfaceElo,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.surfaceElo,
+    },
     {
       key: "serveReturn" as const,
       name: "Serve & Return",
       player1Edge: serveReturn.player1ServeRating + serveReturn.player1ReturnRating - serveReturn.player2ServeRating - serveReturn.player2ReturnRating,
       reliability: serveReturn.reliability,
       importance: MODULE_IMPORTANCE.serveReturn,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.serveReturn,
+      confidenceShrink: CONFIDENCE_SHRINK.serveReturn,
     },
     {
       key: "recentForm" as const,
@@ -172,6 +166,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2,
       reliability: recentForm.reliability,
       importance: MODULE_IMPORTANCE.recentForm,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.recentForm,
+      confidenceShrink: CONFIDENCE_SHRINK.recentForm,
     },
     {
       key: "fatigue" as const,
@@ -179,13 +175,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       player1Edge: (fatigue.player2FatigueScore - fatigue.player1FatigueScore) / 2,
       reliability: fatigue.reliability,
       importance: MODULE_IMPORTANCE.fatigue,
-    },
-    {
-      key: "availability" as const,
-      name: "Availability (rest/travel/injury)",
-      player1Edge: computeAvailabilityEdge(availability),
-      reliability: availability.reliability,
-      importance: MODULE_IMPORTANCE.availability,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.fatigue,
     },
     {
       key: "headToHead" as const,
@@ -195,11 +185,35 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
         : 0,
       reliability: headToHead.reliability,
       importance: MODULE_IMPORTANCE.headToHead,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.headToHead,
     },
-  ].filter((m) => !excludedModels?.has(m.key));
+  ].filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
 
-  const { models: featureModels, ensembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
+  const { models: featureModels, ensembleProbability: rawEnsembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
 
+  // Requirement 6/7 of the fix-the-engine spec: when the core signals are genuinely close to a
+  // coin flip, use an explicit priority cascade instead of just accepting an uninformative ~50/50
+  // average -- always surface a real (if modest) lean when evidence supports one, never inflate
+  // beyond a small fixed nudge, and only stay at exactly 50/50 when every tie-break step is also
+  // silent (a genuine coin-flip matchup).
+  const tieBreaker = applyTieBreaker(rawEnsembleProbability, {
+    surfaceElo,
+    serveReturn,
+    recentForm,
+    fatigue,
+    headToHead,
+    player1: input.player1,
+    player2: input.player2,
+    player1Matches: input.player1Matches,
+    player2Matches: input.player2Matches,
+    surface: input.surface,
+  });
+  const ensembleProbability = tieBreaker.applied ? tieBreaker.adjustedProbability : rawEnsembleProbability;
+
+  // Availability is still fully computed and shown (below, via `availability`/`availabilityNote`)
+  // but excluded from both the ensemble vote and the Data Quality blend -- see
+  // `EXCLUDED_FROM_ENSEMBLE`'s rationale: its own leave-one-out removal measurably improved
+  // accuracy in the 2026-07-13 ablation report, so it is disabled rather than merely down-weighted.
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
     moduleEdges.map((m) => ({ reliability: m.reliability, importance: m.importance })),
   );
@@ -374,6 +388,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.unshift(`MODEL CONFLICT: ${modelConflictNote}`);
   }
 
+  // Requirement 8 of the fix-the-engine spec: a strictly narrower "Elite Prediction" tier -- see
+  // `eliteTier.ts` for the exact gating conditions.
+  const { isEliteTier, reason: eliteTierReason } = computeEliteTier({
+    dataQuality,
+    surfaceEloFavorsPlayer1: voteFavorsPlayer1(featureModels, "Surface Elo"),
+    serveReturnFavorsPlayer1: voteFavorsPlayer1(featureModels, "Serve & Return"),
+    recentFormFavorsPlayer1: voteFavorsPlayer1(featureModels, "Recent Form"),
+    specialistApplied,
+    segmentLabel: segment?.label ?? null,
+    modelConflict,
+  });
+
   const warnings = [
     ...surfaceElo.warnings,
     ...serveReturn.warnings,
@@ -413,6 +439,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     simulatorNote,
     modelConflict,
     modelConflictNote,
+    tieBreakerApplied: tieBreaker.applied,
+    tieBreakerDecidingStep: tieBreaker.decidingStep,
+    tieBreakerNote: tieBreaker.applied ? tieBreaker.note : null,
+    isEliteTier,
+    eliteTierReason,
   };
 
   return {

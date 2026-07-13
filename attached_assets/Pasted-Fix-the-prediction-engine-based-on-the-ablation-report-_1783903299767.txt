@@ -1,0 +1,29 @@
+Fix the prediction engine based on the ablation report.
+
+1. Reduce or disable the Availability module in the final prediction because its rest-day, travel, injury, withdrawal, and schedule-congestion signals are lowering accuracy.
+2. Recalibrate Serve/Return and Recent Form because both are about 9 percentage points overconfident. Their displayed probabilities should match their actual historical win rates.
+3. Make Surface Elo, Serve/Return, and Recent Form the primary prediction signals because this core combination tested better than the full engine.
+4. Reduce the influence of weak models, including Fatigue, Head-to-Head, General Ensemble, and Segment Specialist, unless testing proves they improve accuracy.
+5. Continue predicting every match. Do not give strong confidence when data quality is low, but also do not default close matches to 50/50 simply because some data is missing. Low-data matches should stay at moderate confidence and be clearly labeled as lower reliability.
+6. When the main models are close, always use a tie-breaking order instead of averaging everything toward 50/50:
+    * Serve/Return advantage
+    * Surface Elo
+    * Recent Form
+    * Surface-specific history
+    * Ranking and competition level
+    * Fatigue and Head-to-Head only as minor tie-breakers
+7. Always select a predicted winner. If the available evidence supports one player, show a meaningful lean instead of defaulting to 50/50. Do not artificially inflate percentages. If a match is genuinely even after all tie-breakers, then a result such as 52/48 or 53/47 is acceptable.
+8. Create an Elite Prediction tier only when:
+    * Data quality is high.
+    * Surface Elo, Serve/Return, and Recent Form all agree.
+    * Historical accuracy for that exact tour and surface segment supports the confidence.
+    * The prediction passes calibration.
+9. After making these changes, run a new out-of-sample test and report:
+    * Overall accuracy
+    * Elite-tier accuracy
+    * Accuracy by tour
+    * Accuracy by surface
+    * Calibration by confidence bucket
+    * Accuracy by data-quality bucket
+
+Do not add No Trade filtering. Do not artificially increase displayed percentages. Improve weighting, calibration, and tie-breaking so confidence reflects the evidence, strong confidence is only shown when the data supports it, and the engine no longer defaults too many matches toward 50/50.
