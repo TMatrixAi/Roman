@@ -119,10 +119,15 @@ export const GetPlayerMatchesResponse = zod.array(GetPlayerMatchesResponseItem)
 
 
 /**
+ * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary.
  * @summary Upcoming scheduled matches
  */
+export const getUpcomingFixturesQueryLimitMax = 200;
+
+
+
 export const GetUpcomingFixturesQueryParams = zod.object({
-  "date": zod.string().optional().describe('ISO date (YYYY-MM-DD). Defaults to today.')
+  "limit": zod.coerce.number().min(1).max(getUpcomingFixturesQueryLimitMax).optional().describe('Maximum number of fixtures to return. Defaults to 50.')
 })
 
 export const GetUpcomingFixturesResponseItem = zod.object({

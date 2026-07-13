@@ -58,7 +58,7 @@ export default function Home() {
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value as TourFilter)}
               className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
-              aria-label="Prioritize today's fixtures by tour"
+              aria-label="Prioritize upcoming fixtures by tour"
             >
               {TOUR_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
@@ -81,7 +81,7 @@ export default function Home() {
         <section className="space-y-4">
           <div className="flex items-center gap-2 border-b pb-2">
             <Swords className="w-5 h-5" />
-            <h2 className="text-xl font-bold">TODAY'S FIXTURES</h2>
+            <h2 className="text-xl font-bold">UPCOMING FIXTURES</h2>
           </div>
           <p className="text-sm text-muted-foreground font-mono mb-4">QUICK START PREDICTIONS</p>
           <FixturesList ref={fixturesRef} priorityFilter={priorityFilter} />

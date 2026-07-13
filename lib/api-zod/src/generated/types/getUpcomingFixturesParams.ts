@@ -8,7 +8,9 @@
 
 export type GetUpcomingFixturesParams = {
 /**
- * ISO date (YYYY-MM-DD). Defaults to today.
+ * Maximum number of fixtures to return. Defaults to 50.
+ * @minimum 1
+ * @maximum 200
  */
-date?: string;
+limit?: number;
 };

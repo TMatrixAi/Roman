@@ -56,10 +56,21 @@ function sortFixtures(fixtures: Fixture[], priorityFilter: TourFilter): Fixture[
   })
 }
 
-/** Formats a fixture's real start time in the viewer's local timezone, or "Time TBD" when the provider hasn't confirmed one. */
+/**
+ * Formats a fixture's real start time consistently in Eastern time (America/New_York), or
+ * "Time TBD" when the provider hasn't confirmed one. Match times are stored/compared in UTC
+ * everywhere else -- this is a render-time-only conversion, and intentionally not the viewer's
+ * arbitrary local timezone, so every viewer sees the same schedule.
+ */
 function formatFixtureTime(fixture: Fixture): string {
   if (!fixture.scheduledStart) return "Time TBD"
-  return new Date(fixture.scheduledStart).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  return new Date(fixture.scheduledStart).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }) + " ET"
 }
 
 function buildCustomMatchUrl(fixture: Fixture): string {
@@ -151,7 +162,7 @@ export const FixturesList = forwardRef<FixturesListHandle, { priorityFilter?: To
 
       {visibleFixtures.length === 0 ? (
         <div className="p-8 border border-dashed rounded-lg text-center text-muted-foreground font-mono text-sm">
-          NO UPCOMING FIXTURES TODAY
+          NO UPCOMING FIXTURES FOUND
         </div>
       ) : (
         visibleFixtures.map((fixture) => (

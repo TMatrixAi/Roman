@@ -140,13 +140,20 @@ paths:
       operationId: getUpcomingFixtures
       tags: [matchups]
       summary: Upcoming scheduled matches
+      description: >-
+        Returns a rolling now-forward window of matches with a start time at or after the current
+        instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The
+        window auto-extends further out when the near-term days are sparse, so the result is
+        capped by `limit` rather than by a fixed clock/day boundary.
       parameters:
-        - name: date
+        - name: limit
           in: query
           required: false
-          description: ISO date (YYYY-MM-DD). Defaults to today.
+          description: Maximum number of fixtures to return. Defaults to 50.
           schema:
-            type: string
+            type: integer
+            minimum: 1
+            maximum: 200
       responses:
         "200":
           description: Upcoming fixtures

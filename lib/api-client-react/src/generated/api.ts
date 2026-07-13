@@ -496,6 +496,7 @@ export const getGetUpcomingFixturesUrl = (params?: GetUpcomingFixturesParams,) =
 }
 
 /**
+ * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary.
  * @summary Upcoming scheduled matches
  */
 export const getUpcomingFixtures = async (params?: GetUpcomingFixturesParams, options?: RequestInit): Promise<Fixture[]> => {

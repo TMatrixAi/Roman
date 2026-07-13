@@ -1,8 +1,11 @@
 import { Router, type IRouter } from "express";
 import { GetUpcomingFixturesQueryParams, GetUpcomingFixturesResponse } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
+import { collectUpcomingWindow } from "./upcomingWindow";
 
 const router: IRouter = Router();
+
+const DEFAULT_LIMIT = 50;
 
 router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
   const parsed = GetUpcomingFixturesQueryParams.safeParse(req.query);
@@ -11,16 +14,11 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
     return;
   }
 
-  const date = parsed.data.date ?? new Date().toISOString().slice(0, 10);
+  const limit = parsed.data.limit ?? DEFAULT_LIMIT;
+  const provider = getTennisDataProvider();
 
   try {
-    const fixtures = await getTennisDataProvider().getUpcomingFixtures(date);
-    // Today's Fixtures is always shown in real chronological order (earliest confirmed start time
-    // first). Fixtures with no confirmed provider time ("Time TBD") sort after every confirmed
-    // fixture on the same calendar date, rather than being guessed into some position by date alone.
-    const sortKey = (f: (typeof fixtures)[number]) =>
-      f.scheduledStart ? new Date(f.scheduledStart).getTime() : new Date(`${f.date}T23:59:59.999Z`).getTime();
-    const sorted = [...fixtures].sort((a, b) => sortKey(a) - sortKey(b));
+    const sorted = await collectUpcomingWindow((date) => provider.getUpcomingFixtures(date), { limit, nowMs: Date.now() });
     res.json(GetUpcomingFixturesResponse.parse(sorted));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {
