@@ -157,13 +157,24 @@ function buildAvailabilityNote(availability: ReturnType<typeof computeAvailabili
   return parts.join(" ");
 }
 
-function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbability: number, favorsPlayer1: boolean): string {
+// LIVE BUG FIXED 2026-07-13 (found by the invariant-checking batch script + a user's direct
+// challenge to "confirm this can't happen today"): `winnerSets`/`loserSets` here are already the
+// PREDICTED WINNER's own set count and the loser's, in that fixed abstract sense -- they were
+// never player1's or player2's number specifically. The old code nonetheless branched on
+// `favorsPlayer1` and swapped which literal went first (`loserSets-winnerSets` when player 2 was
+// the pick), which actually just re-encoded "player1's count first, player2's count second" --
+// NOT "winner's count first" as the variable names and every caller (this function is always
+// displayed directly under "PREDICTED WINNER" with no player labels, see PredictionResult.tsx)
+// assumed. So any prediction favoring player 2 rendered a set score that looked like the winner
+// lost (e.g. "0-2" next to the winner's own name). `favorsPlayer1` is intentionally unused now --
+// the winner's own set count must always be shown first, independent of which player it is.
+function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbability: number): string {
   const margin = Math.abs(calibratedProbability - 50);
   const setsToWin = matchFormat === "BestOf5" ? 3 : 2;
   const decisive = margin >= 20;
   const winnerSets = setsToWin;
   const loserSets = decisive ? Math.max(0, setsToWin - 2) : setsToWin - 1;
-  return favorsPlayer1 ? `${winnerSets}-${loserSets}` : `${loserSets}-${winnerSets}`;
+  return `${winnerSets}-${loserSets}`;
 }
 
 export function runPredictionEngine(input: PredictionEngineInput): EngineOutput {
@@ -446,7 +457,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // player 1's when player 2 is the pick. By construction this can never read below 50 next to
   // the player the engine just named the favorite -- see the field doc on EngineOutput.
   const predictedWinnerProbability = Math.round((favorsPlayer1 ? calibratedProbability : 100 - calibratedProbability) * 10) / 10;
-  const predictedSetScore = predictSetScore(input.matchFormat, calibratedProbability, favorsPlayer1);
+  const predictedSetScore = predictSetScore(input.matchFormat, calibratedProbability);
 
   const reasons: string[] = [];
   const risks: string[] = [];

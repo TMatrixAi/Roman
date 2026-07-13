@@ -80,10 +80,30 @@ test("a 'Surface Elo favors X' reason always names whichever player actually hol
   void expectedFavored;
 });
 
-test("the predicted winner's projected set score never implies they lose the match", () => {
+test("the predicted winner's projected set score never implies they lose the match, when player 1 is favored", () => {
   const output = runPredictionEngine(baseInput());
+  assert.equal(output.predictedWinnerId, "p1", "sanity check: this fixture must actually favor player 1");
   const [winnerSets, loserSets] = output.predictedSetScore.split("-").map(Number);
   assert.ok(winnerSets > loserSets, `predictedSetScore "${output.predictedSetScore}" must show the winner (listed first) ahead`);
+});
+
+// Regression test for a live bug found 2026-07-13 (a user directly asked us to prove the fix,
+// which surfaced that the original `predictSetScore` swapped which literal came first based on
+// `favorsPlayer1` -- that's player-1-first ordering, NOT winner-first ordering, so any prediction
+// favoring player 2 rendered a set score that looked like the winner lost (e.g. "0-2" printed
+// directly under the winner's own name in the UI, with no player labels). This exact case was
+// invisible to the "player 1 favored" test above, which is why it shipped in the first place --
+// always test the swapped-favorite direction explicitly, not just the default/happy path.
+test("the predicted winner's projected set score never implies they lose the match, when player 2 is favored (regression: this exact case shipped a live bug)", () => {
+  const output = runPredictionEngine(
+    baseInput({
+      player1Matches: Array.from({ length: 8 }, (_, i) => match(`opp1-${i}`, `Opp1-${i}`, i % 3 === 0, "Hard", 12 + i * 10, 52)),
+      player2Matches: Array.from({ length: 8 }, (_, i) => match(`opp2-${i}`, `Opp2-${i}`, i % 4 !== 0, "Hard", 10 + i * 10, 65)),
+    }),
+  );
+  assert.equal(output.predictedWinnerId, "p2", "sanity check: this fixture must actually favor player 2");
+  const [winnerSets, loserSets] = output.predictedSetScore.split("-").map(Number);
+  assert.ok(winnerSets > loserSets, `predictedSetScore "${output.predictedSetScore}" must show the winner (listed first) ahead even when player 2 is the pick`);
 });
 
 test("the Monte Carlo simulator's reliability figure is never shown as if it were a passed validation score while the simulator is still unvalidated/display-only", () => {
