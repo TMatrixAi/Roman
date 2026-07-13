@@ -1,11 +1,34 @@
 import type { MatchRecord } from "../tennisData/types";
 import type { OpponentEloLookup } from "./opponentStrength";
 
+/**
+ * Point-level serve/return breakdown, computed directly from real provider match-level stats
+ * (never fabricated/interpolated). Each field is null independently when its underlying provider
+ * field never resolved for enough of this player's matches -- there is no shared "all or nothing"
+ * gate across the four fields, since a provider can report break-point counts without reporting
+ * first-serve splits, or vice versa.
+ */
+export interface PointLevelStats {
+  /** Real, provider-reported average % of points won on first serve (`MatchStatLine.firstServeWon`). */
+  firstServeWinPct: number | null;
+  /** Real break points saved / break points faced on this player's own serve, aggregated as a single ratio (not a per-match average) so a handful of high-pressure games don't get diluted by matches with none. */
+  breakPointsSavedPct: number | null;
+  /** Real break points converted while returning, derived from the opponent's own service-game stats (`opponentStats.breakPointsFaced/breakPointsSaved`) recorded on the SAME match -- this is the only place that data exists, since a player's own stat line never reports their return-side break conversions directly. */
+  breakPointsConvertedPct: number | null;
+  /** Estimated probability (0-100) of holding a service game, derived from real `servicePointsWonPct` via the standard (Newton & Keller 1974) closed-form game-win formula -- an established statistical model applied to a real input, not a fabricated number. Null when `servicePointsWonPct` never resolved. */
+  serviceGamesHeldPct: number | null;
+  /** Count of matches that contributed to at least one of the fields above. */
+  sampleSize: number;
+}
+
 export interface ServeReturnResult {
   player1ServeRating: number;
   player2ServeRating: number;
   player1ReturnRating: number;
   player2ReturnRating: number;
+  /** Point-level inputs behind the ratings above (first-serve win %, break points saved/converted, service games held) -- see `PointLevelStats`. Always computed and exposed, independent of whether the overall module fell back to the margin proxy. */
+  player1PointLevel: PointLevelStats;
+  player2PointLevel: PointLevelStats;
   reliability: number;
   note: string | null;
   warnings: string[];
@@ -28,6 +51,101 @@ const TOUR_AVG_SERVICE_POINTS_WON_PCT = 62;
 const TOUR_AVG_RETURN_POINTS_WON_PCT = 38;
 const REAL_STATS_RATING_SCALE = 2.5;
 const MIN_REAL_SAMPLE = 3;
+
+// Rough tour-wide averages for the point-level breakdown, used the same way as the tour averages
+// above: only to center a real, provider-reported (or provider-input-derived) percentage onto a
+// "50 = average" rating scale -- never used in place of missing data.
+const TOUR_AVG_SERVICE_GAMES_HELD_PCT = 80;
+const TOUR_AVG_BREAK_POINTS_CONVERTED_PCT = 40;
+const POINT_LEVEL_RATING_SCALE = 1.8;
+// How much weight the deeper point-level breakdown gets blended into the headline serve/return
+// rating once it resolves for both players -- kept modest so this is a refinement of the
+// existing real-stats rating, not a replacement of it.
+const POINT_LEVEL_BLEND_WEIGHT = 0.2;
+const MIN_POINT_LEVEL_SAMPLE = 3;
+
+/**
+ * Closed-form probability of winning a standard (advantage) tennis game given a real, per-point
+ * probability `p` of winning each point on serve -- the well-established Newton & Keller (1974)
+ * formula, not a fit/guess. Used only to translate a real `servicePointsWonPct` into an estimated
+ * "service games held %" -- a genuinely deeper, game-outcome-relevant statistic than the raw
+ * points-won percentage alone, without requiring the provider to report game-level data directly
+ * (which it doesn't).
+ */
+function estimateServiceGameHoldProbability(pointWinProbPct: number): number {
+  const p = Math.max(0.01, Math.min(0.99, pointWinProbPct / 100));
+  const q = 1 - p;
+  const winStraight = Math.pow(p, 4) * (1 + 4 * q + 10 * q * q);
+  const reachDeuce = 20 * Math.pow(p, 3) * Math.pow(q, 3);
+  const winFromDeuce = (p * p) / (p * p + q * q);
+  return Math.round((winStraight + reachDeuce * winFromDeuce) * 1000) / 10;
+}
+
+/**
+ * Aggregates the point-level breakdown (first-serve win %, break points saved/converted, service
+ * games held) from real provider match-level stats. Each field resolves independently -- a
+ * provider can supply break-point counts without first-serve splits, or vice versa -- so this
+ * never gates one field's availability on another's.
+ */
+function computePointLevelStats(matches: MatchRecord[], opponentElo: OpponentEloLookup): PointLevelStats {
+  let firstServeWeightedSum = 0;
+  let firstServeWeightTotal = 0;
+  let bpSavedSum = 0;
+  let bpFacedSum = 0;
+  let bpConvertedSum = 0;
+  let bpReturnFacedSum = 0;
+  let gamesHeldWeightedSum = 0;
+  let gamesHeldWeightTotal = 0;
+  const contributingMatchIds = new Set<string>();
+
+  for (const m of matches) {
+    const elo = opponentElo.get(m.id);
+    const strengthFactor = elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1;
+
+    if (m.stats?.firstServeWon != null) {
+      firstServeWeightedSum += m.stats.firstServeWon * strengthFactor;
+      firstServeWeightTotal += strengthFactor;
+      contributingMatchIds.add(m.id);
+    }
+    if (m.stats?.breakPointsSaved != null && m.stats?.breakPointsFaced != null && m.stats.breakPointsFaced > 0) {
+      bpSavedSum += m.stats.breakPointsSaved;
+      bpFacedSum += m.stats.breakPointsFaced;
+      contributingMatchIds.add(m.id);
+    }
+    if (m.opponentStats?.breakPointsFaced != null && m.opponentStats?.breakPointsSaved != null && m.opponentStats.breakPointsFaced > 0) {
+      // The opponent's own break points faced/saved on THEIR serve, during this same match, is
+      // exactly how many break points this player generated/converted while returning.
+      bpConvertedSum += m.opponentStats.breakPointsFaced - m.opponentStats.breakPointsSaved;
+      bpReturnFacedSum += m.opponentStats.breakPointsFaced;
+      contributingMatchIds.add(m.id);
+    }
+    if (m.stats?.servicePointsWonPct != null) {
+      gamesHeldWeightedSum += estimateServiceGameHoldProbability(m.stats.servicePointsWonPct) * strengthFactor;
+      gamesHeldWeightTotal += strengthFactor;
+      contributingMatchIds.add(m.id);
+    }
+  }
+
+  return {
+    firstServeWinPct: firstServeWeightTotal > 0 ? Math.round((firstServeWeightedSum / firstServeWeightTotal) * 10) / 10 : null,
+    breakPointsSavedPct: bpFacedSum > 0 ? Math.round((bpSavedSum / bpFacedSum) * 1000) / 10 : null,
+    breakPointsConvertedPct: bpReturnFacedSum > 0 ? Math.round((bpConvertedSum / bpReturnFacedSum) * 1000) / 10 : null,
+    serviceGamesHeldPct: gamesHeldWeightTotal > 0 ? Math.round((gamesHeldWeightedSum / gamesHeldWeightTotal) * 10) / 10 : null,
+    sampleSize: contributingMatchIds.size,
+  };
+}
+
+/**
+ * Nudges a base 0-100 rating toward a point-level metric's own centered rating, only when that
+ * metric actually resolved for BOTH players (the same "fair comparison" rule the top-level
+ * real-vs-proxy fallback already uses) and each side has enough matches behind it -- otherwise
+ * returns the base rating completely unchanged.
+ */
+function blendPointLevel(baseRating: number, p1Pct: number | null, p2Pct: number | null, p1Sample: number, p2Sample: number, tourAvg: number): number {
+  if (p1Pct === null || p2Pct === null || p1Sample < MIN_POINT_LEVEL_SAMPLE || p2Sample < MIN_POINT_LEVEL_SAMPLE) return baseRating;
+  const centered = Math.max(5, Math.min(95, 50 + (p1Pct - tourAvg) * POINT_LEVEL_RATING_SCALE));
+  return Math.max(5, Math.min(95, baseRating * (1 - POINT_LEVEL_BLEND_WEIGHT) + centered * POINT_LEVEL_BLEND_WEIGHT));
+}
 
 /**
  * Average games-per-set differential in matches won vs lost, as a serve/return dominance proxy,
@@ -104,11 +222,14 @@ export function computeServeReturnModule(
   const p1Real = realRatingsFromStats(player1Matches, player1OpponentElo);
   const p2Real = realRatingsFromStats(player2Matches, player2OpponentElo);
 
+  const p1PointLevel = computePointLevelStats(player1Matches, player1OpponentElo);
+  const p2PointLevel = computePointLevelStats(player2Matches, player2OpponentElo);
+
   if (p1Real && p2Real) {
     const minSample = Math.min(p1Real.sample, p2Real.sample);
     // Real data starts at a meaningfully higher floor than the proxy's 60 cap, and keeps climbing
     // with more matches -- unlike the proxy, this is never artificially capped at "not excellent".
-    const reliability = Math.max(65, Math.min(95, 65 + (minSample - MIN_REAL_SAMPLE) * 5));
+    let reliability = Math.max(65, Math.min(95, 65 + (minSample - MIN_REAL_SAMPLE) * 5));
 
     const warnings: string[] = [];
     if (minSample < MIN_SAMPLE_FOR_NO_WARNING) {
@@ -118,13 +239,35 @@ export function computeServeReturnModule(
       warnings.push("Opponent-strength weighting is only partially available -- some matches are weighted as opponent-neutral.");
     }
 
+    // Deepen the headline rating with the point-level breakdown (service games held, break
+    // points converted) when it resolves for both players -- a modest, capped nudge (see
+    // `blendPointLevel`) on top of the already-real servicePointsWonPct/returnPointsWon rating,
+    // never a replacement for it. When the point-level fields are unavailable this is a no-op,
+    // so it never changes behavior for a provider stat line that only reports the match-level
+    // percentages (the pre-existing, tested behavior).
+    let player1ServeRating = blendPointLevel(p1Real.serve, p1PointLevel.serviceGamesHeldPct, p2PointLevel.serviceGamesHeldPct, p1PointLevel.sampleSize, p2PointLevel.sampleSize, TOUR_AVG_SERVICE_GAMES_HELD_PCT);
+    let player2ServeRating = blendPointLevel(p2Real.serve, p2PointLevel.serviceGamesHeldPct, p1PointLevel.serviceGamesHeldPct, p2PointLevel.sampleSize, p1PointLevel.sampleSize, TOUR_AVG_SERVICE_GAMES_HELD_PCT);
+    let player1ReturnRating = blendPointLevel(p1Real.ret, p1PointLevel.breakPointsConvertedPct, p2PointLevel.breakPointsConvertedPct, p1PointLevel.sampleSize, p2PointLevel.sampleSize, TOUR_AVG_BREAK_POINTS_CONVERTED_PCT);
+    let player2ReturnRating = blendPointLevel(p2Real.ret, p2PointLevel.breakPointsConvertedPct, p1PointLevel.breakPointsConvertedPct, p2PointLevel.sampleSize, p1PointLevel.sampleSize, TOUR_AVG_BREAK_POINTS_CONVERTED_PCT);
+
+    const pointLevelApplied =
+      p1PointLevel.serviceGamesHeldPct !== null &&
+      p2PointLevel.serviceGamesHeldPct !== null &&
+      p1PointLevel.sampleSize >= MIN_POINT_LEVEL_SAMPLE &&
+      p2PointLevel.sampleSize >= MIN_POINT_LEVEL_SAMPLE;
+    if (pointLevelApplied) {
+      reliability = Math.min(95, reliability + 5);
+    }
+
     return {
-      player1ServeRating: Math.round(p1Real.serve),
-      player2ServeRating: Math.round(p2Real.serve),
-      player1ReturnRating: Math.round(p1Real.ret),
-      player2ReturnRating: Math.round(p2Real.ret),
+      player1ServeRating: Math.round(player1ServeRating),
+      player2ServeRating: Math.round(player2ServeRating),
+      player1ReturnRating: Math.round(player1ReturnRating),
+      player2ReturnRating: Math.round(player2ReturnRating),
+      player1PointLevel: p1PointLevel,
+      player2PointLevel: p2PointLevel,
       reliability: Math.round(reliability),
-      note: REAL_STATS_NOTE,
+      note: pointLevelApplied ? `${REAL_STATS_NOTE} Deepened with point-level inputs (first-serve win %, break points saved/converted, estimated service games held).` : REAL_STATS_NOTE,
       warnings,
     };
   }
@@ -148,6 +291,8 @@ export function computeServeReturnModule(
     player2ServeRating: Math.round(p2.serve),
     player1ReturnRating: Math.round(p1.ret),
     player2ReturnRating: Math.round(p2.ret),
+    player1PointLevel: p1PointLevel,
+    player2PointLevel: p2PointLevel,
     reliability: Math.round(reliability),
     note: PROXY_NOTE,
     warnings,

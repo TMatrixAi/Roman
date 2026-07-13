@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeDataQuality, MODULE_IMPORTANCE } from "./dataQuality";
+import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE } from "./dataQuality";
 
 function modules(overrides: Partial<Record<keyof typeof MODULE_IMPORTANCE, number>>) {
   const defaults: Record<keyof typeof MODULE_IMPORTANCE, number> = {
@@ -58,4 +58,18 @@ test("an all-zero input produces the lowest score without dividing by zero", () 
   const { score, label } = computeDataQuality(modules({}));
   assert.equal(score, 0);
   assert.equal(label, "Poor");
+});
+
+test("computeSurfaceSampleDepth flags the weaker side and labels Low/Moderate/High consistently with surfaceElo's own warning threshold", () => {
+  const low = computeSurfaceSampleDepth(2, 20);
+  assert.equal(low.minSample, 2);
+  assert.equal(low.label, "Low");
+
+  const moderate = computeSurfaceSampleDepth(8, 9);
+  assert.equal(moderate.label, "Moderate");
+
+  const high = computeSurfaceSampleDepth(15, 30);
+  assert.equal(high.label, "High");
+  assert.equal(high.player1Sample, 15);
+  assert.equal(high.player2Sample, 30);
 });

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-13T00:25:05.038Z",
-  "matchCount": 18242,
+  "generatedAt": "2026-07-13T07:51:24.778Z",
+  "matchCount": 18281,
   "caveats": [
     "This report replays the historical backtest corpus (frozen pre-match snapshots, no hindsight leakage) through the exact live ensemble engine, using the CURRENTLY ACTIVE calibration and segment-specialist models. Those were themselves fit on walk-forward folds of this same corpus, so this is a diagnostic on the current production configuration, not a fresh out-of-sample benchmark.",
     "\"Active Segment Specialist\" ablation only changes matches whose tour/surface is an actual candidate segment (ATP/WTA on Hard/Clay/Grass/IndoorHard) with an active specialist that has cleared its data threshold -- it is a true no-op on every other match, which is expected, not a bug.",
@@ -11,25 +11,25 @@
     "key": "baseline",
     "label": "Everything active (baseline)",
     "overall": {
-      "n": 13032,
-      "accuracy": 54.9
+      "n": 13066,
+      "accuracy": 57.3
     },
     "byTour": {
+      "ATP": {
+        "n": 1242,
+        "accuracy": 54.6
+      },
       "Challenger": {
         "n": 2675,
-        "accuracy": 53.4
+        "accuracy": 55
       },
       "WTA": {
         "n": 1155,
-        "accuracy": 56.2
+        "accuracy": 55.2
       },
       "ITF": {
         "n": 7866,
-        "accuracy": 55.1
-      },
-      "ATP": {
-        "n": 1208,
-        "accuracy": 55.8
+        "accuracy": 58.9
       },
       "Teams Mix": {
         "n": 4,
@@ -37,11 +37,11 @@
       },
       "Junior": {
         "n": 109,
-        "accuracy": 53.2
+        "accuracy": 54.1
       },
       "Mixed Doubles": {
         "n": 13,
-        "accuracy": 46.2
+        "accuracy": 69.2
       },
       "Exhibition": {
         "n": 2,
@@ -50,36 +50,36 @@
     },
     "bySurface": {
       "Hard": {
-        "n": 8074,
-        "accuracy": 55.3
+        "n": 8108,
+        "accuracy": 57
       },
       "Clay": {
         "n": 3761,
-        "accuracy": 54.3
+        "accuracy": 57.8
       },
       "IndoorHard": {
         "n": 1035,
-        "accuracy": 53.8
+        "accuracy": 57.3
       },
       "Grass": {
         "n": 162,
-        "accuracy": 55.6
+        "accuracy": 59.9
       }
     },
     "byDataQuality": {
       "high": {
-        "n": 2320,
-        "accuracy": 57.1
+        "n": 2398,
+        "accuracy": 56
       },
       "low": {
-        "n": 10712,
-        "accuracy": 54.4
+        "n": 10668,
+        "accuracy": 57.6
       }
     },
     "byFavorite": {
       "agreesWithBaseline": {
-        "n": 13032,
-        "accuracy": 54.9
+        "n": 13066,
+        "accuracy": 57.3
       },
       "divergesFromBaseline": {
         "n": 0,
@@ -91,21 +91,21 @@
     {
       "modelKey": "surfaceElo",
       "modelLabel": "Surface Elo",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 54.5,
-      "deltaPoints": -0.4,
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
       "recommendation": "Review",
       "rank": "Neutral",
       "segments": {
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 12449,
-              "accuracy": 54.9
+              "n": 12798,
+              "accuracy": 57.5
             }
           },
           "divergesFromBaseline": {
@@ -114,55 +114,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 583,
-              "accuracy": 45.5
+              "n": 268,
+              "accuracy": 49.3
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 56.2
+            },
+            "deltaPoints": 1.6
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 53.3
+              "accuracy": 54.8
             },
-            "deltaPoints": -0.1
+            "deltaPoints": -0.2
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
-              "accuracy": 55.6
+              "accuracy": 54.5
             },
-            "deltaPoints": -0.6
+            "deltaPoints": -0.7
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 54.6
+              "accuracy": 58.7
             },
-            "deltaPoints": -0.5
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.7
-            },
-            "deltaPoints": -0.1
+            "deltaPoints": -0.2
           },
           "Teams Mix": {
             "baseline": {
@@ -178,22 +178,22 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
               "accuracy": 54.1
             },
-            "deltaPoints": 0.9
+            "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "deltaPoints": 0
           },
@@ -212,71 +212,71 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 54.9
+              "n": 8108,
+              "accuracy": 57.2
             },
-            "deltaPoints": -0.4
+            "deltaPoints": 0.2
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 53.5
+              "accuracy": 57.6
             },
-            "deltaPoints": -0.8
+            "deltaPoints": -0.2
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 54.6
+              "accuracy": 57
             },
-            "deltaPoints": 0.8
+            "deltaPoints": -0.3
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
-              "accuracy": 56.8
+              "accuracy": 58.6
             },
-            "deltaPoints": 1.2
+            "deltaPoints": -1.3
           }
         },
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 2201,
-              "accuracy": 57.6
+              "n": 2317,
+              "accuracy": 56.4
             },
-            "deltaPoints": 0.5
+            "deltaPoints": 0.4
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10831,
-              "accuracy": 53.9
+              "n": 10749,
+              "accuracy": 57.5
             },
-            "deltaPoints": -0.5
+            "deltaPoints": -0.1
           }
         }
       }
@@ -284,394 +284,8 @@
     {
       "modelKey": "serveReturn",
       "modelLabel": "Serve & Return",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 53.5,
-      "deltaPoints": -1.4,
-      "recommendation": "Keep",
-      "rank": "Valuable",
-      "segments": {
-        "byFavoriteVsUnderdog": {
-          "agreesWithBaseline": {
-            "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
-            },
-            "ablated": {
-              "n": 11488,
-              "accuracy": 54.8
-            }
-          },
-          "divergesFromBaseline": {
-            "baseline": {
-              "n": 0,
-              "accuracy": null
-            },
-            "ablated": {
-              "n": 1544,
-              "accuracy": 44.2
-            }
-          }
-        },
-        "byTour": {
-          "Challenger": {
-            "baseline": {
-              "n": 2675,
-              "accuracy": 53.4
-            },
-            "ablated": {
-              "n": 2675,
-              "accuracy": 51.5
-            },
-            "deltaPoints": -1.9
-          },
-          "WTA": {
-            "baseline": {
-              "n": 1155,
-              "accuracy": 56.2
-            },
-            "ablated": {
-              "n": 1155,
-              "accuracy": 54.2
-            },
-            "deltaPoints": -2
-          },
-          "ITF": {
-            "baseline": {
-              "n": 7866,
-              "accuracy": 55.1
-            },
-            "ablated": {
-              "n": 7866,
-              "accuracy": 54.1
-            },
-            "deltaPoints": -1
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 54.2
-            },
-            "deltaPoints": -1.6
-          },
-          "Teams Mix": {
-            "baseline": {
-              "n": 4,
-              "accuracy": 75
-            },
-            "ablated": {
-              "n": 4,
-              "accuracy": 75
-            },
-            "deltaPoints": 0
-          },
-          "Junior": {
-            "baseline": {
-              "n": 109,
-              "accuracy": 53.2
-            },
-            "ablated": {
-              "n": 109,
-              "accuracy": 45.9
-            },
-            "deltaPoints": -7.3
-          },
-          "Mixed Doubles": {
-            "baseline": {
-              "n": 13,
-              "accuracy": 46.2
-            },
-            "ablated": {
-              "n": 13,
-              "accuracy": 46.2
-            },
-            "deltaPoints": 0
-          },
-          "Exhibition": {
-            "baseline": {
-              "n": 2,
-              "accuracy": 50
-            },
-            "ablated": {
-              "n": 2,
-              "accuracy": 0
-            },
-            "deltaPoints": -50
-          }
-        },
-        "bySurface": {
-          "Hard": {
-            "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
-            },
-            "ablated": {
-              "n": 8074,
-              "accuracy": 54
-            },
-            "deltaPoints": -1.3
-          },
-          "Clay": {
-            "baseline": {
-              "n": 3761,
-              "accuracy": 54.3
-            },
-            "ablated": {
-              "n": 3761,
-              "accuracy": 52.8
-            },
-            "deltaPoints": -1.5
-          },
-          "IndoorHard": {
-            "baseline": {
-              "n": 1035,
-              "accuracy": 53.8
-            },
-            "ablated": {
-              "n": 1035,
-              "accuracy": 51.8
-            },
-            "deltaPoints": -2
-          },
-          "Grass": {
-            "baseline": {
-              "n": 162,
-              "accuracy": 55.6
-            },
-            "ablated": {
-              "n": 162,
-              "accuracy": 56.2
-            },
-            "deltaPoints": 0.6
-          }
-        },
-        "byDataQuality": {
-          "high": {
-            "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
-            },
-            "ablated": {
-              "n": 2246,
-              "accuracy": 55.9
-            },
-            "deltaPoints": -1.2
-          },
-          "low": {
-            "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
-            },
-            "ablated": {
-              "n": 10786,
-              "accuracy": 53
-            },
-            "deltaPoints": -1.4
-          }
-        }
-      }
-    },
-    {
-      "modelKey": "recentForm",
-      "modelLabel": "Recent Form",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 54.9,
-      "deltaPoints": 0,
-      "recommendation": "Review",
-      "rank": "Neutral",
-      "segments": {
-        "byFavoriteVsUnderdog": {
-          "agreesWithBaseline": {
-            "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
-            },
-            "ablated": {
-              "n": 11419,
-              "accuracy": 55.6
-            }
-          },
-          "divergesFromBaseline": {
-            "baseline": {
-              "n": 0,
-              "accuracy": null
-            },
-            "ablated": {
-              "n": 1613,
-              "accuracy": 49.9
-            }
-          }
-        },
-        "byTour": {
-          "Challenger": {
-            "baseline": {
-              "n": 2675,
-              "accuracy": 53.4
-            },
-            "ablated": {
-              "n": 2675,
-              "accuracy": 52.3
-            },
-            "deltaPoints": -1.1
-          },
-          "WTA": {
-            "baseline": {
-              "n": 1155,
-              "accuracy": 56.2
-            },
-            "ablated": {
-              "n": 1155,
-              "accuracy": 57
-            },
-            "deltaPoints": 0.8
-          },
-          "ITF": {
-            "baseline": {
-              "n": 7866,
-              "accuracy": 55.1
-            },
-            "ablated": {
-              "n": 7866,
-              "accuracy": 55.3
-            },
-            "deltaPoints": 0.2
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.9
-            },
-            "deltaPoints": 0.1
-          },
-          "Teams Mix": {
-            "baseline": {
-              "n": 4,
-              "accuracy": 75
-            },
-            "ablated": {
-              "n": 4,
-              "accuracy": 50
-            },
-            "deltaPoints": -25
-          },
-          "Junior": {
-            "baseline": {
-              "n": 109,
-              "accuracy": 53.2
-            },
-            "ablated": {
-              "n": 109,
-              "accuracy": 50.5
-            },
-            "deltaPoints": -2.7
-          },
-          "Mixed Doubles": {
-            "baseline": {
-              "n": 13,
-              "accuracy": 46.2
-            },
-            "ablated": {
-              "n": 13,
-              "accuracy": 46.2
-            },
-            "deltaPoints": 0
-          },
-          "Exhibition": {
-            "baseline": {
-              "n": 2,
-              "accuracy": 50
-            },
-            "ablated": {
-              "n": 2,
-              "accuracy": 50
-            },
-            "deltaPoints": 0
-          }
-        },
-        "bySurface": {
-          "Hard": {
-            "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
-            },
-            "ablated": {
-              "n": 8074,
-              "accuracy": 55.5
-            },
-            "deltaPoints": 0.2
-          },
-          "Clay": {
-            "baseline": {
-              "n": 3761,
-              "accuracy": 54.3
-            },
-            "ablated": {
-              "n": 3761,
-              "accuracy": 53.8
-            },
-            "deltaPoints": -0.5
-          },
-          "IndoorHard": {
-            "baseline": {
-              "n": 1035,
-              "accuracy": 53.8
-            },
-            "ablated": {
-              "n": 1035,
-              "accuracy": 53.4
-            },
-            "deltaPoints": -0.4
-          },
-          "Grass": {
-            "baseline": {
-              "n": 162,
-              "accuracy": 55.6
-            },
-            "ablated": {
-              "n": 162,
-              "accuracy": 54.9
-            },
-            "deltaPoints": -0.7
-          }
-        },
-        "byDataQuality": {
-          "high": {
-            "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
-            },
-            "ablated": {
-              "n": 1604,
-              "accuracy": 56.4
-            },
-            "deltaPoints": -0.7
-          },
-          "low": {
-            "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
-            },
-            "ablated": {
-              "n": 11428,
-              "accuracy": 54.6
-            },
-            "deltaPoints": 0.2
-          }
-        }
-      }
-    },
-    {
-      "modelKey": "fatigue",
-      "modelLabel": "Fatigue",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 55,
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.4,
       "deltaPoints": 0.1,
       "recommendation": "Review",
       "rank": "Neutral",
@@ -679,12 +293,12 @@
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 12895,
-              "accuracy": 55
+              "n": 12668,
+              "accuracy": 57.6
             }
           },
           "divergesFromBaseline": {
@@ -693,55 +307,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 137,
-              "accuracy": 54
+              "n": 398,
+              "accuracy": 51.3
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 54.8
+            },
+            "deltaPoints": 0.2
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 53.6
+              "accuracy": 54.8
             },
-            "deltaPoints": 0.2
+            "deltaPoints": -0.2
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
-              "accuracy": 55.7
+              "accuracy": 55.8
             },
-            "deltaPoints": -0.5
+            "deltaPoints": 0.6
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 55.3
+              "accuracy": 59
             },
-            "deltaPoints": 0.2
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.4
-            },
-            "deltaPoints": -0.4
+            "deltaPoints": 0.1
           },
           "Teams Mix": {
             "baseline": {
@@ -757,22 +371,22 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
               "accuracy": 54.1
             },
-            "deltaPoints": 0.9
+            "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "deltaPoints": 0
           },
@@ -791,71 +405,457 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57.3
             },
-            "deltaPoints": 0
+            "deltaPoints": 0.3
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 54.4
+              "accuracy": 57.6
+            },
+            "deltaPoints": -0.2
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 1035,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 1035,
+              "accuracy": 57.1
+            },
+            "deltaPoints": -0.2
+          },
+          "Grass": {
+            "baseline": {
+              "n": 162,
+              "accuracy": 59.9
+            },
+            "ablated": {
+              "n": 162,
+              "accuracy": 61.1
+            },
+            "deltaPoints": 1.2
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 2398,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 2267,
+              "accuracy": 57.3
+            },
+            "deltaPoints": 1.3
+          },
+          "low": {
+            "baseline": {
+              "n": 10668,
+              "accuracy": 57.6
+            },
+            "ablated": {
+              "n": 10799,
+              "accuracy": 57.4
+            },
+            "deltaPoints": -0.2
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "recentForm",
+      "modelLabel": "Recent Form",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.6,
+      "deltaPoints": 0.3,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 13066,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 12922,
+              "accuracy": 57.6
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 144,
+              "accuracy": 63.2
+            }
+          }
+        },
+        "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 55.5
+            },
+            "deltaPoints": 0.9
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 2675,
+              "accuracy": 55
+            },
+            "ablated": {
+              "n": 2675,
+              "accuracy": 55.1
+            },
+            "deltaPoints": 0.1
+          },
+          "WTA": {
+            "baseline": {
+              "n": 1155,
+              "accuracy": 55.2
+            },
+            "ablated": {
+              "n": 1155,
+              "accuracy": 55.3
+            },
+            "deltaPoints": 0.1
+          },
+          "ITF": {
+            "baseline": {
+              "n": 7866,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 7866,
+              "accuracy": 59.2
+            },
+            "deltaPoints": 0.3
+          },
+          "Teams Mix": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 109,
+              "accuracy": 54.1
+            },
+            "ablated": {
+              "n": 109,
+              "accuracy": 54.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 13,
+              "accuracy": 69.2
+            },
+            "ablated": {
+              "n": 13,
+              "accuracy": 69.2
+            },
+            "deltaPoints": 0
+          },
+          "Exhibition": {
+            "baseline": {
+              "n": 2,
+              "accuracy": 50
+            },
+            "ablated": {
+              "n": 2,
+              "accuracy": 50
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 8108,
+              "accuracy": 57
+            },
+            "ablated": {
+              "n": 8108,
+              "accuracy": 57.5
+            },
+            "deltaPoints": 0.5
+          },
+          "Clay": {
+            "baseline": {
+              "n": 3761,
+              "accuracy": 57.8
+            },
+            "ablated": {
+              "n": 3761,
+              "accuracy": 57.9
             },
             "deltaPoints": 0.1
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 54.2
+              "accuracy": 57.1
             },
-            "deltaPoints": 0.4
+            "deltaPoints": -0.2
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
-              "accuracy": 56.2
+              "accuracy": 59.9
             },
-            "deltaPoints": 0.6
+            "deltaPoints": 0
           }
         },
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 2274,
-              "accuracy": 57
+              "n": 1682,
+              "accuracy": 56
             },
-            "deltaPoints": -0.1
+            "deltaPoints": 0
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10758,
-              "accuracy": 54.5
+              "n": 11384,
+              "accuracy": 57.9
+            },
+            "deltaPoints": 0.3
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "fatigue",
+      "modelLabel": "Fatigue",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.4,
+      "deltaPoints": 0.1,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 13066,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 12985,
+              "accuracy": 57.4
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 81,
+              "accuracy": 59.3
+            }
+          }
+        },
+        "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 54.9
+            },
+            "deltaPoints": 0.3
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 2675,
+              "accuracy": 55
+            },
+            "ablated": {
+              "n": 2675,
+              "accuracy": 54.9
+            },
+            "deltaPoints": -0.1
+          },
+          "WTA": {
+            "baseline": {
+              "n": 1155,
+              "accuracy": 55.2
+            },
+            "ablated": {
+              "n": 1155,
+              "accuracy": 55.2
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 7866,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 7866,
+              "accuracy": 59
             },
             "deltaPoints": 0.1
+          },
+          "Teams Mix": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 109,
+              "accuracy": 54.1
+            },
+            "ablated": {
+              "n": 109,
+              "accuracy": 54.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 13,
+              "accuracy": 69.2
+            },
+            "ablated": {
+              "n": 13,
+              "accuracy": 69.2
+            },
+            "deltaPoints": 0
+          },
+          "Exhibition": {
+            "baseline": {
+              "n": 2,
+              "accuracy": 50
+            },
+            "ablated": {
+              "n": 2,
+              "accuracy": 50
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 8108,
+              "accuracy": 57
+            },
+            "ablated": {
+              "n": 8108,
+              "accuracy": 57.2
+            },
+            "deltaPoints": 0.2
+          },
+          "Clay": {
+            "baseline": {
+              "n": 3761,
+              "accuracy": 57.8
+            },
+            "ablated": {
+              "n": 3761,
+              "accuracy": 57.8
+            },
+            "deltaPoints": 0
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 1035,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 1035,
+              "accuracy": 57.6
+            },
+            "deltaPoints": 0.3
+          },
+          "Grass": {
+            "baseline": {
+              "n": 162,
+              "accuracy": 59.9
+            },
+            "ablated": {
+              "n": 162,
+              "accuracy": 58
+            },
+            "deltaPoints": -1.9
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 2398,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 2330,
+              "accuracy": 56
+            },
+            "deltaPoints": 0
+          },
+          "low": {
+            "baseline": {
+              "n": 10668,
+              "accuracy": 57.6
+            },
+            "ablated": {
+              "n": 10736,
+              "accuracy": 57.8
+            },
+            "deltaPoints": 0.2
           }
         }
       }
@@ -863,21 +863,21 @@
     {
       "modelKey": "availability",
       "modelLabel": "Availability (rest/travel/injury)",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 56.6,
-      "deltaPoints": 1.7,
-      "recommendation": "Candidate for lower weight",
-      "rank": "Weak",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.4,
+      "deltaPoints": 0.1,
+      "recommendation": "Review",
+      "rank": "Neutral",
       "segments": {
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 11900,
-              "accuracy": 56.3
+              "n": 13004,
+              "accuracy": 57.4
             }
           },
           "divergesFromBaseline": {
@@ -886,55 +886,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 1132,
-              "accuracy": 60
+              "n": 62,
+              "accuracy": 59.7
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 54.8
+            },
+            "deltaPoints": 0.2
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 55
+              "accuracy": 54.9
             },
-            "deltaPoints": 1.6
+            "deltaPoints": -0.1
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
-              "accuracy": 56.4
+              "accuracy": 55.2
             },
-            "deltaPoints": 0.2
+            "deltaPoints": 0
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 57.3
+              "accuracy": 59
             },
-            "deltaPoints": 2.2
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "deltaPoints": 0
+            "deltaPoints": 0.1
           },
           "Teams Mix": {
             "baseline": {
@@ -950,24 +950,24 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
-              "accuracy": 56
+              "accuracy": 54.1
             },
-            "deltaPoints": 2.8
+            "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 61.5
+              "accuracy": 69.2
             },
-            "deltaPoints": 15.3
+            "deltaPoints": 0
           },
           "Exhibition": {
             "baseline": {
@@ -984,71 +984,71 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 56.6
+              "n": 8108,
+              "accuracy": 57.2
             },
-            "deltaPoints": 1.3
+            "deltaPoints": 0.2
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 56.8
+              "accuracy": 57.9
             },
-            "deltaPoints": 2.5
+            "deltaPoints": 0.1
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 56.4
+              "accuracy": 57.5
             },
-            "deltaPoints": 2.6
+            "deltaPoints": 0.2
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
               "accuracy": 58
             },
-            "deltaPoints": 2.4
+            "deltaPoints": -1.9
           }
         },
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 2474,
-              "accuracy": 56.3
+              "n": 2563,
+              "accuracy": 55.8
             },
-            "deltaPoints": -0.8
+            "deltaPoints": -0.2
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10558,
-              "accuracy": 56.7
+              "n": 10503,
+              "accuracy": 57.8
             },
-            "deltaPoints": 2.3
+            "deltaPoints": 0.2
           }
         }
       }
@@ -1056,8 +1056,8 @@
     {
       "modelKey": "headToHead",
       "modelLabel": "Head-to-Head",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 54.9,
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
       "deltaPoints": 0,
       "recommendation": "Review",
       "rank": "Neutral",
@@ -1065,12 +1065,12 @@
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 12854,
-              "accuracy": 55
+              "n": 13045,
+              "accuracy": 57.3
             }
           },
           "divergesFromBaseline": {
@@ -1079,55 +1079,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 178,
-              "accuracy": 51.7
+              "n": 21,
+              "accuracy": 38.1
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 54.4
+            },
+            "deltaPoints": -0.2
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 53.5
+              "accuracy": 55
             },
-            "deltaPoints": 0.1
+            "deltaPoints": 0
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
-              "accuracy": 56
+              "accuracy": 55.2
             },
-            "deltaPoints": -0.2
+            "deltaPoints": 0
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 55.2
+              "accuracy": 58.8
             },
-            "deltaPoints": 0.1
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.4
-            },
-            "deltaPoints": -0.4
+            "deltaPoints": -0.1
           },
           "Teams Mix": {
             "baseline": {
@@ -1143,22 +1143,22 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "deltaPoints": 0
           },
@@ -1177,69 +1177,69 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "deltaPoints": 0
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 54.5
+              "accuracy": 57.7
             },
-            "deltaPoints": 0.2
+            "deltaPoints": -0.1
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 54.1
+              "accuracy": 57.3
             },
-            "deltaPoints": 0.3
+            "deltaPoints": 0
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
-              "accuracy": 54.3
+              "accuracy": 59.3
             },
-            "deltaPoints": -1.3
+            "deltaPoints": -0.6
           }
         },
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 3013,
-              "accuracy": 57.2
+              "n": 3091,
+              "accuracy": 56.5
             },
-            "deltaPoints": 0.1
+            "deltaPoints": 0.5
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10019,
-              "accuracy": 54.3
+              "n": 9975,
+              "accuracy": 57.5
             },
             "deltaPoints": -0.1
           }
@@ -1249,21 +1249,21 @@
     {
       "modelKey": "generalEnsemble",
       "modelLabel": "General Ensemble",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 54.9,
-      "deltaPoints": 0,
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.4,
+      "deltaPoints": 0.1,
       "recommendation": "Review",
       "rank": "Neutral",
       "segments": {
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 12857,
-              "accuracy": 55
+              "n": 13031,
+              "accuracy": 57.4
             }
           },
           "divergesFromBaseline": {
@@ -1272,55 +1272,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 175,
-              "accuracy": 52
+              "n": 35,
+              "accuracy": 62.9
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 55.3
+            },
+            "deltaPoints": 0.7
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 53.5
+              "accuracy": 55
             },
-            "deltaPoints": 0.1
+            "deltaPoints": 0
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
-              "accuracy": 55.6
+              "accuracy": 55.2
             },
-            "deltaPoints": -0.6
+            "deltaPoints": 0
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 55.3
+              "accuracy": 58.9
             },
-            "deltaPoints": 0.2
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55.2
-            },
-            "deltaPoints": -0.6
+            "deltaPoints": 0
           },
           "Teams Mix": {
             "baseline": {
@@ -1336,22 +1336,22 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
-              "accuracy": 55
+              "accuracy": 54.1
             },
-            "deltaPoints": 1.8
+            "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "deltaPoints": 0
           },
@@ -1370,45 +1370,45 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "deltaPoints": 0
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 54.5
+              "accuracy": 58.1
             },
-            "deltaPoints": 0.2
+            "deltaPoints": 0.3
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 54.1
+              "accuracy": 57.3
             },
-            "deltaPoints": 0.3
+            "deltaPoints": 0
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "deltaPoints": 0
           }
@@ -1416,23 +1416,23 @@
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "deltaPoints": 0
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10712,
-              "accuracy": 54.5
+              "n": 10668,
+              "accuracy": 57.7
             },
             "deltaPoints": 0.1
           }
@@ -1442,21 +1442,21 @@
     {
       "modelKey": "segmentSpecialist",
       "modelLabel": "Active Segment Specialist",
-      "baselineAccuracy": 54.9,
-      "ablatedAccuracy": 54.8,
-      "deltaPoints": -0.1,
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
       "recommendation": "Review",
       "rank": "Neutral",
       "segments": {
         "byFavoriteVsUnderdog": {
           "agreesWithBaseline": {
             "baseline": {
-              "n": 13032,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             },
             "ablated": {
-              "n": 12838,
-              "accuracy": 54.9
+              "n": 13066,
+              "accuracy": 57.3
             }
           },
           "divergesFromBaseline": {
@@ -1465,55 +1465,55 @@
               "accuracy": null
             },
             "ablated": {
-              "n": 194,
-              "accuracy": 47.4
+              "n": 0,
+              "accuracy": null
             }
           }
         },
         "byTour": {
+          "ATP": {
+            "baseline": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "ablated": {
+              "n": 1242,
+              "accuracy": 54.6
+            },
+            "deltaPoints": 0
+          },
           "Challenger": {
             "baseline": {
               "n": 2675,
-              "accuracy": 53.4
+              "accuracy": 55
             },
             "ablated": {
               "n": 2675,
-              "accuracy": 53.3
+              "accuracy": 55
             },
-            "deltaPoints": -0.1
+            "deltaPoints": 0
           },
           "WTA": {
             "baseline": {
               "n": 1155,
-              "accuracy": 56.2
+              "accuracy": 55.2
             },
             "ablated": {
               "n": 1155,
               "accuracy": 55.2
             },
-            "deltaPoints": -1
+            "deltaPoints": 0
           },
           "ITF": {
             "baseline": {
               "n": 7866,
-              "accuracy": 55.1
+              "accuracy": 58.9
             },
             "ablated": {
               "n": 7866,
-              "accuracy": 55.2
+              "accuracy": 58.9
             },
-            "deltaPoints": 0.1
-          },
-          "ATP": {
-            "baseline": {
-              "n": 1208,
-              "accuracy": 55.8
-            },
-            "ablated": {
-              "n": 1208,
-              "accuracy": 55
-            },
-            "deltaPoints": -0.8
+            "deltaPoints": 0
           },
           "Teams Mix": {
             "baseline": {
@@ -1529,22 +1529,22 @@
           "Junior": {
             "baseline": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "ablated": {
               "n": 109,
-              "accuracy": 53.2
+              "accuracy": 54.1
             },
             "deltaPoints": 0
           },
           "Mixed Doubles": {
             "baseline": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "ablated": {
               "n": 13,
-              "accuracy": 46.2
+              "accuracy": 69.2
             },
             "deltaPoints": 0
           },
@@ -1563,45 +1563,45 @@
         "bySurface": {
           "Hard": {
             "baseline": {
-              "n": 8074,
-              "accuracy": 55.3
+              "n": 8108,
+              "accuracy": 57
             },
             "ablated": {
-              "n": 8074,
-              "accuracy": 55.2
+              "n": 8108,
+              "accuracy": 57
             },
-            "deltaPoints": -0.1
+            "deltaPoints": 0
           },
           "Clay": {
             "baseline": {
               "n": 3761,
-              "accuracy": 54.3
+              "accuracy": 57.8
             },
             "ablated": {
               "n": 3761,
-              "accuracy": 54.2
+              "accuracy": 57.8
             },
-            "deltaPoints": -0.1
+            "deltaPoints": 0
           },
           "IndoorHard": {
             "baseline": {
               "n": 1035,
-              "accuracy": 53.8
+              "accuracy": 57.3
             },
             "ablated": {
               "n": 1035,
-              "accuracy": 53.9
+              "accuracy": 57.3
             },
-            "deltaPoints": 0.1
+            "deltaPoints": 0
           },
           "Grass": {
             "baseline": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "ablated": {
               "n": 162,
-              "accuracy": 55.6
+              "accuracy": 59.9
             },
             "deltaPoints": 0
           }
@@ -1609,25 +1609,25 @@
         "byDataQuality": {
           "high": {
             "baseline": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "ablated": {
-              "n": 2320,
-              "accuracy": 57.1
+              "n": 2398,
+              "accuracy": 56
             },
             "deltaPoints": 0
           },
           "low": {
             "baseline": {
-              "n": 10712,
-              "accuracy": 54.4
+              "n": 10668,
+              "accuracy": 57.6
             },
             "ablated": {
-              "n": 10712,
-              "accuracy": 54.3
+              "n": 10668,
+              "accuracy": 57.6
             },
-            "deltaPoints": -0.1
+            "deltaPoints": 0
           }
         }
       }
@@ -1638,25 +1638,25 @@
       "key": "combo_everything",
       "label": "Everything active",
       "overall": {
-        "n": 13032,
-        "accuracy": 54.9
+        "n": 13066,
+        "accuracy": 57.3
       },
       "byTour": {
+        "ATP": {
+          "n": 1242,
+          "accuracy": 54.6
+        },
         "Challenger": {
           "n": 2675,
-          "accuracy": 53.4
+          "accuracy": 55
         },
         "WTA": {
           "n": 1155,
-          "accuracy": 56.2
+          "accuracy": 55.2
         },
         "ITF": {
           "n": 7866,
-          "accuracy": 55.1
-        },
-        "ATP": {
-          "n": 1208,
-          "accuracy": 55.8
+          "accuracy": 58.9
         },
         "Teams Mix": {
           "n": 4,
@@ -1664,11 +1664,11 @@
         },
         "Junior": {
           "n": 109,
-          "accuracy": 53.2
+          "accuracy": 54.1
         },
         "Mixed Doubles": {
           "n": 13,
-          "accuracy": 46.2
+          "accuracy": 69.2
         },
         "Exhibition": {
           "n": 2,
@@ -1677,36 +1677,36 @@
       },
       "bySurface": {
         "Hard": {
-          "n": 8074,
-          "accuracy": 55.3
+          "n": 8108,
+          "accuracy": 57
         },
         "Clay": {
           "n": 3761,
-          "accuracy": 54.3
+          "accuracy": 57.8
         },
         "IndoorHard": {
           "n": 1035,
-          "accuracy": 53.8
+          "accuracy": 57.3
         },
         "Grass": {
           "n": 162,
-          "accuracy": 55.6
+          "accuracy": 59.9
         }
       },
       "byDataQuality": {
         "high": {
-          "n": 2320,
-          "accuracy": 57.1
+          "n": 2398,
+          "accuracy": 56
         },
         "low": {
-          "n": 10712,
-          "accuracy": 54.4
+          "n": 10668,
+          "accuracy": 57.6
         }
       },
       "byFavorite": {
         "agreesWithBaseline": {
-          "n": 13032,
-          "accuracy": 54.9
+          "n": 13066,
+          "accuracy": 57.3
         },
         "divergesFromBaseline": {
           "n": 0,
@@ -1718,25 +1718,25 @@
       "key": "combo_core_signals_only",
       "label": "Core signals only (Surface Elo, Serve & Return, Recent Form)",
       "overall": {
-        "n": 13032,
-        "accuracy": 56.5
+        "n": 13066,
+        "accuracy": 57.4
       },
       "byTour": {
+        "ATP": {
+          "n": 1242,
+          "accuracy": 54
+        },
         "Challenger": {
           "n": 2675,
-          "accuracy": 55
+          "accuracy": 55.3
         },
         "WTA": {
           "n": 1155,
-          "accuracy": 55.1
+          "accuracy": 55.2
         },
         "ITF": {
           "n": 7866,
-          "accuracy": 57.3
-        },
-        "ATP": {
-          "n": 1208,
-          "accuracy": 55.5
+          "accuracy": 59
         },
         "Teams Mix": {
           "n": 4,
@@ -1744,11 +1744,11 @@
         },
         "Junior": {
           "n": 109,
-          "accuracy": 56
+          "accuracy": 54.1
         },
         "Mixed Doubles": {
           "n": 13,
-          "accuracy": 61.5
+          "accuracy": 69.2
         },
         "Exhibition": {
           "n": 2,
@@ -1757,40 +1757,40 @@
       },
       "bySurface": {
         "Hard": {
-          "n": 8074,
-          "accuracy": 56.4
+          "n": 8108,
+          "accuracy": 57.2
         },
         "Clay": {
           "n": 3761,
-          "accuracy": 56.7
+          "accuracy": 57.9
         },
         "IndoorHard": {
           "n": 1035,
-          "accuracy": 56.4
+          "accuracy": 57.2
         },
         "Grass": {
           "n": 162,
-          "accuracy": 56.8
+          "accuracy": 57.4
         }
       },
       "byDataQuality": {
         "high": {
-          "n": 3168,
-          "accuracy": 56.8
+          "n": 3222,
+          "accuracy": 56.5
         },
         "low": {
-          "n": 9864,
-          "accuracy": 56.4
+          "n": 9844,
+          "accuracy": 57.7
         }
       },
       "byFavorite": {
         "agreesWithBaseline": {
-          "n": 11806,
-          "accuracy": 56.3
+          "n": 12882,
+          "accuracy": 57.5
         },
         "divergesFromBaseline": {
-          "n": 1226,
-          "accuracy": 58.5
+          "n": 184,
+          "accuracy": 52.2
         }
       }
     },
@@ -1798,13 +1798,17 @@
       "key": "combo_specialists_off",
       "label": "Segment specialists off",
       "overall": {
-        "n": 13032,
-        "accuracy": 54.8
+        "n": 13066,
+        "accuracy": 57.3
       },
       "byTour": {
+        "ATP": {
+          "n": 1242,
+          "accuracy": 54.6
+        },
         "Challenger": {
           "n": 2675,
-          "accuracy": 53.3
+          "accuracy": 55
         },
         "WTA": {
           "n": 1155,
@@ -1812,11 +1816,7 @@
         },
         "ITF": {
           "n": 7866,
-          "accuracy": 55.3
-        },
-        "ATP": {
-          "n": 1208,
-          "accuracy": 55
+          "accuracy": 58.9
         },
         "Teams Mix": {
           "n": 4,
@@ -1824,11 +1824,11 @@
         },
         "Junior": {
           "n": 109,
-          "accuracy": 53.2
+          "accuracy": 54.1
         },
         "Mixed Doubles": {
           "n": 13,
-          "accuracy": 46.2
+          "accuracy": 69.2
         },
         "Exhibition": {
           "n": 2,
@@ -1837,40 +1837,40 @@
       },
       "bySurface": {
         "Hard": {
-          "n": 8074,
-          "accuracy": 55.2
+          "n": 8108,
+          "accuracy": 57
         },
         "Clay": {
           "n": 3761,
-          "accuracy": 54.3
+          "accuracy": 57.8
         },
         "IndoorHard": {
           "n": 1035,
-          "accuracy": 53.7
+          "accuracy": 57.3
         },
         "Grass": {
           "n": 162,
-          "accuracy": 55.6
+          "accuracy": 59.9
         }
       },
       "byDataQuality": {
         "high": {
-          "n": 2320,
-          "accuracy": 57
+          "n": 2398,
+          "accuracy": 56
         },
         "low": {
-          "n": 10712,
-          "accuracy": 54.3
+          "n": 10668,
+          "accuracy": 57.6
         }
       },
       "byFavorite": {
         "agreesWithBaseline": {
-          "n": 12822,
-          "accuracy": 54.9
+          "n": 13066,
+          "accuracy": 57.3
         },
         "divergesFromBaseline": {
-          "n": 210,
-          "accuracy": 47.6
+          "n": 0,
+          "accuracy": null
         }
       }
     },
@@ -1878,25 +1878,25 @@
       "key": "combo_no_calibration_no_specialist",
       "label": "General calibration + specialists off (raw ensemble only)",
       "overall": {
-        "n": 13032,
-        "accuracy": 54.9
+        "n": 13066,
+        "accuracy": 57.3
       },
       "byTour": {
+        "ATP": {
+          "n": 1242,
+          "accuracy": 54.6
+        },
         "Challenger": {
           "n": 2675,
-          "accuracy": 53.5
+          "accuracy": 55
         },
         "WTA": {
           "n": 1155,
-          "accuracy": 54.8
+          "accuracy": 55.2
         },
         "ITF": {
           "n": 7866,
-          "accuracy": 55.3
-        },
-        "ATP": {
-          "n": 1208,
-          "accuracy": 55
+          "accuracy": 58.9
         },
         "Teams Mix": {
           "n": 4,
@@ -1904,11 +1904,11 @@
         },
         "Junior": {
           "n": 109,
-          "accuracy": 55
+          "accuracy": 54.1
         },
         "Mixed Doubles": {
           "n": 13,
-          "accuracy": 46.2
+          "accuracy": 69.2
         },
         "Exhibition": {
           "n": 2,
@@ -1917,40 +1917,40 @@
       },
       "bySurface": {
         "Hard": {
-          "n": 8074,
-          "accuracy": 55.2
+          "n": 8108,
+          "accuracy": 57
         },
         "Clay": {
           "n": 3761,
-          "accuracy": 54.3
+          "accuracy": 57.8
         },
         "IndoorHard": {
           "n": 1035,
-          "accuracy": 53.9
+          "accuracy": 57.3
         },
         "Grass": {
           "n": 162,
-          "accuracy": 55.6
+          "accuracy": 59.9
         }
       },
       "byDataQuality": {
         "high": {
-          "n": 2320,
-          "accuracy": 57
+          "n": 2398,
+          "accuracy": 56
         },
         "low": {
-          "n": 10712,
-          "accuracy": 54.4
+          "n": 10668,
+          "accuracy": 57.6
         }
       },
       "byFavorite": {
         "agreesWithBaseline": {
-          "n": 12758,
-          "accuracy": 55
+          "n": 13066,
+          "accuracy": 57.3
         },
         "divergesFromBaseline": {
-          "n": 274,
-          "accuracy": 49.6
+          "n": 0,
+          "accuracy": null
         }
       }
     }
@@ -1960,82 +1960,76 @@
       {
         "modelKey": "generalEnsemble",
         "modelLabel": "General Ensemble",
-        "n": 5879,
-        "rate": 99.4
+        "n": 5576,
+        "rate": 100
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 5576,
+        "rate": 94
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 5576,
+        "rate": 76.6
       },
       {
         "modelKey": "segmentSpecialist",
         "modelLabel": "Active Segment Specialist",
-        "n": 969,
-        "rate": 85
-      },
-      {
-        "modelKey": "recentForm",
-        "modelLabel": "Recent Form",
-        "n": 5879,
-        "rate": 77.9
-      },
-      {
-        "modelKey": "serveReturn",
-        "modelLabel": "Serve & Return",
-        "n": 5879,
-        "rate": 76.4
+        "n": 934,
+        "rate": 74.7
       },
       {
         "modelKey": "surfaceElo",
         "modelLabel": "Surface Elo",
-        "n": 5879,
-        "rate": 66.8
-      },
-      {
-        "modelKey": "availability",
-        "modelLabel": "Availability (rest/travel/injury)",
-        "n": 5879,
-        "rate": 56.1
+        "n": 5576,
+        "rate": 69
       },
       {
         "modelKey": "headToHead",
         "modelLabel": "Head-to-Head",
-        "n": 5879,
-        "rate": 52
+        "n": 5576,
+        "rate": 49.7
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 5576,
+        "rate": 49.2
       },
       {
         "modelKey": "fatigue",
         "modelLabel": "Fatigue",
-        "n": 5879,
-        "rate": 50.9
+        "n": 5576,
+        "rate": 49.1
       }
     ],
     "overconfidentStrongVoteFailureRate": [
       {
-        "modelKey": "availability",
-        "modelLabel": "Availability (rest/travel/injury)",
-        "n": 2509,
-        "rate": 54
-      },
-      {
-        "modelKey": "recentForm",
-        "modelLabel": "Recent Form",
-        "n": 4808,
-        "rate": 42
-      },
-      {
         "modelKey": "serveReturn",
         "modelLabel": "Serve & Return",
-        "n": 6523,
-        "rate": 39.4
+        "n": 1619,
+        "rate": 35.1
+      },
+      {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 394,
+        "rate": 34.8
       },
       {
         "modelKey": "headToHead",
         "modelLabel": "Head-to-Head",
-        "n": 595,
-        "rate": 36.3
+        "n": 628,
+        "rate": 34.4
       },
       {
         "modelKey": "generalEnsemble",
         "modelLabel": "General Ensemble",
-        "n": 315,
-        "rate": 33.7
+        "n": 1634,
+        "rate": 34.1
       },
       {
         "modelKey": "surfaceElo",
@@ -2044,140 +2038,146 @@
         "rate": 33.4
       },
       {
-        "modelKey": "segmentSpecialist",
-        "modelLabel": "Active Segment Specialist",
-        "n": 153,
-        "rate": 33.3
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 174,
+        "rate": 32.8
       },
       {
         "modelKey": "fatigue",
         "modelLabel": "Fatigue",
         "n": 0,
         "rate": null
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 0,
+        "rate": null
       }
     ],
     "confidenceMiscalibration": [
       {
-        "modelKey": "serveReturn",
-        "modelLabel": "Serve & Return",
-        "n": 13032,
-        "avgPredictedConfidence": 66.8,
-        "observedHitRate": 57.3,
-        "overconfidencePoints": 9.5
-      },
-      {
-        "modelKey": "recentForm",
-        "modelLabel": "Recent Form",
-        "n": 13032,
-        "avgPredictedConfidence": 63.2,
-        "observedHitRate": 54.4,
-        "overconfidencePoints": 8.8
-      },
-      {
-        "modelKey": "availability",
-        "modelLabel": "Availability (rest/travel/injury)",
-        "n": 13032,
-        "avgPredictedConfidence": 55.5,
-        "observedHitRate": 48.5,
-        "overconfidencePoints": 7
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 2036,
+        "avgPredictedConfidence": 60.1,
+        "observedHitRate": 56.8,
+        "overconfidencePoints": 3.3
       },
       {
         "modelKey": "surfaceElo",
         "modelLabel": "Surface Elo",
-        "n": 13032,
+        "n": 13066,
         "avgPredictedConfidence": 57.3,
-        "observedHitRate": 55.9,
-        "overconfidencePoints": 1.4
-      },
-      {
-        "modelKey": "headToHead",
-        "modelLabel": "Head-to-Head",
-        "n": 13032,
-        "avgPredictedConfidence": 52.1,
-        "observedHitRate": 51.4,
-        "overconfidencePoints": 0.7
-      },
-      {
-        "modelKey": "fatigue",
-        "modelLabel": "Fatigue",
-        "n": 13032,
-        "avgPredictedConfidence": 50,
-        "observedHitRate": 50.8,
-        "overconfidencePoints": -0.8
-      },
-      {
-        "modelKey": "segmentSpecialist",
-        "modelLabel": "Active Segment Specialist",
-        "n": 2192,
-        "avgPredictedConfidence": 54.3,
-        "observedHitRate": 55.2,
-        "overconfidencePoints": -0.9
+        "observedHitRate": 55.8,
+        "overconfidencePoints": 1.5
       },
       {
         "modelKey": "generalEnsemble",
         "modelLabel": "General Ensemble",
-        "n": 13032,
-        "avgPredictedConfidence": 53.5,
-        "observedHitRate": 54.8,
-        "overconfidencePoints": -1.3
+        "n": 13052,
+        "avgPredictedConfidence": 58.1,
+        "observedHitRate": 57.3,
+        "overconfidencePoints": 0.8
+      },
+      {
+        "modelKey": "headToHead",
+        "modelLabel": "Head-to-Head",
+        "n": 13066,
+        "avgPredictedConfidence": 52.2,
+        "observedHitRate": 51.6,
+        "overconfidencePoints": 0.6
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 13066,
+        "avgPredictedConfidence": 57.5,
+        "observedHitRate": 57.1,
+        "overconfidencePoints": 0.4
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 13066,
+        "avgPredictedConfidence": 54.6,
+        "observedHitRate": 54.2,
+        "overconfidencePoints": 0.4
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 13066,
+        "avgPredictedConfidence": 50.1,
+        "observedHitRate": 50.8,
+        "overconfidencePoints": -0.7
+      },
+      {
+        "modelKey": "fatigue",
+        "modelLabel": "Fatigue",
+        "n": 13066,
+        "avgPredictedConfidence": 50,
+        "observedHitRate": 50.9,
+        "overconfidencePoints": -0.9
       }
     ],
     "dissentFromFinalPrediction": [
       {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 417,
+        "rate": 2.3,
+        "correctDissentRate": 56.6
+      },
+      {
         "modelKey": "serveReturn",
         "modelLabel": "Serve & Return",
-        "n": 2453,
-        "rate": 13.4,
-        "correctDissentRate": 56.5
+        "n": 699,
+        "rate": 3.8,
+        "correctDissentRate": 48.1
       },
       {
         "modelKey": "surfaceElo",
         "modelLabel": "Surface Elo",
-        "n": 3771,
-        "rate": 20.7,
-        "correctDissentRate": 51.7
-      },
-      {
-        "modelKey": "recentForm",
-        "modelLabel": "Recent Form",
-        "n": 2665,
-        "rate": 14.6,
-        "correctDissentRate": 48.7
-      },
-      {
-        "modelKey": "segmentSpecialist",
-        "modelLabel": "Active Segment Specialist",
-        "n": 305,
-        "rate": 1.7,
-        "correctDissentRate": 47.5
+        "n": 3657,
+        "rate": 20,
+        "correctDissentRate": 47.2
       },
       {
         "modelKey": "headToHead",
         "modelLabel": "Head-to-Head",
-        "n": 6093,
-        "rate": 33.4,
-        "correctDissentRate": 46.3
+        "n": 6358,
+        "rate": 34.8,
+        "correctDissentRate": 44.1
       },
       {
         "modelKey": "fatigue",
         "modelLabel": "Fatigue",
-        "n": 6312,
-        "rate": 34.6,
-        "correctDissentRate": 45.8
+        "n": 6513,
+        "rate": 35.6,
+        "correctDissentRate": 43.6
       },
       {
         "modelKey": "availability",
         "modelLabel": "Availability (rest/travel/injury)",
-        "n": 5999,
-        "rate": 32.9,
-        "correctDissentRate": 43
+        "n": 6513,
+        "rate": 35.6,
+        "correctDissentRate": 43.5
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 3009,
+        "rate": 16.5,
+        "correctDissentRate": 43.3
       },
       {
         "modelKey": "generalEnsemble",
         "modelLabel": "General Ensemble",
-        "n": 92,
-        "rate": 0.5,
-        "correctDissentRate": 41.3
+        "n": 0,
+        "rate": 0,
+        "correctDissentRate": null
       }
     ]
   }

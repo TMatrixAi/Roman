@@ -1,11 +1,51 @@
 import type { MatchRecord } from "../tennisData/types";
 import { inferVenue, type Venue } from "./venueMap";
 
+export type RestCategory = "ShortRest" | "Normal" | "LongLayoff" | "Unknown";
+export type TravelBucket = "None" | "Local" | "Regional" | "Intercontinental";
+
+/**
+ * A rest gap of this many days or fewer is a real short-turnaround risk (documented threshold,
+ * not a medical claim) -- both a fatigue signal and, on tour, often a sign a player is playing
+ * through a compressed schedule (e.g. deep run at the prior event).
+ */
+export const SHORT_REST_THRESHOLD_DAYS = 2;
+/**
+ * A rest gap of this many days or more is a genuine layoff long enough to raise a "ring rust"
+ * question (return from injury, off-season, or a bad early loss) -- distinct from the
+ * recent-retirement window below, which flags WHY a layoff happened, not just its length.
+ */
+export const LONG_LAYOFF_THRESHOLD_DAYS = 14;
+
+/** Documented travel-distance buckets, coarser than the raw km figure but finer than the old flat number -- lets a matchup be flagged as "no travel" vs "short hop" vs "same-continent" vs "intercontinental" without pretending we can weigh a 300km trip the same as a 9,000km one. */
+export const TRAVEL_LOCAL_MAX_KM = 800;
+export const TRAVEL_REGIONAL_MAX_KM = 4000;
+
+function travelBucketFromKm(km: number): TravelBucket {
+  if (km <= 0) return "None";
+  if (km <= TRAVEL_LOCAL_MAX_KM) return "Local";
+  if (km <= TRAVEL_REGIONAL_MAX_KM) return "Regional";
+  return "Intercontinental";
+}
+
+function restCategoryFromDays(days: number | null): RestCategory {
+  if (days === null) return "Unknown";
+  if (days <= SHORT_REST_THRESHOLD_DAYS) return "ShortRest";
+  if (days >= LONG_LAYOFF_THRESHOLD_DAYS) return "LongLayoff";
+  return "Normal";
+}
+
+export type ConfirmedAvailabilityConcernType = "MidMatchRetirement" | "Walkover" | null;
+
 export interface PlayerAvailability {
   /** Exact real days between a player's most recent completed match and this one. Null when the player has no prior match on record at all. */
   daysSinceLastMatch: number | null;
+  /** Bucketed read of `daysSinceLastMatch` against the documented thresholds above. "Unknown" only when there's no prior match to measure from. */
+  restCategory: RestCategory;
   /** Great-circle distance (km) between the venue of a player's most recent match and this match's venue, computed from real, verified venue coordinates. Null when either venue can't be resolved, or there's no prior match. */
   travelDistanceKm: number | null;
+  /** Bucketed read of `travelDistanceKm` (see `TRAVEL_LOCAL_MAX_KM`/`TRAVEL_REGIONAL_MAX_KM`). Null exactly when `travelDistanceKm` is null. */
+  travelBucket: TravelBucket | null;
   /**
    * True only when the player's own real match record shows they retired or received a
    * walkover-related result within the lookback window -- a genuine recorded fact, not a
@@ -15,22 +55,43 @@ export interface PlayerAvailability {
   recentRetirementOrWithdrawal: boolean;
   /** The tournament name of the match that produced `recentRetirementOrWithdrawal`, for disclosure. Null when the flag is false. */
   recentRetirementTournament: string | null;
+  /**
+   * True only when the player's own real match record shows a walkover LOSS (`walkover && result
+   * === "L"`) within the lookback window -- i.e. they were withdrawn before a ball was struck.
+   * This is a more definitive real-data signal than a mid-match retirement (the player never took
+   * the court at all), and was previously ignored by this module even though `walkover` was
+   * already present on every `MatchRecord`.
+   */
+  recentWalkoverGiven: boolean;
+  /** The tournament name of the match that produced `recentWalkoverGiven`, for disclosure. Null when the flag is false. */
+  recentWalkoverTournament: string | null;
+  /** The stronger of `recentRetirementOrWithdrawal` / `recentWalkoverGiven` (a walkover, being pre-match, is treated as the more definitive confirmed concern when both are somehow present). Null when neither fired. */
+  confirmedAvailabilityConcernType: ConfirmedAvailabilityConcernType;
+  /** Tournament name backing `confirmedAvailabilityConcernType`. Null when it is null. */
+  confirmedAvailabilityConcernTournament: string | null;
 }
 
 export interface AvailabilityResult {
   player1: PlayerAvailability;
   player2: PlayerAvailability;
+  /**
+   * Real-data-derived 0-100 "freshness/availability" score per player, built entirely from
+   * `restCategory`/`travelBucket`/confirmed-concern -- each component only nudges the score when
+   * its underlying data actually resolved (see `computeAvailabilityScore`), so a player with no
+   * resolvable signals lands on the neutral baseline rather than a fabricated extreme.
+   */
+  player1AvailabilityScore: number;
+  player2AvailabilityScore: number;
   reliability: number;
   note: string;
   warnings: string[];
 }
 
+const EARTH_RADIUS_KM = 6371;
 // A retirement/walkover more than this many days ago is treated as fully resolved (no signal) --
 // there's no verified data on actual recovery time, so this window is a documented, conservative
 // modeling choice (roughly one full tour cycle back to the same event), not a medical claim.
 const RECENT_RETIREMENT_WINDOW_DAYS = 21;
-
-const EARTH_RADIUS_KM = 6371;
 
 function haversineKm(a: Venue, b: Venue): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -48,6 +109,30 @@ function mostRecentMatch(matches: MatchRecord[]): MatchRecord | null {
   if (matches.length === 0) return null;
   // Callers already sort matches newest-first, but don't assume it -- pick the max by date directly.
   return matches.reduce((latest, m) => (new Date(m.date).getTime() > new Date(latest.date).getTime() ? m : latest));
+}
+
+/**
+ * Real-data availability score (0-100, higher = fresher/more available), built ONLY from
+ * components that actually resolved for this player -- an unresolved component contributes
+ * nothing (not a fabricated "neutral" penalty/bonus), so a player with zero resolvable signals
+ * lands exactly on the neutral baseline below, same as the pre-existing "absent, not faked"
+ * contract the rest of this module follows.
+ */
+function computeAvailabilityScore(a: PlayerAvailability): number {
+  const NEUTRAL = 60;
+  let score = NEUTRAL;
+
+  if (a.restCategory === "ShortRest") score -= 15;
+  else if (a.restCategory === "LongLayoff") score -= 6;
+  else if (a.restCategory === "Normal") score += 8;
+
+  if (a.travelBucket === "Regional") score -= 5;
+  else if (a.travelBucket === "Intercontinental") score -= 12;
+
+  if (a.confirmedAvailabilityConcernType === "Walkover") score -= 30;
+  else if (a.confirmedAvailabilityConcernType === "MidMatchRetirement") score -= 18;
+
+  return Math.max(0, Math.min(100, score));
 }
 
 function computeOnePlayer(matches: MatchRecord[], currentVenue: Venue | null, now: Date, warnings: string[], playerLabel: string): PlayerAvailability {
@@ -71,12 +156,24 @@ function computeOnePlayer(matches: MatchRecord[], currentVenue: Venue | null, no
 
   const cutoff = now.getTime() - RECENT_RETIREMENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   const recentRetirement = matches.find((m) => m.retired && m.result === "L" && new Date(m.date).getTime() >= cutoff) ?? null;
+  const recentWalkover = matches.find((m) => m.walkover && m.result === "L" && new Date(m.date).getTime() >= cutoff) ?? null;
+
+  // A pre-match walkover is a more definitive confirmed-withdrawal signal than a mid-match
+  // retirement (the player never took the court at all), so it wins when both somehow fired.
+  const confirmedAvailabilityConcernType: ConfirmedAvailabilityConcernType = recentWalkover ? "Walkover" : recentRetirement ? "MidMatchRetirement" : null;
+  const confirmedAvailabilityConcernTournament = recentWalkover?.tournamentName ?? recentRetirement?.tournamentName ?? null;
 
   return {
     daysSinceLastMatch,
+    restCategory: restCategoryFromDays(daysSinceLastMatch),
     travelDistanceKm,
+    travelBucket: travelDistanceKm !== null ? travelBucketFromKm(travelDistanceKm) : null,
     recentRetirementOrWithdrawal: recentRetirement !== null,
     recentRetirementTournament: recentRetirement?.tournamentName ?? null,
+    recentWalkoverGiven: recentWalkover !== null,
+    recentWalkoverTournament: recentWalkover?.tournamentName ?? null,
+    confirmedAvailabilityConcernType,
+    confirmedAvailabilityConcernTournament,
   };
 }
 
@@ -85,17 +182,21 @@ function computeOnePlayer(matches: MatchRecord[], currentVenue: Venue | null, no
  * external injury-news feed was found to be reachable from this environment (RAPIDAPI_KEY and
  * API_SPORTS_KEY are present but neither resolves to a live, subscribed tennis data source as of
  * 2026-07-11 -- see docs/audit-phase4-availability.md). Rather than fabricate a "current fitness"
- * score that looks verified but isn't, this module reports three things it CAN verify:
- *   1. Exact rest days since each player's last real completed match.
- *   2. Real travel distance between that match's venue and this one, using the same verified
- *      venue coordinates the weather module already relies on (`venueMap.ts`) -- coverage is
- *      therefore limited to the same set of recognized tournaments today.
- *   3. Whether a player's own match record shows they retired mid-match (i.e. they were the
- *      losing side of a `retired` result) within the last few weeks -- a real recorded fact that
- *      is a meaningful (not proof-positive) indicator of a recent physical issue.
- * Withdrawal *before* a ball is struck (the case this module can't see) still has no verified
- * source connected -- that gap is disclosed explicitly in the engine's `availabilityNote`, never
- * silently assumed away.
+ * score that looks verified but isn't, this module reports what it CAN verify, at finer
+ * granularity than the original version:
+ *   1. Exact rest days since each player's last real completed match, bucketed against explicit,
+ *      documented thresholds (`SHORT_REST_THRESHOLD_DAYS` / `LONG_LAYOFF_THRESHOLD_DAYS`).
+ *   2. Real travel distance between that match's venue and this one (same verified venue
+ *      coordinates the weather module relies on, `venueMap.ts`), bucketed into
+ *      None/Local/Regional/Intercontinental instead of a flat, undifferentiated km figure.
+ *   3. A CONFIRMED withdrawal/injury signal built from TWO real match-record facts, not one:
+ *      a mid-match retirement (`retired && result === "L"`, as before) AND -- newly -- a
+ *      pre-match walkover given (`walkover && result === "L"`), which every `MatchRecord` has
+ *      always carried but this module previously ignored entirely. A walkover means the player
+ *      never even took the court, which is a more definitive real signal than a retirement.
+ * Withdrawal announced *before* any of a player's own match records reflect it (e.g. a same-day
+ * news-only pullout) still has no verified source connected -- that gap is disclosed explicitly
+ * in the engine's `availabilityNote`, never silently assumed away.
  */
 export function computeAvailabilityModule(
   player1Matches: MatchRecord[],
@@ -123,12 +224,21 @@ export function computeAvailabilityModule(
   if (player2.travelDistanceKm !== null) resolvedSignals++;
   const reliability = Math.round((resolvedSignals / totalSignals) * 100);
 
+  if (player1.recentWalkoverGiven) {
+    warnings.push(`Player 1 was withdrawn (walkover) at ${player1.recentWalkoverTournament ?? "a recent tournament"} within the last 3 weeks -- a real, confirmed pre-match withdrawal, weighted more heavily than a mid-match retirement.`);
+  }
+  if (player2.recentWalkoverGiven) {
+    warnings.push(`Player 2 was withdrawn (walkover) at ${player2.recentWalkoverTournament ?? "a recent tournament"} within the last 3 weeks -- a real, confirmed pre-match withdrawal, weighted more heavily than a mid-match retirement.`);
+  }
+
   return {
     player1,
     player2,
+    player1AvailabilityScore: computeAvailabilityScore(player1),
+    player2AvailabilityScore: computeAvailabilityScore(player2),
     reliability,
     note:
-      "Rest days and recent-retirement flags are real, derived from each player's actual match record. Travel distance is a real great-circle calculation between verified venue coordinates, but only available when both the last and current tournaments are in the known-venue list. Pre-match withdrawal/injury status (before a match starts) has no verified data source connected -- see the prediction's availability disclosure.",
+      `Rest days (bucketed as ShortRest <=${SHORT_REST_THRESHOLD_DAYS}d / Normal / LongLayoff >=${LONG_LAYOFF_THRESHOLD_DAYS}d) and confirmed-withdrawal flags (mid-match retirement OR pre-match walkover) are real, derived from each player's actual match record. Travel distance is a real great-circle calculation between verified venue coordinates, bucketed into None/Local (<=${TRAVEL_LOCAL_MAX_KM}km)/Regional (<=${TRAVEL_REGIONAL_MAX_KM}km)/Intercontinental, but only available when both the last and current tournaments are in the known-venue list. No verified pre-match news-only withdrawal/injury feed is connected -- see the prediction's availability disclosure.`,
     warnings,
   };
 }

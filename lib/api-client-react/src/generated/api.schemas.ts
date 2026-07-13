@@ -478,6 +478,26 @@ export interface UpsetRiskResult {
   note: string;
 }
 
+export type SurfaceSampleDepthLabel = typeof SurfaceSampleDepthLabel[keyof typeof SurfaceSampleDepthLabel];
+
+
+export const SurfaceSampleDepthLabel = {
+  Low: 'Low',
+  Moderate: 'Moderate',
+  High: 'High',
+} as const;
+
+/**
+ * Surfaces, per matchup, how many prior matches each player has on the relevant surface -- so a low-sample surface prediction is visibly flagged rather than silently blended in.
+ */
+export interface SurfaceSampleDepth {
+  player1Sample: number;
+  player2Sample: number;
+  /** The weaker (smaller) of the two players' sample counts -- a matchup is only as well-supported as its thinner side. */
+  minSample: number;
+  label: SurfaceSampleDepthLabel;
+}
+
 /**
  * Full module-by-module output of the prediction engine
  */
@@ -546,6 +566,8 @@ export interface EngineBreakdown {
   eliteTierReason?: string;
   /** Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present. */
   upsetRiskBreakdown?: UpsetRiskResult;
+  /** Per-matchup count of prior matches each player has on the relevant surface, labeled Low/Moderate/High. Absent on predictions made before this field existed. */
+  surfaceSampleDepth?: SurfaceSampleDepth;
 }
 
 export interface BulkDeletePredictionsInput {

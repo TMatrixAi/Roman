@@ -85,6 +85,8 @@ export * from './streakSummaryCurrentStreakType';
 export * from './styleMatchupResult';
 export * from './surface';
 export * from './surfaceEloResult';
+export * from './surfaceSampleDepth';
+export * from './surfaceSampleDepthLabel';
 export * from './tournamentLevel';
 export * from './updatePredictionSettingsRequest';
 export * from './updatePredictionSettingsRequestRetirementRule';

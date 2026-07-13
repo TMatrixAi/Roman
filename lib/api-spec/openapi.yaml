@@ -1262,6 +1262,25 @@ components:
         upsetRiskBreakdown:
           $ref: "#/components/schemas/UpsetRiskResult"
           description: Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.
+        surfaceSampleDepth:
+          $ref: "#/components/schemas/SurfaceSampleDepth"
+          description: Per-matchup count of prior matches each player has on the relevant surface, labeled Low/Moderate/High. Absent on predictions made before this field existed.
+
+    SurfaceSampleDepth:
+      type: object
+      description: Surfaces, per matchup, how many prior matches each player has on the relevant surface -- so a low-sample surface prediction is visibly flagged rather than silently blended in.
+      required: [player1Sample, player2Sample, minSample, label]
+      properties:
+        player1Sample:
+          type: integer
+        player2Sample:
+          type: integer
+        minSample:
+          type: integer
+          description: The weaker (smaller) of the two players' sample counts -- a matchup is only as well-supported as its thinner side.
+        label:
+          type: string
+          enum: [Low, Moderate, High]
 
     UpsetRiskComponents:
       type: object

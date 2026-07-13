@@ -78,3 +78,55 @@ test("does not flag a retirement outside the recency window, and reports nulls (
   assert.equal(result.player2.travelDistanceKm, null);
   assert.ok(result.warnings.some((w) => w.includes("no prior match history")));
 });
+
+test("buckets rest days against the documented thresholds", () => {
+  const now = new Date("2026-07-11T00:00:00Z");
+  const shortRest = [match({ date: "2026-07-10", tournamentName: "Wimbledon" })]; // 1 day
+  const normalRest = [match({ date: "2026-07-04", tournamentName: "Wimbledon" })]; // 7 days
+  const longLayoff = [match({ date: "2026-06-01", tournamentName: "Wimbledon" })]; // 40 days
+  const noHistory: MatchRecord[] = [];
+
+  assert.equal(computeAvailabilityModule(shortRest, normalRest, "US Open", now).player1.restCategory, "ShortRest");
+  assert.equal(computeAvailabilityModule(normalRest, shortRest, "US Open", now).player1.restCategory, "Normal");
+  assert.equal(computeAvailabilityModule(longLayoff, normalRest, "US Open", now).player1.restCategory, "LongLayoff");
+  assert.equal(computeAvailabilityModule(noHistory, normalRest, "US Open", now).player1.restCategory, "Unknown");
+});
+
+test("buckets real travel distance into None/Local/Regional/Intercontinental", () => {
+  const now = new Date("2026-07-11T00:00:00Z");
+  // Wimbledon -> Wimbledon is the same venue (0km, "None").
+  const same = [match({ date: "2026-07-05", tournamentName: "Wimbledon" })];
+  // Wimbledon -> Roland Garros is a real cross-channel hop, well beyond the Regional cap.
+  const farAway = [match({ date: "2026-07-05", tournamentName: "Roland Garros" })];
+
+  const sameVenueResult = computeAvailabilityModule(same, farAway, "Wimbledon", now);
+  assert.equal(sameVenueResult.player1.travelBucket, "None");
+
+  const crossChannelResult = computeAvailabilityModule(farAway, same, "US Open", now);
+  assert.ok(crossChannelResult.player1.travelDistanceKm !== null && crossChannelResult.player1.travelDistanceKm > 0);
+  assert.ok(["Local", "Regional", "Intercontinental"].includes(crossChannelResult.player1.travelBucket as string));
+});
+
+test("flags a confirmed pre-match walkover distinctly from a mid-match retirement, and prefers it when both fire", () => {
+  const now = new Date("2026-07-11T12:00:00Z");
+  const walkoverOnly = [match({ date: "2026-07-05", tournamentName: "Wimbledon", walkover: true, result: "L" })];
+  const retirementOnly = [match({ date: "2026-07-05", tournamentName: "Wimbledon", retired: true, result: "L" })];
+
+  const walkoverResult = computeAvailabilityModule(walkoverOnly, retirementOnly, "US Open", now);
+  assert.equal(walkoverResult.player1.recentWalkoverGiven, true);
+  assert.equal(walkoverResult.player1.confirmedAvailabilityConcernType, "Walkover");
+  assert.equal(walkoverResult.player2.confirmedAvailabilityConcernType, "MidMatchRetirement");
+  assert.ok(walkoverResult.warnings.some((w) => w.includes("withdrawn (walkover)")));
+
+  // A walkover is a stronger confirmed signal than a retirement -- its player should score lower.
+  assert.ok(walkoverResult.player1AvailabilityScore < walkoverResult.player2AvailabilityScore);
+});
+
+test("computes a real-data-only availability score that stays neutral when nothing resolves", () => {
+  const now = new Date("2026-07-11T12:00:00Z");
+  const result = computeAvailabilityModule([], [], "US Open", now);
+  // No resolvable rest/travel/withdrawal data for either player -- score should sit at the
+  // documented neutral baseline, never a fabricated extreme in either direction.
+  assert.equal(result.player1AvailabilityScore, result.player2AvailabilityScore);
+  assert.ok(result.player1AvailabilityScore > 0 && result.player1AvailabilityScore < 100);
+});

@@ -16,6 +16,7 @@ import type { RecentFormResult } from './recentFormResult';
 import type { ServeReturnResult } from './serveReturnResult';
 import type { StyleMatchupResult } from './styleMatchupResult';
 import type { SurfaceEloResult } from './surfaceEloResult';
+import type { SurfaceSampleDepth } from './surfaceSampleDepth';
 import type { UpsetRiskResult } from './upsetRiskResult';
 import type { WeatherConditions } from './weatherConditions';
 
@@ -87,4 +88,6 @@ export interface EngineBreakdown {
   eliteTierReason?: string;
   /** Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present. */
   upsetRiskBreakdown?: UpsetRiskResult;
+  /** Per-matchup count of prior matches each player has on the relevant surface, labeled Low/Moderate/High. Absent on predictions made before this field existed. */
+  surfaceSampleDepth?: SurfaceSampleDepth;
 }

@@ -56,13 +56,28 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
   recentForm: 1.3,
   fatigue: 0.4,
   headToHead: 0.4,
+  /**
+   * Applies only if/when `EXCLUDED_FROM_ENSEMBLE` below no longer contains "availability" --
+   * see the 2026-07-13 walk-forward re-validation note in `EXCLUDED_FROM_ENSEMBLE`'s comment for
+   * the current include/exclude decision and its measured accuracy delta.
+   */
+  availability: 0.4,
 } as const;
 
 /**
  * Modules excluded from the ensemble VOTE entirely (but still fully computed and shown in
- * `EngineBreakdown` for transparency -- warnings/notes/raw numbers are never hidden). Per the
- * 2026-07-13 ablation report, Availability's leave-one-out removal improved overall accuracy --
- * its signal is net-harmful, not merely weak, so it is disabled rather than just down-weighted.
+ * `EngineBreakdown` for transparency -- warnings/notes/raw numbers are never hidden).
+ *
+ * Availability was excluded per an earlier ablation report (its old, thin rest/travel/
+ * mid-match-retirement-only signal measurably hurt accuracy). The module's inputs were then
+ * reworked (finer travel-distance buckets, explicit rest-day thresholds, and a real confirmed-
+ * withdrawal signal that now also checks pre-match walkovers, not just mid-match retirements) and
+ * re-validated on 2026-07-13 via a live ablation replay over the full historical corpus (18281
+ * matches): including the reworked module in the ensemble gave 57.3% overall accuracy vs 57.4%
+ * with it excluded (leave-one-out delta +0.1pt for REMOVING it, i.e. -0.1pt for including it).
+ * Not a net positive, so it remains excluded here -- see
+ * `docs/audit-phase45-availability-revalidation.md` for the full numbers. Only a future run
+ * clearing that bar should remove "availability" from this set.
  */
 export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability"]);
 
@@ -79,6 +94,34 @@ export const CONFIDENCE_SHRINK = {
   serveReturn: 0.45,
   recentForm: 0.35,
 } as const;
+
+export type SurfaceSampleLabel = "Low" | "Moderate" | "High";
+
+/** A player's surface sample is "Low" below this many prior matches on the relevant surface -- matches `surfaceElo.ts`'s own low-confidence warning threshold, so the two signals never disagree about what counts as thin. */
+const SURFACE_SAMPLE_LOW_THRESHOLD = 5;
+/** At or above this many prior matches on the relevant surface, sample depth is "High" rather than merely "Moderate". */
+const SURFACE_SAMPLE_HIGH_THRESHOLD = 15;
+
+export interface SurfaceSampleDepth {
+  player1Sample: number;
+  player2Sample: number;
+  /** The weaker (smaller) of the two players' sample counts -- a matchup is only as well-supported as its thinner side. */
+  minSample: number;
+  label: SurfaceSampleLabel;
+}
+
+/**
+ * Surfaces, explicitly and per-matchup, how many prior matches each player has on the relevant
+ * surface (within whatever match-history window the caller already resolved -- the same window
+ * `computeSurfaceEloModule` used to build its own rating) -- so a low-sample surface prediction
+ * is visibly flagged instead of being silently blended into a single probability number, right
+ * alongside the Data Quality tier it already sits near in the UI.
+ */
+export function computeSurfaceSampleDepth(sampleSizePlayer1: number, sampleSizePlayer2: number): SurfaceSampleDepth {
+  const minSample = Math.min(sampleSizePlayer1, sampleSizePlayer2);
+  const label: SurfaceSampleLabel = minSample < SURFACE_SAMPLE_LOW_THRESHOLD ? "Low" : minSample < SURFACE_SAMPLE_HIGH_THRESHOLD ? "Moderate" : "High";
+  return { player1Sample: sampleSizePlayer1, player2Sample: sampleSizePlayer2, minSample, label };
+}
 
 export interface DataQualityModuleInput {
   reliability: number;

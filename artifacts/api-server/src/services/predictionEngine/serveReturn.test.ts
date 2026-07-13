@@ -79,6 +79,42 @@ test("falls back to the proxy when only one player has enough matches with real 
   assert.ok(result.reliability <= 60);
 });
 
+test("exposes point-level breakdown (first-serve win %, BP saved/converted, games held estimate) from real stats", () => {
+  const matches: MatchRecord[] = Array.from({ length: 5 }, (_, i) =>
+    baseMatch({
+      id: `pl${i}`,
+      stats: statLine({ servicePointsWonPct: 65, returnPointsWon: 40, firstServeWon: 75, breakPointsSaved: 3, breakPointsFaced: 4 }),
+      opponentStats: statLine({ breakPointsSaved: 1, breakPointsFaced: 3 }),
+    }),
+  );
+  const result = computeServeReturnModule(matches, matches);
+
+  assert.equal(result.player1PointLevel.firstServeWinPct, 75);
+  assert.equal(result.player1PointLevel.breakPointsSavedPct, 75); // 3/4
+  assert.equal(result.player1PointLevel.breakPointsConvertedPct, Math.round(((2 / 3) * 1000)) / 10); // (3-1)/3
+  assert.ok(result.player1PointLevel.serviceGamesHeldPct !== null && result.player1PointLevel.serviceGamesHeldPct > 0);
+  assert.equal(result.player1PointLevel.sampleSize, 5);
+  assert.match(result.note ?? "", /Deepened with point-level inputs/);
+});
+
+test("point-level fields resolve independently and stay null when their source stat is missing", () => {
+  const matches: MatchRecord[] = Array.from({ length: 5 }, (_, i) =>
+    baseMatch({ id: `bp${i}`, stats: statLine({ servicePointsWonPct: 65, returnPointsWon: 40 }) }),
+  );
+  const result = computeServeReturnModule(matches, matches);
+  assert.equal(result.player1PointLevel.firstServeWinPct, null);
+  assert.equal(result.player1PointLevel.breakPointsSavedPct, null);
+  assert.equal(result.player1PointLevel.breakPointsConvertedPct, null);
+  assert.ok(result.player1PointLevel.serviceGamesHeldPct !== null);
+});
+
+test("point-level breakdown is still computed (all null) on the margin-proxy fallback path, never crashing", () => {
+  const matches: MatchRecord[] = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `m${i}` }));
+  const result = computeServeReturnModule(matches, matches);
+  assert.equal(result.player1PointLevel.firstServeWinPct, null);
+  assert.equal(result.player1PointLevel.sampleSize, 0);
+});
+
 test("does not regress a proxy-only prediction: identical inputs and outputs to the pre-existing margin logic", () => {
   const matches: MatchRecord[] = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `m${i}` }));
   const result = computeServeReturnModule(matches, matches, new Map(), new Map());

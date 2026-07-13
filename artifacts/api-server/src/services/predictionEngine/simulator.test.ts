@@ -94,11 +94,14 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
     sampleSizePlayer2: 35,
     warnings: [],
   };
+  const emptyPointLevel = { firstServeWinPct: null, breakPointsSavedPct: null, breakPointsConvertedPct: null, serviceGamesHeldPct: null, sampleSize: 0 };
   const serveReturn: ServeReturnResult = {
     player1ServeRating: 55,
     player2ServeRating: 48,
     player1ReturnRating: 52,
     player2ReturnRating: 47,
+    player1PointLevel: emptyPointLevel,
+    player2PointLevel: emptyPointLevel,
     reliability: 20,
     note: null,
     warnings: [],

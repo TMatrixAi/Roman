@@ -377,7 +377,13 @@ export const CreatePredictionResponse = zod.object({
 }).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
   "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
   "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
-}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.'),
+  "surfaceSampleDepth": zod.object({
+  "player1Sample": zod.number(),
+  "player2Sample": zod.number(),
+  "minSample": zod.number().describe('The weaker (smaller) of the two players\' sample counts -- a matchup is only as well-supported as its thinner side.'),
+  "label": zod.enum(['Low', 'Moderate', 'High'])
+}).optional().describe('Per-matchup count of prior matches each player has on the relevant surface, labeled Low\/Moderate\/High. Absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -572,7 +578,13 @@ export const GetPredictionResponse = zod.object({
 }).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
   "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
   "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
-}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.'),
+  "surfaceSampleDepth": zod.object({
+  "player1Sample": zod.number(),
+  "player2Sample": zod.number(),
+  "minSample": zod.number().describe('The weaker (smaller) of the two players\' sample counts -- a matchup is only as well-supported as its thinner side.'),
+  "label": zod.enum(['Low', 'Moderate', 'High'])
+}).optional().describe('Per-matchup count of prior matches each player has on the relevant surface, labeled Low\/Moderate\/High. Absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
@@ -823,7 +835,13 @@ export const RecordPredictionOutcomeResponse = zod.object({
 }).describe('Named, auditable components behind an upset-risk score -- see upsetRisk.ts for how each is derived and calibrated.'),
   "topContributors": zod.array(zod.string()).describe('Names of the components that meaningfully contributed, most-contributing first.'),
   "note": zod.string().describe('Always present -- names the actual top contributors behind the tier. Never a silent label.')
-}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.')
+}).optional().describe('Recalibrated (2026-07-13) component-based upset-risk breakdown. Absent on predictions made before this field existed -- the top-level upsetRisk tier is still always present.'),
+  "surfaceSampleDepth": zod.object({
+  "player1Sample": zod.number(),
+  "player2Sample": zod.number(),
+  "minSample": zod.number().describe('The weaker (smaller) of the two players\' sample counts -- a matchup is only as well-supported as its thinner side.'),
+  "label": zod.enum(['Low', 'Moderate', 'High'])
+}).optional().describe('Per-matchup count of prior matches each player has on the relevant surface, labeled Low\/Moderate\/High. Absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),

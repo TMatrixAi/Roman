@@ -435,6 +435,17 @@ export default function PredictionResultPage() {
               <span>WIN PROB (ELO):</span>
               <span className="font-bold text-foreground">{engine.surfaceElo.eloWinProbabilityPlayer1.toFixed(1)}%</span>
             </div>
+            {engine.surfaceSampleDepth && (
+              <div className="mt-2 flex items-center justify-between text-xs font-mono">
+                <span className="text-muted-foreground">SURFACE SAMPLE DEPTH:</span>
+                <Badge
+                  variant={engine.surfaceSampleDepth.label === "Low" ? "destructive" : engine.surfaceSampleDepth.label === "Moderate" ? "outline" : "success"}
+                  className="font-mono text-[10px]"
+                >
+                  {engine.surfaceSampleDepth.label.toUpperCase()} ({engine.surfaceSampleDepth.player1Sample}/{engine.surfaceSampleDepth.player2Sample})
+                </Badge>
+              </div>
+            )}
           </ModuleCard>
 
           <ModuleCard title="SERVE & RETURN" reliability={engine.serveReturn.reliability} icon={TrendingUp}>

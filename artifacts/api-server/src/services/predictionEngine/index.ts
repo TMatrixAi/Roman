@@ -5,7 +5,7 @@ import { computeFatigueModule } from "./fatigue";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
-import { computeDataQuality, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, CONFIDENCE_SHRINK } from "./dataQuality";
+import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, CONFIDENCE_SHRINK } from "./dataQuality";
 import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
 import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
@@ -75,6 +75,8 @@ export interface EngineBreakdown {
   eliteTierReason: string;
   /** Recalibrated upset-risk breakdown (2026-07-13 disagreement/upset-risk spec, Part 2) -- see `upsetRisk.ts`. `EngineOutput.upsetRisk` stays the plain LOW/MODERATE/HIGH/EXTREME tier for existing API/DB consumers; this is the full auditable component breakdown behind it. Not present on predictions made before this field existed. */
   upsetRiskBreakdown: UpsetRiskResult;
+  /** Per-matchup count of prior meetings/matches on the relevant surface for each player (same window `surfaceElo.ts` used), surfaced explicitly so a low-sample surface prediction is visibly flagged rather than silently blended in. Not present on predictions made before this field existed. */
+  surfaceSampleDepth: ReturnType<typeof computeSurfaceSampleDepth>;
 }
 
 export interface EngineOutput {
@@ -195,6 +197,14 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       weightPrior: ENSEMBLE_WEIGHT_PRIOR.fatigue,
     },
     {
+      key: "availability" as const,
+      name: "Availability",
+      player1Edge: (availability.player1AvailabilityScore - availability.player2AvailabilityScore) / 2,
+      reliability: availability.reliability,
+      importance: MODULE_IMPORTANCE.availability,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.availability,
+    },
+    {
       key: "headToHead" as const,
       name: "Head-to-Head",
       player1Edge: headToHead.player1Wins + headToHead.player2Wins > 0
@@ -238,6 +248,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
     moduleEdges.map((m) => ({ reliability: m.reliability, importance: m.importance })),
   );
+
+  // Requirement 2 of this phase: expose the surface sample-depth count that `surfaceElo.ts`
+  // already tracks internally, so a low-sample surface matchup is visibly flagged rather than
+  // silently blended into a single probability number.
+  const surfaceSampleDepth = computeSurfaceSampleDepth(surfaceElo.sampleSizePlayer1, surfaceElo.sampleSizePlayer2);
 
   // Phase 7: point-by-point Monte Carlo simulation, always computed for display/transparency.
   // Seeded deterministically from match identity (see simulator.ts) so re-predicting the exact
@@ -518,6 +533,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     isEliteTier,
     eliteTierReason,
     upsetRiskBreakdown,
+    surfaceSampleDepth,
   };
 
   return {
