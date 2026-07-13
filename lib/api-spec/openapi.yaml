@@ -1046,6 +1046,11 @@ components:
 
     SurfaceEloResult:
       type: object
+      # Only the original (pre-recalibration) fields are required -- predictions saved before the
+      # 2026-07-13 Surface Elo recalibration have a stored `surfaceElo` blob with none of the new
+      # fields below (rawEloWinProbabilityPlayer1, effectiveSampleSize*, *OverallElo,
+      # *SurfaceOnlyElo, *BlendWeight); they must stay optional so reads of those legacy rows don't
+      # throw. New live predictions always populate every field -- see surfaceElo.ts.
       required: [player1SurfaceElo, player2SurfaceElo, eloDifference, eloWinProbabilityPlayer1, reliability, sampleSizePlayer1, sampleSizePlayer2]
       properties:
         player1SurfaceElo:
@@ -1056,12 +1061,30 @@ components:
           type: number
         eloWinProbabilityPlayer1:
           type: number
+        rawEloWinProbabilityPlayer1:
+          type: number
         reliability:
           type: number
         sampleSizePlayer1:
           type: integer
         sampleSizePlayer2:
           type: integer
+        effectiveSampleSizePlayer1:
+          type: number
+        effectiveSampleSizePlayer2:
+          type: number
+        player1OverallElo:
+          type: number
+        player2OverallElo:
+          type: number
+        player1SurfaceOnlyElo:
+          type: number
+        player2SurfaceOnlyElo:
+          type: number
+        player1BlendWeight:
+          type: number
+        player2BlendWeight:
+          type: number
         warnings:
           type: array
           items:

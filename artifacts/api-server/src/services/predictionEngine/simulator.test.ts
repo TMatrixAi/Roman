@@ -89,9 +89,18 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
     player2SurfaceElo: 1500,
     eloDifference: 100,
     eloWinProbabilityPlayer1: 64,
+    rawEloWinProbabilityPlayer1: 64,
     reliability: 90,
     sampleSizePlayer1: 40,
     sampleSizePlayer2: 35,
+    effectiveSampleSizePlayer1: 30,
+    effectiveSampleSizePlayer2: 25,
+    player1OverallElo: 1600,
+    player2OverallElo: 1500,
+    player1SurfaceOnlyElo: 1600,
+    player2SurfaceOnlyElo: 1500,
+    player1BlendWeight: 0.05,
+    player2BlendWeight: 0.05,
     warnings: [],
   };
   const emptyPointLevel = { firstServeWinPct: null, breakPointsSavedPct: null, breakPointsConvertedPct: null, serviceGamesHeldPct: null, sampleSize: 0 };

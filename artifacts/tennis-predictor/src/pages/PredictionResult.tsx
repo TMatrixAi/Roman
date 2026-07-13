@@ -446,6 +446,22 @@ export default function PredictionResultPage() {
                 </Badge>
               </div>
             )}
+            {typeof engine.surfaceElo.effectiveSampleSizePlayer1 === "number" && typeof engine.surfaceElo.effectiveSampleSizePlayer2 === "number" && (
+              <div className="mt-1 flex items-center justify-between text-xs font-mono">
+                <span className="text-muted-foreground" title="Recency- and level-weighted match count, not a raw tally">EFFECTIVE SAMPLE (WEIGHTED):</span>
+                <span className="text-foreground">
+                  {engine.surfaceElo.effectiveSampleSizePlayer1.toFixed(1)}/{engine.surfaceElo.effectiveSampleSizePlayer2.toFixed(1)}
+                </span>
+              </div>
+            )}
+            {typeof engine.surfaceElo.player1BlendWeight === "number" &&
+              typeof engine.surfaceElo.player2BlendWeight === "number" &&
+              Math.max(engine.surfaceElo.player1BlendWeight, engine.surfaceElo.player2BlendWeight) > 0.3 && (
+                <div className="mt-1 text-xs font-mono text-warning">
+                  Blended toward overall Elo: {prediction.player1Name} {(engine.surfaceElo.player1BlendWeight * 100).toFixed(0)}%, {prediction.player2Name}{" "}
+                  {(engine.surfaceElo.player2BlendWeight * 100).toFixed(0)}% (thin surface-specific sample)
+                </div>
+              )}
           </ModuleCard>
 
           <ModuleCard title="SERVE & RETURN" reliability={engine.serveReturn.reliability} icon={TrendingUp}>

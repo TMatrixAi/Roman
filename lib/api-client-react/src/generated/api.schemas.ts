@@ -280,9 +280,18 @@ export interface SurfaceEloResult {
   player2SurfaceElo: number;
   eloDifference: number;
   eloWinProbabilityPlayer1: number;
+  rawEloWinProbabilityPlayer1?: number;
   reliability: number;
   sampleSizePlayer1: number;
   sampleSizePlayer2: number;
+  effectiveSampleSizePlayer1?: number;
+  effectiveSampleSizePlayer2?: number;
+  player1OverallElo?: number;
+  player2OverallElo?: number;
+  player1SurfaceOnlyElo?: number;
+  player2SurfaceOnlyElo?: number;
+  player1BlendWeight?: number;
+  player2BlendWeight?: number;
   warnings?: string[];
 }
 
