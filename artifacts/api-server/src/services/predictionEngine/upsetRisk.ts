@@ -155,11 +155,19 @@ export function computeUpsetRisk(input: UpsetRiskInput): UpsetRiskResult {
     .sort((a, b) => b[1] - a[1])
     .map(([name]) => name);
 
-  return { upsetRisk, score, components, topContributors, note: buildUpsetRiskNote(upsetRisk, components, topContributors, margin) };
+  return {
+    upsetRisk,
+    score,
+    components,
+    topContributors,
+    note: buildUpsetRiskNote(upsetRisk, components, topContributors, margin, input.disagreement.coreModelsConflict),
+  };
 }
 
-const COMPONENT_LABELS: Record<keyof UpsetRiskComponents, string> = {
-  modelConflict: "the core models disagree on direction",
+// `modelConflict` is intentionally absent here -- its label depends on *why* the component is
+// nonzero (a real coreModelsConflict vs. the agreement-band term alone), so it's resolved in
+// `buildUpsetRiskNote` instead of being a static string. See that function.
+const COMPONENT_LABELS: Record<Exclude<keyof UpsetRiskComponents, "modelConflict">, string> = {
   favoriteWeakness: "the favorite's edge is thin",
   uncertainty: "real gaps in the underlying data",
   sampleDepth: "a very thin surface-history sample for one or both players",
@@ -167,14 +175,35 @@ const COMPONENT_LABELS: Record<keyof UpsetRiskComponents, string> = {
   matchupHazard: "a verified match hazard", // never actually reachable today -- see field doc; kept for forward-compat if a real hazard signal is added
 };
 
-/** Always present -- never a silent LOW/MODERATE/HIGH/EXTREME label with no stated reason. */
-function buildUpsetRiskNote(upsetRisk: UpsetRisk, components: UpsetRiskComponents, topContributors: string[], margin: number): string {
+/**
+ * Always present -- never a silent LOW/MODERATE/HIGH/EXTREME label with no stated reason.
+ *
+ * `modelConflict` is nonzero for two structurally different reasons -- a genuine
+ * `coreModelsConflict` (>=2 core models pointing at different players) OR the agreement-band term
+ * alone (e.g. HighDisagreement from spread/support alone, with no core-model direction conflict).
+ * Claiming "the core models disagree on direction" in the second case is a real, checkable false
+ * statement (see `disagreement.coreModelsConflict`), so the label branches on that flag rather
+ * than assuming the component's presence always means a direction conflict.
+ */
+function buildUpsetRiskNote(
+  upsetRisk: UpsetRisk,
+  components: UpsetRiskComponents,
+  topContributors: string[],
+  margin: number,
+  coreModelsConflict: boolean,
+): string {
   if (topContributors.length === 0) {
     return `${upsetRisk}: the favorite's edge is comfortable (${margin.toFixed(0)}pts from a coin flip) and no other risk factor is present.`;
   }
   const named = topContributors
     .slice(0, 2)
-    .map((key) => COMPONENT_LABELS[key as keyof UpsetRiskComponents])
+    .map((key) =>
+      key === "modelConflict"
+        ? coreModelsConflict
+          ? "the core models disagree on direction"
+          : "the models' overall agreement is less than strong"
+        : COMPONENT_LABELS[key as Exclude<keyof UpsetRiskComponents, "modelConflict">],
+    )
     .join(" and ");
   return `${upsetRisk} upset risk, mainly because ${named}.`;
 }

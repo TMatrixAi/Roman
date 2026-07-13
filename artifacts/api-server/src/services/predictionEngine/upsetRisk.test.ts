@@ -97,3 +97,26 @@ test("note names the real top contributors, never a generic placeholder, wheneve
   assert.notEqual(result.upsetRisk, "LOW");
   assert.match(result.note, /favorite's edge is thin|thin surface-history sample/);
 });
+
+test("modelConflict note names a real core-model direction conflict only when coreModelsConflict is actually true", () => {
+  const withCoreConflict = computeUpsetRisk(
+    input({
+      calibratedProbability: 60, // margin 10, keeps favoriteWeakness a smaller secondary contributor
+      disagreement: disagreement({ modelAgreement: "HighDisagreement", coreModelsConflict: true }),
+    }),
+  );
+  assert.ok(withCoreConflict.topContributors.includes("modelConflict"));
+  assert.match(withCoreConflict.note, /the core models disagree on direction/);
+});
+
+test("modelConflict note falls back to an accurate agreement-band label when the score comes from HighDisagreement alone (no core-model direction conflict)", () => {
+  const bandOnly = computeUpsetRisk(
+    input({
+      calibratedProbability: 60,
+      disagreement: disagreement({ modelAgreement: "HighDisagreement", coreModelsConflict: false }),
+    }),
+  );
+  assert.ok(bandOnly.topContributors.includes("modelConflict"));
+  assert.doesNotMatch(bandOnly.note, /the core models disagree on direction/);
+  assert.match(bandOnly.note, /overall agreement is less than strong/);
+});

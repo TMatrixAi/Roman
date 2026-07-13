@@ -1,0 +1,51 @@
+Step 1 — Confirm the upsetRisk.ts labeling fix
+
+Confirm the fix from earlier is fully applied: buildUpsetRiskNote now 
+branches the modelConflict label on coreModelsConflict, only using "the 
+core models disagree on direction" when coreModelsConflict is actually 
+true, and using an accurate alternate label (e.g. "the models' overall 
+agreement is less than strong") when the score comes from the agreement-
+band term alone. Re-run the E. Winter vs S. Kirchheimer case and confirm 
+the note now reads correctly. If not yet applied, apply it now.
+
+Step 2 — Add automated contradiction tests
+
+Add automated validation tests that run against every prediction and 
+fail/flag if any of these occur:
+- Elite or Strong Recommendation paired with High/Extreme Upset Risk
+- Elite or Strong Recommendation paired with Mixed/High Model Disagreement
+- Elite or Strong Recommendation paired with No Strong Signal
+- A lower Surface Elo rating displayed as "favored"
+- The predicted winner's projected set score implying a loss
+- Any component's explanation text claiming disagreement/conflict when 
+  the underlying flag (e.g. coreModelsConflict) is false, or vice versa
+- Two prediction records for the same match/input snapshot producing 
+  different recommendation tiers
+- Monte Carlo output labeled with a reliability/validation score while 
+  still marked unvalidated/display-only
+
+Report which tests were added, confirm they pass against current data, 
+and confirm they run automatically on new predictions going forward 
+(not just as a one-time manual check).
+
+Step 3 — Clear and restart with no-look-ahead, July 10-11
+
+Only after Steps 1 and 2 are confirmed complete:
+
+Clear the entire live predictions history table. Before deleting, create 
+a full backup/export of the current table so it can be restored or 
+referenced later if needed — do not delete without this backup existing 
+first.
+
+After clearing, generate all new live predictions starting from July 10, 
+2026, with a strict no-future-look-ahead rule: every input (Elo, 
+rankings, recent form, etc.) for any prediction must only use data known 
+as of that match's actual start time. Confirm this rule is already 
+enforced in the live prediction path, or fix it if it's currently 
+pulling "current" data regardless of the match date.
+
+Include all real matches from both July 10, 2026 and July 11, 2026 — 
+report the total match count found for each date across all levels 
+(ATP/WTA/Challenger/ITF).
+
+Confirm once complete: table cleared, backup location/fo

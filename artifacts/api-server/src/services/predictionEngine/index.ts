@@ -542,6 +542,12 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     modelAgreement,
     upsetRisk,
     upsetRiskBreakdownTier: upsetRiskBreakdown.upsetRisk,
+    recommendation,
+    modelConflict,
+    disagreementNote,
+    modelConflictNote,
+    upsetRiskNote: upsetRiskBreakdown.note,
+    predictedSetScore,
   });
   const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
   const eliteTierReason =

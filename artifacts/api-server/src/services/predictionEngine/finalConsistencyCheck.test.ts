@@ -17,6 +17,12 @@ function baseInput(overrides: Partial<FinalConsistencyInput> = {}): FinalConsist
     modelAgreement: "Strong",
     upsetRisk: "LOW",
     upsetRiskBreakdownTier: "LOW",
+    recommendation: "MODERATE_LEAN",
+    modelConflict: false,
+    disagreementNote: null,
+    modelConflictNote: null,
+    upsetRiskNote: "LOW: the favorite's edge is comfortable (15pts from a coin flip) and no other risk factor is present.",
+    predictedSetScore: "2-0",
     ...overrides,
   };
 }
@@ -64,6 +70,7 @@ test("rule 4 tolerates High Disagreement/High risk as long as Elite is correctly
       modelAgreement: "HighDisagreement",
       upsetRisk: "HIGH",
       upsetRiskBreakdownTier: "HIGH",
+      disagreementNote: "HIGHDISAGREEMENT: some real note explaining the conflicting models.",
     }),
   );
   assert.deepEqual(violations, []);
@@ -72,6 +79,84 @@ test("rule 4 tolerates High Disagreement/High risk as long as Elite is correctly
 test("rule 5: a top-level upsetRisk that disagrees with the detailed breakdown's own tier is caught", () => {
   const { violations } = checkFinalConsistency(baseInput({ upsetRisk: "LOW", upsetRiskBreakdownTier: "EXTREME" }));
   assert.ok(violations.some((v) => v.includes("Rule 5")));
+});
+
+test("rule 6: a Strong Recommendation paired with High/Extreme upset risk is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ recommendation: "STRONG_RECOMMENDATION", upsetRisk: "HIGH", upsetRiskBreakdownTier: "HIGH" }));
+  assert.ok(violations.some((v) => v.includes("Rule 6") && v.includes("upset risk")));
+});
+
+test("rule 6: a Strong Recommendation paired with Mixed/High Model Disagreement is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ recommendation: "STRONG_RECOMMENDATION", modelAgreement: "HighDisagreement" }));
+  assert.ok(violations.some((v) => v.includes("Rule 6") && v.includes("model agreement")));
+});
+
+test("rule 6: a Strong Recommendation with LOW upset risk and Strong agreement is clean", () => {
+  const { violations } = checkFinalConsistency(baseInput({ recommendation: "STRONG_RECOMMENDATION", upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "Strong" }));
+  assert.deepEqual(violations, []);
+});
+
+test("rule 7: Elite tier paired with No Strong Signal is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ isEliteTier: true, recommendation: "NO_STRONG_SIGNAL" }));
+  assert.ok(violations.some((v) => v.includes("Rule 7")));
+});
+
+test("rule 7: Elite tier paired with Do Not Recommend is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ isEliteTier: true, recommendation: "DO_NOT_RECOMMEND" }));
+  assert.ok(violations.some((v) => v.includes("Rule 7")));
+});
+
+test("rule 8: a disagreementNote present while modelAgreement is Strong is caught (vice versa of the real bug)", () => {
+  const { violations } = checkFinalConsistency(baseInput({ modelAgreement: "Strong", disagreementNote: "Moderate: some spurious note." }));
+  assert.ok(violations.some((v) => v.includes("Rule 8") && v.includes("disagreement note")));
+});
+
+test("rule 8: a missing disagreementNote while modelAgreement isn't Strong is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ modelAgreement: "Moderate", disagreementNote: null }));
+  assert.ok(violations.some((v) => v.includes("Rule 8") && v.includes("disagreement note")));
+});
+
+test("rule 8: a modelConflictNote present while modelConflict is false is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ modelConflict: false, modelConflictNote: "MODEL CONFLICT: some spurious note." }));
+  assert.ok(violations.some((v) => v.includes("Rule 8") && v.includes("model-conflict note")));
+});
+
+test("rule 8: a missing modelConflictNote while modelConflict is true is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ modelConflict: true, modelConflictNote: null }));
+  assert.ok(violations.some((v) => v.includes("Rule 8") && v.includes("model-conflict note")));
+});
+
+test("rule 8 (the exact upsetRisk.ts bug this task fixed): a note claiming core-model direction conflict while modelAgreement isn't HighDisagreement is caught", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({ modelAgreement: "Moderate", upsetRiskNote: "LOW upset risk, mainly because the core models disagree on direction and the favorite's edge is thin." }),
+  );
+  assert.ok(violations.some((v) => v.includes("Rule 8") && v.includes("upset-risk note")));
+});
+
+test("rule 8 tolerates the real direction-conflict wording when modelAgreement genuinely is HighDisagreement", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({
+      modelAgreement: "HighDisagreement",
+      disagreementNote: "HIGHDISAGREEMENT: some real note.",
+      upsetRiskNote: "HIGH upset risk, mainly because the core models disagree on direction.",
+    }),
+  );
+  assert.ok(!violations.some((v) => v.includes("Rule 8") && v.includes("upset-risk note")));
+});
+
+test("rule 9: a predicted winner's set score implying a loss (fewer sets than the opponent) is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ predictedSetScore: "1-2" }));
+  assert.ok(violations.some((v) => v.includes("Rule 9") && v.includes("does not show")));
+});
+
+test("rule 9: a malformed set score is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ predictedSetScore: "garbage" }));
+  assert.ok(violations.some((v) => v.includes("Rule 9") && v.includes("format")));
+});
+
+test("rule 9: a legitimate winner-first set score is clean", () => {
+  const { violations } = checkFinalConsistency(baseInput({ predictedSetScore: "3-1" }));
+  assert.deepEqual(violations, []);
 });
 
 // --- Regression fixture: the original bug report (C. Bouchelaghem vs. A. Ganesan) showed Elite

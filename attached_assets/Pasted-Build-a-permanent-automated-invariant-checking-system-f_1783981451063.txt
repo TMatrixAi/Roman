@@ -1,0 +1,47 @@
+Build a permanent, automated invariant-checking system for every 
+prediction — not a one-time test, but a check that runs on every single 
+prediction generated from now on, and blocks/flags any that violate a 
+rule.
+
+Invariants to enforce (add to this list any others you identify from 
+the prediction engine's own logic):
+
+- Elite / Strong Recommendation can never coexist with High or Extreme 
+  Upset Risk
+- Elite / Strong Recommendation can never coexist with Mixed or High 
+  Model Disagreement
+- Elite can never coexist with No Strong Signal
+- The player with the higher Surface Elo must always be shown as 
+  "favored" — never the reverse
+- The predicted winner's projected set score can never imply a loss 
+  (winner must have the higher set count shown)
+- Any explanation text referencing "disagreement" or "conflict" must 
+  only appear when the underlying flag (coreModelsConflict or 
+  equivalent) is actually true — never derived from a different signal 
+  and mislabeled
+- No two prediction records for the same match + same input snapshot 
+  can show different recommendation tiers
+- A component explicitly marked "unvalidated" or "display-only" (like 
+  Monte Carlo) can never be labeled with a reliability/confidence score 
+  that implies validation
+- Win probability, recommendation tier, and all badges must always 
+  trace back to the same single finalized decision object — flag if 
+  any UI field is computed independently of it
+
+Implementation requirements:
+
+1. Write these as automated tests that run in CI on every code change, 
+   AND as a runtime check that runs on every prediction as it's 
+   generated/stored — not just at test time.
+2. If a runtime violation is detected, do not silently serve the broken 
+   prediction — either block it, or flag it clearly in the output with 
+   what rule was violated, so it's visible before I see it live.
+3. Scan the entire prediction engine codebase for any other places where 
+   a label, badge, or explanation is generated separately from the main 
+   decision object, and report them — these are exactly the kind of 
+   hidden inconsistency risks that caused past bugs.
+4. Run this check against all currently stored predictions right now 
+   and report any existing violations found.
+5. Report: full list of invariants implemented, files modified, results 
+   of running against current data, and confirmation this runs 
+   automatically going forward (not manually triggered).

@@ -33,6 +33,18 @@ export interface FinalConsistencyInput {
   upsetRisk: UpsetRisk;
   /** The upset-risk tier as recorded on the detailed breakdown object -- checked against `upsetRisk` above to catch the two ever silently diverging (rule 5, "single source of truth"). */
   upsetRiskBreakdownTier: UpsetRisk;
+  /** "STRONG_RECOMMENDATION" | "MODERATE_LEAN" | "HIGH_RISK" | "NO_STRONG_SIGNAL" | "DO_NOT_RECOMMEND" from recommendation.ts. Typed loosely here to avoid a circular import; validated as a plain string. */
+  recommendation: string;
+  /** True when calibration/specialist/simulator blending flipped the pick away from the raw evidence vote (index.ts's `modelConflict`). */
+  modelConflict: boolean;
+  /** Non-null only when modelAgreement isn't "Strong" (disagreement.ts's `buildDisagreementNote` contract). */
+  disagreementNote: string | null;
+  /** Non-null only when `modelConflict` is true (index.ts's `modelConflictNote` construction). */
+  modelConflictNote: string | null;
+  /** The upset-risk breakdown's own auditable note (upsetRisk.ts's `buildUpsetRiskNote`). */
+  upsetRiskNote: string;
+  /** "W-L" set-count string for the predicted winner (e.g. "2-0"), as shown to users. */
+  predictedSetScore: string;
 }
 
 export interface FinalConsistencyResult {
@@ -92,6 +104,63 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
     violations.push(
       `Rule 5 (single source of truth): top-level upsetRisk (${input.upsetRisk}) disagrees with the detailed breakdown's own tier (${input.upsetRiskBreakdownTier}).`,
     );
+  }
+
+  // Rule 6: a Strong Recommendation is a confident directional claim -- it can never coexist with
+  // High/Extreme upset risk (genuine upset danger) or Mixed/HighDisagreement model agreement (the
+  // underlying models don't actually agree). `recommendation.ts` already gates STRONG_RECOMMENDATION
+  // on these same conditions structurally; this is a defense-in-depth check against future drift,
+  // mirroring how Rule 4 already guards the separate Elite tier claim.
+  if (input.recommendation === "STRONG_RECOMMENDATION") {
+    if (input.upsetRisk === "HIGH" || input.upsetRisk === "EXTREME") {
+      violations.push(`Rule 6 (Strong Recommendation vs. upset risk): recommendation is STRONG_RECOMMENDATION while upsetRisk is ${input.upsetRisk}.`);
+    }
+    if (input.modelAgreement === "Mixed" || input.modelAgreement === "HighDisagreement") {
+      violations.push(`Rule 6 (Strong Recommendation vs. model agreement): recommendation is STRONG_RECOMMENDATION while modelAgreement is ${input.modelAgreement}.`);
+    }
+  }
+
+  // Rule 7: Elite tier is a strictly narrower, MORE demanding bar than a Strong Recommendation
+  // (eliteTier.ts's doc comment) -- it can never be true at the same time as NO_STRONG_SIGNAL
+  // ("the engine simply doesn't have a lean at all", recommendation.ts) or DO_NOT_RECOMMEND (data
+  // quality too poor to trust). Those two recommendation tiers are the opposite claim from Elite.
+  if (input.isEliteTier && (input.recommendation === "NO_STRONG_SIGNAL" || input.recommendation === "DO_NOT_RECOMMEND")) {
+    violations.push(`Rule 7 (Elite vs. recommendation): isEliteTier is true while recommendation is ${input.recommendation} -- Elite requires a real, well-supported lean.`);
+  }
+
+  // Rule 8: the auditable explanation notes must never claim a disagreement/conflict exists when
+  // the flag that gates them is false, or omit one that does exist -- e.g. the upsetRisk.ts bug
+  // where a note said "the core models disagree on direction" while modelAgreement wasn't even
+  // HighDisagreement (coreModelsConflict can only be true when modelAgreement is HighDisagreement,
+  // see disagreement.ts's OR condition, so this check needs no extra flag beyond modelAgreement).
+  if (input.modelAgreement === "Strong" && input.disagreementNote !== null) {
+    violations.push(`Rule 8 (disagreement note vs. flag): disagreementNote is present while modelAgreement is Strong (buildDisagreementNote's contract says null exactly when Strong).`);
+  }
+  if (input.modelAgreement !== "Strong" && input.disagreementNote === null) {
+    violations.push(`Rule 8 (disagreement note vs. flag): disagreementNote is null while modelAgreement is ${input.modelAgreement} -- a real disagreement must never go unexplained.`);
+  }
+  if (!input.modelConflict && input.modelConflictNote !== null) {
+    violations.push(`Rule 8 (model-conflict note vs. flag): modelConflictNote is present while modelConflict is false.`);
+  }
+  if (input.modelConflict && input.modelConflictNote === null) {
+    violations.push(`Rule 8 (model-conflict note vs. flag): modelConflictNote is null while modelConflict is true -- a real conflict must never go unexplained.`);
+  }
+  if (/core models disagree on direction/i.test(input.upsetRiskNote) && input.modelAgreement !== "HighDisagreement") {
+    violations.push(
+      `Rule 8 (upset-risk note vs. flag): upsetRiskNote claims "the core models disagree on direction" while modelAgreement is ${input.modelAgreement} -- that claim is only ever true when a genuine coreModelsConflict exists, which requires modelAgreement to be HighDisagreement.`,
+    );
+  }
+
+  // Rule 9: the predicted winner's own projected set score must never imply they lose the match
+  // (more sets for the opponent than for the winner). Parsed as plain "W-L" digits, winner first.
+  const setScoreMatch = input.predictedSetScore.match(/^(\d+)-(\d+)$/);
+  if (!setScoreMatch) {
+    violations.push(`Rule 9 (set score format): predictedSetScore "${input.predictedSetScore}" is not a valid "W-L" set-count string.`);
+  } else {
+    const [, winnerSets, loserSets] = setScoreMatch.map(Number) as unknown as [number, number, number];
+    if (winnerSets <= loserSets) {
+      violations.push(`Rule 9 (set score vs. winner): predictedSetScore "${input.predictedSetScore}" does not show the predicted winner (listed first) taking more sets than the opponent.`);
+    }
   }
 
   return { violations };
