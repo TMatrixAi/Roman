@@ -148,6 +148,13 @@ function PredictionRow({
   isDeleting: boolean
 }) {
   const isResolved = !!prediction.actualWinnerName;
+  // NOTE: PredictionSummary (the Ledger list endpoint) only exposes player/winner NAMES, not IDs,
+  // so this must compare by name -- unlike PredictionResult.tsx and PredictionLog.tsx, which have
+  // IDs available and compare by ID. Two same-named players in different matches on the same page
+  // is the one theoretical false-positive/negative this leaves open; flagged in the 2026-07-13
+  // invariant-checking report rather than fixed here since it requires widening the API contract
+  // (PredictionSummary schema + backend route + regenerated client), which is out of scope for a
+  // display-layer fix.
   const isCorrect = prediction.actualWinnerName === prediction.predictedWinnerName;
 
   const renderRecommendationBadge = () => {
