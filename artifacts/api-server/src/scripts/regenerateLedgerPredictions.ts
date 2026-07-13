@@ -30,6 +30,7 @@
 //    happened.
 //
 // Usage: pnpm --filter @workspace/api-server exec tsx src/scripts/regenerateLedgerPredictions.ts
+import { eq } from "drizzle-orm";
 import { db, predictionsTable, pool } from "@workspace/db";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   const skippedNoHistory: string[] = [];
   const errors: string[] = [];
   let insertedTotal = 0;
+  let replacedTotal = 0;
 
   // Chronological order, so if the same player appears twice in the window, the later match's
   // own bounded history naturally includes the earlier one (it's already in provider data by
@@ -168,6 +170,18 @@ async function main(): Promise<void> {
       const actualWinnerId = fixture.winnerId!;
       const actualWinnerName = actualWinnerId === player1.id ? player1.name : player2.name;
 
+      // Surgical replace: the table has no stored match-date column, so we can't identify "the
+      // July 10-11 rows" by created_at (that's insertion time, not match time). matchIdentityKey
+      // is a deterministic function of (player1Id, player2Id, tournamentName, surface, matchFormat)
+      // -- i.e. of the fixture itself, not of any particular prediction run -- so any existing row
+      // for this exact match (old, buggy or otherwise) shares this key regardless of when it was
+      // inserted. Delete only those rows before inserting the fresh one, leaving every unrelated
+      // row (including the 205 legitimate post-fix live predictions for other matches) untouched.
+      const replaced = await db.delete(predictionsTable).where(eq(predictionsTable.matchIdentityKey, matchIdentityKey)).returning({ id: predictionsTable.id });
+      if (replaced.length > 0) {
+        replacedTotal += replaced.length;
+      }
+
       await db.insert(predictionsTable).values({
         player1Id: player1.id,
         player1Name: player1.name,
@@ -213,6 +227,7 @@ async function main(): Promise<void> {
   console.log(`Skipped (no resolved surface/format): ${skippedReasons.noSurfaceOrFormat}`);
   console.log(`Skipped (no real pre-cutoff history for one/both players): ${skippedNoHistory.length}`);
   console.log(`Inserted: ${insertedTotal}`);
+  console.log(`Replaced (old row for the same exact match deleted first): ${replacedTotal}`);
   console.log(`Errors: ${errors.length}`);
   console.log("\nPer date / tournament level:");
   for (const date of Object.keys(inserted).sort()) {

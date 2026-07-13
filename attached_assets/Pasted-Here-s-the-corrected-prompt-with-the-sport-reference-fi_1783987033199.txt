@@ -1,0 +1,30 @@
+Here's the corrected prompt with the sport reference fixed, plus additional error-scanning checks built in based on standard backtesting pitfalls (feature leakage, duplicate rows, model-selection bias).[1][2]
+
+## Corrected Prompt with Error-Scan Steps
+
+"Run backtest predictions for July 8, 2026 through July 11, 2026 (all four dates), with strict no-look-ahead enforcement, then merge results into the live predictions/ledger table.
+
+Requirements:
+- Every input used to generate each prediction (rankings, recent form, Elo, injury/fatigue status, head-to-head, etc.) must be frozen at the exact moment before that specific match started — not current/today's values. Confirm this constraint is enforced in the actual code path being used, not just assumed.
+- Run this across all relevant tour levels (ATP/WTA/Challenger/ITF).
+- Before writing anything, back up the current live predictions/ledger table in its existing state (this should already include July 10-11 data from the prior run — confirm those rows are untouched and not duplicated).
+- Only add new rows for July 8 and July 9 (since July 10-11 predictions already exist in the ledger). Do not overwrite or duplicate the existing July 10-11 rows.
+- After generating July 8-9 predictions and confirming they pass all invariant/consistency checks (zero contradictions flagged), merge them directly into the live predictions/ledger history table alongside the existing July 10-11 rows.
+- Additionally scan for these common backtest bugs before finalizing: (1) feature leakage — confirm no post-match stats (final rankings, updated Elo, injury reports issued after match start) leaked into pre-match inputs; (2) duplicate/orphaned rows from the merge, especially any match appearing twice under different IDs; (3) impossible or malformed match data (e.g. invalid scores, missing player IDs, null timestamps) similar to the ~20 stale rows found earlier; (4) any Elite/High-Disagreement label contradictions reappearing under the fixed upsetRisk.ts logic.
+- Report back: total match count loaded per date (July 8, 9, 10, 11 — confirming 10-11 counts are unchanged from before), backup location/format, confirmation the no-look-ahead rule was verified in the actual live/backtest code path, confirmation zero invariant violations were flagged across the full July 8-11 batch, and explicit pass/fail on each of the four bug-scan checks above before final merge."
+
+## What Changed
+
+The sport reference now correctly says "ATP/WTA/Challenger/ITF" only, matching your actual tennis prediction engine rather than the mistaken MLB/soccer mention. I also folded in the four highest-risk backtest failure modes — leakage, duplicates, malformed data, and label contradictions — since these are the exact categories that caused issues in your July 10-11 run and are the most common sources of silent backtest corruption.[2][1]
+
+Sources
+[1] 30.2 Backtesting Strategies... https://datafield.dev/sports-betting-textbook/part-06/chapter-30/
+[2] How to Build a Tennis Prediction Model Using Tennis API Data https://tennis-api.com/news/how-to-build-a-tennis-prediction-model-using-tennis-api-data/
+[3] 15. Backtesting In R... https://www.r-bloggers.com/2026/02/designing-sports-betting-systems-in-r-bayesian-probabilities-expected-value-and-kelly-logic/
+[4] Correctness of Backtest Engines https://arxiv.org/pdf/1509.08248.pdf
+[5] Backtest Setup | Option Omega Documentation https://docs.optionomega.com/backtesting/backtest-setup
+[6] What's the best way to backtest predictive trading strategies ... https://www.reddit.com/r/algotrading/comments/1oe0pmw/whats_the_best_way_to_backtest_predictive_trading/
+[7] 10 Backtesting Mistakes in Trading https://www.fortraders.com/blog/10-backtesting-mistakes-in-trading
+[8] The critical pitfalls of backtesting trading strategies https://starqube.com/backtesting-investment-strategies/
+[9] 8.3 The Dangers of Backtesting https://portfoliooptimizationbook.com/book/8.3-dangers-backtesting.html
+[10] Backtesting https://nautilustrader.io/docs/latest/concepts/backtesting/

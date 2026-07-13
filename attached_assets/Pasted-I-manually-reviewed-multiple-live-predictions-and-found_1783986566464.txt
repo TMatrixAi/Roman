@@ -1,0 +1,93 @@
+I manually reviewed multiple live predictions and found several 
+system-wide consistency issues. Audit the underlying logic before making 
+any changes. Do not simply adjust thresholds to make labels look better 
+— identify the actual root cause. Do NOT modify any code in this pass — 
+produce a diagnostic report only, and wait for my explicit go-ahead 
+before implementing any fix.
+
+Context: earlier tonight, Rules 6-9 were added to the consistency guard, 
+and the upsetRisk.ts label bug was fixed (false "core models disagree" 
+claims). A prior diagnostic also found that 67% of HighDisagreement 
+flags don't involve the three core models actually disagreeing — they 
+come from downstream 2-model blend-stage thresholds tripping too easily. 
+Take this into account — don't re-diagnose what's already confirmed, and 
+flag if any new finding conflicts with or overlaps those existing fixes.
+
+Scope: audit against the current full live predictions table (cap the 
+detailed rule-by-rule breakdown to the specific matches named below, but 
+report aggregate statistics across the whole table where requested).
+
+1. MONTE CARLO DISPLAY BUG
+   The simulated win probability should always display the predicted 
+   winner's Monte Carlo win percentage, never whichever player happens 
+   to be Player One or Player Two.
+
+   Observed: Shcherbina initially displayed the opponent's 31.8%, later 
+   displayed Shcherbina's correct 67.9%. Zamora showed the same pattern.
+
+   Determine and state definitively, with evidence:
+   - Is the display bound to player position or to a stable predicted-
+     winner player ID? Show the actual binding logic.
+   - Are predictions being recalculated after being saved? If so, when 
+     and why, and is this logged/timestamped anywhere currently?
+   - State conclusively: binding bug, player-order bug, or unlogged 
+     recalculation. Do not leave this as "possibly."
+   
+   Required fix design (report only, don't implement yet): display must 
+   bind to predicted-winner's stable player ID. Any recalculation must 
+   be timestamped and flagged as "recalculated," never silently replace 
+   saved values.
+
+2. MODEL AGREEMENT AUDIT
+   Determine exactly how the current agreement score is calculated — 
+   show the actual formula/weights.
+
+   Measure across the full live table:
+   - % of matches where all four core models agree (Surface Elo, 
+     Serve/Return, Recent Form, Monte Carlo)
+   - % where three of four agree
+   - % where the core models split two-two
+   - % where HighDisagreement fires but none of the four core models 
+     actually conflict (cross-reference against the 67% figure already 
+     found)
+
+   Confirm whether Fatigue, Head-to-Head, and Availability can currently 
+   trigger High Disagreement on their own without core-model conflict. 
+   If yes, this should not happen unless it's a documented, intentional 
+   override — state whether it's intentional or a bug.
+
+3. RECOMMENDATION ENGINE AUDIT
+   For Morvayova, Maja, and S. Johnson — all showed reasonable win 
+   probability, agreeing Monte Carlo, good data quality, supportive 
+   recent form, and reasonable upset risk, yet all received "High Risk."
+
+   Report:
+   - Every rule capable of producing a High Risk recommendation, with 
+     exact threshold values.
+   - Which specific rule fired for each of these three matches.
+   - Whether the recommendation engine reads from the same underlying 
+     signals (win probability, upset risk, model agreement) as the rest 
+     of the card, or computes an independent risk assessment.
+   - Whether recommendation thresholds were touched by any of tonight's 
+     earlier fixes (Rules 6-9, upsetRisk.ts) — if not, state whether 
+     it's running on stale/older calibration while everything around it 
+     has been updated.
+   - Whether current thresholds are historically justified (i.e. does 
+     "High Risk" actually correlate with a meaningfully higher 
+     favorite-loss rate in the historical data), or arbitrary.
+
+4. CONSISTENCY AUDIT
+   Win Probability, Monte Carlo, Recommendation, Model Agreement, Upset 
+   Risk, Match Closeness, and Data Quality should never contradict each 
+   other. For S. Johnson specifically (59% favorite, 58.7% Monte Carlo, 
+   Low Upset Risk, Moderate Agreement, Strong Recent Form, yet High 
+   Risk) — explain precisely why each label was assigned and which 
+   specific rule/threshold produced the contradiction.
+
+5. DIAGNOSTIC REPORT
+   Deliver: every current threshold and rule for recommendation, 
+   agreement, and upset risk; which rule fired for each reviewed match; 
+   whether current behavior matches historical calibration or is 
+   arbitrary; which findings are true logic bugs versus intentional 
+   design decisions; specific recommendations backed by historical data, 
+   not assumptions. Do not implement any fix in this pass.
