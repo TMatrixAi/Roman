@@ -1,0 +1,58 @@
+Fix the flat and internally-inconsistent LEVEL_BASELINE_ELO values.
+
+Confirmed problems: 15-point total spread from weakest to strongest tour 
+level; Challenger and ATP250 are identical (1524); ITF and WTA250 are 
+identical (1522); GrandSlam (1523) is rated below ATP250/Challenger 
+(1524), which is backwards; Challenger and ITF have no internal tier 
+splits at all.
+
+1. Investigate the GrandSlam-below-ATP250 inversion first, before 
+   touching anything else. Determine whether this is a genuine data 
+   artifact (e.g. Slam qualifying rounds skewing the average down) or a 
+   query/aggregation bug. Report the root cause before proceeding.
+
+2. Extend the TournamentLevel type to support meaningful tier splits 
+   within Challenger (e.g. Challenger175/125/100/etc., based on whatever 
+   granularity the historical data actually supports) and within ITF 
+   (M25/M15, and M40 if the corpus has enough matches to support it). 
+   Do not add a tier split that has too few historical matches to 
+   produce a statistically meaningful baseline — report the sample size 
+   backing each new bucket.
+
+3. Recompute LEVEL_BASELINE_ELO per level from the historical corpus, 
+   using a HELD-OUT split — do not compute baselines and validate on the 
+   same data. Report the sample size and time window behind each level's 
+   new baseline value.
+
+4. Confirm the new baselines produce a real, monotonic-by-competition-
+   strength ordering (Grand Slam > Masters 1000 > ATP 500 > ATP 250 > 
+   Challenger tiers > ITF tiers, in that general direction) — flag if 
+   any inversion remains and explain why before keeping it.
+
+5. Confirm the existing tour-level-credibility shrink mechanism (from 
+   Task #76) still functions correctly with the new, finer-grained 
+   baselines — tourLevelShare and shrinkage logic may need adjustment 
+   since "opponent coverage" now spans more distinct levels.
+
+6. Run a backtest capped at 4,000 matches, stratified across all levels 
+   (old and new tiers) proportional to their real representation in the 
+   historical data. Compare Brier score, log loss, calibration-by-tier, 
+   and accuracy before vs. after, using a paired significance test (e.g. 
+   bootstrap confidence interval on the Brier score difference) — report 
+   the actual interval/p-value, not just point estimates. Only keep the 
+   new calibration if the improvement is statistically significant on 
+   this held-out sample. Do not expand beyond the 4,000-match cap.
+
+7. Back up the current Elo database/baseline values before making any 
+   changes, so the fix can be reverted if it underperforms or regresses.
+
+8. Rerun prediction #447 (Boulais vs. Zhang) specifically and report: 
+   before/after baseline values used for each unresolved opponent, 
+   before/after Elo for both players, before/after win probability, and 
+   whether the final predicted winner changes.
+
+9. Report: root cause of the GrandSlam inversion, new baseline values 
+   per level with sample sizes, backtest before/after numbers with 
+   significance test results, confirmation the shrink mechanism still 
+   works correctly, and confirmation no player-specific hardcoding was 
+   added anywhere.

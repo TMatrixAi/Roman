@@ -17,11 +17,11 @@ const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
 export default function Home() {
   const [, setLocation] = useLocation()
   const [tourFilter, setTourFilter] = useState<TourFilter>("all")
-  const [priorityFilter, setPriorityFilter] = useState<TourFilter>("all")
+  const [appliedTourFilter, setAppliedTourFilter] = useState<TourFilter>("all")
   const fixturesRef = useRef<FixturesListHandle>(null)
 
   const handleGo = () => {
-    setPriorityFilter(tourFilter)
+    setAppliedTourFilter(tourFilter)
     fixturesRef.current?.refetch()
   }
 
@@ -58,7 +58,7 @@ export default function Home() {
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value as TourFilter)}
               className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
-              aria-label="Prioritize upcoming fixtures by tour"
+              aria-label="Filter upcoming fixtures by tour"
             >
               {TOUR_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
@@ -84,7 +84,7 @@ export default function Home() {
             <h2 className="text-xl font-bold">UPCOMING FIXTURES</h2>
           </div>
           <p className="text-sm text-muted-foreground font-mono mb-4">QUICK START PREDICTIONS</p>
-          <FixturesList ref={fixturesRef} priorityFilter={priorityFilter} />
+          <FixturesList ref={fixturesRef} tourFilter={appliedTourFilter} />
         </section>
 
         <section className="space-y-4">

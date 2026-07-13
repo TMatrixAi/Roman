@@ -41,19 +41,15 @@ function timeSortKey(fixture: Fixture): number {
 }
 
 /**
- * All fixtures stay visible -- nothing is hidden. Fixtures matching the applied priority tour
- * float to the top as a group; within each group (priority and non-priority), the existing
- * time-based order is preserved. When priorityFilter is "all", every fixture matches, so this
- * collapses back to a plain chronological sort.
+ * Fixtures NOT matching the applied tour filter are hidden entirely -- this is a real filter, not
+ * a reordering. The remaining (matching) fixtures keep the existing time-based order. When
+ * tourFilter is "all", every fixture matches, so nothing is hidden and this collapses back to a
+ * plain chronological sort.
  */
-function sortFixtures(fixtures: Fixture[], priorityFilter: TourFilter): Fixture[] {
-  const list = [...fixtures]
-  return list.sort((a, b) => {
-    const aPriority = matchesFilter(a, priorityFilter) ? 0 : 1
-    const bPriority = matchesFilter(b, priorityFilter) ? 0 : 1
-    if (aPriority !== bPriority) return aPriority - bPriority
-    return timeSortKey(a) - timeSortKey(b)
-  })
+function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter): Fixture[] {
+  return fixtures
+    .filter((fixture) => matchesFilter(fixture, tourFilter))
+    .sort((a, b) => timeSortKey(a) - timeSortKey(b))
 }
 
 /**
@@ -87,8 +83,8 @@ export type FixturesListHandle = {
   refetch: () => void
 }
 
-export const FixturesList = forwardRef<FixturesListHandle, { priorityFilter?: TourFilter }>(
-  function FixturesList({ priorityFilter = "all" }, ref) {
+export const FixturesList = forwardRef<FixturesListHandle, { tourFilter?: TourFilter }>(
+  function FixturesList({ tourFilter = "all" }, ref) {
   const { data: fixtures, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures()
   const [, setLocation] = useLocation()
   const createPrediction = useCreatePrediction()
@@ -101,8 +97,8 @@ export const FixturesList = forwardRef<FixturesListHandle, { priorityFilter?: To
 
   const visibleFixtures = useMemo(() => {
     if (!fixtures) return []
-    return sortFixtures(fixtures, priorityFilter)
-  }, [fixtures, priorityFilter])
+    return filterFixtures(fixtures, tourFilter)
+  }, [fixtures, tourFilter])
 
   const handlePredictNow = (fixture: Fixture) => {
     setPredictNowError(null)
