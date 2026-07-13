@@ -1,0 +1,103 @@
+Overall, this looks much more internally consistent than the previous screenshots. I don’t see the obvious contradictions like “Elite + High Disagreement + Extreme Risk.”
+
+That said, there are a few things I’d still question.
+
+✅ What’s good
+
+* Elite Prediction + 94% Data Quality + 72% Win Probability all fit together.
+* Model Agreement = Moderate matches the explanation.
+* The core models all favor E. Winter:
+    * Surface Elo: 59%
+    * Serve & Return: 66%
+    * Recent Form: 52%
+* Monte Carlo at 71% is close to the final 72%, so those two aren’t wildly disagreeing.
+
+⸻
+
+⚠️ Things I’d investigate
+
+1. Upset Risk explanation is a little confusing
+
+It says:
+
+“LOW upset risk… the core models disagree on direction.”
+
+But the Model Agreement panel says:
+
+* 100% of effective weight behind the leader
+* All three primary models favor E. Winter
+
+Those statements don’t seem to match.
+
+If 100% of effective weight is behind Winter, the explanation probably shouldn’t say the core models disagree on direction.
+
+⸻
+
+2. Recent Form barely favors Winter
+
+Recent Form is:
+
+* Winter: 56
+* Kirchheimer: 52
+
+Yet the Recent Form model outputs about 51.5%.
+
+That isn’t necessarily wrong, but I’d verify that:
+
+* the displayed score (56 vs. 52), and
+* the model probability (51.5%)
+
+are being generated from the same underlying calculation.
+
+⸻
+
+3. Surface Elo edge
+
+Surface Elo:
+
+* 1558 vs 1523
+
+That’s only a 35-point Elo difference.
+
+A 59% probability is reasonable, but I’d verify it’s using the standard Elo logistic formula correctly.
+
+⸻
+
+4. Fatigue
+
+Fatigue:
+
+* Winter: 48
+* Kirchheimer: around 60+
+
+If lower fatigue is better, Winter has an advantage.
+
+If higher is better, Winter is disadvantaged.
+
+I’d make sure the UI clearly explains which direction the scale works.
+
+⸻
+
+5. Model weighting
+
+Current weights:
+
+* Surface Elo: 0.32
+* Serve & Return: 0.30
+* Recent Form: 0.28
+
+Those make sense.
+
+The weaker models (0.03–0.06) aren’t dominating, which is much healthier than before.
+
+⸻
+
+One thing I’d ask Replit to verify
+
+Verify that every explanation shown on the prediction card is generated from the same finalized prediction object used for the displayed probabilities and model agreement. In particular, the Upset Risk explanation should accurately reflect the Model Agreement calculation. The current card states that “the core models disagree on direction,” while the Model Agreement section reports “100% of effective weight behind the leader” and shows all primary models favoring E. Winter. Confirm whether this is a wording issue or a logic inconsistency.
+
+So my assessment is:
+
+* Much better than the earlier screenshots.
+* I don’t see a major mathematical inconsistency.
+* The only thing that still stands out is the wording about core models disagreeing, because the model agreement panel appears to show the opposite.
