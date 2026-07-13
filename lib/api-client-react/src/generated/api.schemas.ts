@@ -213,6 +213,39 @@ export interface HeadToHeadRecord {
   meetings: HeadToHeadMeeting[];
 }
 
+export interface ScreenshotMatchupInput {
+  /** Base64-encoded image data (a data URL such as "data:image/png;base64,..." or raw base64 -- both accepted). PNG/JPEG/WEBP screenshots only. */
+  imageBase64: string;
+}
+
+export interface ScreenshotPlayerMatch {
+  /**
+     * The player name as read off the screenshot, before any lookup. Null if vision AI could not distinguish a second player.
+     * @nullable
+     */
+  recognizedName: string | null;
+  /** The confidently-matched player from the existing player search, or null if the recognized name had no confident match. */
+  player: PlayerSummary | null;
+}
+
+export interface ScreenshotEventMatch {
+  /**
+     * The event/tournament name as read off the screenshot. Null if none was found.
+     * @nullable
+     */
+  recognizedName: string | null;
+  surface: Surface | null;
+  level: TournamentLevel | null;
+}
+
+export interface ScreenshotMatchupResult {
+  player1: ScreenshotPlayerMatch;
+  player2: ScreenshotPlayerMatch;
+  event: ScreenshotEventMatch;
+  /** Human-readable notes on anything not confidently recognized or matched -- the user should fill these in manually. */
+  warnings: string[];
+}
+
 export interface PredictionRequest {
   player1Id: string;
   player2Id: string;

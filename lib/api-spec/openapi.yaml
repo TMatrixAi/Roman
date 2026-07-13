@@ -200,6 +200,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProviderError"
 
+  /matchups/from-screenshot:
+    post:
+      operationId: recognizeMatchupScreenshot
+      tags: [matchups]
+      summary: Read a matchup screenshot and resolve players/surface
+      description: >-
+        Accepts an uploaded screenshot (e.g. a bracket, schedule, or another app's matchup card),
+        uses vision AI to read up to two distinct player names and an event/tournament name off
+        it, then resolves each recognized player against the same player search used by the
+        manual Search Players flow and resolves the event to a surface/level using the same
+        tournament-name knowledge used elsewhere in the engine. Never guesses -- anything not
+        confidently recognized or matched comes back null with an explanatory warning so the user
+        can fill it in manually.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenshotMatchupInput"
+      responses:
+        "200":
+          description: >-
+            Recognition result. A 200 does not mean everything was found -- check each field for
+            null and read `warnings` for what still needs manual input.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreenshotMatchupResult"
+        "400":
+          description: Missing or unreadable image payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+        "502":
+          description: Vision AI provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
   /predictions:
     get:
       operationId: listPredictions
@@ -901,6 +942,61 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HeadToHeadMeeting"
+
+    ScreenshotMatchupInput:
+      type: object
+      required: [imageBase64]
+      properties:
+        imageBase64:
+          type: string
+          description: >-
+            Base64-encoded image data (a data URL such as "data:image/png;base64,..." or raw
+            base64 -- both accepted). PNG/JPEG/WEBP screenshots only.
+
+    ScreenshotPlayerMatch:
+      type: object
+      required: [recognizedName, player]
+      properties:
+        recognizedName:
+          type: ["string", "null"]
+          description: The player name as read off the screenshot, before any lookup. Null if vision AI could not distinguish a second player.
+        player:
+          oneOf:
+            - $ref: "#/components/schemas/PlayerSummary"
+            - type: "null"
+          description: The confidently-matched player from the existing player search, or null if the recognized name had no confident match.
+
+    ScreenshotEventMatch:
+      type: object
+      required: [recognizedName, surface, level]
+      properties:
+        recognizedName:
+          type: ["string", "null"]
+          description: The event/tournament name as read off the screenshot. Null if none was found.
+        surface:
+          oneOf:
+            - $ref: "#/components/schemas/Surface"
+            - type: "null"
+        level:
+          oneOf:
+            - $ref: "#/components/schemas/TournamentLevel"
+            - type: "null"
+
+    ScreenshotMatchupResult:
+      type: object
+      required: [player1, player2, event, warnings]
+      properties:
+        player1:
+          $ref: "#/components/schemas/ScreenshotPlayerMatch"
+        player2:
+          $ref: "#/components/schemas/ScreenshotPlayerMatch"
+        event:
+          $ref: "#/components/schemas/ScreenshotEventMatch"
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Human-readable notes on anything not confidently recognized or matched -- the user should fill these in manually.
 
     PredictionRequest:
       type: object

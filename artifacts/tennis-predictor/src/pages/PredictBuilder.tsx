@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
+import { ScreenshotMatchupUpload } from "@/components/ScreenshotMatchupUpload"
 import { DataWarning } from "@/components/DataWarning"
 import { Activity, Swords, Settings2, RefreshCw } from "lucide-react"
 
@@ -112,9 +113,37 @@ export default function PredictBuilderPage() {
   const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
   const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
   const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
-  const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
+  // Set when the surface/level came from reading an uploaded screenshot instead of a real
+  // fixture -- reuses the same "AUTO-DETECTED" indicator as the Custom Match fixture flow above,
+  // since both mean "we filled this in for you, but you should double check it."
+  const [screenshotDetectedSurface, setScreenshotDetectedSurface] = useState(false)
+  const [screenshotTournamentName, setScreenshotTournamentName] = useState<string | null>(null)
+  const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel) || screenshotDetectedSurface
 
   const createPrediction = useCreatePrediction()
+
+  const handleScreenshotResolved = ({
+    player1,
+    player2,
+    surface: detectedSurface,
+    level: detectedLevel,
+    eventName,
+  }: {
+    player1: { player: { id: string } | null }
+    player2: { player: { id: string } | null }
+    surface: Surface | null
+    level: TournamentLevel | null
+    eventName: string | null
+  }) => {
+    if (player1.player) setPlayer1Id(player1.player.id)
+    if (player2.player) setPlayer2Id(player2.player.id)
+    if (detectedSurface) {
+      setSurface(detectedSurface)
+      setScreenshotDetectedSurface(true)
+    }
+    if (detectedLevel) setLevel(detectedLevel)
+    if (eventName) setScreenshotTournamentName(eventName)
+  }
 
   const handleRunModel = () => {
     if (!player1Id || !player2Id) return
@@ -126,7 +155,7 @@ export default function PredictBuilderPage() {
         surface,
         matchFormat: format,
         tournamentLevel: level,
-        tournamentName: prefillTournamentName ?? undefined
+        tournamentName: prefillTournamentName ?? screenshotTournamentName ?? undefined
       }
     }, {
       onSuccess: (prediction) => {
@@ -158,6 +187,12 @@ export default function PredictBuilderPage() {
           onRemove={() => setPlayer2Id(null)} 
         />
       </div>
+
+      {/* Always rendered (not just while a slot is empty) so the recognition chips/warnings from
+          the last upload stay visible even after a fully successful match fills both players --
+          otherwise this card would unmount the instant both slots fill and the confirmation the
+          user just saw would vanish before they could read it. */}
+      <ScreenshotMatchupUpload onResolved={handleScreenshotResolved} />
 
       {(!player1Id || !player2Id) && (
         <Card>

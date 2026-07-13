@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -26,8 +26,25 @@ app.use(
   }),
 );
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Default express.json() limit (100kb) is too small for a base64-encoded screenshot upload
+// (POST /matchups/from-screenshot) -- raised globally rather than per-route since Express body
+// parsing happens before routing.
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Without this, a malformed body or an over-limit upload (e.g. too-large screenshot on
+// POST /matchups/from-screenshot) falls through to Express's default handler, which returns an
+// HTML page with a raw stack trace instead of the clean JSON error shape every route in this API
+// uses -- and it leaks internal file paths in the process.
+const bodyParserErrorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (err && typeof err === "object" && "type" in err && "status" in err) {
+    const status = typeof err.status === "number" ? err.status : 400;
+    res.status(status).json({ error: "Invalid request body", detail: (err as Error).message });
+    return;
+  }
+  next(err);
+};
+app.use(bodyParserErrorHandler);
 
 app.use("/api", router);
 

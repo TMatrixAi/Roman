@@ -171,6 +171,46 @@ export const GetHeadToHeadResponse = zod.object({
 
 
 /**
+ * Accepts an uploaded screenshot (e.g. a bracket, schedule, or another app's matchup card), uses vision AI to read up to two distinct player names and an event/tournament name off it, then resolves each recognized player against the same player search used by the manual Search Players flow and resolves the event to a surface/level using the same tournament-name knowledge used elsewhere in the engine. Never guesses -- anything not confidently recognized or matched comes back null with an explanatory warning so the user can fill it in manually.
+ * @summary Read a matchup screenshot and resolve players/surface
+ */
+export const RecognizeMatchupScreenshotBody = zod.object({
+  "imageBase64": zod.string().describe('Base64-encoded image data (a data URL such as \"data:image\/png;base64,...\" or raw base64 -- both accepted). PNG\/JPEG\/WEBP screenshots only.')
+})
+
+export const RecognizeMatchupScreenshotResponse = zod.object({
+  "player1": zod.object({
+  "recognizedName": zod.string().nullable().describe('The player name as read off the screenshot, before any lookup. Null if vision AI could not distinguish a second player.'),
+  "player": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "countryCode": zod.string().nullable(),
+  "currentRank": zod.number().nullish(),
+  "tour": zod.string().nullish(),
+  "source": zod.enum(['live-standings', 'historical-match']).optional().describe('How this player was found. \"live-standings\" means they\'re in the current ATP\/WTA standings feed (rank\/tour are live). \"historical-match\" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank\/tour here reflect their last known match, not a live ranking. Omitted for legacy rows.')
+}),zod.null()]).describe('The confidently-matched player from the existing player search, or null if the recognized name had no confident match.')
+}),
+  "player2": zod.object({
+  "recognizedName": zod.string().nullable().describe('The player name as read off the screenshot, before any lookup. Null if vision AI could not distinguish a second player.'),
+  "player": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "countryCode": zod.string().nullable(),
+  "currentRank": zod.number().nullish(),
+  "tour": zod.string().nullish(),
+  "source": zod.enum(['live-standings', 'historical-match']).optional().describe('How this player was found. \"live-standings\" means they\'re in the current ATP\/WTA standings feed (rank\/tour are live). \"historical-match\" means they were found only in our own previously-fetched real match history -- a genuinely real player, but rank\/tour here reflect their last known match, not a live ranking. Omitted for legacy rows.')
+}),zod.null()]).describe('The confidently-matched player from the existing player search, or null if the recognized name had no confident match.')
+}),
+  "event": zod.object({
+  "recognizedName": zod.string().nullable().describe('The event\/tournament name as read off the screenshot. Null if none was found.'),
+  "surface": zod.union([zod.enum(['Hard', 'Clay', 'Grass', 'IndoorHard']),zod.null()]),
+  "level": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()])
+}),
+  "warnings": zod.array(zod.string()).describe('Human-readable notes on anything not confidently recognized or matched -- the user should fill these in manually.')
+})
+
+
+/**
  * @summary List saved predictions (most recent first)
  */
 export const listPredictionsQueryLimitDefault = 25;

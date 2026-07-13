@@ -53,6 +53,8 @@ import type {
   ProviderStatus,
   RemoveDuplicatePredictionsResult,
   RunWalkForwardRequest,
+  ScreenshotMatchupInput,
+  ScreenshotMatchupResult,
   SearchPlayersParams,
   SimulatorValidation,
   UpdatePredictionSettingsRequest,
@@ -648,6 +650,78 @@ export function useGetHeadToHead<TData = Awaited<ReturnType<typeof getHeadToHead
 
 
 
+
+export const getRecognizeMatchupScreenshotUrl = () => {
+
+
+
+
+  return `/api/matchups/from-screenshot`
+}
+
+/**
+ * Accepts an uploaded screenshot (e.g. a bracket, schedule, or another app's matchup card), uses vision AI to read up to two distinct player names and an event/tournament name off it, then resolves each recognized player against the same player search used by the manual Search Players flow and resolves the event to a surface/level using the same tournament-name knowledge used elsewhere in the engine. Never guesses -- anything not confidently recognized or matched comes back null with an explanatory warning so the user can fill it in manually.
+ * @summary Read a matchup screenshot and resolve players/surface
+ */
+export const recognizeMatchupScreenshot = async (screenshotMatchupInput: ScreenshotMatchupInput, options?: RequestInit): Promise<ScreenshotMatchupResult> => {
+
+  return customFetch<ScreenshotMatchupResult>(getRecognizeMatchupScreenshotUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(screenshotMatchupInput)
+  }
+);}
+
+
+
+
+
+export const getRecognizeMatchupScreenshotMutationOptions = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recognizeMatchupScreenshot>>, TError,{data: BodyType<ScreenshotMatchupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recognizeMatchupScreenshot>>, TError,{data: BodyType<ScreenshotMatchupInput>}, TContext> => {
+
+const mutationKey = ['recognizeMatchupScreenshot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recognizeMatchupScreenshot>>, {data: BodyType<ScreenshotMatchupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  recognizeMatchupScreenshot(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecognizeMatchupScreenshotMutationResult = NonNullable<Awaited<ReturnType<typeof recognizeMatchupScreenshot>>>
+    export type RecognizeMatchupScreenshotMutationBody = BodyType<ScreenshotMatchupInput>
+    export type RecognizeMatchupScreenshotMutationError = ErrorType<ProviderError>
+
+    /**
+ * @summary Read a matchup screenshot and resolve players/surface
+ */
+export const useRecognizeMatchupScreenshot = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recognizeMatchupScreenshot>>, TError,{data: BodyType<ScreenshotMatchupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recognizeMatchupScreenshot>>,
+        TError,
+        {data: BodyType<ScreenshotMatchupInput>},
+        TContext
+      > => {
+      return useMutation(getRecognizeMatchupScreenshotMutationOptions(options));
+    }
 
 export const getListPredictionsUrl = (params?: ListPredictionsParams,) => {
   const normalizedParams = new URLSearchParams();
