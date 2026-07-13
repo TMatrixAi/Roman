@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, real, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, real, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -34,6 +34,18 @@ export const predictionsTable = pgTable(
     // Full module-by-module engine output (EngineBreakdown shape), stored as-is for the detail view.
     engine: jsonb("engine").notNull(),
 
+    // Preventive duplicate-prediction protection (2026-07-13 spec, Part 4) -- see
+    // predictionEngine/predictionIdentity.ts. `matchIdentityKey` is an order-independent key over
+    // the two player ids + tournament + surface + format; `inputSnapshotHash` is a SHA-256 hash of
+    // the actual resolved match histories/head-to-head/opponent-strength inputs used for THIS
+    // prediction. Together they form a DB-enforced uniqueness constraint: a genuinely identical
+    // repeat request (same match, same inputs) can never insert a second row, while a request for
+    // the same match with materially different inputs (e.g. newer match history) still can. This
+    // is distinct from `ledgerDuplicates.ts`'s manual cleanup tool, which detects/removes
+    // duplicates after the fact using a looser key that ignores inputs entirely.
+    matchIdentityKey: text("match_identity_key").notNull(),
+    inputSnapshotHash: text("input_snapshot_hash").notNull(),
+
     actualWinnerId: text("actual_winner_id"),
     actualWinnerName: text("actual_winner_name"),
 
@@ -45,6 +57,10 @@ export const predictionsTable = pgTable(
     // `/predictions/stats` aggregation's full-table scan avoidance as row counts grow.
     index("predictions_created_at_idx").on(table.createdAt),
     index("predictions_recommendation_idx").on(table.recommendation),
+    // Enforces "same match, same resolved inputs -> at most one row" at the database level (see
+    // the column doc above). A prediction submitted for the same match with different inputs gets
+    // a different inputSnapshotHash and is free to insert a new row.
+    uniqueIndex("predictions_identity_input_snapshot_idx").on(table.matchIdentityKey, table.inputSnapshotHash),
   ],
 );
 

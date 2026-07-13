@@ -171,3 +171,37 @@ test("reliability (confidence) grows with effective sample size and shrinks the 
     "the confidence-shrunk probability should never be pulled further from 50 than the raw probability",
   );
 });
+
+test("eloDifference's sign always agrees with which of the two DISPLAYED (rounded) Elo numbers is higher, even for a razor-thin raw gap", () => {
+  // Regression test for the "favors the wrong player" bug: eloDifference used to be rounded
+  // independently from player1SurfaceElo/player2SurfaceElo (each rounded from the raw, unrounded
+  // blendedElo). When the true gap was small enough to straddle a rounding boundary on one or
+  // both sides (e.g. a raw gap of ~0.2-0.9), the *sign* of the rounded difference could disagree
+  // with which rounded display number was actually higher -- e.g. displayed 1500 vs 1500 (tied)
+  // while eloDifference still read +1 or -1, or player1's rounded number reading higher while
+  // eloDifference's sign said player2 was favored. Sweep a range of near-tie matchups (varying
+  // small win/loss imbalances) to hit that boundary and assert the invariant holds every time.
+  for (let extraWins = 0; extraWins <= 6; extraWins++) {
+    const p1 = [...wins(10, "Hard"), ...wins(extraWins, "Hard")];
+    const p2 = wins(10, "Hard");
+    const result = computeSurfaceEloModule(p1, p2, "Hard");
+
+    const displayedDiff = result.player1SurfaceElo - result.player2SurfaceElo;
+    assert.equal(
+      result.eloDifference,
+      displayedDiff,
+      `eloDifference (${result.eloDifference}) must exactly equal the difference of the two displayed Elo numbers ` +
+        `(${result.player1SurfaceElo} - ${result.player2SurfaceElo} = ${displayedDiff}) for extraWins=${extraWins}`,
+    );
+
+    // The "favors X" sign (eloDifference >= 0 means player1) must never contradict which
+    // displayed number is actually higher.
+    if (result.player1SurfaceElo > result.player2SurfaceElo) {
+      assert.ok(result.eloDifference > 0, `player1's displayed Elo is higher but eloDifference (${result.eloDifference}) doesn't favor player1`);
+    } else if (result.player1SurfaceElo < result.player2SurfaceElo) {
+      assert.ok(result.eloDifference < 0, `player2's displayed Elo is higher but eloDifference (${result.eloDifference}) doesn't favor player2`);
+    } else {
+      assert.equal(result.eloDifference, 0, `displayed Elo numbers are tied (${result.player1SurfaceElo}) but eloDifference (${result.eloDifference}) is nonzero`);
+    }
+  }
+});

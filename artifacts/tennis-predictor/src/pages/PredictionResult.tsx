@@ -43,7 +43,7 @@ function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number,
   )
 }
 
-function ModuleCard({ title, reliability, children, icon: Icon }: { title: string, reliability: number, children: React.ReactNode, icon: any }) {
+function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel = "REL" }: { title: string, reliability: number, children: React.ReactNode, icon: any, reliabilityLabel?: string }) {
   return (
     <Card className="overflow-hidden flex flex-col h-full">
       <div className="bg-secondary/50 p-3 border-b flex justify-between items-center">
@@ -52,7 +52,7 @@ function ModuleCard({ title, reliability, children, icon: Icon }: { title: strin
           {title}
         </div>
         <div className="flex items-center gap-1.5 text-xs font-mono">
-          <span className="text-muted-foreground">REL:</span>
+          <span className="text-muted-foreground">{reliabilityLabel}:</span>
           <span className={reliability < 50 ? "text-warning" : reliability >= 80 ? "text-success" : "text-foreground"}>
             {reliability}%
           </span>
@@ -355,7 +355,7 @@ export default function PredictionResultPage() {
                     <span className="text-foreground font-bold">{engine.simulation.simulationsRun.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Input reliability:</span>
+                    <span>Input completeness:</span>
                     <span className="text-foreground font-bold">{engine.simulation.inputReliability}%</span>
                   </div>
                 </div>
@@ -363,7 +363,7 @@ export default function PredictionResultPage() {
               </CardContent>
             </Card>
 
-            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={engine.simulation.inputReliability} icon={Dices}>
+            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={engine.simulation.inputReliability} icon={Dices} reliabilityLabel="COMP">
               <div className="h-64 -ml-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={engine.simulation.setScoreDistribution.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>

@@ -4,6 +4,7 @@
 // Run with: pnpm --filter @workspace/api-server run test:evaluation
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { db, predictionsTable } from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import { findDuplicatePredictionGroups } from "./ledgerDuplicates";
@@ -30,6 +31,13 @@ function baseRow(overrides: Partial<typeof predictionsTable.$inferInsert>) {
     recommendation: "MODERATE_LEAN",
     predictedSetScore: "2-1",
     engine: {},
+    // This dedup tool intentionally inserts multiple rows that share the same
+    // player/tournament/surface/format on purpose (that's what it's testing) -- give each row its
+    // own random identity/hash so the unrelated matchIdentityKey+inputSnapshotHash uniqueness
+    // constraint (added for the preventive duplicate-insert feature) never collides with these
+    // deliberately-duplicate rows.
+    matchIdentityKey: `${RUN_TAG}-${randomUUID()}`,
+    inputSnapshotHash: randomUUID(),
     ...overrides,
   } satisfies typeof predictionsTable.$inferInsert;
 }

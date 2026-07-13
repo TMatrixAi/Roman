@@ -24,10 +24,12 @@ import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
 import { runPredictionEngine } from "../services/predictionEngine";
 import { buildPlayerProfileWarnings } from "../services/predictionEngine/playerProfileWarnings";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
+import { computeMatchIdentityKey, computeInputSnapshotHash } from "../services/predictionEngine/predictionIdentity";
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
 import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
 import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrading";
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
+import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
 
 const router: IRouter = Router();
 
@@ -152,29 +154,39 @@ router.post("/predictions", async (req, res): Promise<void> => {
     });
     output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 
-    const [saved] = await db
-      .insert(predictionsTable)
-      .values({
-        player1Id: player1.id,
-        player1Name: player1.name,
-        player2Id: player2.id,
-        player2Name: player2.name,
-        surface: body.surface,
-        matchFormat: body.matchFormat,
-        tournamentLevel: body.tournamentLevel ?? null,
-        tournamentName: body.tournamentName ?? null,
-        predictedWinnerId: output.predictedWinnerId,
-        predictedWinnerName: output.predictedWinnerName,
-        calibratedProbability: output.calibratedProbability,
-        predictedWinnerProbability: output.predictedWinnerProbability,
-        dataQuality: output.dataQuality,
-        dataQualityLabel: output.dataQualityLabel,
-        upsetRisk: output.upsetRisk,
-        recommendation: output.recommendation,
-        predictedSetScore: output.predictedSetScore,
-        engine: output.engine,
-      })
-      .returning();
+    const matchIdentityKey = computeMatchIdentityKey(player1.id, player2.id, body.tournamentName ?? null, body.surface, body.matchFormat);
+    const inputSnapshotHash = computeInputSnapshotHash({
+      player1Id: player1.id,
+      player2Id: player2.id,
+      player1Matches,
+      player2Matches,
+      headToHead,
+      player1OpponentElo: player1OpponentStrength.lookup,
+      player2OpponentElo: player2OpponentStrength.lookup,
+    });
+
+    const saved = await saveOrUpdatePrediction({
+      player1Id: player1.id,
+      player1Name: player1.name,
+      player2Id: player2.id,
+      player2Name: player2.name,
+      surface: body.surface,
+      matchFormat: body.matchFormat,
+      tournamentLevel: body.tournamentLevel ?? null,
+      tournamentName: body.tournamentName ?? null,
+      predictedWinnerId: output.predictedWinnerId,
+      predictedWinnerName: output.predictedWinnerName,
+      calibratedProbability: output.calibratedProbability,
+      predictedWinnerProbability: output.predictedWinnerProbability,
+      dataQuality: output.dataQuality,
+      dataQualityLabel: output.dataQualityLabel,
+      upsetRisk: output.upsetRisk,
+      recommendation: output.recommendation,
+      predictedSetScore: output.predictedSetScore,
+      engine: output.engine,
+      matchIdentityKey,
+      inputSnapshotHash,
+    });
 
     res.status(201).json(CreatePredictionResponse.parse(saved));
   } catch (err) {

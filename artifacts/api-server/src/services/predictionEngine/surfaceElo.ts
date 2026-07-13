@@ -288,7 +288,17 @@ export function computeSurfaceEloModule(
   const p1 = computePlayerSurfaceElo(player1Matches, surface, player1OpponentElo);
   const p2 = computePlayerSurfaceElo(player2Matches, surface, player2OpponentElo);
 
-  const eloDifference = p1.blendedElo - p2.blendedElo;
+  // Round each player's displayed Elo FIRST, then derive `eloDifference` (and therefore which
+  // player it says is "favored") from those same rounded numbers -- never from the raw, unrounded
+  // blended Elo independently. Rounding `p1.blendedElo` and `p2.blendedElo` separately before
+  // subtracting can disagree in sign with rounding their raw difference directly whenever the true
+  // gap is small (e.g. a raw gap of ~0.3-0.9 straddling a rounding boundary on one or both sides),
+  // which previously let the "favors X" text name a different player than the two displayed Elo
+  // numbers implied. Deriving from the rounded display values guarantees the two can never
+  // disagree, by construction.
+  const player1SurfaceElo = Math.round(p1.blendedElo);
+  const player2SurfaceElo = Math.round(p2.blendedElo);
+  const eloDifference = player1SurfaceElo - player2SurfaceElo;
   const rawEloWinProbabilityPlayer1 = 1 / (1 + Math.pow(10, -eloDifference / 400));
 
   // Weakest-link confidence -- a matchup is only as well-supported as its thinner side, matching
@@ -322,9 +332,9 @@ export function computeSurfaceEloModule(
   }
 
   return {
-    player1SurfaceElo: Math.round(p1.blendedElo),
-    player2SurfaceElo: Math.round(p2.blendedElo),
-    eloDifference: Math.round(eloDifference),
+    player1SurfaceElo,
+    player2SurfaceElo,
+    eloDifference,
     eloWinProbabilityPlayer1: Math.round(eloWinProbabilityPlayer1 * 10) / 10,
     rawEloWinProbabilityPlayer1: Math.round(rawEloWinProbabilityPlayer1 * 1000) / 10,
     reliability: Math.round(reliability),

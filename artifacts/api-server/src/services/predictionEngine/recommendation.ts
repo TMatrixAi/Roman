@@ -23,7 +23,14 @@ export function computeRecommendation(
   if (dataQualityLabel === "Poor" || dataQuality < 25) return "DO_NOT_RECOMMEND";
   if (margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement")) return "NO_STRONG_SIGNAL";
   if (upsetRisk === "EXTREME") return "HIGH_RISK";
-  if (margin >= 22 && dataQuality >= 55 && (upsetRisk === "LOW" || upsetRisk === "MODERATE")) return "STRONG_RECOMMENDATION";
+  if (
+    margin >= 22 &&
+    dataQuality >= 55 &&
+    (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
+    modelAgreement !== "Mixed" &&
+    modelAgreement !== "HighDisagreement"
+  )
+    return "STRONG_RECOMMENDATION";
   if (margin >= 10) return "MODERATE_LEAN";
   return "HIGH_RISK";
 }
