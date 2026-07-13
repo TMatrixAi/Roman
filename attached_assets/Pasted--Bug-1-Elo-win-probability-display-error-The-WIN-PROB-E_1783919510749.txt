@@ -1,0 +1,59 @@
+## Bug 1 — Elo win probability display error
+
+The WIN PROB (ELO) field is displaying values like 3930.0%, 5740.0%, 6980.0%, 7130.0% across multiple match cards. A probability cannot exceed 100%, so this is a calculation or formatting bug isolated to this one display field — every other probability on the same cards (Surface Elo bar, Serve & Return bars, final win probability) displays normally in the 0-100% range.
+
+Prompt to submit: "Fix the WIN PROB (ELO) display field — it's showing values above 100% (e.g., 3930%, 5740%, 6980%, 7130%) across multiple match cards. Locate the Elo-to-probability conversion (should use the standard logistic transform, P = 1 / (1 + 10^(-ratingDiff/400))) and check for a missing division or an accidental double multiplication by 100 in this specific display line. Confirm the fix by checking that this field never exceeds 100% or drops below 0% across all match cards, including edge cases with very large rating gaps."
+
+## Bug 2 — Predicted winner with sub-50% win probability
+
+At least one match (C. A. Herea vs. I. D. Amariei) displayed Herea as the predicted winner while her stated win probability was 44% — under 50%, which is logically inconsistent with being the pick. This happened on a "NO STRONG SIGNAL" / "HIGH DISAGREEMENT" card, suggesting the tie-break cascade picks a side while confidence-shrinkage logic separately pulls the number below 50% without correcting which player is displayed as winner.
+
+Prompt to submit: "Fix a logic conflict where the predicted winner field can show a player with a win probability under 50%. Add a guardrail in the confidence-shrinkage step: if shrinkage would push the winning player's probability below 50%, either (a) flip the displayed predicted winner to match whichever player's probability is actually higher after shrinkage, or (b) clamp the shrunk probability at 50%+epsilon so the winner and probability stay consistent. Apply this check after all shrinkage/calibration steps run, not before, so it catches the final displayed number. Test specifically against the Herea/Amariei case where this was observed (44% win probability, Herea shown as winner)."
+
+## Bug 3 — Upcoming-matches dropdown time-window filter
+
+The dropdown currently filters by a fixed daily clock-time window (e.g., 6AM-6PM) instead of showing all matches chronologically from now forward, causing matches outside that window to be invisible even though they're upcoming.
+
+Prompt to submit (already finalized, ready to send as-is): "Fix the upcoming-matches dropdown: replace the fixed daily time-window filter with a query for all matches where start_time >= now (both stored/compared internally in UTC), sorted ascending by start_time. Cap results by count (50 at a time) rather than by clock hours. If fewer than N matches exist in the next 24-48 hours, extend the window rather than showing an empty list. Display all match times to the user in EST (America/New_York), converting from UTC only at render time — do not change how times are stored or compared internally. Clarify whether in-progress matches (started but not yet finished) should remain visible or be excluded."
+
+## Phase 43 remaining work — Elite tier validation
+
+The Elite Prediction tier currently has n=0 real graded matches, meaning its gating logic has never been tested against actual outcomes.
+
+Prompt to submit: "Give the Elite Prediction tier a real validation sample. Either temporarily loosen the Elite gating threshold, or add a 'near-Elite' logging path that records matches falling just short of the threshold, so a meaningful n accumulates over the next stretch of graded matches. Once a minimum n is defined and reached, backtest Elite-tier predictions against that sample and surface the results (n, accuracy, calibration) on the existing Elite tier UI. Record results whether the tier performs well or not."
+
+## Phase 43 remaining work — market-edge tracking
+
+You've selected Odds-API.io as the primary odds provider and The Odds API as fallback, with API keys already stored in Replit Secrets as ODDS_API_KEY and ODDS_API_KEY_FALLBACK.
+
+Prompt to submit: "Implement market-edge tracking using Odds-API.io as the primary odds provider (key in Secrets as ODDS_API_KEY, base endpoint https://api.odds-api.io/v3) and The Odds API as fallback (key in Secrets as ODDS_API_KEY_FALLBACK). On a 429/rate-limit response from the primary, automatically retry the same match against the fallback provider. Log which provider served each match's odds. If both providers fail for a given match, flag it clearly on the dashboard as 'no odds available' rather than silently excluding it or treating it as zero edge. For every graded prediction with available odds, compute vig-adjusted implied probability and store (calibrated model probability − implied probability) as the edge. Aggregate into a rolling average and display on the Accuracy dashboard as a metric separate from accuracy/ECE. Clarify and document whether the odds snapshot used is 'at prediction time' or 'closing line' — pick one and be consistent."
+
+## Phase 45 — feature depth (spec finalized, ready to run)
+
+Full task spec already written covering: point-level serve/return features (first-serve win %, break points saved/converted, service games held), surface-sample-depth exposure per matchup, Availability module rework with richer travel/rest/injury inputs, and incremental walk-forward validation run in three stages (serve/return alone, then +surface-sample, then +Availability) rather than one combined run — this isolates Availability's true net accuracy impact so the re-enable decision is trustworthy. Submit this spec as-is; it's already corrected and complete.
+
+## Phase 46 — needs to be written (Data Quality tier re-audit)
+
+This does not exist yet as a task. It depends on Phase 45's Availability validation results being available first.
+
+Prompt to write once Phase 45 completes: "Using the walk-forward validation results from Phase 45 (specifically the run with the reworked Availability module included/excluded per its net-positive bar), rerun the poor/limited/strong Data Quality tier breakdown that was originally reported in the Phase 41 ablation analysis. Confirm whether the accuracy inversion (Strong tier at 54.8%, underperforming Poor at 59.3% and Limited at 61.9%) has resolved now that Availability's influence has been corrected. Specifically re-check the F. Passaro vs. M. Krumich match (Data Quality: 84% 'Strong', no head-to-head history, high model disagreement) as a concrete test case. If the inversion persists even after the Availability fix, flag that the Data Quality scoring formula itself likely needs rework, separate from the Availability issue."
+
+## Depends on weeks of odds data — CLV tracking
+
+Not actionable yet; revisit once Phase 43's market-edge tracking has been live for a few weeks and accumulated real odds history.
+
+Future prompt (hold until ready): "Add Closing Line Value (CLV) tracking: for every graded prediction, capture the odds at prediction time and the closing odds just before match start, then compute CLV as the difference between the two implied probabilities. Track CLV as a rolling average, separate from the existing point-in-time market-edge metric, since consistently beating the closing line is a stronger signal of real predictive skill than raw win accuracy or single-snapshot edge."
+
+## Standalone monitoring — Monte Carlo simulator
+
+The Monte Carlo simulator is currently display-only and explicitly not voting into final probabilities; it requires at least 30 real graded outcomes with a full engine snapshot before it can be evaluated for inclusion.
+
+Prompt to submit when checking status: "Report current progress toward the Monte Carlo simulator's 30-graded-outcome validation threshold — how many qualifying outcomes have been recorded so far, and whether the validation run is ready to be triggered."
+
+## Standalone flag — Monte Carlo vs. card probability disagreement
+
+At least one match showed the final card probability and the Monte Carlo simulated probability disagreeing by a wide margin (37% vs. 65.1% favoring the same player, opposite directions). This isn't currently a bug since Monte Carlo doesn't vote yet, but it should be understood before it's ever allowed to vote.
+
+Prompt to submit before Monte Carlo is enabled to vote: "Before allowing the Monte Carlo simulator to vote into the final ensemble probability, investigate cases where its simulated win probability disagrees sharply with the card's final probability for the same match (e.g., one match showed 37% vs. 65.1% favoring the same player in opposite directions). Determine whether this stems from different input assumptions, different reliability weighting, or a genuine modeling disagreement, and document the finding before any change to Monte Carlo's voting status."
+
+Sources

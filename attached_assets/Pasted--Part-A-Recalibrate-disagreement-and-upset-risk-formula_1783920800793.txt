@@ -1,0 +1,167 @@
+## Part A — Recalibrate disagreement and upset-risk formulas
+
+Recalibrate model disagreement, rebuild upset-risk logic, and validate the underlying models
+
+Do not fix the contradiction by simply hiding the Elite badge. Fix the calculations that produce High Disagreement and Extreme Upset Risk, then keep a final consistency guardrail so the UI cannot display contradictory states.
+
+1. Recalibrate model-disagreement scoring
+
+The current disagreement label appears to treat all models too equally. Weak, low-reliability, or low-data modules may be causing "High Disagreement" even when the strongest validated models agree.
+
+Rebuild disagreement using these rules:
+
+A. Use calibrated probabilities, not raw model outputs
+
+Calculate disagreement only after each model has been individually calibrated using walk-forward validation.
+
+For every model, compare its predicted probability buckets against actual historical win rates. For example:
+
+- Predictions around 60% should historically win near 60%.
+- Predictions around 70% should historically win near 70%.
+- If a model predicts 70% but only wins 61%, shrink its future output accordingly.
+
+Use isotonic regression, Platt scaling, or another validation-supported calibration method. Select the method with the best out-of-sample Brier score and calibration error.
+
+Do not calculate disagreement from uncalibrated outputs.
+
+B. Weight disagreement by proven reliability
+
+Each model's disagreement influence should depend on:
+
+- walk-forward accuracy
+- Brier score
+- expected calibration error
+- validation sample size
+- matchup-specific data completeness
+- relevant surface and competition-level sample size
+
+Recommended concept:
+
+effectiveWeight = baseModelWeight × validationReliability × matchupDataReliability × sampleDepthReliability
+
+A model with poor validation performance or almost no usable matchup data should not be able to create a High Disagreement label by itself.
+
+C. Prioritize the validated core models
+
+Give the greatest disagreement influence to:
+
+1. Serve/Return
+2. Surface Elo
+3. Recent Form
+
+Secondary models such as Head-to-Head, Fatigue, General Ensemble, Segment Specialist, Availability, or style matchup should only strongly affect disagreement if they have:
+
+- sufficient matchup data
+- proven out-of-sample value
+- acceptable calibration
+- meaningful weight in the final prediction
+
+Do not let a model with reliability 5 or weight 0.01 materially change the disagreement category.
+
+D. Measure weighted probability spread
+
+Use a transparent weighted disagreement score rather than a simple model vote count.
+
+For example:
+
+weightedMean = Σ(probability × effectiveWeight) / Σ(effectiveWeight)
+weightedVariance = Σ(effectiveWeight × (probability - weightedMean)^2) / Σ(effectiveWeight)
+weightedStandardDeviation = sqrt(weightedVariance)
+
+Also calculate:
+
+- maximum meaningful probability gap among reliable models
+- whether reliable models choose opposite winners
+- core-model directional agreement
+- percentage of effective weight supporting each player
+
+Suggested starting categories, which must later be validated:
+
+Low disagreement: weighted standard deviation below 6 percentage points, and at least 70% of effective weight supports the same player
+Moderate disagreement: weighted standard deviation from 6 to 11 points, or effective support is between 58% and 70%
+High disagreement: weighted standard deviation above 11 points, or major validated models choose opposite winners, or neither player receives at least 58% of effective model weight
+
+These are starting thresholds, not permanent constants. Tune them using historical walk-forward results.
+
+E. Separate disagreement from closeness
+
+A match can be close without the models disagreeing.
+
+Example:
+
+- Surface Elo: Player A 53%
+- Serve/Return: Player A 55%
+- Recent Form: Player A 52%
+
+This should be: close matchup, low disagreement. It should not be High Disagreement simply because the final probability is near 50%.
+
+Conversely:
+
+- Surface Elo: Player A 68%
+- Serve/Return: Player B 61%
+- Recent Form: Player A 66%
+
+This is real disagreement even if the final blend lands near 57%.
+
+Create separate fields: matchupCloseness, modelDisagreement. Do not use one as a substitute for the other.
+
+F. Explain the disagreement
+
+The UI should show which meaningful models caused the label.
+
+Example:
+
+High Disagreement: Surface Elo favors Player A at 68%, Serve/Return favors Player B at 61%, Recent Form favors Player A at 66%, Serve/Return has high reliability and is the primary source of conflict.
+
+Do not show High Disagreement without identifying the actual conflict.
+
+2. Rework the upset-risk calculation
+
+The current Extreme Risk label appears too sensitive and may be triggered by missing data, a close probability, or one weak model.
+
+Upset risk should measure the chance that the displayed favorite loses because of credible uncertainty or contradictory evidence. It should not simply duplicate low confidence or model disagreement.
+
+A. Build upset risk from defined components
+
+upsetRiskScore = modelConflictComponent + favoriteWeaknessComponent + uncertaintyComponent + volatilityComponent + sampleDepthComponent + matchupHazardComponent
+
+Each component should be visible and auditable.
+
+1. Model-conflict component: use the recalibrated weighted disagreement score described above. Only reliable models should meaningfully contribute.
+
+2. Favorite-weakness component: risk should increase when the displayed favorite is only slightly favored. Suggested starting logic: 50-53% favorite = high closeness contribution, 53-57% = moderate, 57-63% = low, 63%+ = minimal. Do not automatically classify every 50-55% prediction as Extreme Risk. A close match with strong model agreement is uncertain, but not necessarily an extreme upset scenario.
+
+3. Uncertainty component: increase risk when important inputs are missing or unreliable — very few recent matches, weak surface sample, uncertain player identity matching, missing serve/return data, uncertain competition level, stale injury or availability information, unverified surface, major disagreement between raw and calibrated probability. Missing data should lower reliability. It should not invent a strong upset signal.
+
+4. Volatility component: use historically measured volatility for ATP versus WTA, Challenger versus ITF versus main tour, qualifying versus main draw, surface, best-of-three versus best-of-five, player experience, recent retirement or withdrawal history, inconsistent form. This component must be based on historical upset rates, not assumptions.
+
+5. Surface and sample-depth component: risk should increase when the favorite has very few matches on the current surface, the underdog has much deeper surface experience, Surface Elo is based on a shallow sample, or the player's overall rating is strong but surface-specific evidence is weak. Expose the exact sample counts used.
+
+6. Matchup-hazard component: include validated matchup hazards such as large serve advantage versus weak returner, underdog with a strong break-rate advantage, extreme tiebreak dependence, major style mismatch, recent fatigue or travel disadvantage, injury or return-from-absence uncertainty, strong underdog form at the same competition level. Only include a factor after it demonstrates out-of-sample predictive value.
+
+B. Prevent double-counting
+
+Do not count the same signal multiple times. Examples: a shallow surface sample should not simultaneously create a full penalty in Data Quality, Surface Elo reliability, disagreement, and upset risk without controlled weighting. A 52% final probability should not independently trigger High Risk, Extreme Risk, and High Disagreement unless the underlying evidence supports all three. Audit correlated inputs and cap their combined influence.
+
+C. Define risk tiers using actual historical loss rates
+
+Do not choose labels solely from arbitrary thresholds. After computing the risk score, bucket historical predictions and inspect how often the displayed favorite actually lost. The labels should correspond to observed loss rates.
+
+Example target meaning:
+
+Low Risk: favorite historically loses less than about 25%
+Moderate Risk: favorite loses about 25-35%
+High Risk: favorite loses about 35-45%
+Extreme Risk: favorite loses more than about 45%, or there is a specific major hazard with strong historical support
+
+Use the actual validation results to establish the final ranges. If the current Extreme tier does not have a clearly higher favorite-loss rate than High or Moderate, the tier is not calibrated.
+
+D. Do not use Extreme as a generic warning
+
+Extreme Risk should require at least one of: strong conflict between multiple reliable primary models, final favorite probability nearly 50% combined with high uncertainty, major verified injury/fatigue/retirement/availability concern, severe sample-depth problem, historically dangerous matchup factor with strong validation support, very high ensemble uncertainty measured through out-of-sample testing. One missing field or one weak secondary model should not be enough.
+
+E. Explain the risk label
+
+Show the top contributors. Example: Extreme Risk because Serve/Return strongly favors the opponent, favorite has only 3 prior hard-court matches, primary models split 54% versus 46% by effective weight, ITF validation data shows elevated upset variance for this matchup type. Do not display only "Volatility warning."
+
+Sources

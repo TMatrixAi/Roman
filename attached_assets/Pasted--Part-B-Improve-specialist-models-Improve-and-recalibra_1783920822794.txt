@@ -1,0 +1,21 @@
+## Part B — Improve specialist models
+
+Improve and recalibrate the underlying specialist models
+
+Serve/Return
+
+Replace generic ratings with point-level or match-derived metrics where available: first-serve points won, second-serve points won, return points won, break points saved, break points converted, service games held, return games won, ace and double-fault rates, opponent-adjusted serve and return strength. Calculate by current surface, recent period, competition level, opponent strength. Use shrinkage toward tour averages when samples are small. A player with two recorded matches should not receive the same confidence as a player with forty.
+
+Surface Elo
+
+Check that Surface Elo includes: recency decay, surface-specific history, opponent strength, competition-level adjustment, uncertainty for small samples, sensible fallback to overall Elo when surface history is shallow. Expose: rating, number of surface matches, effective sample size, confidence interval or reliability score. Do not treat a small rating difference such as 1638 versus 1535 as automatically decisive without considering rating uncertainty and sample depth.
+
+Recent Form
+
+Recent Form should not be a raw win-loss percentage. Adjust for: opponent quality, surface, competition level, match recency, retirement and walkover handling, strength of performance not only outcome, serve/return performance trend, sample size. Prevent the model from becoming overconfident after a small winning or losing streak. Validate whether "improving," "stable," and "declining" categories correspond to future results.
+
+Availability
+
+Do not re-enable Availability based on intuition. Use richer inputs: days of rest, travel distance, time-zone changes, matches played over the previous 7, 14, and 30 days, recent long matches, consecutive tournament weeks, verified injury reports, recent retirements and withdrawals, return from absence, scheduling congestion. Distinguish verified data from inferred data. Each availability feature should have: source, freshness, confidence, missing-data handling. Only restore Availability to the live ensemble if walk-forward testing shows a net improvement.
+
+Sources

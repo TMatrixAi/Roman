@@ -1,0 +1,45 @@
+## Part C — Incremental validation and final consistency checks
+
+Validate each change separately and add final consistency checks
+
+Do not deploy all changes as one combined adjustment. Run incremental walk-forward validation:
+
+Stage 1: Current baseline engine. Record accuracy, Brier score, log loss, expected calibration error, calibration by probability bucket, upset-risk tier loss rates, disagreement-tier accuracy, sample size.
+
+Stage 2: Add recalibrated Serve/Return. Compare against baseline.
+
+Stage 3: Add improved Surface Elo sample-depth handling. Compare again.
+
+Stage 4: Add recalibrated Recent Form. Compare again.
+
+Stage 5: Add revised disagreement logic. Confirm High Disagreement cases genuinely contain conflict among reliable models, Low Disagreement cases show meaningful agreement, and disagreement tier predicts error or uncertainty monotonically.
+
+Stage 6: Add revised upset-risk logic. Confirm observed favorite-loss rates rise consistently: Low < Moderate < High < Extreme.
+
+Stage 7: Test Availability both included and excluded. Only re-enable it if it improves out-of-sample performance without harming calibration.
+
+Use chronological train/test splits. Do not use future matches to generate features or calibration.
+
+Add final consistency checks
+
+After every model, calibration, shrinkage, risk, and disagreement step finishes, run one final consistency pass.
+
+Required rules:
+
+- predictedWinner must match the player with final probability above 50%
+- winner probability must be between 50% and 100%
+- opponent probability must equal 100% minus winner probability
+- Elite explanation cannot say "no model conflict" when disagreement is High
+- all displayed values must come from the same final prediction object
+
+Do not solve incorrect disagreement or risk labels by merely changing the badge. Fix the underlying calculations first. However, the UI must still reject logically contradictory states while the models are being validated.
+
+Required output after implementation
+
+Provide a report showing: previous versus new disagreement formula, previous versus new upset-risk formula, effective weights for every model, calibration method used for each model, historical sample size for each validation run, accuracy, Brier score, log loss, and ECE, favorite loss rate for each upset-risk tier, accuracy and error rate for each disagreement tier, examples of predictions whose labels changed, exact reason the C. Bouchelaghem vs. A. Ganesan match received its final Elite, disagreement, and risk labels.
+
+Do not claim the issue is fixed only because the contradictory labels disappeared. Confirm that the new labels are supported by walk-forward validation.
+
+These screenshots show a contradiction in my tennis prediction engine. The app predicts C. Bouchelaghem as the winner with a 66% win probability, 82% data quality, and an Elite Prediction badge. However, the same prediction is also labeled High Risk, Extreme Upset Risk, and High Disagreement in the Model Votes section. The explanation even states "no model conflict," which directly contradicts the High Disagreement label. I need to determine whether this is caused by incorrect disagreement scoring, incorrect upset-risk logic, stale UI state, or multiple UI components reading different versions of the prediction object. The Elite badge, explanation, disagreement label, and upset-risk label should all be generated from the same finalized prediction state and should never contradict one another.
+
+Sources

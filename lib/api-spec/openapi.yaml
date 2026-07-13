@@ -1444,6 +1444,7 @@ components:
           predictedWinnerId,
           predictedWinnerName,
           calibratedProbability,
+          predictedWinnerProbability,
           dataQuality,
           upsetRisk,
           recommendation,
@@ -1479,6 +1480,13 @@ components:
         calibratedProbability:
           type: number
           description: Calibrated win probability for player 1, 0-100
+        predictedWinnerProbability:
+          type: number
+          description: >-
+            The predicted winner's own win probability (always >= 50) -- mirrored from
+            calibratedProbability when player 2 is the pick, so this can never disagree with the
+            player named as predictedWinnerName. Use this for display; calibratedProbability
+            stays player-1-relative for calibration/evaluation purposes.
         dataQuality:
           type: integer
         dataQualityLabel:
@@ -1513,6 +1521,7 @@ components:
           surface,
           predictedWinnerName,
           calibratedProbability,
+          predictedWinnerProbability,
           dataQuality,
           upsetRisk,
           recommendation,
@@ -1533,6 +1542,11 @@ components:
           type: string
         calibratedProbability:
           type: number
+        predictedWinnerProbability:
+          type: number
+          description: >-
+            The predicted winner's own win probability (always >= 50) -- see the field doc on
+            Prediction. Use this for display instead of calibratedProbability.
         dataQuality:
           type: integer
         upsetRisk:

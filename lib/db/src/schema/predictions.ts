@@ -20,6 +20,11 @@ export const predictionsTable = pgTable(
     predictedWinnerId: text("predicted_winner_id").notNull(),
     predictedWinnerName: text("predicted_winner_name").notNull(),
     calibratedProbability: real("calibrated_probability").notNull(),
+    // The predicted winner's own win probability (mirrored from calibratedProbability when
+    // player 2 is the pick) -- always >= 50, so display surfaces never show a sub-50% number
+    // next to the player the engine named the favorite. calibratedProbability itself stays
+    // player-1-relative because calibration fitting/evaluation depend on that fixed orientation.
+    predictedWinnerProbability: real("predicted_winner_probability").notNull(),
     dataQuality: integer("data_quality").notNull(),
     dataQualityLabel: text("data_quality_label").notNull(),
     upsetRisk: text("upset_risk").notNull(),

@@ -165,6 +165,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
         predictedWinnerId: output.predictedWinnerId,
         predictedWinnerName: output.predictedWinnerName,
         calibratedProbability: output.calibratedProbability,
+        predictedWinnerProbability: output.predictedWinnerProbability,
         dataQuality: output.dataQuality,
         dataQualityLabel: output.dataQualityLabel,
         upsetRisk: output.upsetRisk,

@@ -140,9 +140,9 @@ export default function PredictionResultPage() {
               <div className="space-y-2">
                 <div className="flex justify-between font-mono text-sm">
                   <span>WIN PROBABILITY</span>
-                  <span className="font-bold">{formatProbability(prediction.calibratedProbability)}</span>
+                  <span className="font-bold">{formatProbability(prediction.predictedWinnerProbability)}</span>
                 </div>
-                <Progress value={prediction.calibratedProbability} className="h-3" />
+                <Progress value={prediction.predictedWinnerProbability} className="h-3" />
               </div>
             </div>
 

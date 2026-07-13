@@ -81,7 +81,13 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
             <div className="font-bold flex items-center gap-2">
               {prediction.predictedWinnerName ?? "—"}
               {prediction.calibratedProbability != null && (
-                <Badge variant="outline" className="font-mono">{formatProbability(prediction.calibratedProbability)}</Badge>
+                <Badge variant="outline" className="font-mono">
+                  {formatProbability(
+                    prediction.predictedWinnerId === prediction.player1Id
+                      ? prediction.calibratedProbability
+                      : 100 - prediction.calibratedProbability,
+                  )}
+                </Badge>
               )}
             </div>
           </div>

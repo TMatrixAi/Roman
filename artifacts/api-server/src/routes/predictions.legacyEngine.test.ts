@@ -20,6 +20,7 @@ test("GetPredictionResponse parses a legacy row whose stored engine blob has no 
     predictedWinnerId: "p1",
     predictedWinnerName: "Player One",
     calibratedProbability: 55,
+    predictedWinnerProbability: 55,
     dataQuality: 68,
     upsetRisk: "MODERATE",
     recommendation: "NO_STRONG_SIGNAL",

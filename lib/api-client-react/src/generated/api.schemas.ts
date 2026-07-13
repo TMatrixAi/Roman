@@ -600,6 +600,8 @@ export interface Prediction {
   predictedWinnerName: string;
   /** Calibrated win probability for player 1, 0-100 */
   calibratedProbability: number;
+  /** The predicted winner's own win probability (always >= 50) -- mirrored from calibratedProbability when player 2 is the pick, so this can never disagree with the player named as predictedWinnerName. Use this for display; calibratedProbability stays player-1-relative for calibration/evaluation purposes. */
+  predictedWinnerProbability: number;
   dataQuality: number;
   dataQualityLabel?: PredictionDataQualityLabel;
   upsetRisk: UpsetRisk;
@@ -624,6 +626,8 @@ export interface PredictionSummary {
   tournamentName?: string | null;
   predictedWinnerName: string;
   calibratedProbability: number;
+  /** The predicted winner's own win probability (always >= 50) -- see the field doc on Prediction. Use this for display instead of calibratedProbability. */
+  predictedWinnerProbability: number;
   dataQuality: number;
   upsetRisk: UpsetRisk;
   recommendation: Recommendation;

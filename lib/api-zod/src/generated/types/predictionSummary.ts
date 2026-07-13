@@ -18,6 +18,8 @@ export interface PredictionSummary {
   tournamentName?: string | null;
   predictedWinnerName: string;
   calibratedProbability: number;
+  /** The predicted winner's own win probability (always >= 50) -- see the field doc on Prediction. Use this for display instead of calibratedProbability. */
+  predictedWinnerProbability: number;
   dataQuality: number;
   upsetRisk: UpsetRisk;
   recommendation: Recommendation;

@@ -200,7 +200,7 @@ function PredictionRow({
             <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
             <div className="font-bold flex items-center gap-2">
               {prediction.predictedWinnerName}
-              <Badge variant="outline" className="font-mono">{formatProbability(prediction.calibratedProbability)}</Badge>
+              <Badge variant="outline" className="font-mono">{formatProbability(prediction.predictedWinnerProbability)}</Badge>
             </div>
           </div>
 

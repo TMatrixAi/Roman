@@ -23,6 +23,7 @@ function baseRow(overrides: Partial<typeof predictionsTable.$inferInsert>) {
     predictedWinnerId: `${RUN_TAG}-p1`,
     predictedWinnerName: "Test Player One",
     calibratedProbability: 55,
+    predictedWinnerProbability: 55,
     dataQuality: 80,
     dataQualityLabel: "Good",
     upsetRisk: "Low",

@@ -74,6 +74,16 @@ export interface EngineOutput {
   predictedWinnerId: string;
   predictedWinnerName: string;
   calibratedProbability: number; // for player 1, final -- Phase-4 fitted calibration when available, else the heuristic fallback
+  /**
+   * Final consistency guarantee: this is always the PREDICTED WINNER's own win probability
+   * (>= 50, mirrored from `calibratedProbability` when player 2 is the pick), never player 1's
+   * raw number mislabeled as the winner's confidence. `calibratedProbability` stays player-1-
+   * relative because calibration fitting, model-conflict detection, and evaluation scoring all
+   * depend on that fixed orientation -- this field exists so every display surface (match cards,
+   * prediction log, ledger) can show a number that can never contradict the winner it sits next
+   * to (e.g. a 44% figure next to the player the engine just called the favorite).
+   */
+  predictedWinnerProbability: number;
   /** Ensemble probability for player 1 before any calibration is applied -- kept for transparency and future calibration refitting. */
   rawEnsembleProbability: number;
   dataQuality: number;
@@ -348,6 +358,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const favorsPlayer1 = calibratedProbability >= 50;
   const predictedWinnerId = favorsPlayer1 ? input.player1.id : input.player2.id;
   const predictedWinnerName = favorsPlayer1 ? input.player1.name : input.player2.name;
+  // Guardrail (final consistency check): the predicted winner's own probability, mirrored from
+  // player 1's when player 2 is the pick. By construction this can never read below 50 next to
+  // the player the engine just named the favorite -- see the field doc on EngineOutput.
+  const predictedWinnerProbability = Math.round((favorsPlayer1 ? calibratedProbability : 100 - calibratedProbability) * 10) / 10;
   const predictedSetScore = predictSetScore(input.matchFormat, calibratedProbability, favorsPlayer1);
 
   const reasons: string[] = [];
@@ -455,6 +469,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     predictedWinnerId,
     predictedWinnerName,
     calibratedProbability,
+    predictedWinnerProbability,
     rawEnsembleProbability: ensembleProbability,
     dataQuality,
     dataQualityLabel,

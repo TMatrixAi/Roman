@@ -1,0 +1,21 @@
+50 - Rolling "upcoming from now" fixtures window
+
+What & Why
+
+The upcoming-matches list currently fetches fixtures for a single fixed UTC calendar date (defaulting to "today"), which hides matches that are genuinely upcoming but fall outside that single day (e.g. matches happening tomorrow, or near a UTC day boundary). Users should see all truly-upcoming matches from right now forward, not matches limited to one arbitrary calendar day.
+
+Done looks like
+
+The upcoming-matches list shows all matches with a start time at or after the current moment, sorted soonest-first, regardless of which calendar day (UTC) they fall on.
+The list is capped by a result count (e.g. 50) rather than by a clock-time or single-day window; if fewer matches exist in the near term, the window auto-extends further out instead of returning an empty or truncated list.
+All match times are still stored and compared internally in UTC exactly as today; only the on-screen display changes to consistently show Eastern time (America/New_York) instead of the viewer's arbitrary local timezone.
+It's decided and consistently applied whether in-progress (started but unfinished) matches remain visible in the list or are excluded.
+Out of scope
+
+Any change to how the tennis data provider itself is queried/paginated beyond what's needed to assemble the rolling window (e.g. no new data source).
+The tour filter (ATP/WTA/ITF) and "Predict Now"/"Custom Match" actions on each fixture card -- unchanged.
+Steps
+
+Replace the single-day fixture query with a rolling now-forward window — Change the upcoming-fixtures endpoint so it gathers matches starting at or after the current UTC instant (extending across as many calendar days as needed) instead of a single fixed date, sorts them ascending by start time, and caps the result count rather than a clock window; if the near-term window is sparse, extend it further out to keep a meaningful list populated.
+Decide and document in-progress match visibility — Explicitly include or exclude matches that have started but not finished, and make that behavior consistent between the endpoint and the list UI.
+Switch the display to Eastern time — Update the frontend fixtures list so all displayed match times are rendered in America/New_York, converting from the UTC value only at render time; keep "Time TBD" handling for matches with no confirmed start time.
