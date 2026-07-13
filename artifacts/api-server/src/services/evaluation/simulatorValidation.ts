@@ -8,6 +8,13 @@ import type { LiveFeatureSnapshot } from "./types";
 import type { SimulatorAdoptionInput } from "../predictionEngine/types";
 
 /**
+ * Adoption here is gated purely on measured logLoss performance (see `validateAndStoreSimulator`
+ * below) and deliberately says nothing about *why* the simulator's per-match probability can
+ * disagree sharply with the card's ensemble probability -- that is a separate, structural
+ * consequence of the simulator's narrow two-signal input scope, investigated and documented in
+ * `./SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md` with two reproduced real cases. Read that before
+ * changing anything about whether/how much the simulator should vote.
+ *
  * The simulator needs at least this many real, graded, out-of-sample match outcomes before its
  * measured performance is trusted at all -- fitting a comparison on a handful of matches would
  * just be measuring noise. Mirrors the same rough floor used for Phase 6 specialist segments

@@ -13,6 +13,13 @@ import type { ServeReturnResult } from "./serveReturn";
  * closed-form shortcut. Uncertainty in the *input* probabilities (driven by how thin the
  * underlying data is) is deliberately propagated into the output range -- this is not simulation
  * noise dressed up as confidence, it's the actual measured reliability of the inputs.
+ *
+ * IMPORTANT: this narrow two-signal input scope (Surface Elo + Serve & Return only, never Recent
+ * Form/Fatigue/Availability/Head-to-Head/the specialist blend) is exactly why this simulator's
+ * `player1WinProbability` can disagree sharply -- even in the opposite direction -- with the
+ * card's final ensemble probability on matches where those other signals dominate the ensemble's
+ * vote. See `../evaluation/SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md` for a reproduced, concrete
+ * investigation of this before treating a large disagreement as a bug.
  */
 
 export interface ServicePointEstimate {
