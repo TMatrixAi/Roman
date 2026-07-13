@@ -178,6 +178,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   ): Promise<Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean }>> {
     const results: Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean }> = [];
 
+
     for (const match of matches) {
       const resultType = classifyResult(match);
       const isVoid = resultType === "walkover" || resultType === "cancelled";
@@ -208,6 +209,8 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
           lockedAt: new Date(),
           modelVersion: HISTORICAL_MODEL_VERSION,
           featureSnapshot: scored?.snapshot ?? null,
+          modelAgreement: scored?.modelAgreement ?? null,
+          upsetRiskTier: scored?.upsetRiskTier ?? null,
           rawProbability: rawProbability !== null ? rawProbability * 100 : null,
           calibratedProbability: rawProbability !== null ? rawProbability * 100 : null,
           predictedWinnerId,

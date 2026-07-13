@@ -5,10 +5,12 @@
  * Tennis prediction engine API
  * OpenAPI spec version: 0.1.0
  */
+import type { DisagreementTierMetrics } from './disagreementTierMetrics';
 import type { EliteTierBacktest } from './eliteTierBacktest';
 import type { EvaluationDashboardActiveCalibrationMethod } from './evaluationDashboardActiveCalibrationMethod';
 import type { EvaluationDashboardSegment } from './evaluationDashboardSegment';
 import type { SpecialistSegmentSummary } from './specialistSegmentSummary';
+import type { UpsetRiskTierMetrics } from './upsetRiskTierMetrics';
 
 export interface EvaluationDashboard {
   segments: EvaluationDashboardSegment[];
@@ -31,4 +33,6 @@ export interface EvaluationDashboard {
   activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
   eliteTierBacktest: EliteTierBacktest;
+  upsetRiskTierMetrics: UpsetRiskTierMetrics[];
+  disagreementTierMetrics: DisagreementTierMetrics[];
 }

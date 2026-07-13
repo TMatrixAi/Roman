@@ -136,6 +136,71 @@ export function computeCalibrationBuckets(rows: EvaluationPredictionRow[]): Cali
   });
 }
 
+export interface UpsetRiskTierMetrics {
+  tier: string;
+  n: number;
+  /** Share of these predictions where the model's own favorite lost -- the tier is only doing its
+   * job if this rises monotonically LOW -> MODERATE -> HIGH -> EXTREME. */
+  favoriteLossRate: number | null;
+}
+
+const UPSET_RISK_TIER_ORDER = ["LOW", "MODERATE", "HIGH", "EXTREME"];
+
+/**
+ * Favorite-loss-rate per upset-risk tier, scoped to the same honestly-graded/accuracy-eligible
+ * rows `computeSegmentMetrics` uses (graded-or-void, `includedInAccuracy`, and here additionally
+ * requiring a persisted `upsetRiskTier` -- rows written before that column existed are simply
+ * excluded rather than silently miscounted into a tier they were never actually assigned).
+ * Task 56 validates disagreement/upset-risk purely via this tier-level monotonicity check, since
+ * both modules are pure downstream classifiers of the already-calibrated probability and cannot
+ * move accuracy/logLoss/Brier themselves (see index.ts: computeUpsetRisk and disagreement.ts's
+ * computeWeightedDisagreement never feed back into calibratedProbability).
+ */
+export function computeUpsetRiskTierMetrics(rows: EvaluationPredictionRow[]): UpsetRiskTierMetrics[] {
+  const included = rows.filter((r) => (r.status === "graded" || r.status === "void") && r.includedInAccuracy && r.upsetRiskTier !== null);
+
+  return UPSET_RISK_TIER_ORDER.map((tier) => {
+    const inTier = included.filter((r) => r.upsetRiskTier === tier);
+    const favoriteLosses = inTier.filter((r) => r.actualWinnerId !== r.predictedWinnerId).length;
+    return {
+      tier,
+      n: inTier.length,
+      favoriteLossRate: inTier.length > 0 ? Math.round((favoriteLosses / inTier.length) * 1000) / 10 : null,
+    };
+  });
+}
+
+export interface DisagreementTierMetrics {
+  tier: string;
+  n: number;
+  accuracy: number | null;
+  errorRate: number | null;
+}
+
+const DISAGREEMENT_TIER_ORDER = ["Strong", "Moderate", "Mixed", "HighDisagreement"];
+
+/**
+ * Accuracy/error-rate per model-agreement tier, same scoping rules as
+ * `computeUpsetRiskTierMetrics` above (honestly-graded, accuracy-eligible, persisted-tier-only).
+ * A healthy engine should show accuracy falling (error rate rising) from Strong toward
+ * HighDisagreement -- disagreement tiers exist to flag genuinely harder matchups, not to be
+ * decorative.
+ */
+export function computeDisagreementTierMetrics(rows: EvaluationPredictionRow[]): DisagreementTierMetrics[] {
+  const included = rows.filter((r) => (r.status === "graded" || r.status === "void") && r.includedInAccuracy && r.modelAgreement !== null);
+
+  return DISAGREEMENT_TIER_ORDER.map((tier) => {
+    const inTier = included.filter((r) => r.modelAgreement === tier);
+    const correct = inTier.filter((r) => r.actualWinnerId === r.predictedWinnerId).length;
+    return {
+      tier,
+      n: inTier.length,
+      accuracy: inTier.length > 0 ? Math.round((correct / inTier.length) * 1000) / 10 : null,
+      errorRate: inTier.length > 0 ? Math.round(((inTier.length - correct) / inTier.length) * 1000) / 10 : null,
+    };
+  });
+}
+
 export interface StreakSummary {
   currentStreakType: "win" | "loss" | null;
   currentStreakLength: number;

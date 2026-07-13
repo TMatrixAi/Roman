@@ -1040,6 +1040,28 @@ export interface EliteTierBacktest {
 }
 
 /**
+ * Favorite-loss-rate for one upset-risk tier (LOW/MODERATE/HIGH/EXTREME), scoped to honestly-graded, accuracy-eligible rows that have a persisted tier. Task 56: since computeUpsetRisk is a pure downstream classifier of the already-calibrated probability (it never feeds back into calibratedProbability), its validation is tier-level monotonicity -- favoriteLossRate should rise from LOW toward EXTREME -- not a before/after accuracy delta.
+ */
+export interface UpsetRiskTierMetrics {
+  tier: string;
+  n: number;
+  /** @nullable */
+  favoriteLossRate: number | null;
+}
+
+/**
+ * Accuracy/error-rate for one model-agreement tier (Strong/Moderate/Mixed/ HighDisagreement), same scoping as UpsetRiskTierMetrics. computeWeightedDisagreement is also a pure downstream classifier -- accuracy should fall (error rate rise) from Strong toward HighDisagreement if the tier is doing real work.
+ */
+export interface DisagreementTierMetrics {
+  tier: string;
+  n: number;
+  /** @nullable */
+  accuracy: number | null;
+  /** @nullable */
+  errorRate: number | null;
+}
+
+/**
  * Which method (isotonic or Platt/sigmoid) won the holdout comparison and is currently active
  * @nullable
  */
@@ -1072,6 +1094,8 @@ export interface EvaluationDashboard {
   activeCalibrationPlattHoldoutLogLoss?: number | null;
   specialistSegments: SpecialistSegmentSummary[];
   eliteTierBacktest: EliteTierBacktest;
+  upsetRiskTierMetrics: UpsetRiskTierMetrics[];
+  disagreementTierMetrics: DisagreementTierMetrics[];
 }
 
 export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];

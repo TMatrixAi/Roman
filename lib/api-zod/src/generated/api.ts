@@ -1176,7 +1176,18 @@ export const GetEvaluationDashboardResponse = zod.object({
   "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
 }),
   "nearEliteMeetsMinSample": zod.boolean()
-}).describe('Task 46: real backtest of the Elite Prediction tier against genuinely-unseen graded outcomes (historical_test test-segment + paper_trade\/live), scored with the exact same accuracy\/logLoss\/brier\/ECE methodology as every other segment. \"nearElite\" is a backtest-only comparison group -- every Elite gate met except segment-specialist support, which is structurally unobservable during historical walk-forward scoring -- and never affects which tier is shown as \"Elite\" in the live prediction UI.')
+}).describe('Task 46: real backtest of the Elite Prediction tier against genuinely-unseen graded outcomes (historical_test test-segment + paper_trade\/live), scored with the exact same accuracy\/logLoss\/brier\/ECE methodology as every other segment. \"nearElite\" is a backtest-only comparison group -- every Elite gate met except segment-specialist support, which is structurally unobservable during historical walk-forward scoring -- and never affects which tier is shown as \"Elite\" in the live prediction UI.'),
+  "upsetRiskTierMetrics": zod.array(zod.object({
+  "tier": zod.string(),
+  "n": zod.number(),
+  "favoriteLossRate": zod.number().nullable()
+}).describe('Favorite-loss-rate for one upset-risk tier (LOW\/MODERATE\/HIGH\/EXTREME), scoped to honestly-graded, accuracy-eligible rows that have a persisted tier. Task 56: since computeUpsetRisk is a pure downstream classifier of the already-calibrated probability (it never feeds back into calibratedProbability), its validation is tier-level monotonicity -- favoriteLossRate should rise from LOW toward EXTREME -- not a before\/after accuracy delta.')),
+  "disagreementTierMetrics": zod.array(zod.object({
+  "tier": zod.string(),
+  "n": zod.number(),
+  "accuracy": zod.number().nullable(),
+  "errorRate": zod.number().nullable()
+}).describe('Accuracy\/error-rate for one model-agreement tier (Strong\/Moderate\/Mixed\/ HighDisagreement), same scoping as UpsetRiskTierMetrics. computeWeightedDisagreement is also a pure downstream classifier -- accuracy should fall (error rate rise) from Strong toward HighDisagreement if the tier is doing real work.'))
 })
 
 

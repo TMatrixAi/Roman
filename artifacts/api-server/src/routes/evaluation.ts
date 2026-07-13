@@ -27,7 +27,13 @@ import { CALIBRATION_REFIT_JOB_NAME } from "../jobs/calibrationRefitJobName";
 import { runWalkForwardEvaluation } from "../services/evaluation/walkForward";
 import { runPaperTradingCycle } from "../services/evaluation/paperTrading";
 import { getPredictionSettings } from "../services/evaluation/settle";
-import { computeSegmentMetrics, computeCalibrationBuckets, computeStreaks } from "../services/evaluation/metrics";
+import {
+  computeSegmentMetrics,
+  computeCalibrationBuckets,
+  computeStreaks,
+  computeUpsetRiskTierMetrics,
+  computeDisagreementTierMetrics,
+} from "../services/evaluation/metrics";
 import { computeEliteTierBacktest } from "../services/evaluation/eliteTierBacktest";
 import { getActiveSpecialistSegments } from "../services/evaluation/specialistWeights";
 import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
@@ -146,6 +152,15 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
   // segment, which was used to fit calibration.
   const eliteTierBacktest = computeEliteTierBacktest([...historicalTestRows, ...paperTradeRows]);
 
+  // Task 56: disagreement/upset-risk are pure downstream classifiers of the already-calibrated
+  // probability (see disagreement.ts/upsetRisk.ts) -- they cannot move accuracy/logLoss/Brier
+  // themselves, so their validation is tier-level monotonicity, scoped to the same genuinely-
+  // unseen rows the Elite tier backtest already uses (never the validation segment, which was
+  // used to fit calibration).
+  const unseenRows = [...historicalTestRows, ...paperTradeRows];
+  const upsetRiskTierMetrics = computeUpsetRiskTierMetrics(unseenRows);
+  const disagreementTierMetrics = computeDisagreementTierMetrics(unseenRows);
+
   res.json(
     GetEvaluationDashboardResponse.parse({
       segments,
@@ -155,6 +170,8 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
       activeCalibrationPlattHoldoutLogLoss: activeCalibration?.plattHoldoutLogLoss ?? null,
       specialistSegments,
       eliteTierBacktest,
+      upsetRiskTierMetrics,
+      disagreementTierMetrics,
     }),
   );
 });

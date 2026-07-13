@@ -2155,9 +2155,54 @@ components:
         nearEliteMeetsMinSample:
           type: boolean
 
+    UpsetRiskTierMetrics:
+      type: object
+      description: >-
+        Favorite-loss-rate for one upset-risk tier (LOW/MODERATE/HIGH/EXTREME), scoped to
+        honestly-graded, accuracy-eligible rows that have a persisted tier. Task 56: since
+        computeUpsetRisk is a pure downstream classifier of the already-calibrated probability
+        (it never feeds back into calibratedProbability), its validation is tier-level
+        monotonicity -- favoriteLossRate should rise from LOW toward EXTREME -- not a
+        before/after accuracy delta.
+      required: [tier, n, favoriteLossRate]
+      properties:
+        tier:
+          type: string
+        n:
+          type: integer
+        favoriteLossRate:
+          type: ["number", "null"]
+
+    DisagreementTierMetrics:
+      type: object
+      description: >-
+        Accuracy/error-rate for one model-agreement tier (Strong/Moderate/Mixed/
+        HighDisagreement), same scoping as UpsetRiskTierMetrics. computeWeightedDisagreement is
+        also a pure downstream classifier -- accuracy should fall (error rate rise) from Strong
+        toward HighDisagreement if the tier is doing real work.
+      required: [tier, n, accuracy, errorRate]
+      properties:
+        tier:
+          type: string
+        n:
+          type: integer
+        accuracy:
+          type: ["number", "null"]
+        errorRate:
+          type: ["number", "null"]
+
     EvaluationDashboard:
       type: object
-      required: [segments, activeCalibrationSampleSize, activeCalibrationMethod, specialistSegments, eliteTierBacktest]
+      required:
+        [
+          segments,
+          activeCalibrationSampleSize,
+          activeCalibrationMethod,
+          specialistSegments,
+          eliteTierBacktest,
+          upsetRiskTierMetrics,
+          disagreementTierMetrics,
+        ]
       properties:
         segments:
           type: array
@@ -2182,6 +2227,14 @@ components:
             $ref: "#/components/schemas/SpecialistSegmentSummary"
         eliteTierBacktest:
           $ref: "#/components/schemas/EliteTierBacktest"
+        upsetRiskTierMetrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpsetRiskTierMetrics"
+        disagreementTierMetrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisagreementTierMetrics"
 
     PredictionSettings:
       type: object

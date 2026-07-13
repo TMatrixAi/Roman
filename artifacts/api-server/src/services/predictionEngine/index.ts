@@ -15,6 +15,7 @@ import { computeRecommendation } from "./recommendation";
 import { deriveServicePointEstimate, runMatchSimulation, deriveMatchSeed, type MatchSimulationResult } from "./simulator";
 import { applyTieBreaker } from "./tieBreakers";
 import { computeEliteTier, voteFavorsPlayer1 } from "./eliteTier";
+import { checkFinalConsistency } from "./finalConsistencyCheck";
 import type { PredictionEngineInput } from "./types";
 import type { WeatherConditions } from "./weather";
 
@@ -77,6 +78,15 @@ export interface EngineBreakdown {
   upsetRiskBreakdown: UpsetRiskResult;
   /** Per-matchup count of prior meetings/matches on the relevant surface for each player (same window `surfaceElo.ts` used), surfaced explicitly so a low-sample surface prediction is visibly flagged rather than silently blended in. Not present on predictions made before this field existed. */
   surfaceSampleDepth: ReturnType<typeof computeSurfaceSampleDepth>;
+  /**
+   * Task 56: output of the final-consistency guard (`finalConsistencyCheck.ts`), run as the very
+   * last step before this EngineOutput is returned. Empty in the overwhelming common case --
+   * every rule it checks already holds by construction elsewhere in this file. A non-empty array
+   * means an upstream invariant broke (e.g. a future change reintroduced the original
+   * Elite+HighDisagreement+"no model conflict" contradiction); when that happens, Elite tier is
+   * force-withheld below and the violation is surfaced here rather than shown silently.
+   */
+  consistencyViolations: string[];
 }
 
 export interface EngineOutput {
@@ -474,7 +484,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // `eliteTier.ts` for the exact gating conditions. Extended by the 2026-07-13 spec's Elite-vs-
   // risk consistency guardrail (Part 2E): Elite additionally requires modelAgreement not to be
   // High Disagreement and upsetRisk not to be High/Extreme.
-  const { isEliteTier, reason: eliteTierReason } = computeEliteTier({
+  const { isEliteTier: eliteTierBeforeGuard, reason: eliteTierReasonBeforeGuard } = computeEliteTier({
     dataQuality,
     surfaceEloFavorsPlayer1: voteFavorsPlayer1(featureModels, "Surface Elo"),
     serveReturnFavorsPlayer1: voteFavorsPlayer1(featureModels, "Serve & Return"),
@@ -497,6 +507,29 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   ];
 
   const weather = input.weather ?? null;
+
+  // Task 56: final-consistency guard, run against the pre-guard Elite verdict. Checked BEFORE
+  // isEliteTier is fixed for real, so a violation can force it false rather than ship it.
+  const { violations: consistencyViolations } = checkFinalConsistency({
+    player1Id: input.player1.id,
+    player2Id: input.player2.id,
+    calibratedProbability,
+    predictedWinnerId,
+    predictedWinnerProbability,
+    isEliteTier: eliteTierBeforeGuard,
+    eliteTierReason: eliteTierReasonBeforeGuard,
+    modelAgreement,
+    upsetRisk,
+    upsetRiskBreakdownTier: upsetRiskBreakdown.upsetRisk,
+  });
+  const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
+  const eliteTierReason =
+    consistencyViolations.length === 0
+      ? eliteTierReasonBeforeGuard
+      : `Not elite tier -- final-consistency guard caught an invariant violation and withheld Elite regardless of the underlying gates: ${consistencyViolations.join(" ")}`;
+  if (consistencyViolations.length > 0) {
+    risks.unshift(`CONSISTENCY GUARD: ${consistencyViolations.join(" ")}`);
+  }
 
   const engine: EngineBreakdown = {
     surfaceElo,
@@ -534,6 +567,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     eliteTierReason,
     upsetRiskBreakdown,
     surfaceSampleDepth,
+    consistencyViolations,
   };
 
   return {

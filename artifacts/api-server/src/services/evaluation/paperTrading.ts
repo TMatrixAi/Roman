@@ -200,6 +200,8 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         lockedAt: new Date(),
         modelVersion: LIVE_MODEL_VERSION,
         featureSnapshot: snapshot,
+        modelAgreement: output.engine.modelAgreement,
+        upsetRiskTier: output.upsetRisk,
         rawProbability,
         calibratedProbability,
         predictedWinnerId: favorsPlayer1 ? player1.id : player2.id,

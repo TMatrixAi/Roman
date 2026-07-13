@@ -108,6 +108,16 @@ export const evaluationPredictionsTable = pgTable(
     predictedWinnerId: text("predicted_winner_id"),
     predictedWinnerName: text("predicted_winner_name"),
 
+    // Denormalized copies of `engine.modelAgreement` / `engine.upsetRiskBreakdown.upsetRisk` from
+    // the frozen `featureSnapshot`, added so tier-level outcomes (favorite-loss-rate by upset
+    // tier, accuracy by disagreement tier) can be queried/aggregated directly instead of parsing
+    // JSON per row. Nullable because they don't exist on rows written before this column was
+    // added, and because historical_test rows only carry a reduced feature set that may not
+    // always compute one (e.g. very early folds). Purely descriptive -- never read by the
+    // prediction engine itself, so backfilling or leaving old rows null cannot affect scoring.
+    modelAgreement: text("model_agreement"),
+    upsetRiskTier: text("upset_risk_tier"),
+
     // 'pending' -> exactly one of 'graded' | 'void' | 'missed'. Never reverts.
     status: text("status").notNull().default("pending"),
     actualWinnerId: text("actual_winner_id"),
