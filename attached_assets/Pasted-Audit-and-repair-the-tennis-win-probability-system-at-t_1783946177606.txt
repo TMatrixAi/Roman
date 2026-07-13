@@ -1,0 +1,115 @@
+Audit and repair the tennis win-probability system at the root level. Do not manually patch individual matches or hard-code player-specific outcomes.
+
+The app has produced several suspicious predictions, including:
+
+* Kilian Feldbausch favored at roughly 73% over Miomir Kecmanović
+* Nadia Podoroska favored at roughly 58% over Petra Marčinko
+* Martin Krumich favored over Francesco Passaro
+* Pieter De Lange favored over Michael Geerts
+* Edward Winter favored at roughly 76% over Strong Kirchheimer
+* Dalmasso shown around 71% in a matchup that appeared much closer
+
+Investigate the entire prediction pipeline and identify why weaker players may be incorrectly favored or why close matches receive excessively confident probabilities.
+
+Perform the following work:
+
+1. Trace the complete prediction flow from player lookup and feature collection through model scoring, probability conversion, upset-risk classification, and frontend display.
+2. Check for Player 1 and Player 2 reversal bugs at every stage:
+    * API request parsing
+    * feature construction
+    * Elo differences
+    * ranking differences
+    * model input order
+    * probability assignment
+    * winner labels
+    * frontend rendering
+3. Confirm that all directional features use one consistent convention, preferably:
+    feature_difference = Player 1 value - Player 2 value
+    Verify that lower-is-better statistics, especially rankings, are reversed correctly before use.
+4. Verify that the displayed probabilities always:
+    * fall between 0% and 100%;
+    * sum to exactly 100%;
+    * correspond to the displayed predicted winner;
+    * remain identical when the player order is swapped, except that the two probabilities exchange sides.
+5. Audit the conversion from raw model score to win probability. Look for:
+    * incorrect sigmoid or logistic formulas;
+    * applying a sigmoid twice;
+    * treating percentages as decimals or decimals as percentages;
+    * incorrect normalization;
+    * probability clipping that creates false confidence;
+    * incorrect sign direction;
+    * confidence multipliers applied directly to probability.
+6. Audit all model weights, including:
+    * overall Elo;
+    * surface Elo;
+    * ATP or WTA ranking;
+    * recent form;
+    * opponent-strength-adjusted form;
+    * serve and return statistics;
+    * tour level;
+    * fatigue;
+    * travel;
+    * head-to-head;
+    * surface-specialist indicators.
+    Identify any feature that dominates the prediction unexpectedly.
+7. Audit missing-data handling. Missing data must not silently become zero when zero represents a strong advantage or disadvantage. Use neutral, statistically justified fallbacks and attach a missing-data indicator where appropriate.
+8. Add sample-size shrinkage. Surface Elo, recent form, serve statistics, return statistics, and specialist labels must be blended toward an overall or tour-level baseline when the sample is small.
+9. Review tour-level comparisons so ATP, Challenger, ITF, qualifying, junior, and national-level results are not treated as equally strong competition.
+10. Review ranking freshness, player identity matching, duplicate names, accented names, aliases, and stale cached records. Confirm the correct player records are being loaded.
+11. Ensure upset-risk classification is derived consistently from:
+
+* predicted probability;
+* data quality;
+* model disagreement;
+* sample size;
+* uncertainty.
+
+A prediction near 55% should not normally be labeled low upset risk, and a 75% favorite should not receive extreme upset risk unless there is a documented uncertainty reason.
+
+12. Add automated tests for:
+
+* player-order symmetry;
+* probabilities summing to 1;
+* identical-player inputs producing approximately 50/50;
+* missing-data neutrality;
+* monotonic Elo behavior;
+* monotonic ranking behavior;
+* small-sample shrinkage;
+* upset-risk thresholds;
+* stale or mismatched player records;
+* ATP versus Challenger versus ITF strength adjustments.
+
+13. Add a diagnostic mode that displays:
+
+* each feature value for both players;
+* normalized feature differences;
+* feature contribution to the model score;
+* raw model score;
+* calibrated probability;
+* data-quality score;
+* missing-data fallbacks used;
+* final upset-risk reason.
+
+14. Backtest the repaired model using historical matches that were not used for training. Report:
+
+* accuracy;
+* log loss;
+* Brier score;
+* calibration by probability bucket;
+* favorite accuracy;
+* underdog accuracy;
+* performance by ATP, WTA, Challenger, ITF, surface, and qualifying level.
+
+15. Use Platt scaling, isotonic regression, or another justified calibration method only if historical validation demonstrates better out-of-sample Brier score and log loss.
+16. Do not claim the issue is fixed merely because the listed match predictions change. Fix the underlying logic, run the tests, and provide evidence.
+
+After making the changes, give me:
+
+* the root causes found;
+* the exact files changed;
+* a summary of every code change;
+* the before-and-after behavior;
+* test results;
+* backtest and calibration results;
+* any remaining limitations;
+* confirmation that no player-specific hard-coding was added.
