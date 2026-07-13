@@ -11,7 +11,7 @@ import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
 import { computeUpsetRisk } from "./upsetRisk";
 import { computeRecommendation } from "./recommendation";
-import { deriveServicePointEstimate, runMatchSimulation, type MatchSimulationResult } from "./simulator";
+import { deriveServicePointEstimate, runMatchSimulation, deriveMatchSeed, type MatchSimulationResult } from "./simulator";
 import { applyTieBreaker } from "./tieBreakers";
 import { computeEliteTier, voteFavorsPlayer1 } from "./eliteTier";
 import type { PredictionEngineInput } from "./types";
@@ -219,8 +219,13 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   );
 
   // Phase 7: point-by-point Monte Carlo simulation, always computed for display/transparency.
+  // Seeded deterministically from match identity (see simulator.ts) so re-predicting the exact
+  // same match (quick-start, custom match, or a plain re-run) always simulates the same outcome
+  // instead of drifting between calls -- this is what let same-match duplicates disagree on
+  // predicted winner and slip past the ledger's duplicate detector.
   const servicePointEstimate = deriveServicePointEstimate(surfaceElo, serveReturn);
-  const simulation = runMatchSimulation(servicePointEstimate, input.matchFormat);
+  const simulatorSeed = deriveMatchSeed(input.player1.id, input.player2.id, input.surface, input.matchFormat);
+  const simulation = runMatchSimulation(servicePointEstimate, input.matchFormat, { seed: simulatorSeed });
 
   // Prefer the real, Phase-4-fitted isotonic calibration (learned from actual walk-forward
   // validation outcomes) whenever one exists. Only fall back to the hand-tuned dataQuality-shrink

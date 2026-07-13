@@ -64,6 +64,22 @@ function clamp(x: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, x));
 }
 
+/**
+ * Derives a deterministic seed from stable match identity (player ids, surface, format) so that
+ * predicting the exact same match multiple times reproduces the same simulated outcome instead
+ * of drifting between calls on unseeded Math.random(). Player ids are sorted before hashing so
+ * the seed is order-independent -- it agrees with the ledger's own duplicate-match identity
+ * (see ledgerDuplicates.ts), which also treats the two players as an unordered pair.
+ */
+export function deriveMatchSeed(player1Id: string, player2Id: string, surface: string, matchFormat: string): number {
+  const key = `${[player1Id, player2Id].sort().join("|")}::${surface}::${matchFormat}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
 // --- Point-by-point scoring primitives ---
 
 /** Simulates one game, returning true if the server wins it. Standard deuce/advantage scoring. */

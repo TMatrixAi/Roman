@@ -16,18 +16,28 @@ export interface DuplicatePredictionGroup {
  * The ledger (`predictionsTable`) has no external match/fixture id and no separate scheduled
  * match date/time field -- it only records player names/ids, tournament, surface, format, the
  * predicted winner, and when the prediction was created. So a "true duplicate" here means: same
- * two players (order-independent), same tournament, same surface, same match format, and the same
- * predicted winner. In practice a single real match can only appear once in this schema, so an
- * exact match on all of these fields is a reliable proxy for "this is the same match predicted
- * more than once" (e.g. a double-click on Predict Now) -- never used to merge two genuinely
+ * two players (order-independent), same tournament (case/whitespace-insensitive; null and empty
+ * both treated as "no tournament"), same surface, and same match format -- deliberately NOT the
+ * same predicted winner. In practice a single real match can only appear once in this schema, so
+ * an exact match on player pair/tournament/surface/format alone is a reliable proxy for "this is
+ * the same match predicted more than once" (e.g. a double-click on Predict Now, or predicting the
+ * same fixture via quick-start and again via custom match) -- never used to merge two genuinely
  * different matches, since two different real matches between the same pair with the same
- * tournament/surface/format essentially cannot both exist.
+ * tournament/surface/format essentially cannot both exist. The predicted winner is intentionally
+ * excluded from the key: the prediction engine's Monte Carlo simulator step is seeded from match
+ * identity (see simulator.ts's deriveMatchSeed) so repeat predictions are now reproducible, but
+ * predictions made before that fix (or via other future non-determinism) can still legitimately
+ * disagree on which side they favored while still being the same real match.
  *
  * Within a duplicate group the earliest-created row (by createdAt) is always kept as the
  * original; only the later row(s) are candidates for removal. This never deletes a prediction
  * that has no duplicate, and never touches calibration/evaluation/historical-match tables --
  * only rows in the ledger's own predictionsTable.
  */
+function normalizeTournamentName(name: string | null): string {
+  const trimmed = (name ?? "").trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : "\u0000";
+}
 export async function findDuplicatePredictionGroups(): Promise<DuplicatePredictionGroup[]> {
   const rows = await db
     .select({
@@ -49,7 +59,7 @@ export async function findDuplicatePredictionGroups(): Promise<DuplicatePredicti
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
     const pairKey = [row.player1Id, row.player2Id].sort().join("|");
-    const key = [pairKey, row.tournamentName ?? "\u0000", row.surface, row.matchFormat, row.predictedWinnerId].join("::");
+    const key = [pairKey, normalizeTournamentName(row.tournamentName), row.surface, row.matchFormat].join("::");
     const list = groups.get(key);
     if (list) list.push(row);
     else groups.set(key, [row]);

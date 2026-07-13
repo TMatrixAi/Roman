@@ -5,7 +5,7 @@
 // Run with: pnpm --filter @workspace/api-server run test:evaluation
 import test from "node:test";
 import assert from "node:assert/strict";
-import { simulateMatch, runMatchSimulation, deriveServicePointEstimate, type ServicePointEstimate } from "./simulator";
+import { simulateMatch, runMatchSimulation, deriveServicePointEstimate, deriveMatchSeed, type ServicePointEstimate } from "./simulator";
 import type { SurfaceEloResult } from "./surfaceElo";
 import type { ServeReturnResult } from "./serveReturn";
 
@@ -108,4 +108,34 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
   assert.equal(estimate.reliability, 20, "simulator reliability must inherit the weaker (serveReturn) signal, never the stronger one");
   assert.ok(estimate.player1ServicePointProbability > 0.45 && estimate.player1ServicePointProbability < 0.85, "service point probability must stay within a realistic tour range");
   assert.ok(estimate.note.length > 0, "must always explain that this is a derived, not point-tracked, estimate");
+});
+
+test("deriveMatchSeed: identical match identity always yields the same seed", () => {
+  const seed1 = deriveMatchSeed("p1", "p2", "Hard", "BestOf3");
+  const seed2 = deriveMatchSeed("p1", "p2", "Hard", "BestOf3");
+  assert.equal(seed1, seed2, "the same match identity must always derive the same seed");
+});
+
+test("deriveMatchSeed: is order-independent in the two player ids", () => {
+  const seedForward = deriveMatchSeed("p1", "p2", "Hard", "BestOf3");
+  const seedReversed = deriveMatchSeed("p2", "p1", "Hard", "BestOf3");
+  assert.equal(seedForward, seedReversed, "swapping which player is player1/player2 must not change the seed -- it's the same real match");
+});
+
+test("deriveMatchSeed: differs when surface, format, or either player differs", () => {
+  const base = deriveMatchSeed("p1", "p2", "Hard", "BestOf3");
+  assert.notEqual(deriveMatchSeed("p1", "p3", "Hard", "BestOf3"), base, "a different opponent must be a different match");
+  assert.notEqual(deriveMatchSeed("p1", "p2", "Clay", "BestOf3"), base, "a different surface must be a different match");
+  assert.notEqual(deriveMatchSeed("p1", "p2", "Hard", "BestOf5"), base, "a different match format must be a different match");
+});
+
+test("re-predicting the exact same match twice produces an identical simulated outcome", () => {
+  const estimate: ServicePointEstimate = { player1ServicePointProbability: 0.63, player2ServicePointProbability: 0.6, reliability: 70, note: "test" };
+  const seed = deriveMatchSeed("alice", "bob", "Clay", "BestOf3");
+
+  const first = runMatchSimulation(estimate, "BestOf3", { seed });
+  const second = runMatchSimulation(estimate, "BestOf3", { seed });
+
+  assert.equal(first.player1WinProbability, second.player1WinProbability, "identical match identity must reproduce the identical win probability");
+  assert.deepEqual(first.setScoreDistribution, second.setScoreDistribution, "identical match identity must reproduce the identical set-score distribution");
 });
