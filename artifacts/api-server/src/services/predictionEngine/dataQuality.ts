@@ -94,8 +94,17 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
  * Not a net positive, so it remains excluded here -- see
  * `docs/audit-phase45-availability-revalidation.md` for the full numbers. Only a future run
  * clearing that bar should remove "availability" from this set.
+ *
+ * Fatigue was temporarily excluded on 2026-07-14 after fixing a backtest-only bug (Fatigue was
+ * comparing dates against `Date.now()` instead of each row's real as-of date, so it silently
+ * never fired during walk-forward scoring). Once fixed, Fatigue does fire, but a full walk-forward
+ * re-run showed only 45.6-45.8% conditional accuracy (below a coin flip) while carrying ~16.5%
+ * ensemble weight in the 48-59% calibration band -- i.e. once genuinely active, it is a confidently
+ * wrong signal with real influence. Excluded here pending a separate investigation into Fatigue's
+ * window/weighting logic; still fully computed and shown in `EngineBreakdown` for transparency.
+ * Remove "fatigue" from this set only after that investigation lands a fix.
  */
-export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability"]);
+export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue"]);
 
 /**
  * Per-model confidence shrink (see `EnsembleModuleInput.confidenceShrink`), derived directly from
