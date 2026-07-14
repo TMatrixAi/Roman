@@ -1,0 +1,31 @@
+"Proceed with the backfill for the 7 confirmed Fix-2 rows only (442, 759, 852, 883, 972, 996, 1031), exactly as originally scoped. Do not touch the 8 additional rows (4, 9, 10, 14, 15, 16, 19, 24).
+
+SAFETY CHECKS BEFORE WRITING
+
+- Before writing anything, take a fresh backup/snapshot of the current state of all 7 target rows (all columns, not just recommendation), plus confirm the existing full-table backup from the original discrepancy check is still valid and retrievable.
+- Immediately before executing the write (not just at the start of this session), re-query these exact 7 IDs one final time and confirm their current stored recommendation is still HIGH_RISK and their margin/upsetRisk/modelAgreement inputs are unchanged from when they were last verified. If any of the 7 rows have changed state since the last check (e.g. a new prediction was regenerated for one of them, or its inputs shifted), halt and report the discrepancy instead of writing — do not assume the earlier verification still holds.
+- Confirm none of the 7 rows are graded/resolved matches; if any are graded, flag explicitly and pause before writing to that specific row, since backfilling a label on an already-decided outcome carries different implications than correcting an open prediction.
+
+BACKFILL EXECUTION
+
+- Update only the recommendation column for these 7 rows to their correct value under the fixed logic.
+- Do not alter any timestamp field that would make these rows look like newly-generated predictions — either leave modified_at untouched or add a separate flag/note marking this as a backfill correction.
+- Do not touch any other field, row, or file.
+
+VERIFICATION AFTER WRITE
+
+- Confirm exactly 7 rows were updated, with before/after values for each.
+- Re-run the full invariant/consistency check suite against the entire live table and confirm zero new contradictions were introduced.
+- Confirm all other rows in the table are byte-for-byte unchanged.
+- Confirm no test suite regressed.
+- Confirm the pre-write backup/snapshot from this session is stored and retrievable, separate from the original backup.
+
+After the backfill completes and passes all verification, open a new, separate diagnostic-only investigation into the 8 unrelated rows (4, 9, 10, 14, 15, 16, 19, 24). Do NOT fix or modify them yet — report only. For each of the 8 rows, determine:
+- What their stored recommendation value is, and what the pre-Fix-2 logic would have produced given their stored margin/upsetRisk/modelAgreement inputs.
+- When each row was created relative to when the NO_STRONG_SIGNAL rule was introduced in the codebase — check if these rows predate that rule's existence.
+- Whether any of the row's underlying inputs were modified after the row was originally saved without recommendation being recomputed — check for evidence of partial updates.
+- Whether this is an isolated 8-row issue or indicates a broader class of stale rows that might exist beyond HIGH_RISK (check other recommendation categories too for the same staleness pattern).
+
+Report back on the 7-row backfill completion first, including all safety-check results, then the 8-row diagnostic findings as a separate item. Wait for my go-ahead before fixing anything related to the 8 rows."
+
+Sources
