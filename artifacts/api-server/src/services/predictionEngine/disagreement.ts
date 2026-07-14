@@ -64,7 +64,18 @@ export interface WeightedDisagreement {
  * pre-simulator-vs-simulator) that needs to fold its own reading into the overall agreement.
  */
 export function computeWeightedDisagreement(models: DisagreementModelInput[]): WeightedDisagreement {
-  const totalWeight = models.reduce((sum, m) => sum + m.weightUsed, 0) || 1;
+  const totalWeightRaw = models.reduce((sum, m) => sum + m.weightUsed, 0);
+
+  // No real votes to disagree over -- an empty model list or a set of models that all carry zero
+  // weight. Previously the `|| 1` fallback below on a genuinely-zero total weight, combined with
+  // `player2Support = totalWeight - player1Support`, fabricated 100% support for player 2 out of
+  // no data at all (an empty array trivially has zero player1Support, so the subtraction assigned
+  // the entire fallback weight to player 2). Report a neutral, no-conflict reading instead of
+  // inventing a leader.
+  if (models.length === 0 || totalWeightRaw === 0) {
+    return { modelAgreement: "Strong", weightedStdDev: 0, leadingSupportPercent: 50, coreModelsConflict: false, conflictingModels: [] };
+  }
+  const totalWeight = totalWeightRaw;
 
   const weightedMean = models.reduce((sum, m) => sum + m.player1Probability * m.weightUsed, 0) / totalWeight;
   const weightedVariance = models.reduce((sum, m) => sum + m.weightUsed * (m.player1Probability - weightedMean) ** 2, 0) / totalWeight;
@@ -79,12 +90,26 @@ export function computeWeightedDisagreement(models: DisagreementModelInput[]): W
   const coreModelsConflict =
     meaningfulCoreModels.some((m) => m.player1Probability >= 50) && meaningfulCoreModels.some((m) => m.player1Probability < 50);
 
+  // Task #114 fix: a matchup where every MEANINGFULLY-weighted model favors the same player must
+  // never be classified as HighDisagreement, no matter how wide their confidence spread is (e.g.
+  // Surface Elo 74%/Serve & Return 51%/Recent Form 51%, all favoring the same player, previously
+  // hit HighDisagreement purely off `weightedStdDev > 11` -- that conflates "models differ in how
+  // strongly they favor a player" with "models favor different players"). HighDisagreement now
+  // requires genuine directional conflict: meaningful effective weight on BOTH sides of 50%,
+  // either among the validated core models specifically (`coreModelsConflict`) or more broadly
+  // among any meaningfully-weighted models (`meaningfulModelsConflict`, e.g. a non-core model
+  // conflicting with a core one). A wide spread with no such conflict still degrades the category
+  // -- just never past "Mixed", via the stddev/support thresholds below.
+  const meaningfulModelsConflict =
+    meaningfulModels.some((m) => m.player1Probability >= 50) && meaningfulModels.some((m) => m.player1Probability < 50);
+  const genuineDirectionalConflict = coreModelsConflict || meaningfulModelsConflict;
+
   // Thresholds derived from spec Part A.D's starting categories (weighted stddev <6/6-11/>11,
-  // effective support >=70/58-70/<58), split into four bands so the existing Strong/Moderate/
-  // Mixed/HighDisagreement scale (used across upsetRisk.ts, recommendation.ts, and the UI) keeps
-  // its granularity rather than collapsing to the spec's 3 buckets.
+  // effective support >=70/58-70/<58). The original >11/<58 band fed HighDisagreement directly;
+  // it now folds into "Mixed" (its severity is still reflected there) since HighDisagreement is
+  // reserved for genuine directional conflict per the fix above.
   let modelAgreement: ModelAgreement;
-  if (coreModelsConflict || weightedStdDev > 11 || leadingSupportPercent < 58) {
+  if (genuineDirectionalConflict) {
     modelAgreement = "HighDisagreement";
   } else if (weightedStdDev > 9 || leadingSupportPercent < 65) {
     modelAgreement = "Mixed";
@@ -117,6 +142,11 @@ export function computeMatchupCloseness(finalProbability: number): MatchupClosen
  * Human-readable explanation naming the actual conflicting models, their probabilities, and their
  * weights (spec Part A.F: "do not show High Disagreement without identifying the actual
  * conflict"). Null exactly when modelAgreement is "Strong" -- there is nothing to explain.
+ *
+ * Task #114 fix: a wide confidence spread with every meaningfully-weighted model favoring the SAME
+ * player (Moderate/Mixed from stddev/support alone, never HighDisagreement per the gate above) is
+ * a genuinely different situation from real directional conflict, and must read that way -- never
+ * phrased so it implies the models are in disagreement about who wins.
  */
 export function buildDisagreementNote(disagreement: WeightedDisagreement, player1Name: string, player2Name: string): string | null {
   if (disagreement.modelAgreement === "Strong" || disagreement.conflictingModels.length === 0) return null;
@@ -129,6 +159,15 @@ export function buildDisagreementNote(disagreement: WeightedDisagreement, player
       return `${m.modelName} favors ${favorsPlayer1 ? player1Name : player2Name} at ${displayProbability.toFixed(0)}% (weight ${m.weightUsed.toFixed(2)})`;
     })
     .join("; ");
+
+  const allFavorPlayer1 = disagreement.conflictingModels.every((m) => m.player1Probability >= 50);
+  const allFavorPlayer2 = disagreement.conflictingModels.every((m) => m.player1Probability < 50);
+  const isUnanimousDirection = !disagreement.coreModelsConflict && (allFavorPlayer1 || allFavorPlayer2);
+
+  if (isUnanimousDirection) {
+    const leaderName = allFavorPlayer1 ? player1Name : player2Name;
+    return `${agreementLabel}: all meaningfully weighted models favor ${leaderName} (${votes}), but their confidence levels vary -- weighted spread ${disagreement.weightedStdDev.toFixed(1)}pts, ${disagreement.leadingSupportPercent.toFixed(0)}% of effective weight behind ${leaderName}. This is a confidence-spread reading, not a real conflict over who wins.`;
+  }
 
   return `${agreementLabel}: ${votes}. Weighted spread ${disagreement.weightedStdDev.toFixed(1)}pts across meaningfully-weighted models, ${disagreement.leadingSupportPercent.toFixed(0)}% of effective weight behind the leader.`;
 }

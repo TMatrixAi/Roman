@@ -102,3 +102,156 @@ test("matchupCloseness is independent of the disagreement category", () => {
   assert.equal(computeMatchupCloseness(75), "Moderate");
   assert.equal(computeMatchupCloseness(90), "Clear");
 });
+
+test("Task #114 regression: unanimous direction with a wide confidence spread is never HighDisagreement", () => {
+  // Real reported case: Surface Elo favors I. Buse at 74% (weight 0.34), Serve & Return at 51%
+  // (weight 0.34), Recent Form at 51% (weight 0.31) -- 100% of effective weight behind the same
+  // player, but a wide weighted stddev previously pushed this straight to HighDisagreement.
+  const { modelAgreement, coreModelsConflict, leadingSupportPercent } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 74, weightUsed: 0.34 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 51, weightUsed: 0.34 },
+      recentForm: { modelName: "Recent Form", player1Probability: 51, weightUsed: 0.31 },
+    }),
+  );
+
+  assert.equal(coreModelsConflict, false);
+  assert.equal(leadingSupportPercent, 100, "every model favors the same player");
+  assert.notEqual(modelAgreement, "HighDisagreement", "unanimous direction must never reach the highest disagreement category");
+});
+
+test("Task #114: genuine directional conflict among meaningfully-weighted models (not just core models) still reaches HighDisagreement", () => {
+  // A non-core model (Availability) meaningfully conflicts with a core model -- coreModelsConflict
+  // is false (only one core model is meaningfully weighted here), but the conflict is still real.
+  const { modelAgreement, coreModelsConflict } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 65, weightUsed: 0.5 },
+      availability: { modelName: "Availability", player1Probability: 30, weightUsed: 0.5 },
+    }),
+  );
+
+  assert.equal(coreModelsConflict, false, "only one core model is present/meaningfully weighted");
+  assert.equal(modelAgreement, "HighDisagreement", "a real conflict between two meaningfully-weighted models must still be flagged");
+});
+
+test("Task #114: a single negligible-weight dissenting model still cannot flip the category to HighDisagreement", () => {
+  const { modelAgreement, coreModelsConflict } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 70, weightUsed: 0.45 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 65, weightUsed: 0.4 },
+      recentForm: { modelName: "Recent Form", player1Probability: 5, weightUsed: 0.05 },
+      availability: { modelName: "Availability", player1Probability: 60, weightUsed: 0.1 },
+    }),
+  );
+
+  assert.equal(coreModelsConflict, false, "Recent Form's weight share (5%) is below the meaningful-weight floor");
+  assert.notEqual(modelAgreement, "HighDisagreement");
+});
+
+test("Task #114: unanimous and tightly grouped models still earn the strongest agreement category", () => {
+  const { modelAgreement } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 61, weightUsed: 0.4 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 60, weightUsed: 0.35 },
+      recentForm: { modelName: "Recent Form", player1Probability: 59, weightUsed: 0.25 },
+    }),
+  );
+
+  assert.equal(modelAgreement, "Strong");
+});
+
+test("Task #114: a neutral (exactly 50%) model mixed with non-neutral models does not fabricate a direction", () => {
+  // By the same >=50-favors-player1 convention used throughout the engine (see
+  // eliteTier.ts's voteFavorsPlayer1), an exact 50% counts toward player1's side -- this test
+  // pins down that a neutral vote mixed in with real leans behaves predictably rather than
+  // manufacturing a spurious conflict or an inflated spread.
+  const { modelAgreement, coreModelsConflict } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 68, weightUsed: 0.4 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 50, weightUsed: 0.35 },
+      recentForm: { modelName: "Recent Form", player1Probability: 66, weightUsed: 0.25 },
+    }),
+  );
+
+  assert.equal(coreModelsConflict, false, "the neutral model favors neither side in genuine conflict -- both real leans point the same way");
+  assert.notEqual(modelAgreement, "HighDisagreement");
+});
+
+test("Task #114: all-neutral (exactly 50%) models never fabricate a leader or a manufactured conflict", () => {
+  const { modelAgreement, coreModelsConflict, weightedStdDev, leadingSupportPercent } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 50, weightUsed: 0.4 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 50, weightUsed: 0.35 },
+      recentForm: { modelName: "Recent Form", player1Probability: 50, weightUsed: 0.25 },
+    }),
+  );
+
+  assert.equal(coreModelsConflict, false);
+  assert.equal(weightedStdDev, 0, "identical values across every model, however neutral, is perfect agreement");
+  assert.equal(leadingSupportPercent, 100, "every model lands on the same side of the 50 convention, consistent with voteFavorsPlayer1 elsewhere");
+  assert.equal(modelAgreement, "Strong");
+});
+
+test("Task #114 edge cases: zero total weight and an empty model array report a neutral reading, never a fabricated leader", () => {
+  const empty = computeWeightedDisagreement([]);
+  assert.equal(empty.modelAgreement, "Strong");
+  assert.equal(empty.leadingSupportPercent, 50);
+  assert.equal(empty.coreModelsConflict, false);
+  assert.deepEqual(empty.conflictingModels, []);
+
+  const zeroWeight = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 80, weightUsed: 0 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 10, weightUsed: 0 },
+    }),
+  );
+  assert.equal(zeroWeight.modelAgreement, "Strong");
+  assert.equal(zeroWeight.leadingSupportPercent, 50);
+});
+
+test("Task #114 edge cases: effective weights not summing to 1, and duplicate model names, are handled without crashing or fabricating an extra conflict", () => {
+  const unnormalized = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 65, weightUsed: 12 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 62, weightUsed: 9 },
+    }),
+  );
+  assert.notEqual(unnormalized.modelAgreement, "HighDisagreement");
+
+  const duplicateNames = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 65, weightUsed: 0.4 },
+      surfaceEloAgain: { modelName: "Surface Elo", player1Probability: 63, weightUsed: 0.35 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 60, weightUsed: 0.25 },
+    }),
+  );
+  assert.notEqual(duplicateNames.modelAgreement, "HighDisagreement");
+});
+
+test("Task #114: buildDisagreementNote describes a unanimous-but-spread-out case accurately, without implying real conflict", () => {
+  const unanimousSpread = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 74, weightUsed: 0.34 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 51, weightUsed: 0.34 },
+      recentForm: { modelName: "Recent Form", player1Probability: 51, weightUsed: 0.31 },
+    }),
+  );
+  const note = buildDisagreementNote(unanimousSpread, "I. Buse", "Opponent");
+  if (unanimousSpread.modelAgreement !== "Strong") {
+    assert.ok(note, "expected a note explaining the non-Strong category");
+    assert.match(note!, /all meaningfully weighted models favor I\. Buse/i);
+    assert.match(note!, /confidence levels vary/i);
+    assert.doesNotMatch(note!, /disagree on direction/i);
+  }
+
+  const genuineConflict = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 68, weightUsed: 0.36 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 39, weightUsed: 0.33 },
+      recentForm: { modelName: "Recent Form", player1Probability: 66, weightUsed: 0.31 },
+    }),
+  );
+  const conflictNote = buildDisagreementNote(genuineConflict, "Alice", "Bob");
+  assert.ok(conflictNote);
+  assert.doesNotMatch(conflictNote!, /confidence levels vary/i, "a genuine conflict must not be softened into a confidence-spread framing");
+});
