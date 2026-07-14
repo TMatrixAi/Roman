@@ -1,0 +1,28 @@
+"Proceed with backfilling all 7 confirmed Fix-2 rows, including the 6 graded/resolved matches (759, 852, 883, 972, 996, 1031) and the 1 open prediction (442). Do not leave any of these mislabeled — correct all 7.
+
+REQUIREMENTS
+
+- Update only the recommendation column on these 7 rows to their correct value under the fixed logic. Do not touch the match outcome, score, or any other field on the graded rows — only the recommendation label changes.
+- For the 6 graded rows specifically: add a clear flag/note (e.g. a "backfill_corrected" field or equivalent) marking that this recommendation value was corrected after the match was already graded, distinct from predictions generated fresh under the fixed logic. This must be visible/queryable later so any historical hit-rate-by-recommendation-category analysis can distinguish "originally generated this way" from "corrected retroactively."
+- For row #442 (the open prediction), no backfill flag is needed since it was never graded — but confirm the update path for this row is otherwise identical to the other 6 in terms of backup and verification.
+- Do not alter modified_at/last_updated timestamps in a way that would make these look like newly-generated predictions at prediction time — the backfill flag should make the correction timestamp/context clear instead.
+
+SAFETY CHECKS BEFORE WRITING
+
+- Take a fresh backup/snapshot of all 7 target rows (full row, all columns) before writing anything, since no backup currently exists for these specific rows.
+- Immediately before writing, re-verify all 7 rows are still in their last-confirmed state (recommendation still HIGH_RISK, inputs unchanged) — halt and report if anything has drifted since the last check.
+- Confirm the exact row count and ID set is still 7 (442, 759, 852, 883, 972, 996, 1031) before writing — halt and report if this has changed.
+
+VERIFICATION AFTER WRITE
+
+- Confirm exactly 7 rows were updated, with before/after values and the backfill flag status for each.
+- Re-run the full invariant/consistency check suite against the entire live table and confirm zero new contradictions were introduced.
+- Confirm all other rows are byte-for-byte unchanged.
+- Confirm no test suite regressed.
+- Confirm the backup from this session is stored and retrievable.
+
+Once this backfill is verified complete, proceed directly to the July 8-11 backtest merge task as previously scoped: run backtest predictions for July 8-11, 2026 across ATP/WTA/Challenger/ITF with strict no-look-ahead enforcement (every input frozen to the exact moment before match start), back up the ledger before writing, add only new rows for July 8-9 (July 10-11 already exist and must remain untouched/unduplicated), run the five bug-scan checks (feature leakage, recalculation/repainting, duplicate/orphaned rows, malformed data, label contradictions), and report total match counts per date, backup location, no-look-ahead verification, and pass/fail on all five bug-scan checks before final merge.
+
+Report back with the full backfill results first, then the backtest merge results, in that order. Do not skip or merge these two reports together."
+
+Sources

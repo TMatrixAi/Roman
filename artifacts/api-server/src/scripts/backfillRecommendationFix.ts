@@ -1,80 +1,91 @@
-// Scoped backfill (2026-07-14): correct the `recommendation` column, and ONLY that column, on
-// the rows where the margin-8-10 MODERATE_LEAN rescue rule (added to computeRecommendation in
+// Scoped backfill (2026-07-14): correct the `recommendation` column, and ONLY that column, on the
+// 7 rows where the margin-8-10 MODERATE_LEAN rescue rule (added to computeRecommendation in
 // recommendation.ts) changes the outcome vs. the value stored when the row was generated under
-// the old buggy catch-all. Nothing else on these rows is touched -- no other column, no other
-// field inside `engine`, and no timestamp is modified. Every row's exact pre-backfill state is
-// snapshotted to backups/ before any write, and this script refuses to write anything if the
-// re-identified row set doesn't exactly match the 7 rows already reported to the user (by id,
-// including #1031).
+// the old buggy catch-all. Nothing else on these rows is touched -- no match outcome/score, no
+// other engine field beyond the added backfill-provenance flags, no created_at/resolved_at.
+//
+// This script refuses to write anything if the re-verified row set doesn't exactly match the 7
+// approved IDs, or if any row's recommendation/margin/upsetRisk/modelAgreement has drifted since
+// they were last confirmed.
 //
 // Usage:
 //   pnpm --filter @workspace/api-server exec tsx src/scripts/backfillRecommendationFix.ts --dry-run
 //   pnpm --filter @workspace/api-server exec tsx src/scripts/backfillRecommendationFix.ts --apply
 import { db, predictionsTable, pool } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { computeRecommendation } from "../services/predictionEngine/recommendation";
 import type { EngineBreakdown } from "../services/predictionEngine";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const EXPECTED_IDS = [1031, /* filled in after re-identification, see below */];
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const APPROVED_IDS = [442, 759, 852, 883, 972, 996, 1031].sort((a, b) => a - b);
+
+// Last-confirmed state (from the prior verification pass), used to detect drift before writing.
+const LAST_CONFIRMED: Record<number, { recommendation: string; calibratedProbability: number; upsetRisk: string; modelAgreement: string }> = {
+  442: { recommendation: "HIGH_RISK", calibratedProbability: 40.7, upsetRisk: "LOW", modelAgreement: "Strong" },
+  759: { recommendation: "HIGH_RISK", calibratedProbability: 41.5, upsetRisk: "LOW", modelAgreement: "Moderate" },
+  852: { recommendation: "HIGH_RISK", calibratedProbability: 40.2, upsetRisk: "LOW", modelAgreement: "Moderate" },
+  883: { recommendation: "HIGH_RISK", calibratedProbability: 59.2, upsetRisk: "LOW", modelAgreement: "Strong" },
+  972: { recommendation: "HIGH_RISK", calibratedProbability: 58, upsetRisk: "LOW", modelAgreement: "Moderate" },
+  996: { recommendation: "HIGH_RISK", calibratedProbability: 41.2, upsetRisk: "LOW", modelAgreement: "Moderate" },
+  1031: { recommendation: "HIGH_RISK", calibratedProbability: 58.7, upsetRisk: "LOW", modelAgreement: "Moderate" },
+};
 
 async function main(): Promise<void> {
   const apply = process.argv.includes("--apply");
-  const dryRun = process.argv.includes("--dry-run") || !apply;
+  const dryRun = !apply;
 
-  const rows = await db.select().from(predictionsTable).where(eq(predictionsTable.recommendation, "HIGH_RISK"));
-  console.log(`Found ${rows.length} rows currently stored as HIGH_RISK.`);
+  const rows = await db.select().from(predictionsTable).where(inArray(predictionsTable.id, APPROVED_IDS));
+  const foundIds = rows.map((r) => r.id).sort((a, b) => a - b);
 
-  const flips: { id: number; before: string; after: string; row: typeof rows[number] }[] = [];
+  console.log(`Re-verifying row set: expected [${APPROVED_IDS.join(", ")}], found [${foundIds.join(", ")}]`);
+  if (foundIds.length !== APPROVED_IDS.length || !foundIds.every((id, i) => id === APPROVED_IDS[i])) {
+    console.error(`STOP: row set drifted. Not proceeding.`);
+    process.exit(1);
+  }
+
+  // Drift check against last-confirmed inputs, and recompute new recommendation per row.
+  const plan: { id: number; before: string; after: string; graded: boolean; row: (typeof rows)[number] }[] = [];
   for (const row of rows) {
     const engine = row.engine as EngineBreakdown;
-    const dataQuality = row.dataQuality;
-    const dataQualityLabel = row.dataQualityLabel as EngineBreakdown["dataQualityLabel"];
+    const last = LAST_CONFIRMED[row.id];
+    const drifted =
+      row.recommendation !== last.recommendation ||
+      row.calibratedProbability !== last.calibratedProbability ||
+      row.upsetRisk !== last.upsetRisk ||
+      engine.modelAgreement !== last.modelAgreement;
+    if (drifted) {
+      console.error(
+        `STOP: #${row.id} drifted since last confirmation. was={rec:${last.recommendation},cp:${last.calibratedProbability},risk:${last.upsetRisk},agr:${last.modelAgreement}} now={rec:${row.recommendation},cp:${row.calibratedProbability},risk:${row.upsetRisk},agr:${engine.modelAgreement}}`,
+      );
+      process.exit(1);
+    }
     const newRec = computeRecommendation(
       row.calibratedProbability,
-      dataQuality,
-      dataQualityLabel as never,
+      row.dataQuality,
+      row.dataQualityLabel as never,
       row.upsetRisk as never,
       engine.modelAgreement,
     );
-    if (newRec !== "HIGH_RISK") {
-      flips.push({ id: row.id, before: row.recommendation, after: newRec, row });
-    }
+    const graded = row.actualWinnerId !== null || row.resolvedAt !== null;
+    plan.push({ id: row.id, before: row.recommendation, after: newRec, graded, row });
   }
 
-  flips.sort((a, b) => a.id - b.id);
-  console.log(`\nRe-identified ${flips.length} rows that would flip:`);
-  for (const f of flips) {
-    console.log(`  #${f.id} (${f.row.player1Name} vs ${f.row.player2Name}): ${f.before} -> ${f.after}`);
+  console.log(`\nNo drift detected. Plan:`);
+  for (const p of plan) {
+    console.log(`  #${p.id}: ${p.before} -> ${p.after} (graded=${p.graded})`);
   }
 
-  const ids = flips.map((f) => f.id);
-  console.log(`\nRow IDs: [${ids.join(", ")}]`);
-
-  if (flips.length !== 7) {
-    console.error(`\nSTOP: expected exactly 7 rows, found ${flips.length}. Not proceeding.`);
-    process.exit(1);
-  }
-  if (!ids.includes(1031)) {
-    console.error(`\nSTOP: expected #1031 to be among the flips, but it is not. Not proceeding.`);
-    process.exit(1);
-  }
-
-  // Graded-row check
-  console.log(`\nGraded status:`);
-  for (const f of flips) {
-    const graded = f.row.actualWinnerId !== null || f.row.resolvedAt !== null;
-    console.log(`  #${f.id}: graded=${graded} (actualWinnerId=${f.row.actualWinnerId}, resolvedAt=${f.row.resolvedAt})`);
-  }
-
-  // Snapshot backup before any write
+  // Fresh backup of full row state before any write.
   const backupDir = path.join(__dirname, "..", "..", "backups");
   fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = path.join(backupDir, `recommendation-backfill-${stamp}.json`);
-  fs.writeFileSync(backupPath, JSON.stringify(flips.map((f) => f.row), null, 2));
-  console.log(`\nBackup of pre-backfill row state written to: ${backupPath}`);
+  const backupPath = path.join(backupDir, `recommendation-backfill-7rows-${stamp}.json`);
+  fs.writeFileSync(backupPath, JSON.stringify(rows, null, 2));
+  console.log(`\nBackup of pre-backfill row state (all columns, all 7 rows) written to: ${backupPath}`);
 
   if (dryRun) {
     console.log(`\nDRY RUN -- no writes performed. Re-run with --apply to write.`);
@@ -83,21 +94,23 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nApplying updates...`);
-  for (const f of flips) {
-    const engine = f.row.engine as EngineBreakdown & Record<string, unknown>;
-    const newEngine = {
+  const appliedAt = new Date().toISOString();
+  for (const p of plan) {
+    const engine = p.row.engine as EngineBreakdown & Record<string, unknown>;
+    const newEngine: Record<string, unknown> = {
       ...engine,
-      recommendationBackfillNote: `Backfill correction applied ${new Date().toISOString()}: recommendation column changed from ${f.before} to ${f.after} to fix the margin 8-10 HIGH_RISK catch-all bug. This is a backfill correction of a stored value, not a newly-generated prediction. No other field was changed.`,
-      recommendationBackfillPreviousValue: f.before,
+      recommendationBackfillCorrected: true,
+      recommendationBackfillPreviousValue: p.before,
+      recommendationBackfillAppliedAt: appliedAt,
+      recommendationBackfillWasGradedAtCorrection: p.graded,
+      recommendationBackfillReason:
+        "Corrected the margin 8-10 HIGH_RISK catch-all bug in computeRecommendation (recommendation.ts). This is a retroactive label correction of a stored value, not a newly-generated prediction.",
     };
-    await db
-      .update(predictionsTable)
-      .set({ recommendation: f.after, engine: newEngine })
-      .where(eq(predictionsTable.id, f.id));
-    console.log(`  Updated #${f.id}: ${f.before} -> ${f.after}`);
+    await db.update(predictionsTable).set({ recommendation: p.after, engine: newEngine }).where(eq(predictionsTable.id, p.id));
+    console.log(`  Updated #${p.id}: ${p.before} -> ${p.after} (backfill flag set, graded-at-correction=${p.graded})`);
   }
 
-  console.log(`\nDone. ${flips.length} rows updated.`);
+  console.log(`\nDone. ${plan.length} rows updated.`);
   await pool.end();
 }
 
