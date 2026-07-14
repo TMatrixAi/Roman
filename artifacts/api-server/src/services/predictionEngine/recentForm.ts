@@ -87,6 +87,15 @@ const SERVE_RETURN_BLEND_WEIGHT = 0.25;
 // that spread to ~2.6pts (declining: 59.0% future win rate vs. improving: 61.6%, stable in
 // between at 62.9%) -- a real, if modest, signal. See the script's inline comments for the full
 // comparison table across candidate thresholds/signals.
+// 2026-07-14 re-check (task #71): the validation above predates this file's serve/return blend
+// (`SERVE_RETURN_BLEND_WEIGHT`), so re-ran the same script with a third signal that layers the
+// real serve/return-quality blend on top of the opponent-adjusted delta AND replicates this
+// file's full per-match weight stack (recency decay, level weight, surface-mismatch deweight,
+// retired/walkover deweight) -- i.e. the exact contribution/weight `formScore` computes today,
+// not just its pre-blend predecessor. Result: the richer signal WIDENED the separation further at
+// these same thresholds (0.25 delta / min 6 sample: ~1.5pt -> ~2.2pt improving-vs-declining
+// spread), so 0.25/6 remains the best config -- no retune needed. See the script's updated inline
+// comments and `.agents/memory/recent-form-trend-validation.md` for the numbers.
 const TREND_DELTA_THRESHOLD = 0.25;
 const TREND_MIN_SAMPLE = 6;
 

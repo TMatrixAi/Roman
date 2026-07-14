@@ -1,0 +1,386 @@
+import csv
+import os
+import sys
+import time
+from typing import Any
+
+import requests
+
+
+# Replit Secret name:
+# GEOAPIFY_API_KEY
+API_KEY = os.getenv("GEOAPIFY_API_KEY")
+
+CREATE_URL = "https://api.geoapify.com/v1/batch/geocode/search"
+OUTPUT_FILE = "tournament_coordinates.csv"
+
+# Geoapify recommends leaving a reasonable interval between polling attempts.
+POLL_INTERVAL_SECONDS = 15
+MAX_POLL_ATTEMPTS = 80
+REQUEST_TIMEOUT_SECONDS = 45
+MAX_HTTP_RETRIES = 3
+
+
+# Replace or expand this list with your tournament venues.
+# More specific descriptions generally produce better matches.
+TOURNAMENT_VENUES = [
+    {
+        "tournament_name": "Wimbledon",
+        "query": "All England Lawn Tennis and Croquet Club, Wimbledon, London, United Kingdom",
+    },
+    {
+        "tournament_name": "Roland-Garros",
+        "query": "Stade Roland Garros, Paris, France",
+    },
+    {
+        "tournament_name": "US Open",
+        "query": "USTA Billie Jean King National Tennis Center, Queens, New York, USA",
+    },
+    {
+        "tournament_name": "Australian Open",
+        "query": "Melbourne Park, Melbourne, Australia",
+    },
+    {
+        "tournament_name": "Indian Wells",
+        "query": "Indian Wells Tennis Garden, Indian Wells, California, USA",
+    },
+    {
+        "tournament_name": "Miami Open",
+        "query": "Hard Rock Stadium, Miami Gardens, Florida, USA",
+    },
+    {
+        "tournament_name": "Madrid Open",
+        "query": "Caja Magica, Madrid, Spain",
+    },
+    {
+        "tournament_name": "Italian Open",
+        "query": "Foro Italico, Rome, Italy",
+    },
+    {
+        "tournament_name": "Canadian Open Toronto",
+        "query": "Sobeys Stadium, Toronto, Ontario, Canada",
+    },
+    {
+        "tournament_name": "Canadian Open Montreal",
+        "query": "IGA Stadium, Montreal, Quebec, Canada",
+    },
+    {
+        "tournament_name": "Cincinnati Open",
+        "query": "Lindner Family Tennis Center, Mason, Ohio, USA",
+    },
+]
+
+
+def request_with_retries(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any],
+    json_body: Any | None = None,
+) -> requests.Response:
+    """Send an HTTP request with basic retry handling."""
+
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_HTTP_RETRIES + 1):
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_body,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+
+            # Retry temporary server and rate-limit errors.
+            if response.status_code == 429 or response.status_code >= 500:
+                wait_seconds = attempt * 5
+                print(
+                    f"Temporary API error {response.status_code}. "
+                    f"Retrying in {wait_seconds} seconds..."
+                )
+                time.sleep(wait_seconds)
+                continue
+
+            return response
+
+        except requests.RequestException as exc:
+            last_error = exc
+
+            if attempt < MAX_HTTP_RETRIES:
+                wait_seconds = attempt * 5
+                print(
+                    f"Network error: {exc}. "
+                    f"Retrying in {wait_seconds} seconds..."
+                )
+                time.sleep(wait_seconds)
+
+    raise RuntimeError(
+        f"Request failed after {MAX_HTTP_RETRIES} attempts: {last_error}"
+    )
+
+
+def submit_batch_job() -> str:
+    """Submit venue queries to Geoapify and return the batch job ID."""
+
+    address_queries = [venue["query"] for venue in TOURNAMENT_VENUES]
+
+    print(f"Submitting {len(address_queries)} venues to Geoapify...")
+
+    response = request_with_retries(
+        "POST",
+        CREATE_URL,
+        params={
+            "apiKey": API_KEY,
+            "limit": 1,
+            "lang": "en",
+        },
+        json_body=address_queries,
+    )
+
+    if response.status_code not in (200, 202):
+        raise RuntimeError(
+            "Geoapify rejected the batch request.\n"
+            f"Status code: {response.status_code}\n"
+            f"Response: {response.text}"
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Geoapify returned invalid JSON: {response.text}"
+        ) from exc
+
+    job_id = data.get("id")
+
+    if not job_id:
+        raise RuntimeError(
+            f"Geoapify did not return a batch job ID. Response: {data}"
+        )
+
+    print(f"Batch submitted successfully. Job ID: {job_id}")
+    return job_id
+
+
+def poll_batch_job(job_id: str) -> Any:
+    """Poll Geoapify until the batch results are ready."""
+
+    for attempt in range(1, MAX_POLL_ATTEMPTS + 1):
+        print(
+            f"Checking job status "
+            f"({attempt}/{MAX_POLL_ATTEMPTS})..."
+        )
+
+        response = request_with_retries(
+            "GET",
+            CREATE_URL,
+            params={
+                "id": job_id,
+                "apiKey": API_KEY,
+            },
+        )
+
+        if response.status_code == 202:
+            print(
+                f"Job is still processing. "
+                f"Waiting {POLL_INTERVAL_SECONDS} seconds..."
+            )
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"Completed job returned invalid JSON: {response.text}"
+                ) from exc
+
+            print("Batch job completed.")
+            return data
+
+        if response.status_code == 404:
+            raise RuntimeError(
+                "Geoapify could not find the batch job. "
+                "The job may have expired or the job ID may be invalid."
+            )
+
+        raise RuntimeError(
+            "Unexpected response while checking the batch job.\n"
+            f"Status code: {response.status_code}\n"
+            f"Response: {response.text}"
+        )
+
+    raise TimeoutError(
+        "The batch job did not finish before the polling limit was reached."
+    )
+
+
+def extract_results(payload: Any) -> list[Any]:
+    """
+    Normalize possible Geoapify response shapes into one results list.
+    """
+
+    if isinstance(payload, list):
+        return payload
+
+    if isinstance(payload, dict):
+        results = payload.get("results")
+
+        if isinstance(results, list):
+            return results
+
+    raise RuntimeError(
+        "Could not find a results list in Geoapify's response. "
+        f"Response type: {type(payload).__name__}"
+    )
+
+
+def extract_coordinates(item: Any) -> tuple[Any, Any, str, str]:
+    """
+    Extract latitude, longitude, formatted address and result type
+    from a Geoapify batch result.
+    """
+
+    latitude = None
+    longitude = None
+    formatted_address = ""
+    result_type = ""
+
+    if not isinstance(item, dict):
+        return latitude, longitude, formatted_address, result_type
+
+    # Some batch responses wrap each geocoding response in "result".
+    result = item.get("result", item)
+
+    # Standard GeoJSON FeatureCollection response.
+    if isinstance(result, dict):
+        features = result.get("features")
+
+        if isinstance(features, list) and features:
+            first_feature = features[0] or {}
+            properties = first_feature.get("properties", {})
+            geometry = first_feature.get("geometry", {})
+            coordinates = geometry.get("coordinates", [])
+
+            latitude = properties.get("lat")
+            longitude = properties.get("lon")
+            formatted_address = properties.get("formatted", "")
+            result_type = properties.get("result_type", "")
+
+            # Fall back to GeoJSON coordinates: [longitude, latitude].
+            if (
+                (latitude is None or longitude is None)
+                and isinstance(coordinates, list)
+                and len(coordinates) >= 2
+            ):
+                longitude = coordinates[0]
+                latitude = coordinates[1]
+
+        # Handle JSON-style responses if returned instead of GeoJSON.
+        elif isinstance(result.get("results"), list) and result["results"]:
+            first_result = result["results"][0]
+
+            latitude = first_result.get("lat")
+            longitude = first_result.get("lon")
+            formatted_address = first_result.get("formatted", "")
+            result_type = first_result.get("result_type", "")
+
+        # Handle a direct result object.
+        else:
+            latitude = result.get("lat")
+            longitude = result.get("lon")
+            formatted_address = result.get("formatted", "")
+            result_type = result.get("result_type", "")
+
+    return latitude, longitude, formatted_address, result_type
+
+
+def save_csv(batch_payload: Any) -> None:
+    """Save tournament names and coordinates to a CSV file."""
+
+    results = extract_results(batch_payload)
+
+    rows: list[dict[str, Any]] = []
+
+    for index, venue in enumerate(TOURNAMENT_VENUES):
+        item = results[index] if index < len(results) else {}
+
+        latitude, longitude, formatted_address, result_type = (
+            extract_coordinates(item)
+        )
+
+        status = (
+            "matched"
+            if latitude is not None and longitude is not None
+            else "not_found"
+        )
+
+        rows.append(
+            {
+                "tournament_name": venue["tournament_name"],
+                "search_query": venue["query"],
+                "latitude": latitude if latitude is not None else "",
+                "longitude": longitude if longitude is not None else "",
+                "formatted_address": formatted_address,
+                "result_type": result_type,
+                "status": status,
+            }
+        )
+
+    fieldnames = [
+        "tournament_name",
+        "search_query",
+        "latitude",
+        "longitude",
+        "formatted_address",
+        "result_type",
+        "status",
+    ]
+
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    matched_count = sum(row["status"] == "matched" for row in rows)
+    failed_count = len(rows) - matched_count
+
+    print(f"\nSaved file: {OUTPUT_FILE}")
+    print(f"Matched venues: {matched_count}")
+    print(f"Unmatched venues: {failed_count}")
+
+    if failed_count:
+        print(
+            "Review rows marked 'not_found' and make their search queries "
+            "more specific."
+        )
+
+
+def main() -> None:
+    if not API_KEY:
+        print(
+            "ERROR: The GEOAPIFY_API_KEY environment variable is missing.\n"
+            "In Replit Secrets, create a secret named exactly:\n"
+            "GEOAPIFY_API_KEY\n"
+            "Then paste your Geoapify key as its value."
+        )
+        sys.exit(1)
+
+    if not TOURNAMENT_VENUES:
+        print("ERROR: TOURNAMENT_VENUES is empty.")
+        sys.exit(1)
+
+    try:
+        job_id = submit_batch_job()
+        batch_payload = poll_batch_job(job_id)
+        save_csv(batch_payload)
+
+    except Exception as exc:
+        print(f"\nERROR: {exc}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
