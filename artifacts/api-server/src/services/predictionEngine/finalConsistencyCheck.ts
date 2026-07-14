@@ -51,6 +51,15 @@ export interface FinalConsistencyInput {
   dataQuality: number;
   /** The same Data Quality label `computeRecommendation` was actually given when `recommendation` was produced. */
   dataQualityLabel: DataQualityLabel;
+  /**
+   * The Monte Carlo simulator's raw, player-1-relative win probability (0-100) from
+   * `EngineBreakdown.simulation.player1WinProbability` -- the same stored field
+   * `PredictionResult.tsx`'s `deriveMonteCarloHeadline` mirrors to the predicted winner's side.
+   * Null/undefined when this row predates Phase 7's simulator (no simulation was ever computed
+   * for it) -- rule 11 below can't check a value that was never stored, so it stays silent rather
+   * than treating an absent field as a violation.
+   */
+  simulationPlayer1WinProbability?: number | null;
 }
 
 export interface FinalConsistencyResult {
@@ -61,7 +70,12 @@ export interface FinalConsistencyResult {
 const PROBABILITY_EPSILON = 0.15;
 
 /**
- * Checks the five consistency rules from the Task 56 spec:
+ * Rules 1-5 are the original five consistency rules from the Task 56 spec; rules 6-10 were added
+ * by later phases (Strong Recommendation, Elite-vs-recommendation, note consistency, set score,
+ * and recommendation freshness); rules 11-12 (Task 87) guard the Monte Carlo headline-binding
+ * pattern and the recommendation margin 8-10 catch-all gap specifically, independent of whatever
+ * `computeRecommendation`/`deriveMonteCarloHeadline` currently do, so a regression in either of
+ * those functions can't slip past its own recomputed-and-therefore-matching check.
  *  1. The predicted winner must be whichever player calibratedProbability actually favors.
  *  2. predictedWinnerProbability must be a valid, meaningful favorite probability (50-100).
  *  3. predictedWinnerProbability must be the exact mirrored complement of calibratedProbability
@@ -183,6 +197,62 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
   if (input.recommendation !== expectedRecommendation) {
     violations.push(
       `Rule 10 (recommendation freshness): stored recommendation "${input.recommendation}" does not match what computeRecommendation currently produces ("${expectedRecommendation}") for calibratedProbability=${input.calibratedProbability}, dataQuality=${input.dataQuality}, dataQualityLabel=${input.dataQualityLabel}, upsetRisk=${input.upsetRisk}, modelAgreement=${input.modelAgreement} -- this recommendation is stale and was not recomputed under the current logic.`,
+    );
+  }
+
+  // Rule 11 (Monte Carlo headline-binding): the simulator only ever stores a player-1-relative
+  // `simulation.player1WinProbability` -- every display surface (currently
+  // `PredictionResult.tsx`'s `deriveMonteCarloHeadline`) must mirror it to the predicted winner's
+  // own side (100 - x when the winner is stored as player2) before showing it as "the winner's
+  // win probability". This re-implements that exact derivation as a plain, typed, backend-only
+  // check -- it does NOT call any UI/render code -- so a future change to `deriveMonteCarloHeadline`
+  // (or any other future call site that reads this same stored field) can never again silently
+  // rebind the simulator's number to a fixed player slot instead of the predicted winner. Skipped
+  // entirely when no simulation was ever stored for this row (pre-Phase-7 legacy rows) -- there is
+  // nothing to check, not a violation.
+  if (input.simulationPlayer1WinProbability !== null && input.simulationPlayer1WinProbability !== undefined) {
+    const raw = input.simulationPlayer1WinProbability;
+    let resolvedWinnerProbability: number | null = null;
+    if (input.predictedWinnerId === input.player1Id) {
+      resolvedWinnerProbability = raw;
+    } else if (input.predictedWinnerId === input.player2Id) {
+      resolvedWinnerProbability = 100 - raw;
+    }
+    // predictedWinnerId matching neither stored player id is already independently caught by
+    // Rule 1 above (winner/probability agreement) -- this rule only adds the extra requirement
+    // that, once resolved, the mirrored number must itself be a finite, valid [0,100] probability.
+    if (
+      resolvedWinnerProbability === null ||
+      !Number.isFinite(resolvedWinnerProbability) ||
+      resolvedWinnerProbability < 0 ||
+      resolvedWinnerProbability > 100
+    ) {
+      violations.push(
+        `Rule 11 (Monte Carlo headline binding): the predicted winner's simulation-derived win probability could not be resolved to a valid [0,100] value from simulation.player1WinProbability=${raw}, player1Id=${input.player1Id}, player2Id=${input.player2Id}, predictedWinnerId=${input.predictedWinnerId} (resolved=${resolvedWinnerProbability}) -- a future binding bug could show the wrong player's (or an invalid) simulated win probability.`,
+      );
+    }
+  }
+
+  // Rule 12 (recommendation catch-all-gap): re-checks, independently of `computeRecommendation`,
+  // for exactly the margin 8-10 gap that recommendation.ts's own catch-all used to mislabel as
+  // HIGH_RISK -- a real but modest lean (LOW/MODERATE upset risk, non-Mixed/HighDisagreement
+  // agreement) is not "genuine upset danger" (HIGH_RISK's documented meaning). Deliberately
+  // hardcodes the expected outcome here rather than calling `computeRecommendation` (that's
+  // already Rule 10's job): if a FUTURE change reopens this exact branch inside
+  // `computeRecommendation` itself, Rule 10 alone could not catch it -- it would just recompute
+  // the same newly-buggy value and "match". This rule stands guard against that regression
+  // specifically, independent of whatever `computeRecommendation`'s current implementation does.
+  const catchAllGapMargin = Math.abs(input.calibratedProbability - 50);
+  if (
+    catchAllGapMargin >= 8 &&
+    catchAllGapMargin < 10 &&
+    (input.upsetRisk === "LOW" || input.upsetRisk === "MODERATE") &&
+    input.modelAgreement !== "Mixed" &&
+    input.modelAgreement !== "HighDisagreement" &&
+    input.recommendation === "HIGH_RISK"
+  ) {
+    violations.push(
+      `Rule 12 (recommendation catch-all gap): recommendation is HIGH_RISK for a margin-${catchAllGapMargin.toFixed(1)} pick (calibratedProbability=${input.calibratedProbability}) with upsetRisk=${input.upsetRisk} and modelAgreement=${input.modelAgreement} -- a modest real lean like this is not genuine upset danger and must never fall into the HIGH_RISK catch-all.`,
     );
   }
 

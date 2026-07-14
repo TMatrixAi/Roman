@@ -587,6 +587,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     predictedSetScore,
     dataQuality,
     dataQualityLabel,
+    simulationPlayer1WinProbability: simulation.player1WinProbability,
   });
   const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
   const eliteTierReason =

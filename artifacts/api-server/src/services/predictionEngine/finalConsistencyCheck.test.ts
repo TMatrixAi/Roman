@@ -41,8 +41,12 @@ test("rule 10: a stale stored recommendation that no longer matches computeRecom
   const { violations } = checkFinalConsistency(
     baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, dataQuality: 70, dataQualityLabel: "Strong", upsetRisk: "LOW", modelAgreement: "Strong", recommendation: "HIGH_RISK" }),
   );
-  assert.equal(violations.length, 1);
-  assert.match(violations[0], /Rule 10/);
+  // This exact shape (margin 8, LOW risk, Strong agreement, stored HIGH_RISK) also independently
+  // trips rule 12 (Task 87's hardcoded catch-all-gap guard) -- both rules correctly fire here,
+  // from two different mechanisms (recompute-and-compare vs. a hardcoded expected outcome).
+  assert.equal(violations.length, 2);
+  assert.ok(violations.some((v) => v.includes("Rule 10")));
+  assert.ok(violations.some((v) => v.includes("Rule 12")));
 });
 
 test("rule 10: a recommendation that matches computeRecommendation's current output for the same inputs is not flagged", () => {
@@ -50,6 +54,53 @@ test("rule 10: a recommendation that matches computeRecommendation's current out
     baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, dataQuality: 70, dataQualityLabel: "Strong", upsetRisk: "LOW", modelAgreement: "Strong", recommendation: "MODERATE_LEAN" }),
   );
   assert.deepEqual(violations, []);
+});
+
+test("rule 11: a valid simulation resolves cleanly when the winner is stored as player1", () => {
+  const { violations } = checkFinalConsistency(baseInput({ predictedWinnerId: "p1", simulationPlayer1WinProbability: 65 }));
+  assert.ok(!violations.some((v) => v.includes("Rule 11")));
+});
+
+test("rule 11: a valid simulation resolves cleanly when the winner is stored as player2 (the original binding-bug shape)", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 35, predictedWinnerId: "p2", predictedWinnerProbability: 65, simulationPlayer1WinProbability: 30 }),
+  );
+  // mirrored: predictedWinnerId is p2, so winner probability = 100 - 30 = 70, a valid [0,100] value
+  assert.ok(!violations.some((v) => v.includes("Rule 11")));
+});
+
+test("rule 11: a row with no stored simulation (legacy, pre-Phase-7) is not flagged", () => {
+  const { violations } = checkFinalConsistency(baseInput({ simulationPlayer1WinProbability: null }));
+  assert.ok(!violations.some((v) => v.includes("Rule 11")));
+});
+
+test("rule 11: a malformed/out-of-range simulation value is caught", () => {
+  const { violations } = checkFinalConsistency(baseInput({ predictedWinnerId: "p1", simulationPlayer1WinProbability: Number.NaN }));
+  assert.ok(violations.some((v) => v.includes("Rule 11")));
+});
+
+test("rule 12: the exact margin 8-10 catch-all gap (HIGH_RISK on a modest, low-risk, agreeing pick) is caught independent of computeRecommendation", () => {
+  // margin = |58 - 50| = 8, inside [8,10); LOW risk; Strong agreement -- computeRecommendation
+  // itself would now say MODERATE_LEAN for this, but rule 12 hardcodes the check so it still
+  // fires even if some future regression made computeRecommendation agree with the bad HIGH_RISK.
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "Strong", recommendation: "HIGH_RISK" }),
+  );
+  assert.ok(violations.some((v) => v.includes("Rule 12")));
+});
+
+test("rule 12: a margin 8-10 pick correctly labeled MODERATE_LEAN is not flagged", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "Strong", recommendation: "MODERATE_LEAN" }),
+  );
+  assert.ok(!violations.some((v) => v.includes("Rule 12")));
+});
+
+test("rule 12: a margin 8-10 pick with genuinely High Disagreement is not caught by rule 12 (HIGH_RISK may be correct there)", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "HighDisagreement", recommendation: "HIGH_RISK", disagreementNote: "HIGHDISAGREEMENT: some real note." }),
+  );
+  assert.ok(!violations.some((v) => v.includes("Rule 12")));
 });
 
 test("rule 1: predicted winner disagreeing with the probability's own direction is caught", () => {
