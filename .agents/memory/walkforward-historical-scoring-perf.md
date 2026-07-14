@@ -36,3 +36,14 @@ every invocation. To validate engine changes, prefer the fast focused unit tests
 for real reporting, trigger it via HTTP against the already-running workflow (background trigger +
 poll `GET /evaluation/runs`, per the sandbox-background-process-limits note) and only do it once
 you're ready to accept the old history being replaced.
+
+**HTTP-trigger workaround is not reliable either:** in one session the API-server workflow itself
+kept dying/restarting every ~10-20s for reasons unrelated to the walk-forward call (no crash/error
+in logs -- it just stopped), so a backgrounded HTTP trigger never got far enough to matter. A direct
+`pnpm exec tsx <script calling runWalkForwardEvaluation()>` run in the foreground (no server, no
+build step) got further per attempt, but each per-fold pass still took ~2-3 min and grew slower
+each successive fold (larger training-history rebuild), so even this couldn't fit a full 4-fold run
+in one ~295s shell call, and every re-invocation re-triggers the destructive delete-everything step
+at the top -- so a partial/interrupted run leaves only the folds that finished, not a resumable
+checkpoint. Budget a session with real multi-call headroom (or get workflow stability fixed first)
+before attempting a full re-run; don't expect to finish one opportunistically alongside other work.

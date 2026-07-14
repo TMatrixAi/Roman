@@ -30,6 +30,18 @@ export function computeRecommendation(
   // favorite win rate) -- better than 55-65 (log loss 0.693, -2.9pt gap), which the old >=55 floor
   // let through untouched while excluding the stronger 45-55 band. Lowered to 45 (the "Acceptable"
   // label floor) so STRONG_RECOMMENDATION reaches the segment the evidence actually supports.
+  // Task #120: Task #116's audit found STRONG_RECOMMENDATION (margin>=22, i.e. confidence>=72%)
+  // had the worst log loss of any tier (0.736, worse than a coin flip) on n=189 -- a real but
+  // small-sample warning. This task re-checked it against an independent fresh backtest sample
+  // (n=44) and found the same pattern reproduces (log loss 0.729, accuracy indistinguishable from
+  // MODERATE_LEAN) -- see docs/audit-task120-strong-recommendation-revalidation.md. Thresholds are
+  // left unchanged: the better-powered confidence-band calibration curve (n=307-136 in the
+  // relevant range) shows overconfidence *worsens*, not improves, above this gate's ~72%
+  // confidence floor, so raising the margin further would select an equally/more overconfident
+  // population rather than a better-calibrated one (unlike Task #75's DQ retune, where a threshold
+  // move did land on a genuinely better-calibrated band). The real fix belongs in the calibration
+  // curve itself (calibration.ts), not this gate -- re-check this threshold again once that's
+  // addressed and once live paper-trading volume (Task #121) exists to compare against.
   if (
     margin >= 22 &&
     dataQuality >= 45 &&
