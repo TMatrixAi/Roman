@@ -10,6 +10,8 @@ import {
   type EliteTierBacktest,
   type SegmentMetrics,
   type MarketEdgeSummary,
+  type UpsetRiskTierMetrics,
+  type DisagreementTierMetrics,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +21,12 @@ import { Switch } from "@/components/ui/switch"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords } from "lucide-react"
+
+/** Below this many graded rows, a tier's own numbers are too noisy to trust at face value --
+ * mirrors the n<30 minimum-sample convention this dashboard already uses for the Elite tier
+ * backtest (`EliteTierGroupStats`'s `minSampleSize`). */
+const LOW_CONFIDENCE_TIER_SAMPLE = 30
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
@@ -250,6 +257,125 @@ function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
   )
 }
 
+const UPSET_RISK_TIER_LABEL: Record<string, string> = { LOW: "Low", MODERATE: "Moderate", HIGH: "High", EXTREME: "Extreme" }
+const DISAGREEMENT_TIER_LABEL: Record<string, string> = { Strong: "Strong", Moderate: "Moderate", Mixed: "Mixed", HighDisagreement: "High Disagreement" }
+
+function UpsetRiskTierCard({ tiers }: { tiers: UpsetRiskTierMetrics[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4" /> Upset-Risk Track Record (Task 56)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Upset risk is a pure downstream classifier of the already-calibrated probability -- it never changes the
+          probability itself, so its validation is whether the model's own favorite actually loses more often as the
+          tier climbs. A tier is doing real work only if favorite-loss rate rises LOW → MODERATE → HIGH → EXTREME.
+          Scoped to genuinely-unseen graded rows only (historical test-segment + paper trading).
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-mono text-muted-foreground border-b">
+                <th className="py-2 pr-4">Tier</th>
+                <th className="py-2 pr-4">Sample</th>
+                <th className="py-2 pr-4">Favorite-Loss Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => {
+                const lowConfidence = t.n < LOW_CONFIDENCE_TIER_SAMPLE
+                return (
+                  <tr key={t.tier} className="border-b last:border-0">
+                    <td className="py-2 pr-4 font-medium">{UPSET_RISK_TIER_LABEL[t.tier] ?? t.tier}</td>
+                    <td className="py-2 pr-4 font-mono">n={t.n}</td>
+                    <td className="py-2 pr-4 font-mono">
+                      <div className="flex items-center gap-2">
+                        <span>{t.favoriteLossRate !== null ? `${t.favoriteLossRate}%` : "—"}</span>
+                        {lowConfidence && (
+                          <Badge variant="outline" className="font-mono text-[10px] whitespace-nowrap">
+                            LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DisagreementTierCard({ tiers }: { tiers: DisagreementTierMetrics[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Swords className="w-4 h-4" /> Model-Disagreement Track Record (Task 56)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Model agreement is also a pure downstream classifier -- it never changes the calibrated probability. The
+          tier that matters most is High Disagreement, which should show the lowest accuracy of the four: those are
+          the genuinely hardest matchups, where the engine's own core models point in different directions. Strong/
+          Moderate/Mixed aren't expected to fall in a perfectly straight line -- only High Disagreement being worst
+          is the load-bearing claim. Scoped to the same genuinely-unseen rows as the upset-risk table above.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-mono text-muted-foreground border-b">
+                <th className="py-2 pr-4">Tier</th>
+                <th className="py-2 pr-4">Sample</th>
+                <th className="py-2 pr-4">Accuracy</th>
+                <th className="py-2 pr-4">Error Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => {
+                const lowConfidence = t.n < LOW_CONFIDENCE_TIER_SAMPLE
+                return (
+                  <tr key={t.tier} className="border-b last:border-0">
+                    <td className="py-2 pr-4 font-medium">
+                      <div className="flex items-center gap-2">
+                        {DISAGREEMENT_TIER_LABEL[t.tier] ?? t.tier}
+                        {t.tier === "HighDisagreement" && (
+                          <Badge variant="secondary" className="font-mono text-[10px] whitespace-nowrap">
+                            HARDEST TIER
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 font-mono">n={t.n}</td>
+                    <td className="py-2 pr-4 font-mono">
+                      <div className="flex items-center gap-2">
+                        <span>{t.accuracy !== null ? `${t.accuracy}%` : "—"}</span>
+                        {lowConfidence && (
+                          <Badge variant="outline" className="font-mono text-[10px] whitespace-nowrap">
+                            LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 font-mono">{t.errorRate !== null ? `${t.errorRate}%` : "—"}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function MarketEdgeCard({ marketEdge }: { marketEdge: MarketEdgeSummary }) {
   const hasData = marketEdge.n > 0 && marketEdge.averageEdge !== null
   return (
@@ -373,6 +499,8 @@ export default function AccuracyDashboardPage() {
       ) : dashboard ? (
         <div className="space-y-6">
           <EliteTierBacktestCard backtest={dashboard.eliteTierBacktest} />
+          <UpsetRiskTierCard tiers={dashboard.upsetRiskTierMetrics} />
+          <DisagreementTierCard tiers={dashboard.disagreementTierMetrics} />
           <MarketEdgeCard marketEdge={dashboard.marketEdge} />
           {dashboard.segments.map((segment) => (
             <SegmentCard key={segment.key} segment={segment} />
