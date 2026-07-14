@@ -8,18 +8,40 @@ export interface LedgerPlayerSummary {
   predictionCount: number;
 }
 
+/** Escape LIKE/ILIKE wildcard characters (%, _) in a raw user token so they're matched literally
+ * instead of acting as SQL wildcards -- otherwise a name that happens to contain "%" or "_"
+ * would silently broaden or corrupt the match. */
+function escapeLikeToken(token: string): string {
+  return token.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 /**
  * Search players who appear (as either side) in at least one saved Ledger prediction, matched by
- * name substring. This is intentionally scoped to `predictionsTable` -- it never touches the live
+ * name. This is intentionally scoped to `predictionsTable` -- it never touches the live
  * tennis-data provider (see `/players/search` for that) -- so results are always "you can actually
  * jump to a recorded prediction for this player", never a live player with zero Ledger history.
+ *
+ * Stored names are inconsistent in both word order and punctuation (e.g. "H. Barton" vs a doubles
+ * pairing like "Barros/ Leme Da Silva"), so a single whole-string substring match only ever
+ * recognized a query that happened to reproduce the exact stored order and punctuation --
+ * "Barton H" or "H Barton" (no period) both failed to find "H. Barton". Instead, split the query
+ * into whitespace-separated words and require every word to appear as a substring SOMEWHERE in
+ * the name (in any order), so first-name-first, last-name-first, and missing punctuation all
+ * resolve to the same player.
  *
  * A player's id/name pairing can drift slightly over time (e.g. a display-name correction
  * upstream), so results are grouped by id with the most recently-used name shown, rather than
  * grouping by the (id, name) pair -- otherwise the same real player could show up twice.
  */
 export async function searchLedgerPlayers(query: string): Promise<LedgerPlayerSummary[]> {
-  const pattern = `%${query}%`;
+  const words = query.trim().split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 0) return [];
+
+  const wordConditions = sql.join(
+    words.map((word) => sql`combined.name ilike ${`%${escapeLikeToken(word)}%`} escape '\\'`),
+    sql` and `,
+  );
+
   const result = await db.execute<{ id: string; name: string; prediction_count: number }>(sql`
     select
       combined.id as id,
@@ -30,7 +52,7 @@ export async function searchLedgerPlayers(query: string): Promise<LedgerPlayerSu
       union all
       select player2_id as id, player2_name as name, created_at from ${predictionsTable}
     ) as combined
-    where combined.name ilike ${pattern}
+    where ${wordConditions}
     group by combined.id
     order by prediction_count desc, name asc
     limit 20
