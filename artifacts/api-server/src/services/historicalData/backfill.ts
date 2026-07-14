@@ -1,7 +1,9 @@
-import { db, historicalMatchesTable, matchFeatureSnapshotsTable } from "@workspace/db";
+import { db, historicalMatchesTable, matchFeatureSnapshotsTable, evaluationPredictionsTable } from "@workspace/db";
 import { and, asc, eq, lt, sql } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import type { Surface, TennisDataProvider, HistoricalFixture } from "../tennisData/types";
+import { combineDateTimeUtc } from "../tennisData/apiTennisProvider";
+import { resolveTournamentTimezone } from "../tennisData/timezoneMap";
 import { applyMatchResult, computeFeatures, createPlayerState, type PlayerState } from "./features";
 import { CUTOFF_MINUTES, DEFAULT_CUTOFF, type BackfillOptions, type BackfillSummary, type CutoffOption } from "./types";
 
@@ -34,10 +36,30 @@ function chunkDateRange(dateStart: string, dateStop: string, chunkDays: number):
   return chunks;
 }
 
-/** Parses provider date+time into a UTC Date. Provider does not disclose the fixture's timezone, so this is treated as-is (a documented limitation, not silently corrected). */
-function toScheduledStart(fixture: HistoricalFixture): Date {
-  const time = fixture.time ?? "00:00";
-  return new Date(`${fixture.date}T${time}:00.000Z`);
+interface ScheduledStart {
+  scheduledStartAt: Date;
+  /** False when the venue's timezone couldn't be confidently resolved -- `scheduledStartAt` then
+   * falls back to the fixture's date at UTC midnight, a documented and flagged fallback, never a
+   * silent guess. Mirrors the live-fixtures path's `timeConfirmed` (`apiTennisProvider.ts`). */
+  timeConfirmed: boolean;
+}
+
+/**
+ * Resolves a fixture's real UTC scheduled start. `fixture.time` is the tournament venue's real
+ * LOCAL wall-clock time, not UTC (see `timezoneMap.ts`'s header for the live evidence) -- this
+ * reuses the exact same `resolveTournamentTimezone` + `combineDateTimeUtc` conversion the live
+ * upcoming-fixtures path uses, so historical and live rows are computed identically. When the
+ * venue's timezone can't be confidently resolved, or the provider gave no time at all, this
+ * falls back to the fixture's date at UTC midnight with `timeConfirmed: false` -- a clearly
+ * flagged fallback, never a silent guess.
+ */
+function toScheduledStart(fixture: HistoricalFixture): ScheduledStart {
+  const timezone = resolveTournamentTimezone(fixture.tournamentName);
+  const combined = combineDateTimeUtc(fixture.date, fixture.time ?? undefined, timezone);
+  if (combined !== null) {
+    return { scheduledStartAt: new Date(combined), timeConfirmed: true };
+  }
+  return { scheduledStartAt: new Date(`${fixture.date}T00:00:00.000Z`), timeConfirmed: false };
 }
 
 function gameShareFor(margins: GameMargins, forPlayer1: boolean): number | null {
@@ -175,6 +197,7 @@ export async function runHistoricalBackfill(
     cutoffMinutes,
     fixturesFetched: 0,
     matchesInserted: 0,
+    matchesRecomputed: 0,
     matchesSkippedDuplicate: 0,
     matchesSkippedNoTerminalResult: 0,
     featureRowsInserted: 0,
@@ -196,16 +219,21 @@ export async function runHistoricalBackfill(
     const fixtures = await provider.getCompletedMatchesByDateRange(chunkStart, chunkEnd);
     summary.fixturesFetched += fixtures.length;
 
+    // Resolve each fixture's real scheduled start once (timezone resolution is pure per
+    // fixture, but no need to redo it repeatedly across the sort comparator and the insert path
+    // below).
+    const withSchedule = fixtures.map((fixture) => ({ fixture, schedule: toScheduledStart(fixture) }));
+
     // Sort ascending within the chunk; chunks themselves are already non-overlapping and in
     // ascending order, so this guarantees a fully correct global chronological pass.
-    const sorted = [...fixtures].sort((a, b) => {
-      const aStart = toScheduledStart(a).getTime();
-      const bStart = toScheduledStart(b).getTime();
+    const sorted = [...withSchedule].sort((a, b) => {
+      const aStart = a.schedule.scheduledStartAt.getTime();
+      const bStart = b.schedule.scheduledStartAt.getTime();
       if (aStart !== bStart) return aStart - bStart;
-      return a.id.localeCompare(b.id);
+      return a.fixture.id.localeCompare(b.fixture.id);
     });
 
-    for (const fixture of sorted) {
+    for (const { fixture, schedule } of sorted) {
       if (!fixture.cancelled && fixture.winnerId === null) {
         summary.matchesSkippedNoTerminalResult += 1;
         continue;
@@ -224,7 +252,17 @@ export async function runHistoricalBackfill(
         .from(historicalMatchesTable)
         .where(and(eq(historicalMatchesTable.provider, fixture.provider), eq(historicalMatchesTable.externalId, fixture.id)));
 
-      if (existing) {
+      if (existing && options.recompute) {
+        // Recompute mode (Task #73): purge this fixture's stored row, its feature snapshots, and
+        // any `historical_test` evaluation_predictions pointing at it, then fall through to the
+        // normal insert path below so it's rebuilt fresh -- through the exact same
+        // timezone-aware `toScheduledStart` + `computeFeatures` logic a brand-new fixture uses.
+        // Not folded into playerStates here; the freshly-inserted row folds it in below instead.
+        await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.historicalMatchId, existing.id));
+        await db.delete(matchFeatureSnapshotsTable).where(eq(matchFeatureSnapshotsTable.matchId, existing.id));
+        await db.delete(historicalMatchesTable).where(eq(historicalMatchesTable.id, existing.id));
+        summary.matchesRecomputed += 1;
+      } else if (existing) {
         // Defense in depth: match row + its feature snapshots are written in one DB transaction
         // (see below), so a match can never legitimately exist without exactly the feature
         // snapshots that WOULD be computed for it right now, given the identical running state.
@@ -275,7 +313,7 @@ export async function runHistoricalBackfill(
         continue;
       }
 
-      const scheduledStartAt = toScheduledStart(fixture);
+      const { scheduledStartAt, timeConfirmed: scheduledStartTimeConfirmed } = schedule;
       const cutoffAt = new Date(scheduledStartAt.getTime() - cutoffMinutes * 60_000);
 
       const state1 = getOrCreateState(playerStates, fixture.player1Id);
@@ -318,6 +356,7 @@ export async function runHistoricalBackfill(
             walkover: fixture.walkover,
             cancelled: fixture.cancelled,
             scheduledStartAt,
+            scheduledStartTimeConfirmed,
             cutoffMinutes,
             cutoffAt,
             gameMarginsPlayer1: fixture.setGameMargins,

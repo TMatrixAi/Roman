@@ -25,6 +25,16 @@ export interface BackfillOptions {
   cutoff?: CutoffOption;
   /** Size of each provider request window, in days. Provider is known to fail on ~month-long windows. */
   chunkDays?: number;
+  /**
+   * When true, a fixture that already has a stored row is NOT treated as a normal duplicate to
+   * skip -- its existing row, feature snapshots, and any `historical_test` evaluation_predictions
+   * pointing at it are purged first, then it's re-inserted fresh through the exact same
+   * timezone-aware `toScheduledStart` + `computeFeatures` path a brand-new fixture would take.
+   * This is the supported way to recompute previously-imported matches after a fix to how
+   * `scheduledStartAt` (or any other stored/derived field) is computed -- e.g. Task #73's
+   * venue-timezone fix -- without a separate one-off script or a manual DB wipe.
+   */
+  recompute?: boolean;
 }
 
 export interface BackfillSummary {
@@ -34,6 +44,8 @@ export interface BackfillSummary {
   cutoffMinutes: number;
   fixturesFetched: number;
   matchesInserted: number;
+  /** Count of fixtures purged and rebuilt because `options.recompute` was set (Task #73). 0 outside recompute mode. */
+  matchesRecomputed: number;
   matchesSkippedDuplicate: number;
   matchesSkippedNoTerminalResult: number;
   featureRowsInserted: number;

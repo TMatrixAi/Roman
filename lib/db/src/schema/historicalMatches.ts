@@ -43,8 +43,15 @@ export const historicalMatchesTable = pgTable(
     // without needing to know the specific upstream provider's raw payload shape.
     gameMarginsPlayer1: jsonb("game_margins_player1").notNull().default([]),
 
-    // Scheduled start as reported by the provider (best available "match start" timestamp).
+    // Scheduled start as reported by the provider (best available "match start" timestamp),
+    // converted from the tournament venue's real local wall-clock time to UTC via
+    // `resolveTournamentTimezone`/`combineDateTimeUtc`.
     scheduledStartAt: timestamp("scheduled_start_at", { withTimezone: true }).notNull(),
+    // False when the venue's timezone couldn't be confidently resolved at import time, so
+    // `scheduledStartAt` falls back to the provider's date at UTC midnight -- a documented,
+    // flagged fallback, never a silent guess. Callers doing fold ordering / cutoff simulation
+    // can use this to know when a row's exact time (not just its date) is untrustworthy.
+    scheduledStartTimeConfirmed: boolean("scheduled_start_time_confirmed").notNull().default(true),
     // The configured lead time (minutes) used to derive cutoffAt for THIS match, frozen at
     // import time so a later config change never silently reinterprets old rows.
     cutoffMinutes: integer("cutoff_minutes").notNull(),
