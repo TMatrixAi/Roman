@@ -1,0 +1,31 @@
+Got it — since this is a visual/structural upgrade (not new features, and no functional changes), here's a scoped, "don't touch the logic" prompt that tells Replit to give it a genuine professional polish pass without breaking anything or moving elements around.
+
+## Prompt for Replit
+
+Give the Tennis Prediction app a full visual and structural design upgrade — professional, clean, polished, "premium analytics product" feel. This is a presentation-layer upgrade only. Do not move, rename, remove, or reorder any existing feature, data field, button, or section. Do not change any calculation, prediction logic, API behavior, or data source.
+
+**Scope: visual/UI layer only**
+
+1. **Design system pass.** Establish a consistent, cohesive design system across the whole app: consistent spacing scale, consistent border-radius usage, consistent typography scale (one clear hierarchy for headings vs. body vs. labels vs. numbers), and a refined color palette that reads as a serious sports-analytics product (think Bloomberg Terminal / Linear / Stripe Dashboard, not a generic template). Keep dark mode and light mode both working if the app currently has both, or add a clean dark mode if it doesn't.
+
+2. **Match cards and prediction displays.** Improve visual hierarchy on match cards so the most important number (win probability / recommendation tier) is the clear focal point, with supporting metrics (Data Quality, disagreement, upset risk, stability) organized cleanly underneath — not cluttered or competing for attention. Use consistent badge/pill styling for tier labels (Strong Recommendation, Elite, Moderate Lean, etc.) with clear, distinct but professional colors — no harsh or garish colors.
+
+3. **Typography and numbers.** Use a clean, professional font pairing (not default system fonts). All numeric values (percentages, Elo ratings, odds) should use tabular/monospaced number styling so columns of numbers align visually. Ensure consistent decimal formatting throughout.
+
+4. **Spacing and layout polish.** Fix any cramped, misaligned, or inconsistent spacing between elements. Ensure consistent padding inside cards, consistent gaps between cards, and clean alignment across the grid — without changing what's in each card or where sections sit on the page.
+
+5. **Micro-interactions.** Add subtle, professional hover states, smooth transitions on interactive elements (cards, buttons, tabs), and loading skeleton states for anything that currently shows a blank screen or spinner while data loads.
+
+6. **Consistency check across every page/tab.** Apply the same design system to every screen (match list, match detail, ledger/history, any admin or settings views) so nothing looks like it belongs to a different app.
+
+**Hard constraints — do not violate**
+
+- No layout reordering: every section stays in its current position on the page.
+- No feature removal or renaming.
+- No changes to any prediction, calculation, calibration, ensemble, or data-fetching logic.
+- No changes to routes, API contracts, or database schema.
+- No new dependencies unless required for fonts/icons, and confirm none conflict with existing packages.
+
+**Report back with:** before/after screenshots of each major screen (desktop and mobile), a list of every file touched, confirmation that no functional test regressed (run the existing test suite), and confirmation that no data/logic file was modified — only styling/markup for presentation.
+
+Sources

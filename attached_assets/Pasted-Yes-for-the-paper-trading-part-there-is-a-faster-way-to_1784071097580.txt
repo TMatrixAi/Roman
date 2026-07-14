@@ -1,0 +1,45 @@
+Yes — for the paper-trading part, there is a faster way to get useful evidence than waiting only on live forward data: use a shadow-mode replay / frozen-time historical paper-trading simulation that mimics live operation on held-out dates, then keep real live paper trading running in parallel. That will not replace true live validation, but it can give you a much faster sample for calibration, threshold review, and UI wording decisions while real live results accumulate.[Memory]
+Prompt
+Review the current tennis prediction app and address these four areas in order. If any item already has an open or completed task that fully solves it, do not duplicate that work; instead, verify whether it is actually complete in the current codebase and then move on.
+1.	Faster evidence for confidence/tier claims  
+Do not rely only on waiting for new live paper-trading outcomes. Audit whether the app can generate a faster validation sample using a shadow-mode historical paper-trading workflow: replay held-out historical dates exactly as if the app were running live, using only information available as of each prediction timestamp, then grade those predictions separately from true live paper trading.  
+Requirements:
+•	Do not introduce look-ahead leakage.
+•	Keep this evidence explicitly separated from real live paper-trading results in code, storage, UI, and reporting.
+•	If such a workflow already exists, verify whether it is actually trustworthy and clearly segregated from live evidence.
+•	Report whether this is sufficient for provisional threshold/UI decisions, and what still must wait for real live paper-trading accumulation.
+1.	UI honesty check for Strong Recommendation / Elite Tier  
+Audit the current UI and API outputs to confirm whether earlier work actually improved the honesty of Strong Recommendation and Elite Tier messaging.  
+Requirements:
+•	Check all user-facing labels, badges, tooltips, explanatory text, and supporting copy.
+•	Verify they reflect only what is truly validated today, not implied or aspirational confidence.
+•	Confirm whether the app distinguishes clearly between backtest evidence, shadow-mode replay evidence, and true live paper-trading evidence.
+•	If wording still overclaims certainty or validation strength anywhere, fix it.
+•	Report exactly what changed, where it changed, and what claims are now supported by actual evidence.
+1.	Open root-cause investigations  
+Audit the status of these unresolved root-cause threads and finish only the ones that are still genuinely unresolved in current code:
+•	Data Quality miscalibration above DQ~55.
+•	Match Load Recovery ablation / vote-eligibility validation.  
+Requirements:
+•	Do not accept threshold patches or temporary workarounds as closure if the structural cause is still unresolved.
+•	For DQ: determine whether the underlying formula now tracks trustworthiness correctly across the full range, especially above ~55, using full-history evidence.
+•	For Match Load Recovery: determine conclusively whether it earns a vote, remains excluded, or needs redesign, based on completed validation rather than partial/incomplete runs.
+•	Use my full available match history, not a small sample, unless there is a proven infrastructure reason you must segment it. If segmented, explain why and combine results properly.
+•	If either issue is already truly solved, prove it with code evidence and validation evidence rather than just task status.
+1.	Live / upcoming matches speed  
+Diagnose and improve the speed of the live/upcoming matches experience.  
+Requirements:
+•	Identify the real bottleneck first: query design, missing indexes, repeated prediction computation, N+1 fetching, client-side truncation, fallback-window expansion, or something else.
+•	Do not patch this with only a spinner or a looser cache.
+•	Verify pagination/count limits are applied in the query itself, not after fetching too much data.
+•	Verify no regression to match visibility, ordering, timezone handling, or the earlier fixed-window cutoff issue.
+•	Measure before/after performance with real numbers.
+Final report required  
+For each of the four areas above, provide:
+•	Whether the issue was already solved, partially solved, or still open in the current codebase.
+•	Root cause found.
+•	Files checked and files changed.
+•	Validation method used.
+•	Before/after metrics where applicable.
+•	Any remaining risks or items that still require true live accumulation over time.
+Do not silently close tasks based on task titles alone. Use the actual live code and current app behavior as the source of truth
