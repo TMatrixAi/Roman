@@ -1,0 +1,31 @@
+125 - Read-only trade-combination performance audit
+
+What & Why
+
+The user wants a deep, read-only performance audit of graded predictions that goes beyond Task #116's single-dimension audit: it must cross-tabulate outcomes across combinations of Upset Risk, Recommendation/Lean, predicted-probability band, Data Quality band, Model Agreement, Elite status, Surface, and Tournament level — separately for the historical backtest (evaluation_predictions where run_kind='historical_test') and the live/paper-trading ledger (run_kind='paper_trade') — to find which specific "trade profile" combinations are actually reliable. No code, thresholds, or formulas may be changed; the only deliverable is a written report.
+
+Done looks like
+
+A single written markdown report is produced (following the style of the existing docs/audit-task116-full-statistical-audit.md) that:
+Reports, for every individual category (Upset Risk, Recommendation/Lean, probability band, Data Quality band, Model Agreement, Elite status, Surface, Tournament level) and for every meaningful combination of them: n, wins/losses, accuracy, average predicted probability, calibration gap, and log loss.
+Reports ROI only for rows/combinations where real closing odds exist (odds_provider/odds_player1_decimal/odds_player2_decimal populated) — explicitly states that historical backtest rows have no real odds and ROI is therefore not computed for them, rather than estimating it.
+Specifically calls out and compares: Elite + Low Upset Risk, Elite + Moderate Lean, Strong Recommendation + Low Upset Risk, Moderate Lean + Low Upset Risk, Moderate Lean + Medium Upset Risk, High Data Quality + Low Upset Risk, High Data Quality + core-model agreement, and the four probability bands (60–65%, 65–70%, 70–75%, 75%+).
+Identifies the single highest-performing combination of Upset Risk + Lean/Recommendation + Predicted Probability + Data Quality, with its full stats.
+Treats any combination with fewer than 100 graded predictions as inconclusive, shows it anyway, but labels it clearly rather than using it to support a conclusion.
+Ranks combinations first by accuracy, then calibration, then log loss, then sample size.
+Keeps historical backtest results and live/paper-trade results in fully separate sections — never blended into one number — and explicitly states the current state of the live ledger's graded volume (per Task #116's finding it was 0 graded rows as of that audit; Task #121 is in progress to fix the live pipeline, so this audit must state today's actual graded count and whether it's enough to validate production performance yet).
+Ends with a compact summary table: Best-performing combination | Sample size | Accuracy | Average probability | Calibration gap | Reliability, plus a final recommendation of which trade profile to trust most, based only on combinations that meet the n≥100 bar.
+No source code, thresholds, weights, or formulas are modified anywhere in the repo.
+Out of scope
+
+Any change to recommendation, upset-risk, Data Quality, calibration, or Elite-tier logic (that's Task #120's job, which should read this report once it exists).
+Building new odds ingestion or backfilling odds onto historical rows.
+Waiting for Task #121 (live pipeline fix) to fully complete — report on whatever live graded volume exists today and state clearly if it's insufficient.
+Steps
+
+Assemble the combined dataset — Pull all graded rows from evaluation_predictions (both run_kind values) with their upset-risk tier, model agreement, calibrated probability, surface, tournament level, actual outcome, and (where present) odds/market-edge fields; pull Data Quality band, Recommendation/Lean, and Elite-tier status from wherever they are actually persisted for graded rows (feature snapshot JSON / predictions table linkage as needed), reusing the existing metrics helpers in artifacts/api-server/src/services/evaluation/metrics.ts rather than re-deriving accuracy/log-loss/calibration math from scratch.
+Compute single-category breakdowns — For each of the eight categories individually, compute n, wins/losses, accuracy, average predicted probability, calibration gap, and log loss, separately for historical and live datasets.
+Compute the specified and meaningful combinations — Cross-tabulate the categories pairwise/n-wise, covering at minimum every combination explicitly named in the request, plus any other combination with a real, non-trivial sample that stands out; apply the n≥100 reliability bar and label smaller samples inconclusive rather than excluding them.
+Compute ROI where honestly possible — For any row/combination where real odds are present, compute ROI from those actual odds; leave ROI blank/marked "not available" everywhere odds are absent instead of estimating.
+Find and rank the top combinations — Determine the best Upset Risk + Lean + Probability + Data Quality combination, and produce the full accuracy → calibration → log-loss → sample-size ranking across all computed combinations.
+Write and deliver the report — Produce the final markdown report with separate historical/live sections, the summary table, and the trust recommendation, and share it with the user without making any code changes.
