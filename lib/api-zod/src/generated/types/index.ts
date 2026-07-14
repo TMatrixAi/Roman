@@ -75,6 +75,7 @@ export * from './recentFormResultPlayer2Trend';
 export * from './recommendation';
 export * from './removeDuplicatePredictionsResult';
 export * from './resultType';
+export * from './runAblationAnalysisRequest';
 export * from './runKind';
 export * from './runWalkForwardRequest';
 export * from './screenshotEventMatch';

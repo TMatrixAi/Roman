@@ -19,6 +19,7 @@ import {
   ListCalibrationRefitJobRunsQueryParams,
   ListCalibrationRefitJobRunsResponse,
   GetSimulatorValidationResponse,
+  RunAblationAnalysisBody,
   RunAblationAnalysisResponse,
   GetAblationStatusResponse,
 } from "@workspace/api-zod";
@@ -279,8 +280,13 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
   res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
 });
 
-router.post("/evaluation/ablation/run", async (_req, res): Promise<void> => {
-  const result = startAblationJob();
+router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
+  const parsed = RunAblationAnalysisBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const result = startAblationJob(parsed.data.sampleSize ?? undefined);
   res.json(RunAblationAnalysisResponse.parse(result));
 });
 

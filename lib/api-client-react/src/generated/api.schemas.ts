@@ -1214,6 +1214,11 @@ export interface PaperTradingCycleSummary {
   errors: string[];
 }
 
+export interface RunAblationAnalysisRequest {
+  /** When set, scores a proportional stratified sample of roughly this many matches (by surface and calendar year) instead of the full historical corpus -- sized to complete in one sitting. Omit for a full-corpus run. */
+  sampleSize?: number | null;
+}
+
 export interface AblationRunResponse {
   started: boolean;
   reason?: string | null;
@@ -1233,6 +1238,7 @@ export interface AblationStatus {
   state: AblationStatusState;
   startedAt?: string | null;
   finishedAt?: string | null;
+  sampleSize?: number | null;
   progress?: unknown | null;
   report?: unknown | null;
   reportPath?: string | null;

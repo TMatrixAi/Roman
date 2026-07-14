@@ -67,6 +67,80 @@ function minimalProfile(id: string, name: string): PlayerProfile {
   return { id, name, countryCode: null, currentRank: null, tour: null, age: null, plays: null, fullName: null };
 }
 
+export interface SampleInfo {
+  /** The target sample size that was requested, or null when this run scored the full eligible corpus. */
+  requestedSampleSize: number | null;
+  /** The eligible corpus size the sample was drawn from (before sampling). */
+  totalEligible: number;
+  /** How many matches were actually scored (equals totalEligible when requestedSampleSize is null). */
+  scoredCount: number;
+  /** Per-(surface, year) stratum: how many matches existed in the full corpus vs. how many were drawn into the sample. Empty when unsampled. */
+  strata: Array<{ surface: string; year: number; corpusCount: number; sampleCount: number }>;
+}
+
+/**
+ * Draws a proportional stratified sample from `eligible`, grouped by (surface, calendar year of
+ * `scheduledStartAt`) so a sampled run stays representative of the full corpus's surface mix and
+ * time span -- unlike a recent-date slice, which would both under-represent older data and be too
+ * small on its own. Sampling only shrinks the list of matches that get SCORED; callers must still
+ * build match-history/Elo context from the FULL corpus so a sampled match's reconstructed history
+ * remains accurate (an older or thinner-surface match must not lose real prior-match context just
+ * because it was chosen for the sample).
+ *
+ * Selection within each stratum takes an evenly-spaced subsequence (not `Math.random()`) so the
+ * chosen sample is deterministic and reproducible across repeated runs of the same target size.
+ */
+export function buildRepresentativeSample(eligible: HistoricalMatchRow[], targetSize: number): { sample: HistoricalMatchRow[]; info: SampleInfo } {
+  if (targetSize >= eligible.length) {
+    return { sample: eligible, info: { requestedSampleSize: targetSize, totalEligible: eligible.length, scoredCount: eligible.length, strata: [] } };
+  }
+
+  const strataMap = new Map<string, HistoricalMatchRow[]>();
+  for (const match of eligible) {
+    const surface = match.surface ?? "Unknown";
+    const year = match.scheduledStartAt.getUTCFullYear();
+    const key = `${surface}::${year}`;
+    if (!strataMap.has(key)) strataMap.set(key, []);
+    strataMap.get(key)!.push(match);
+  }
+
+  const strata: SampleInfo["strata"] = [];
+  const sample: HistoricalMatchRow[] = [];
+  let allocated = 0;
+  const keys = [...strataMap.keys()];
+
+  for (const key of keys) {
+    const [surface, yearStr] = key.split("::");
+    const group = strataMap.get(key)!;
+    // Proportional share of the target, rounded, but never zero for a non-empty stratum and never
+    // more than the stratum itself has -- every surface/year present in the corpus stays represented.
+    const share = Math.min(group.length, Math.max(1, Math.round((group.length / eligible.length) * targetSize)));
+    // Evenly-spaced deterministic subsequence, not the group's natural (chronological) order, so a
+    // stratum's own sample still spans its full sub-range rather than clustering at one end.
+    const picked: HistoricalMatchRow[] = [];
+    if (share >= group.length) {
+      picked.push(...group);
+    } else {
+      const step = group.length / share;
+      for (let i = 0; i < share; i++) {
+        picked.push(group[Math.floor(i * step)]);
+      }
+    }
+    sample.push(...picked);
+    allocated += picked.length;
+    strata.push({ surface, year: Number(yearStr), corpusCount: group.length, sampleCount: picked.length });
+  }
+
+  // Keep the sample in the same chronological order as the source corpus -- scoring order doesn't
+  // affect correctness, but it keeps progress/logging behavior consistent with the unsampled path.
+  sample.sort((a, b) => a.scheduledStartAt.getTime() - b.scheduledStartAt.getTime());
+
+  return {
+    sample,
+    info: { requestedSampleSize: targetSize, totalEligible: eligible.length, scoredCount: allocated, strata: strata.sort((a, b) => a.surface.localeCompare(b.surface) || a.year - b.year) },
+  };
+}
+
 interface AblationContext {
   matchHistory: MatchHistoryIndex;
   eloHistory: EloHistoryIndex;
@@ -255,6 +329,8 @@ export interface AblationReport {
   modelDeltas: ModelDelta[];
   combinations: VariantResult[];
   diagnostics: AblationDiagnostics;
+  /** Present (non-null) whenever this run scored a stratified sample instead of the full eligible corpus -- see `buildRepresentativeSample`. */
+  sampleInfo: SampleInfo | null;
 }
 
 /** Maps a baseline `EngineBreakdown.models[].modelName` back to one of the 8 ablatable categories. */
@@ -271,12 +347,26 @@ function categorizeModelName(modelName: string): AblationModelKey | null {
   return null;
 }
 
-export async function runAblationAnalysis(onProgress?: (p: AblationProgress) => void): Promise<AblationReport> {
+export interface RunAblationOptions {
+  /**
+   * When set, scores a proportional stratified sample of roughly this many matches (see
+   * `buildRepresentativeSample`) instead of the full eligible corpus -- sized to complete in one
+   * sitting. The match-history/Elo context is always built from the FULL corpus regardless of this
+   * option, so a sampled match's reconstructed history stays accurate.
+   */
+  sampleSize?: number;
+}
+
+export async function runAblationAnalysis(onProgress?: (p: AblationProgress) => void, options: RunAblationOptions = {}): Promise<AblationReport> {
   onProgress?.({ phase: "loading", variantIndex: 0, variantCount: 0, matchIndex: 0, matchCount: 0 });
 
   const allMatches = await db.select().from(historicalMatchesTable).orderBy(asc(historicalMatchesTable.scheduledStartAt), asc(historicalMatchesTable.id));
-  const eligible = allMatches.filter((m) => !m.cancelled && m.winnerId);
+  const eligibleFull = allMatches.filter((m) => !m.cancelled && m.winnerId);
   const ctx = await buildContext(allMatches);
+
+  const sampled = options.sampleSize != null ? buildRepresentativeSample(eligibleFull, options.sampleSize) : null;
+  const sampleInfo: SampleInfo | null = sampled?.info ?? null;
+  const eligible = sampled?.sample ?? eligibleFull;
 
   const variants = [BASELINE_VARIANT, ...LEAVE_ONE_OUT_VARIANTS, ...COMBO_VARIANTS];
 
@@ -546,7 +636,13 @@ export async function runAblationAnalysis(onProgress?: (p: AblationProgress) => 
   return {
     generatedAt: new Date().toISOString(),
     matchCount: eligible.length,
+    sampleInfo,
     caveats: [
+      ...(sampleInfo
+        ? [
+            `This run scored a REPRESENTATIVE SAMPLE of ${sampleInfo.scoredCount} matches (requested ${sampleInfo.requestedSampleSize}), stratified proportionally by surface and calendar year, out of ${sampleInfo.totalEligible} eligible matches in the full corpus -- not the full corpus. Match-history/Elo context was still built from the full corpus, so each sampled match's reconstructed history is accurate; only which matches were SCORED was reduced.`,
+          ]
+        : []),
       "This report replays the historical backtest corpus (frozen pre-match snapshots, no hindsight leakage) through the exact live ensemble engine, using the CURRENTLY ACTIVE calibration and segment-specialist models. Those were themselves fit on walk-forward folds of this same corpus, so this is a diagnostic on the current production configuration, not a fresh out-of-sample benchmark.",
       "\"Active Segment Specialist\" ablation only changes matches whose tour/surface is an actual candidate segment (ATP/WTA on Hard/Clay/Grass/IndoorHard) with an active specialist that has cleared its data threshold -- it is a true no-op on every other match, which is expected, not a bug.",
       "\"Favorite vs. underdog\" segments compare each variant's own pick against the BASELINE (full-engine) run's pick for the same match -- there is no independent market-odds favorite in this historical corpus, so the full engine's own pick is used as the reference favorite.",

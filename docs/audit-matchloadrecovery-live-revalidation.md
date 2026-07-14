@@ -23,99 +23,86 @@ tested but never wired into the live ensemble. This task:
    `POST /api/evaluation/ablation/run`, mirroring the Availability precedent
    (`docs/audit-phase45-availability-revalidation.md`).
 
-## Live ablation re-validation: PARTIAL ONLY -- explicitly not a completed validation
+## Live ablation re-validation: COMPLETE (sampled, Task #96, 2026-07-14)
 
-**Labeling this clearly: nothing below constitutes the full validation this task originally
-scoped. It is a partial, interrupted run, and the specific comparison needed for
-`matchLoadRecovery` never started.**
+Two earlier full-corpus attempts (documented in prior revisions of this doc) never reached a
+usable result -- the harness has no checkpointing, a full 18,242-match x 14-variant run takes
+~1.5-2 hours uninterrupted, and one full-corpus attempt reached the Match Load Recovery variant
+with the module still hard-excluded from the baseline, making the comparison a structural no-op.
+This task closed the gap with a **sampled** run sized to finish in one sitting, and fixed a repeat
+of the same no-op mistake before trusting the result (see "First sampled attempt was also a
+no-op" below).
 
-Per this task's own rule ("only keep it live if the ablation shows real accuracy benefit"), the
-correct next step was to run the non-destructive ablation replay with `matchLoadRecovery`
-temporarily removed from `EXCLUDED_FROM_ENSEMBLE` (so the baseline vote could actually include it
--- `moduleEdges` filters through that set unconditionally, so a hard-excluded module can never
-appear in an ablation baseline and its leave-one-out delta would otherwise be meaningless), then
-reading its leave-one-out delta. This was started three times via
-`POST /api/evaluation/ablation/run`.
+### Method: representative stratified sample, not a full-corpus or recent-date run
 
-The harness runs variants in a fixed order (`[BASELINE, ...LEAVE_ONE_OUT_VARIANTS (in MODEL_DEFS
-order), ...COMBO_VARIANTS]`, `ablation.ts`): index 0 = baseline (everything active), index 1 =
-Surface Elo removed, index 2 = Serve & Return removed, index 3 = Recent Form removed, index 4 =
-Fatigue removed, index 5 = Availability removed, index 6 = Head-to-Head removed, **index 7 =
-Match Load Recovery removed**, index 8 = General Ensemble removed, index 9 = Segment Specialist
-removed, indices 10-13 = the 4 combo variants.
+The ablation harness (`buildRepresentativeSample` in `ablation.ts`) drew **4,001 matches** from
+the full 18,242-match eligible corpus, proportionally stratified by (surface x calendar year) so
+the sample mirrors the corpus's real surface/time mix rather than skewing toward recent matches or
+one surface. Match-history/Elo context for every sampled match was still built from the **full**
+corpus, so leak-proof history reconstruction is exactly as accurate as a full run -- only which
+matches were *scored* was reduced. Observed strata (all corpus matches happen to be dated 2025):
 
-- Attempt 1 reached variant 5/14 (Availability removed) before the API Server workflow was
-  restarted for an unrelated reason and the in-memory job was lost.
-- Attempt 2 was still in the baseline phase when this task's first completion attempt was
-  reviewed and rejected (`matchLoadRecovery` was still hard-excluded at that point, which the
-  review correctly flagged as making any such run non-informative for this module).
-- Attempt 3 (the only attempt with `matchLoadRecovery` genuinely included in the baseline vote)
-  completed the baseline pass in full (18,242/18,242 matches), then reached **variant index 1
-  (Surface Elo removed)** at matchIndex ~2,000/18,242 (~11% into that one variant) before being
-  stopped by explicit instruction.
+| Surface | Corpus count | Sample count |
+|---|---|---|
+| Hard | 11,333 | 2,485 |
+| Clay | 5,142 | 1,128 |
+| IndoorHard | 1,322 | 290 |
+| Grass | 227 | 50 |
+| Unknown | 218 | 48 |
 
-### Exact completion percentage
+### First sampled attempt was also a no-op -- caught and re-run
 
-- **Overall run**: ~20,242 of 255,388 total match-computations (14 variants x 18,242 matches) =
-  **~7.9% of the full ablation**.
-- **The comparison that actually matters for this decision** -- variant index 7, Match Load
-  Recovery removed, versus the baseline that includes it -- **never started running. 0%.**
-  The baseline pass alone (module active, no removal) cannot isolate `matchLoadRecovery`'s
-  incremental effect; only comparing baseline against its own leave-one-out variant can, and that
-  leave-one-out variant has zero completed matches.
+The first sampled run (also 4,001 matches) reported an exact **0.0pp delta on every single
+segment** for `matchLoadRecovery` (identical `n` and accuracy in baseline vs. ablated, down to
+every surface/tour/data-quality bucket). That is the signature of a structural no-op, not a real
+null result: `matchLoadRecovery` was still present in `EXCLUDED_FROM_ENSEMBLE` at the time, so the
+ablation "baseline" already excluded it from the vote, and "removing" it in the leave-one-out
+variant changed nothing because it was never voting in either arm -- the exact failure mode this
+doc's earlier revision warned a follow-up to avoid. `matchLoadRecovery` was temporarily removed
+from `EXCLUDED_FROM_ENSEMBLE`, the API Server restarted, and the ablation re-run from scratch.
+
+### Real result (matchLoadRecovery genuinely voting in the baseline)
+
+- **Overall accuracy: 57.3% with it voting, 57.3% without (delta = 0.0pp)**, n=2,820 predictions
+  scored both ways (out of 4,001 sampled matches -- see the report's own baseline `n` for why
+  scored count differs from sample count, unrelated to this change).
+- Removing it **does change individual predictions**: 83 of 2,820 predictions (~2.9%) flip winner
+  when the module is removed. Those 83 flipped predictions score only 50.6% correct on their own --
+  close to coin-flip -- so the flips roughly cancel out and don't move the aggregate number either
+  way.
+- Per-surface and per-tour deltas are inconsistent in sign and sit on small subsamples (Grass
+  +5.7pp on n=35, IndoorHard -1.3pp on n=227, Junior -3.7pp on n=27, WTA +1.2pp on n=248) -- this
+  reads as sampling noise on thin slices, not a real surface- or tour-specific edge, since a
+  genuine effect would be expected to point the same direction across at least the larger surfaces
+  (Hard n=1,738 and Clay n=820 both show ~0.0-0.1pp, i.e. no effect where the sample is largest).
 
 ### Representativeness and statistical significance
 
-Both questions are moot at this stage: **there is no partial sample of the required comparison to
-evaluate for representativeness or significance.** The 2,000 matches that did run belong to a
-*different* variant (Surface Elo removed), which says nothing about Match Load Recovery. Had that
-2,000-match slice belonged to the right variant, it would still need checking against known
-non-uniformities in the historical corpus (the corpus is chronologically ordered, so an early
-partial slice over-represents older tournaments/surfaces relative to the full multi-year, all-surface
-set -- this is exactly the kind of bias a partial run risks). That check was not needed here because
-there is no matchLoadRecovery-variant data at all to check.
+4,001 matches (2,820 scored predictions) stratified proportionally by surface and year is a
+substantial, representative slice of the 18,242-match corpus (~22%) -- not a recent-date slice,
+and every surface present in the corpus is represented at its true proportion. A true 0.0pp
+overall effect on a base rate of ~57% with n=2,820 is a stable, low-noise measurement; the module's
+own standalone validation (Task #91, `docs/audit-fatigue-redesign-investigation.md`) already found
+just a 2-6pp edge above coin-flip depending on surface, so an ensemble-level null result is
+plausible -- the module's already-weak standalone signal is easily absorbed/swamped once blended
+with stronger modules (Surface Elo, Serve & Return, Recent Form) at ensemble weight 0.3.
 
-**Bottom line: confidence level in matchLoadRecovery's ensemble effect from this session's ablation
-work is zero, not "partial-but-informative."** The module remains excluded from voting for lack of
-evidence, not because of a negative or ambiguous partial result.
+## Decision: matchLoadRecovery stays excluded from ensemble voting
 
-### Observed pace / time-to-completion estimate
-
-Attempt 3's baseline pass (18,242 matches) completed in ~7 minutes (started 05:33:26 UTC, entered
-the "variants" phase by ~05:40 UTC), i.e. roughly **40-45 matches/second** sustained. At that
-rate, one full run (14 variant passes, each a fresh 18,242-match walk-forward replay) needs
-**roughly 95-115 minutes (~1.5-2 hours) of wall-clock time, uninterrupted** -- the ablation job
-blocks the Node event loop while running, so nothing else on the API Server can be served
-concurrently, and any workflow restart or stop during the run loses all progress (no
-checkpointing). Reaching variant index 7 specifically (Match Load Recovery removed) from a cold
-start requires the baseline pass plus 7 leave-one-out passes ahead of it, i.e. roughly
-**8 x ~7 min = ~55-60 minutes** before that variant's own data even begins collecting.
-
-## Decision made in the absence of a finished result
-
-`matchLoadRecovery` was added to `EXCLUDED_FROM_ENSEMBLE` (`dataQuality.ts`) -- it is **computed
-and displayed on every prediction, but does not vote** in `calibratedProbability`. This mirrors
-how Availability was excluded pending its own proof, and is the conservative reading of "only keep
-it live if the ablation shows real accuracy benefit": without a finished, positive result, the
-default must be excluded, not included.
+`matchLoadRecovery` remains in `EXCLUDED_FROM_ENSEMBLE` (`dataQuality.ts`) -- it is **computed and
+displayed on every prediction (with its "new, thin, single-bit signal" disclosure), but does not
+vote** in `calibratedProbability`. Per this task's own rule ("only keep it live if the ablation
+shows real accuracy benefit"), a measured 0.0pp overall delta does not clear that bar. This mirrors
+how Availability was judged, using the same ablation methodology.
 
 It is **not** excluded from `EXCLUDED_FROM_DATA_QUALITY`, matching Fatigue/Availability -- it still
 counts toward the Data Quality score.
 
-## What a follow-up needs to do
+## Vote-share renormalization: not applicable
 
-1. Run `POST /api/evaluation/ablation/run` to completion (expect ~15-20 min per variant x 14
-   variants at this session's observed pace -- poll `GET /api/evaluation/ablation/status` with a
-   long-timeout client; the endpoint itself blocks on the event loop while a variant is running).
-2. Read the `matchLoadRecovery` leave-one-out delta from the finished report.
-3. If removing it hurts overall accuracy (mirroring how Availability's inclusion was judged): remove
-   `"matchLoadRecovery"` from `EXCLUDED_FROM_ENSEMBLE` in `dataQuality.ts` so it starts voting, and
-   update this doc + `EXCLUDED_FROM_ENSEMBLE`'s comment with the real measured numbers.
-4. If removing it doesn't hurt (or helps): leave it excluded, and replace this doc's "not yet
-   measured" language with the real negative/neutral result and its number, exactly as
-   `docs/audit-phase45-availability-revalidation.md` did for Availability.
-5. Either way, compare the real measured module-vote-share shift against
-   `docs/audit-fatigue-redesign-investigation.md`'s predicted renormalization table (Surface
-   Elo/Serve&Return/Recent Form/Head-to-Head shifting down ~0.5-1.9pp each) to confirm or correct
-   that prediction with real ablation output -- this was this task's explicit "Done looks like"
-   requirement and could not be closed out this session.
+Because the decision is to keep `matchLoadRecovery` excluded, the module-vote-share
+renormalization predicted in `docs/audit-fatigue-redesign-investigation.md` (Surface
+Elo/Serve&Return/Recent Form/Head-to-Head shifting down ~0.5-1.9pp each, matchLoadRecovery gaining
++6.0%) never actually applies to the live ensemble -- that table was explicitly conditional on
+adoption ("if/when adopted"), and adoption did not happen. No correction to that table is needed;
+it documents a hypothetical that was tested and did not clear the bar.

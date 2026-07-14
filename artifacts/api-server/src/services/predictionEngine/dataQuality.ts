@@ -139,6 +139,14 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
 // per-variant pace, and the follow-up task to finish it. Per this task's own rule ("only keep it
 // live if the ablation shows real accuracy benefit"), the default without a finished, positive
 // result is EXCLUDED, matching how Availability was excluded pending its own proof.
+// matchLoadRecovery stays excluded: a 4,001-match representative-sample leave-one-out ablation
+// (Task #96, 2026-07-14) found removing it changes ~2.9% of individual predictions (83/2,820
+// scored matches flip) but moves OVERALL accuracy by exactly 0.0pp (57.3% both with and without
+// it) -- the flips roughly cancel out. Per-surface/per-tour deltas look inconsistent in sign and
+// sit on small subsamples (e.g. Grass n=35, Junior n=27), so they read as noise, not a real
+// surface-specific edge. See docs/audit-matchloadrecovery-live-revalidation.md for the full
+// breakdown; re-run the ablation if the historical corpus grows substantially and this decision
+// should be revisited.
 export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue", "matchLoadRecovery"]);
 
 /**

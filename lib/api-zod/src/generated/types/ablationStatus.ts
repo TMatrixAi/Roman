@@ -11,6 +11,7 @@ export interface AblationStatus {
   state: AblationStatusState;
   startedAt?: Date | null;
   finishedAt?: Date | null;
+  sampleSize?: number | null;
   progress?: unknown | null;
   report?: unknown | null;
   reportPath?: string | null;

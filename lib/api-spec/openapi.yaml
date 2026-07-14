@@ -704,7 +704,13 @@ paths:
     post:
       operationId: runAblationAnalysis
       tags: [evaluation]
-      summary: Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+      summary: Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus, or a representative sample of it). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunAblationAnalysisRequest"
       responses:
         "200":
           description: Whether the run was started
@@ -2431,6 +2437,17 @@ components:
           items:
             type: string
 
+    RunAblationAnalysisRequest:
+      type: object
+      properties:
+        sampleSize:
+          type: integer
+          nullable: true
+          description: >-
+            When set, scores a proportional stratified sample of roughly this many matches
+            (by surface and calendar year) instead of the full historical corpus -- sized to
+            complete in one sitting. Omit for a full-corpus run.
+
     AblationRunResponse:
       type: object
       required: [started]
@@ -2456,10 +2473,13 @@ components:
           type: string
           format: date-time
           nullable: true
+        sampleSize:
+          type: integer
+          nullable: true
         # Free-form: { phase, variantIndex, variantCount, matchIndex, matchCount } while running.
         progress:
           nullable: true
-        # Free-form: the full AblationReport (baseline/modelDeltas/combinations/diagnostics) once state is "done".
+        # Free-form: the full AblationReport (baseline/modelDeltas/combinations/diagnostics/sampleInfo) once state is "done".
         report:
           nullable: true
         reportPath:

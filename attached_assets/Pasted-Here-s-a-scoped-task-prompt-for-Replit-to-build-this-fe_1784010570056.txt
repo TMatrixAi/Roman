@@ -1,0 +1,34 @@
+Here's a scoped task prompt for Replit to build this feature.
+
+## Suggested Task: Bulk Multi-Match Screenshot Import with Swipe Navigation
+
+**What & Why:** The current match-build page only supports inserting one screenshot per match at a time. This slows down entering multiple matches (e.g. after a day of watching several matches). This task adds bulk upload (up to 20 screenshots at once) with a swipeable review interface, so match review stays fast even with many matches queued up.
+
+**Done looks like:**
+
+- The insert-screenshot button/flow supports selecting or dropping up to 20 screenshots in a single action, not just one.
+- Each screenshot is processed independently — parsed into its own match, with its own stats extraction and surface detection, exactly as a single-screenshot upload works today.
+- After upload, the review screen opens on the first match, showing its stats normally.
+- Vertical swipe (up/down) continues to work exactly as it does today for reviewing/scrolling through a single match's stats.
+- Horizontal swipe (left/right) moves between the different matches in the batch — swiping right advances to the next match in the set, swiping left goes back to the previous one.
+- A position indicator (e.g. "Match 3 of 14") is shown so the user always knows where they are in the batch.
+- Auto surface detection runs independently and correctly for every match in the batch — not just the first one, and not falling back to a shared/cached value from a previous match in the same session.
+- If one screenshot in the batch fails to parse (bad image quality, unrecognized format, etc.), it's flagged clearly within its own slide rather than blocking or breaking review of the other matches in the batch.
+- Saving/confirming a match works per-match, so the user can review and confirm matches one at a time while swiping through the batch, without needing to complete all 20 before saving any.
+
+**Out of scope:**
+
+- Any changes to how a single, non-batch screenshot upload currently works.
+- Any changes to the prediction engine, ensemble weighting, or other modules discussed elsewhere.
+- Automatic bulk-confirm without individual review (each match still needs explicit per-match confirmation, matching current single-match behavior).
+
+**Steps:**
+
+1. Update the upload input to accept multi-file selection (up to 20), and route each file through the existing single-screenshot parsing/surface-detection pipeline independently.
+2. Build a batch state model that holds all parsed matches together as a session, with an index pointer for "which match is currently shown."
+3. Implement horizontal swipe gesture handling to move between matches (change the index pointer) while preserving the existing vertical swipe behavior for scrolling within a match's stats.
+4. Add a visible position indicator and per-match save/confirm controls.
+5. Test with a batch containing at least one intentionally low-quality/unparseable screenshot to confirm the failure-isolation behavior works as intended.
+6. Test with a batch spanning multiple surfaces (e.g. some hard court, some clay) to confirm surface detection is correctly independent per match, not leaking or caching across matches in the same batch.
+
+Sources

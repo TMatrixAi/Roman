@@ -156,6 +156,13 @@ appropriately below Head-to-Head's, matching the precedent that new/thin signals
 only earn more weight after a real live ablation re-validation (the same bar Availability was
 held to).
 
+**Outcome (2026-07-14, Task #96):** the live ablation re-validation gated on above was run
+(4,001-match representative sample) and found removing `matchLoadRecovery` from the ensemble vote
+moves overall accuracy by exactly 0.0pp -- it does not clear the bar to vote. The renormalization
+table above was never applied to the live ensemble; `matchLoadRecovery` remains computed/displayed
+but excluded from voting. See `docs/audit-matchloadrecovery-live-revalidation.md` for the full
+measured result.
+
 ## Follow-up if adopted
 
 Wiring `computeMatchLoadRecoveryModule` into `runPredictionEngine`'s `moduleEdges`, the

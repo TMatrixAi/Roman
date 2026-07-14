@@ -1,0 +1,35 @@
+That clears it up completely — you're describing option (a) for the upload/identification step, plus wiring it into your existing prediction-generation flow, not a new stats-extraction feature. The "scroll up and down" you're describing is the existing prediction results page (predicted winner, win probability, Monte Carlo simulation) — content that already exists once a prediction is generated — not something read off the screenshot itself.
+
+## Here's the Corrected, Accurate Task Scope
+
+**97 - Bulk screenshot matchup upload with batch predict and swipeable results**
+
+**What & Why:** The build-match page's screenshot insert currently accepts one screenshot at a time, identifying only the matchup (players + tournament/surface/level) via screenshotRecognition.ts and ScreenshotMatchupUpload.tsx — it does not extract stats or generate predictions itself. This task lets the user drop up to 20 screenshots at once, auto-identify each matchup independently, then batch-generate real predictions for all of them via the existing prediction engine, with a swipeable results interface to review each one.
+
+**Done looks like:**
+
+- The screenshot insert slot accepts up to 20 images in a single drop/selection.
+- Each screenshot is independently resolved to a matchup (player1, player2, eventName, surface, level) using the existing screenshotRecognition flow — no changes to that extraction logic itself.
+- Each resolved matchup is shown for confirmation the same way single-upload works today (existing chip/badge review card), but as a batch list rather than one at a time.
+- A single "Predict" action triggers the existing prediction-generation flow for every confirmed matchup in the batch, populating each with a real prediction (predicted winner, win probability, Monte Carlo simulation, stability, etc.) — reusing the existing single-match prediction pipeline unchanged, just called once per matchup in the batch.
+- After predictions generate, the results view opens on the first match's existing prediction detail page.
+- Vertical scroll within a match's prediction results works exactly as the current single-prediction detail page already works today — no new UI needed here, just confirming it's unaffected.
+- Horizontal swipe moves between the different matches' prediction results in the batch (left/right), with a position indicator (e.g. "Match 3 of 14").
+- Auto-detection (names, tournament, surface) runs independently and correctly per screenshot — no leaking/caching of one match's detected values into another.
+- If one screenshot fails to resolve a matchup, it's flagged clearly in the batch list and skipped for prediction generation, without blocking the rest of the batch.
+
+**Out of scope:**
+
+- Any change to screenshotRecognition.ts's extraction logic itself (still identifies matchup only, not stats).
+- Any change to the prediction engine, ensemble weighting, or Match Load Recovery voting status.
+- Extracting match stats directly from a screenshot of a completed match (a different, not-yet-requested feature).
+
+**Steps:**
+
+1. Extend the upload input to accept multi-file selection (up to 20), routing each file through the existing single-screenshot matchup-resolution pipeline independently.
+2. Build a batch review list showing each resolved matchup with its existing confirmation UI, plus per-item error flagging for failed resolutions.
+3. Wire the "Predict" button to loop the existing single-match prediction-generation call across all confirmed matchups in the batch.
+4. Build a swipeable results container that reuses the existing single-prediction detail page per match, with horizontal swipe/index navigation between matches and a position indicator.
+5. Test with a batch including at least one unresolvable screenshot and matchups spanning multiple surfaces/tournaments to confirm isolation and correct auto-detection per item.
+
+Sources

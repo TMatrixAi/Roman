@@ -1,0 +1,2204 @@
+{
+  "generatedAt": "2026-07-14T06:55:15.297Z",
+  "matchCount": 4001,
+  "sampleInfo": {
+    "requestedSampleSize": 4000,
+    "totalEligible": 18242,
+    "scoredCount": 4001,
+    "strata": [
+      {
+        "surface": "Clay",
+        "year": 2025,
+        "corpusCount": 5142,
+        "sampleCount": 1128
+      },
+      {
+        "surface": "Grass",
+        "year": 2025,
+        "corpusCount": 227,
+        "sampleCount": 50
+      },
+      {
+        "surface": "Hard",
+        "year": 2025,
+        "corpusCount": 11333,
+        "sampleCount": 2485
+      },
+      {
+        "surface": "IndoorHard",
+        "year": 2025,
+        "corpusCount": 1322,
+        "sampleCount": 290
+      },
+      {
+        "surface": "Unknown",
+        "year": 2025,
+        "corpusCount": 218,
+        "sampleCount": 48
+      }
+    ]
+  },
+  "caveats": [
+    "This run scored a REPRESENTATIVE SAMPLE of 4001 matches (requested 4000), stratified proportionally by surface and calendar year, out of 18242 eligible matches in the full corpus -- not the full corpus. Match-history/Elo context was still built from the full corpus, so each sampled match's reconstructed history is accurate; only which matches were SCORED was reduced.",
+    "This report replays the historical backtest corpus (frozen pre-match snapshots, no hindsight leakage) through the exact live ensemble engine, using the CURRENTLY ACTIVE calibration and segment-specialist models. Those were themselves fit on walk-forward folds of this same corpus, so this is a diagnostic on the current production configuration, not a fresh out-of-sample benchmark.",
+    "\"Active Segment Specialist\" ablation only changes matches whose tour/surface is an actual candidate segment (ATP/WTA on Hard/Clay/Grass/IndoorHard) with an active specialist that has cleared its data threshold -- it is a true no-op on every other match, which is expected, not a bug.",
+    "\"Favorite vs. underdog\" segments compare each variant's own pick against the BASELINE (full-engine) run's pick for the same match -- there is no independent market-odds favorite in this historical corpus, so the full engine's own pick is used as the reference favorite.",
+    "No engine code, weights, or active models were changed by generating this report -- it is evidence and recommendations only."
+  ],
+  "baseline": {
+    "key": "baseline",
+    "label": "Everything active (baseline)",
+    "overall": {
+      "n": 2820,
+      "accuracy": 57.3
+    },
+    "byTour": {
+      "WTA": {
+        "n": 248,
+        "accuracy": 56.5
+      },
+      "Challenger": {
+        "n": 576,
+        "accuracy": 52.6
+      },
+      "ITF": {
+        "n": 1710,
+        "accuracy": 58.9
+      },
+      "ATP": {
+        "n": 255,
+        "accuracy": 55.7
+      },
+      "Junior": {
+        "n": 27,
+        "accuracy": 74.1
+      },
+      "Mixed Doubles": {
+        "n": 4,
+        "accuracy": 75
+      }
+    },
+    "bySurface": {
+      "Hard": {
+        "n": 1738,
+        "accuracy": 58.1
+      },
+      "Clay": {
+        "n": 820,
+        "accuracy": 56
+      },
+      "IndoorHard": {
+        "n": 227,
+        "accuracy": 55.5
+      },
+      "Grass": {
+        "n": 35,
+        "accuracy": 60
+      }
+    },
+    "byDataQuality": {
+      "high": {
+        "n": 707,
+        "accuracy": 54.7
+      },
+      "low": {
+        "n": 2113,
+        "accuracy": 58.1
+      }
+    },
+    "byFavorite": {
+      "agreesWithBaseline": {
+        "n": 2820,
+        "accuracy": 57.3
+      },
+      "divergesFromBaseline": {
+        "n": 0,
+        "accuracy": null
+      }
+    }
+  },
+  "modelDeltas": [
+    {
+      "modelKey": "surfaceElo",
+      "modelLabel": "Surface Elo",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.1,
+      "deltaPoints": -0.2,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2757,
+              "accuracy": 57.3
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 63,
+              "accuracy": 46
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 57.3
+            },
+            "deltaPoints": 0.8
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.1
+            },
+            "deltaPoints": -0.5
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.5
+            },
+            "deltaPoints": -0.4
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 56.9
+            },
+            "deltaPoints": 1.2
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 70.4
+            },
+            "deltaPoints": -3.7
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 55.2
+            },
+            "deltaPoints": -0.8
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.9
+            },
+            "deltaPoints": 0.4
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 57.1
+            },
+            "deltaPoints": -2.9
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 857,
+              "accuracy": 55
+            },
+            "deltaPoints": 0.3
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1963,
+              "accuracy": 58
+            },
+            "deltaPoints": -0.1
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "serveReturn",
+      "modelLabel": "Serve & Return",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 56.4,
+      "deltaPoints": -0.9,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2659,
+              "accuracy": 57.2
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 161,
+              "accuracy": 42.2
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.9
+            },
+            "deltaPoints": 0.4
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 51
+            },
+            "deltaPoints": -1.6
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.1
+            },
+            "deltaPoints": -0.8
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 54.5
+            },
+            "deltaPoints": -1.2
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 57.5
+            },
+            "deltaPoints": -0.6
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 54.5
+            },
+            "deltaPoints": -1.5
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 54.6
+            },
+            "deltaPoints": -0.9
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 57.1
+            },
+            "deltaPoints": -2.9
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 705,
+              "accuracy": 56.9
+            },
+            "deltaPoints": 2.2
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2115,
+              "accuracy": 56.2
+            },
+            "deltaPoints": -1.9
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "recentForm",
+      "modelLabel": "Recent Form",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 56.8,
+      "deltaPoints": -0.5,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2751,
+              "accuracy": 57.2
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 69,
+              "accuracy": 40.6
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 51.9
+            },
+            "deltaPoints": -0.7
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.4
+            },
+            "deltaPoints": -0.5
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 57.5
+            },
+            "deltaPoints": -0.6
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 55.5
+            },
+            "deltaPoints": -0.5
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.9
+            },
+            "deltaPoints": 0.4
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 493,
+              "accuracy": 53.1
+            },
+            "deltaPoints": -1.6
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2327,
+              "accuracy": 57.6
+            },
+            "deltaPoints": -0.5
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "fatigue",
+      "modelLabel": "Fatigue",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2820,
+              "accuracy": 57.3
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 0,
+              "accuracy": null
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "deltaPoints": 0
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "deltaPoints": 0
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "deltaPoints": 0
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "deltaPoints": 0
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "availability",
+      "modelLabel": "Availability (rest/travel/injury)",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2820,
+              "accuracy": 57.3
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 0,
+              "accuracy": null
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "deltaPoints": 0
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "deltaPoints": 0
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "deltaPoints": 0
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "deltaPoints": 0
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "headToHead",
+      "modelLabel": "Head-to-Head",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.2,
+      "deltaPoints": -0.1,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2815,
+              "accuracy": 57.2
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 5,
+              "accuracy": 20
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.8
+            },
+            "deltaPoints": -0.1
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.3
+            },
+            "deltaPoints": -0.4
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 55.7
+            },
+            "deltaPoints": -0.3
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.1
+            },
+            "deltaPoints": -0.4
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 707,
+              "accuracy": 54.6
+            },
+            "deltaPoints": -0.1
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2113,
+              "accuracy": 58
+            },
+            "deltaPoints": -0.1
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "matchLoadRecovery",
+      "modelLabel": "Match Load Recovery",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2737,
+              "accuracy": 57.5
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 83,
+              "accuracy": 50.6
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 57.7
+            },
+            "deltaPoints": 1.2
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.8
+            },
+            "deltaPoints": 0.2
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.8
+            },
+            "deltaPoints": -0.1
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 70.4
+            },
+            "deltaPoints": -3.7
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.2
+            },
+            "deltaPoints": 0.1
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "deltaPoints": 0
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 54.2
+            },
+            "deltaPoints": -1.3
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 65.7
+            },
+            "deltaPoints": 5.7
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 668,
+              "accuracy": 54.3
+            },
+            "deltaPoints": -0.4
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2152,
+              "accuracy": 58.2
+            },
+            "deltaPoints": 0.1
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "generalEnsemble",
+      "modelLabel": "General Ensemble",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.3,
+      "deltaPoints": 0,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2820,
+              "accuracy": 57.3
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 0,
+              "accuracy": null
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "deltaPoints": 0
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "deltaPoints": 0
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "deltaPoints": 0
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "deltaPoints": 0
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "deltaPoints": 0
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          }
+        }
+      }
+    },
+    {
+      "modelKey": "segmentSpecialist",
+      "modelLabel": "Active Segment Specialist",
+      "baselineAccuracy": 57.3,
+      "ablatedAccuracy": 57.1,
+      "deltaPoints": -0.2,
+      "recommendation": "Review",
+      "rank": "Neutral",
+      "segments": {
+        "byFavoriteVsUnderdog": {
+          "agreesWithBaseline": {
+            "baseline": {
+              "n": 2820,
+              "accuracy": 57.3
+            },
+            "ablated": {
+              "n": 2812,
+              "accuracy": 57.2
+            }
+          },
+          "divergesFromBaseline": {
+            "baseline": {
+              "n": 0,
+              "accuracy": null
+            },
+            "ablated": {
+              "n": 8,
+              "accuracy": 25
+            }
+          }
+        },
+        "byTour": {
+          "WTA": {
+            "baseline": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "ablated": {
+              "n": 248,
+              "accuracy": 56.5
+            },
+            "deltaPoints": 0
+          },
+          "Challenger": {
+            "baseline": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "ablated": {
+              "n": 576,
+              "accuracy": 52.6
+            },
+            "deltaPoints": 0
+          },
+          "ITF": {
+            "baseline": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "ablated": {
+              "n": 1710,
+              "accuracy": 58.9
+            },
+            "deltaPoints": 0
+          },
+          "ATP": {
+            "baseline": {
+              "n": 255,
+              "accuracy": 55.7
+            },
+            "ablated": {
+              "n": 255,
+              "accuracy": 54.1
+            },
+            "deltaPoints": -1.6
+          },
+          "Junior": {
+            "baseline": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "ablated": {
+              "n": 27,
+              "accuracy": 74.1
+            },
+            "deltaPoints": 0
+          },
+          "Mixed Doubles": {
+            "baseline": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "ablated": {
+              "n": 4,
+              "accuracy": 75
+            },
+            "deltaPoints": 0
+          }
+        },
+        "bySurface": {
+          "Hard": {
+            "baseline": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 1738,
+              "accuracy": 58.1
+            },
+            "deltaPoints": 0
+          },
+          "Clay": {
+            "baseline": {
+              "n": 820,
+              "accuracy": 56
+            },
+            "ablated": {
+              "n": 820,
+              "accuracy": 55.5
+            },
+            "deltaPoints": -0.5
+          },
+          "IndoorHard": {
+            "baseline": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "ablated": {
+              "n": 227,
+              "accuracy": 55.5
+            },
+            "deltaPoints": 0
+          },
+          "Grass": {
+            "baseline": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "ablated": {
+              "n": 35,
+              "accuracy": 60
+            },
+            "deltaPoints": 0
+          }
+        },
+        "byDataQuality": {
+          "high": {
+            "baseline": {
+              "n": 707,
+              "accuracy": 54.7
+            },
+            "ablated": {
+              "n": 707,
+              "accuracy": 54.6
+            },
+            "deltaPoints": -0.1
+          },
+          "low": {
+            "baseline": {
+              "n": 2113,
+              "accuracy": 58.1
+            },
+            "ablated": {
+              "n": 2113,
+              "accuracy": 58
+            },
+            "deltaPoints": -0.1
+          }
+        }
+      }
+    }
+  ],
+  "combinations": [
+    {
+      "key": "combo_everything",
+      "label": "Everything active",
+      "overall": {
+        "n": 2820,
+        "accuracy": 57.3
+      },
+      "byTour": {
+        "WTA": {
+          "n": 248,
+          "accuracy": 56.5
+        },
+        "Challenger": {
+          "n": 576,
+          "accuracy": 52.6
+        },
+        "ITF": {
+          "n": 1710,
+          "accuracy": 58.9
+        },
+        "ATP": {
+          "n": 255,
+          "accuracy": 55.7
+        },
+        "Junior": {
+          "n": 27,
+          "accuracy": 74.1
+        },
+        "Mixed Doubles": {
+          "n": 4,
+          "accuracy": 75
+        }
+      },
+      "bySurface": {
+        "Hard": {
+          "n": 1738,
+          "accuracy": 58.1
+        },
+        "Clay": {
+          "n": 820,
+          "accuracy": 56
+        },
+        "IndoorHard": {
+          "n": 227,
+          "accuracy": 55.5
+        },
+        "Grass": {
+          "n": 35,
+          "accuracy": 60
+        }
+      },
+      "byDataQuality": {
+        "high": {
+          "n": 707,
+          "accuracy": 54.7
+        },
+        "low": {
+          "n": 2113,
+          "accuracy": 58.1
+        }
+      },
+      "byFavorite": {
+        "agreesWithBaseline": {
+          "n": 2820,
+          "accuracy": 57.3
+        },
+        "divergesFromBaseline": {
+          "n": 0,
+          "accuracy": null
+        }
+      }
+    },
+    {
+      "key": "combo_core_signals_only",
+      "label": "Core signals only (Surface Elo, Serve & Return, Recent Form)",
+      "overall": {
+        "n": 2820,
+        "accuracy": 57.2
+      },
+      "byTour": {
+        "WTA": {
+          "n": 248,
+          "accuracy": 56.5
+        },
+        "Challenger": {
+          "n": 576,
+          "accuracy": 52.6
+        },
+        "ITF": {
+          "n": 1710,
+          "accuracy": 58.8
+        },
+        "ATP": {
+          "n": 255,
+          "accuracy": 55.3
+        },
+        "Junior": {
+          "n": 27,
+          "accuracy": 74.1
+        },
+        "Mixed Doubles": {
+          "n": 4,
+          "accuracy": 75
+        }
+      },
+      "bySurface": {
+        "Hard": {
+          "n": 1738,
+          "accuracy": 58.1
+        },
+        "Clay": {
+          "n": 820,
+          "accuracy": 55.7
+        },
+        "IndoorHard": {
+          "n": 227,
+          "accuracy": 55.1
+        },
+        "Grass": {
+          "n": 35,
+          "accuracy": 60
+        }
+      },
+      "byDataQuality": {
+        "high": {
+          "n": 707,
+          "accuracy": 54.6
+        },
+        "low": {
+          "n": 2113,
+          "accuracy": 58
+        }
+      },
+      "byFavorite": {
+        "agreesWithBaseline": {
+          "n": 2815,
+          "accuracy": 57.2
+        },
+        "divergesFromBaseline": {
+          "n": 5,
+          "accuracy": 20
+        }
+      }
+    },
+    {
+      "key": "combo_specialists_off",
+      "label": "Segment specialists off",
+      "overall": {
+        "n": 2820,
+        "accuracy": 57.1
+      },
+      "byTour": {
+        "WTA": {
+          "n": 248,
+          "accuracy": 56.5
+        },
+        "Challenger": {
+          "n": 576,
+          "accuracy": 52.6
+        },
+        "ITF": {
+          "n": 1710,
+          "accuracy": 58.9
+        },
+        "ATP": {
+          "n": 255,
+          "accuracy": 54.1
+        },
+        "Junior": {
+          "n": 27,
+          "accuracy": 74.1
+        },
+        "Mixed Doubles": {
+          "n": 4,
+          "accuracy": 75
+        }
+      },
+      "bySurface": {
+        "Hard": {
+          "n": 1738,
+          "accuracy": 58.1
+        },
+        "Clay": {
+          "n": 820,
+          "accuracy": 55.5
+        },
+        "IndoorHard": {
+          "n": 227,
+          "accuracy": 55.5
+        },
+        "Grass": {
+          "n": 35,
+          "accuracy": 60
+        }
+      },
+      "byDataQuality": {
+        "high": {
+          "n": 707,
+          "accuracy": 54.6
+        },
+        "low": {
+          "n": 2113,
+          "accuracy": 58
+        }
+      },
+      "byFavorite": {
+        "agreesWithBaseline": {
+          "n": 2812,
+          "accuracy": 57.2
+        },
+        "divergesFromBaseline": {
+          "n": 8,
+          "accuracy": 25
+        }
+      }
+    },
+    {
+      "key": "combo_no_calibration_no_specialist",
+      "label": "General calibration + specialists off (raw ensemble only)",
+      "overall": {
+        "n": 2820,
+        "accuracy": 57.1
+      },
+      "byTour": {
+        "WTA": {
+          "n": 248,
+          "accuracy": 56.5
+        },
+        "Challenger": {
+          "n": 576,
+          "accuracy": 52.6
+        },
+        "ITF": {
+          "n": 1710,
+          "accuracy": 58.9
+        },
+        "ATP": {
+          "n": 255,
+          "accuracy": 54.1
+        },
+        "Junior": {
+          "n": 27,
+          "accuracy": 74.1
+        },
+        "Mixed Doubles": {
+          "n": 4,
+          "accuracy": 75
+        }
+      },
+      "bySurface": {
+        "Hard": {
+          "n": 1738,
+          "accuracy": 58.1
+        },
+        "Clay": {
+          "n": 820,
+          "accuracy": 55.5
+        },
+        "IndoorHard": {
+          "n": 227,
+          "accuracy": 55.5
+        },
+        "Grass": {
+          "n": 35,
+          "accuracy": 60
+        }
+      },
+      "byDataQuality": {
+        "high": {
+          "n": 707,
+          "accuracy": 54.6
+        },
+        "low": {
+          "n": 2113,
+          "accuracy": 58
+        }
+      },
+      "byFavorite": {
+        "agreesWithBaseline": {
+          "n": 2812,
+          "accuracy": 57.2
+        },
+        "divergesFromBaseline": {
+          "n": 8,
+          "accuracy": 25
+        }
+      }
+    }
+  ],
+  "diagnostics": {
+    "losingPredictionAttribution": [
+      {
+        "modelKey": "generalEnsemble",
+        "modelLabel": "General Ensemble",
+        "n": 1205,
+        "rate": 99.8
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 1205,
+        "rate": 94.4
+      },
+      {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 185,
+        "rate": 87
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 1205,
+        "rate": 75.2
+      },
+      {
+        "modelKey": "surfaceElo",
+        "modelLabel": "Surface Elo",
+        "n": 1205,
+        "rate": 69.1
+      },
+      {
+        "modelKey": "matchLoadRecovery",
+        "modelLabel": "Match Load Recovery",
+        "n": 1205,
+        "rate": 54.3
+      },
+      {
+        "modelKey": "headToHead",
+        "modelLabel": "Head-to-Head",
+        "n": 1205,
+        "rate": 48.9
+      },
+      {
+        "modelKey": "fatigue",
+        "modelLabel": "Fatigue",
+        "n": 0,
+        "rate": null
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 0,
+        "rate": null
+      }
+    ],
+    "overconfidentStrongVoteFailureRate": [
+      {
+        "modelKey": "matchLoadRecovery",
+        "modelLabel": "Match Load Recovery",
+        "n": 1204,
+        "rate": 47.1
+      },
+      {
+        "modelKey": "surfaceElo",
+        "modelLabel": "Surface Elo",
+        "n": 109,
+        "rate": 38.5
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 992,
+        "rate": 36.6
+      },
+      {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 96,
+        "rate": 35.4
+      },
+      {
+        "modelKey": "headToHead",
+        "modelLabel": "Head-to-Head",
+        "n": 133,
+        "rate": 34.6
+      },
+      {
+        "modelKey": "generalEnsemble",
+        "modelLabel": "General Ensemble",
+        "n": 30,
+        "rate": 26.7
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 1,
+        "rate": 0
+      },
+      {
+        "modelKey": "fatigue",
+        "modelLabel": "Fatigue",
+        "n": 0,
+        "rate": null
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 0,
+        "rate": null
+      }
+    ],
+    "confidenceMiscalibration": [
+      {
+        "modelKey": "matchLoadRecovery",
+        "modelLabel": "Match Load Recovery",
+        "n": 2820,
+        "avgPredictedConfidence": 58.4,
+        "observedHitRate": 51.7,
+        "overconfidencePoints": 6.7
+      },
+      {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 426,
+        "avgPredictedConfidence": 61.1,
+        "observedHitRate": 56.1,
+        "overconfidencePoints": 5
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 2820,
+        "avgPredictedConfidence": 61.5,
+        "observedHitRate": 57,
+        "overconfidencePoints": 4.5
+      },
+      {
+        "modelKey": "headToHead",
+        "modelLabel": "Head-to-Head",
+        "n": 2820,
+        "avgPredictedConfidence": 52.2,
+        "observedHitRate": 52.1,
+        "overconfidencePoints": 0.1
+      },
+      {
+        "modelKey": "generalEnsemble",
+        "modelLabel": "General Ensemble",
+        "n": 2820,
+        "avgPredictedConfidence": 55.6,
+        "observedHitRate": 57.1,
+        "overconfidencePoints": -1.5
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 2820,
+        "avgPredictedConfidence": 52.4,
+        "observedHitRate": 54.8,
+        "overconfidencePoints": -2.4
+      },
+      {
+        "modelKey": "surfaceElo",
+        "modelLabel": "Surface Elo",
+        "n": 2810,
+        "avgPredictedConfidence": 53.6,
+        "observedHitRate": 56.8,
+        "overconfidencePoints": -3.2
+      },
+      {
+        "modelKey": "fatigue",
+        "modelLabel": "Fatigue",
+        "n": 0,
+        "avgPredictedConfidence": null,
+        "observedHitRate": null,
+        "overconfidencePoints": null
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 0,
+        "avgPredictedConfidence": null,
+        "observedHitRate": null,
+        "overconfidencePoints": null
+      }
+    ],
+    "dissentFromFinalPrediction": [
+      {
+        "modelKey": "surfaceElo",
+        "modelLabel": "Surface Elo",
+        "n": 755,
+        "rate": 18.9,
+        "correctDissentRate": 49.3
+      },
+      {
+        "modelKey": "segmentSpecialist",
+        "modelLabel": "Active Segment Specialist",
+        "n": 50,
+        "rate": 1.2,
+        "correctDissentRate": 48
+      },
+      {
+        "modelKey": "serveReturn",
+        "modelLabel": "Serve & Return",
+        "n": 141,
+        "rate": 3.5,
+        "correctDissentRate": 47.5
+      },
+      {
+        "modelKey": "recentForm",
+        "modelLabel": "Recent Form",
+        "n": 669,
+        "rate": 16.7,
+        "correctDissentRate": 44.7
+      },
+      {
+        "modelKey": "headToHead",
+        "modelLabel": "Head-to-Head",
+        "n": 1378,
+        "rate": 34.4,
+        "correctDissentRate": 44.7
+      },
+      {
+        "modelKey": "matchLoadRecovery",
+        "modelLabel": "Match Load Recovery",
+        "n": 1260,
+        "rate": 31.5,
+        "correctDissentRate": 43.7
+      },
+      {
+        "modelKey": "generalEnsemble",
+        "modelLabel": "General Ensemble",
+        "n": 8,
+        "rate": 0.2,
+        "correctDissentRate": 25
+      },
+      {
+        "modelKey": "fatigue",
+        "modelLabel": "Fatigue",
+        "n": 0,
+        "rate": 0,
+        "correctDissentRate": null
+      },
+      {
+        "modelKey": "availability",
+        "modelLabel": "Availability (rest/travel/injury)",
+        "n": 0,
+        "rate": 0,
+        "correctDissentRate": null
+      }
+    ]
+  }
+}

@@ -53,6 +53,7 @@ import type {
   ProviderError,
   ProviderStatus,
   RemoveDuplicatePredictionsResult,
+  RunAblationAnalysisRequest,
   RunWalkForwardRequest,
   ScreenshotMatchupInput,
   ScreenshotMatchupResult,
@@ -2470,16 +2471,16 @@ export const getRunAblationAnalysisUrl = () => {
 }
 
 /**
- * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+ * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus, or a representative sample of it). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
  */
-export const runAblationAnalysis = async ( options?: RequestInit): Promise<AblationRunResponse> => {
+export const runAblationAnalysis = async (runAblationAnalysisRequest?: RunAblationAnalysisRequest, options?: RequestInit): Promise<AblationRunResponse> => {
 
   return customFetch<AblationRunResponse>(getRunAblationAnalysisUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runAblationAnalysisRequest)
   }
 );}
 
@@ -2488,8 +2489,8 @@ export const runAblationAnalysis = async ( options?: RequestInit): Promise<Ablat
 
 
 export const getRunAblationAnalysisMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,{data?: BodyType<RunAblationAnalysisRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,{data?: BodyType<RunAblationAnalysisRequest>}, TContext> => {
 
 const mutationKey = ['runAblationAnalysis'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2501,10 +2502,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAblationAnalysis>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAblationAnalysis>>, {data?: BodyType<RunAblationAnalysisRequest>}> = (props) => {
+          const {data} = props ?? {};
 
-
-          return  runAblationAnalysis(requestOptions)
+          return  runAblationAnalysis(data,requestOptions)
         }
 
 
@@ -2515,18 +2516,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RunAblationAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof runAblationAnalysis>>>
-
+    export type RunAblationAnalysisMutationBody = BodyType<RunAblationAnalysisRequest> | undefined
     export type RunAblationAnalysisMutationError = ErrorType<unknown>
 
     /**
- * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
+ * @summary Start a one-time model ablation analysis (leave-one-out + combinations, replayed over the historical corpus, or a representative sample of it). Runs in the background -- poll /evaluation/ablation/status for progress and the finished report.
  */
 export const useRunAblationAnalysis = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAblationAnalysis>>, TError,{data?: BodyType<RunAblationAnalysisRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runAblationAnalysis>>,
         TError,
-        void,
+        {data?: BodyType<RunAblationAnalysisRequest>},
         TContext
       > => {
       return useMutation(getRunAblationAnalysisMutationOptions(options));
