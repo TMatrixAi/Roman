@@ -42,7 +42,6 @@ import { validateAndStoreSimulator } from "../services/evaluation/simulatorValid
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
-import { requireAdmin } from "../lib/adminAuth";
 
 const router: IRouter = Router();
 
@@ -64,7 +63,7 @@ router.get("/evaluation/runs", async (_req, res): Promise<void> => {
   res.json(ListEvaluationRunsResponse.parse(rows));
 });
 
-router.post("/evaluation/walk-forward/run", requireAdmin, async (req, res): Promise<void> => {
+router.post("/evaluation/walk-forward/run", async (req, res): Promise<void> => {
   const parsed = RunWalkForwardBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -205,7 +204,7 @@ router.get("/evaluation/settings", async (_req, res): Promise<void> => {
   res.json(GetEvaluationSettingsResponse.parse(settings));
 });
 
-router.patch("/evaluation/settings", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/evaluation/settings", async (req, res): Promise<void> => {
   const parsed = UpdateEvaluationSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -246,7 +245,7 @@ router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
   res.json(GetSimulatorValidationResponse.parse(row));
 });
 
-router.post("/evaluation/simulator/validate", requireAdmin, async (_req, res): Promise<void> => {
+router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> => {
   const summary = await validateAndStoreSimulator();
   res.json(
     GetSimulatorValidationResponse.parse({
@@ -256,7 +255,7 @@ router.post("/evaluation/simulator/validate", requireAdmin, async (_req, res): P
   );
 });
 
-router.post("/paper-trading/run-cycle", requireAdmin, async (_req, res): Promise<void> => {
+router.post("/paper-trading/run-cycle", async (_req, res): Promise<void> => {
   const summary = await runPaperTradingCycle();
   res.json(RunPaperTradingCycleResponse.parse(summary));
 });
@@ -295,7 +294,7 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
   res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
 });
 
-router.post("/evaluation/ablation/run", requireAdmin, async (req, res): Promise<void> => {
+router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
   const parsed = RunAblationAnalysisBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

@@ -9,37 +9,6 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Whether the current browser session is logged in as the owner
- */
-export const GetAdminAuthStatusResponse = zod.object({
-  "authenticated": zod.boolean()
-})
-
-
-/**
- * @summary Log in as the owner using the shared access key, setting a signed session cookie
- */
-
-
-
-export const AdminLoginBody = zod.object({
-  "accessKey": zod.string().min(1)
-})
-
-export const AdminLoginResponse = zod.object({
-  "authenticated": zod.boolean()
-})
-
-
-/**
- * @summary Clear the owner session cookie
- */
-export const AdminLogoutResponse = zod.object({
-  "authenticated": zod.boolean()
-})
-
-
-/**
  * Returns server health status
  * @summary Health check
  */

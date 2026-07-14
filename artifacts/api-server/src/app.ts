@@ -1,6 +1,5 @@
 import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -32,9 +31,6 @@ app.use(cors());
 // parsing happens before routing.
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-// Task #143: signs the admin-session cookie set by POST /api/auth/login so `req.signedCookies`
-// is available to `requireAdmin`. Reuses SESSION_SECRET rather than introducing a second secret.
-app.use(cookieParser(process.env.SESSION_SECRET));
 
 // Without this, a malformed body or an over-limit upload (e.g. too-large screenshot on
 // POST /matchups/from-screenshot) falls through to Express's default handler, which returns an
