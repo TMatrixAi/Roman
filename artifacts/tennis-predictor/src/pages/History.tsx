@@ -20,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
+import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
@@ -244,7 +245,7 @@ function PredictionRow({
             <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
             <div className="font-bold flex items-center gap-2">
               {prediction.predictedWinnerName}
-              <Badge variant="outline" className="font-mono">{formatProbability(prediction.predictedWinnerProbability)}</Badge>
+              <Badge variant="outline" className="font-mono">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
             </div>
           </div>
 
@@ -342,7 +343,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
           <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
           <div className="font-bold flex items-center gap-2">
             {prediction.predictedWinnerName}
-            <Badge variant="outline" className="font-mono">{formatProbability(prediction.predictedWinnerProbability)}</Badge>
+            <Badge variant="outline" className="font-mono">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
           </div>
         </div>
 

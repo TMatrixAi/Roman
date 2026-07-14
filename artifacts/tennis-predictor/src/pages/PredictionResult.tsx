@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
+import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
@@ -44,7 +45,7 @@ function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number,
   )
 }
 
-function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel = "REL" }: { title: string, reliability: number, children: React.ReactNode, icon: any, reliabilityLabel?: string }) {
+function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel = "REL" }: { title: string, reliability: Percentage, children: React.ReactNode, icon: any, reliabilityLabel?: string }) {
   return (
     <Card className="overflow-hidden flex flex-col h-full">
       <div className="bg-secondary/50 p-3 border-b flex justify-between items-center">
@@ -55,7 +56,7 @@ function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel
         <div className="flex items-center gap-1.5 text-xs font-mono">
           <span className="text-muted-foreground">{reliabilityLabel}:</span>
           <span className={reliability < 50 ? "text-warning" : reliability >= 80 ? "text-success" : "text-foreground"}>
-            {reliability}%
+            {formatPercentage(reliability)}
           </span>
         </div>
       </div>
@@ -148,7 +149,7 @@ export default function PredictionResultPage() {
               <div className="space-y-2">
                 <div className="flex justify-between font-mono text-sm">
                   <span>WIN PROBABILITY</span>
-                  <span className="font-bold">{formatProbability(prediction.predictedWinnerProbability)}</span>
+                  <span className="font-bold">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</span>
                 </div>
                 <Progress value={prediction.predictedWinnerProbability} className="h-3" />
               </div>
@@ -378,7 +379,7 @@ export default function PredictionResultPage() {
               </CardContent>
             </Card>
 
-            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={engine.simulation.inputReliability} icon={Dices} reliabilityLabel="COMP">
+            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={asPercentage(engine.simulation.inputReliability)} icon={Dices} reliabilityLabel="COMP">
               <div className="h-64 -ml-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={engine.simulation.setScoreDistribution.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -449,7 +450,7 @@ export default function PredictionResultPage() {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           
-          <ModuleCard title="SURFACE ELO" reliability={engine.surfaceElo.reliability} icon={ActivitySquare}>
+          <ModuleCard title="SURFACE ELO" reliability={asPercentage(engine.surfaceElo.reliability)} icon={ActivitySquare}>
             <EdgeBar 
               p1Name={prediction.player1Name} 
               p2Name={prediction.player2Name} 
@@ -459,7 +460,10 @@ export default function PredictionResultPage() {
             />
             <div className="mt-2 text-sm text-muted-foreground flex justify-between font-mono bg-background p-2 rounded">
               <span>WIN PROB (ELO):</span>
-              <span className="font-bold text-foreground">{engine.surfaceElo.eloWinProbabilityPlayer1.toFixed(1)}%</span>
+              {/* eloWinProbabilityPlayer1 is already a Percentage (0-100) -- see the module doc
+                  comment in predictionEngine/units.ts and surfaceElo.ts. asPercentage() asserts
+                  that scale explicitly; never multiply this value by 100. */}
+              <span className="font-bold text-foreground">{formatPercentage(asPercentage(engine.surfaceElo.eloWinProbabilityPlayer1), 1)}</span>
             </div>
             {engine.surfaceSampleDepth && (
               <div className="mt-2 flex items-center justify-between text-xs font-mono">
@@ -484,13 +488,14 @@ export default function PredictionResultPage() {
               typeof engine.surfaceElo.player2BlendWeight === "number" &&
               Math.max(engine.surfaceElo.player1BlendWeight, engine.surfaceElo.player2BlendWeight) > 0.3 && (
                 <div className="mt-1 text-xs font-mono text-warning">
-                  Blended toward overall Elo: {prediction.player1Name} {(engine.surfaceElo.player1BlendWeight * 100).toFixed(0)}%, {prediction.player2Name}{" "}
-                  {(engine.surfaceElo.player2BlendWeight * 100).toFixed(0)}% (thin surface-specific sample)
+                  {/* player1/2BlendWeight are Fractions (0-1) -- must go through fractionToPercentage before display, never displayed directly. */}
+                  Blended toward overall Elo: {prediction.player1Name} {formatPercentage(fractionToPercentage(asFraction(engine.surfaceElo.player1BlendWeight)))}, {prediction.player2Name}{" "}
+                  {formatPercentage(fractionToPercentage(asFraction(engine.surfaceElo.player2BlendWeight)))} (thin surface-specific sample)
                 </div>
               )}
           </ModuleCard>
 
-          <ModuleCard title="SERVE & RETURN" reliability={engine.serveReturn.reliability} icon={TrendingUp}>
+          <ModuleCard title="SERVE & RETURN" reliability={asPercentage(engine.serveReturn.reliability)} icon={TrendingUp}>
             <EdgeBar 
               p1Name={prediction.player1Name} 
               p2Name={prediction.player2Name} 
@@ -511,7 +516,7 @@ export default function PredictionResultPage() {
             )}
           </ModuleCard>
 
-          <ModuleCard title="RECENT FORM" reliability={engine.recentForm.reliability} icon={Activity}>
+          <ModuleCard title="RECENT FORM" reliability={asPercentage(engine.recentForm.reliability)} icon={Activity}>
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-3 bg-background rounded-lg border">
                 <p className="text-xs font-mono text-muted-foreground truncate">{prediction.player1Name}</p>
@@ -542,7 +547,7 @@ export default function PredictionResultPage() {
             )}
           </ModuleCard>
 
-          <ModuleCard title="FATIGUE INDEX" reliability={engine.fatigue.reliability} icon={Activity}>
+          <ModuleCard title="FATIGUE INDEX" reliability={asPercentage(engine.fatigue.reliability)} icon={Activity}>
             <EdgeBar 
               p1Name={prediction.player1Name} 
               p2Name={prediction.player2Name} 
@@ -563,7 +568,7 @@ export default function PredictionResultPage() {
           </ModuleCard>
 
           {engine.matchLoadRecovery && (
-            <ModuleCard title="MATCH LOAD RECOVERY" reliability={engine.matchLoadRecovery.reliability} icon={Activity}>
+            <ModuleCard title="MATCH LOAD RECOVERY" reliability={asPercentage(engine.matchLoadRecovery.reliability)} icon={Activity}>
               <EdgeBar
                 p1Name={prediction.player1Name}
                 p2Name={prediction.player2Name}
@@ -600,7 +605,7 @@ export default function PredictionResultPage() {
           )}
 
           {engine.availability ? (
-            <ModuleCard title="REST, TRAVEL & INJURY" reliability={engine.availability.reliability} icon={Activity}>
+            <ModuleCard title="REST, TRAVEL & INJURY" reliability={asPercentage(engine.availability.reliability)} icon={Activity}>
               <div className="text-xs text-muted-foreground space-y-1">
                 <div className="flex justify-between">
                   <span>{prediction.player1Name} rest days:</span>
@@ -644,14 +649,14 @@ export default function PredictionResultPage() {
               )}
             </ModuleCard>
           ) : (
-            <ModuleCard title="REST, TRAVEL & INJURY" reliability={0} icon={Activity}>
+            <ModuleCard title="REST, TRAVEL & INJURY" reliability={asPercentage(0)} icon={Activity}>
               <p className="text-xs text-muted-foreground italic">
                 This prediction was made before rest/travel/injury tracking was added and doesn't carry this data.
               </p>
             </ModuleCard>
           )}
 
-          <ModuleCard title="HEAD TO HEAD" reliability={engine.headToHead.reliability} icon={Swords}>
+          <ModuleCard title="HEAD TO HEAD" reliability={asPercentage(engine.headToHead.reliability)} icon={Swords}>
              <div className="flex justify-center items-center gap-6 py-4">
                 <div className="text-center">
                   <p className="text-4xl font-bold">{engine.headToHead.player1Wins}</p>
@@ -668,7 +673,7 @@ export default function PredictionResultPage() {
              </div>
           </ModuleCard>
           
-          <ModuleCard title="STYLE MATCHUP" reliability={engine.styleMatchup.reliability} icon={Dna}>
+          <ModuleCard title="STYLE MATCHUP" reliability={asPercentage(engine.styleMatchup.reliability)} icon={Dna}>
              <div className="space-y-4 text-sm">
                 <div>
                   <p className="text-xs font-mono font-bold mb-1 truncate text-primary">{prediction.player1Name}</p>

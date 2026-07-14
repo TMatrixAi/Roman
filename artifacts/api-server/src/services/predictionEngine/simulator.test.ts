@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { simulateMatch, runMatchSimulation, deriveServicePointEstimate, deriveMatchSeed, type ServicePointEstimate } from "./simulator";
 import type { SurfaceEloResult } from "./surfaceElo";
 import type { ServeReturnResult } from "./serveReturn";
+import { asFraction, asPercentage } from "./units";
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -88,9 +89,9 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
     player1SurfaceElo: 1600,
     player2SurfaceElo: 1500,
     eloDifference: 100,
-    eloWinProbabilityPlayer1: 64,
-    rawEloWinProbabilityPlayer1: 64,
-    reliability: 90,
+    eloWinProbabilityPlayer1: asPercentage(64),
+    rawEloWinProbabilityPlayer1: asPercentage(64),
+    reliability: asPercentage(90),
     sampleSizePlayer1: 40,
     sampleSizePlayer2: 35,
     effectiveSampleSizePlayer1: 30,
@@ -99,10 +100,10 @@ test("deriveServicePointEstimate: never fabricates certainty beyond the weaker o
     player2OverallElo: 1500,
     player1SurfaceOnlyElo: 1600,
     player2SurfaceOnlyElo: 1500,
-    player1BlendWeight: 0.05,
-    player2BlendWeight: 0.05,
-    player1TourLevelShare: 1,
-    player2TourLevelShare: 1,
+    player1BlendWeight: asFraction(0.05),
+    player2BlendWeight: asFraction(0.05),
+    player1TourLevelShare: asFraction(1),
+    player2TourLevelShare: asFraction(1),
     warnings: [],
   };
   const emptyPointLevel = { firstServeWinPct: null, breakPointsSavedPct: null, breakPointsConvertedPct: null, serviceGamesHeldPct: null, sampleSize: 0 };

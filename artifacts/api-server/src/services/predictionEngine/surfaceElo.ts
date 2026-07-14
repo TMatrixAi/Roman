@@ -1,18 +1,27 @@
 import type { MatchRecord, Surface, TournamentLevel } from "../tennisData/types";
 import type { OpponentEloLookup } from "./opponentStrength";
 import { eloFallbackTracker } from "./fallbackTracking";
+import { asFraction, asPercentage, type Fraction, type Percentage } from "./units";
 
+/**
+ * `Percentage` (0-100) vs `Fraction` (0-1) below are branded per the convention in `./units.ts` --
+ * read that file first. This module is the reference example: `eloWinProbabilityPlayer1` and
+ * `reliability` are `Percentage` (display directly, never re-multiply by 100); `player1BlendWeight`
+ * and `player1TourLevelShare` are `Fraction` (must go through `fractionToPercentage` before
+ * display). The WIN PROB (ELO) bug was exactly this distinction getting lost once the value left
+ * this file as a plain `number`.
+ */
 export interface SurfaceEloResult {
   /** Final rating actually used for the win-probability edge -- a recency/competition-level-weighted surface-only Elo, blended toward the player's overall (cross-surface) Elo when their surface-specific sample is shallow. */
   player1SurfaceElo: number;
   player2SurfaceElo: number;
   eloDifference: number;
-  /** Player 1's win probability, pulled toward 50 when the underlying rating gap is backed by high uncertainty -- see `rawEloWinProbabilityPlayer1` for the un-shrunk figure. */
-  eloWinProbabilityPlayer1: number;
-  /** Un-shrunk logistic win probability from `eloDifference` alone, before the uncertainty pull-to-50 is applied. Kept for transparency/debugging -- `eloWinProbabilityPlayer1` is what the ensemble actually votes with. */
-  rawEloWinProbabilityPlayer1: number;
-  /** Uncertainty-aware confidence (0-100), derived from each player's *effective* (recency/level-weighted) surface sample size rather than a flat count -- this now IS the same figure used to shrink `eloWinProbabilityPlayer1` toward 50. */
-  reliability: number;
+  /** Player 1's win probability (Percentage, 0-100), pulled toward 50 when the underlying rating gap is backed by high uncertainty -- see `rawEloWinProbabilityPlayer1` for the un-shrunk figure. */
+  eloWinProbabilityPlayer1: Percentage;
+  /** Un-shrunk logistic win probability (Percentage, 0-100) from `eloDifference` alone, before the uncertainty pull-to-50 is applied. Kept for transparency/debugging -- `eloWinProbabilityPlayer1` is what the ensemble actually votes with. */
+  rawEloWinProbabilityPlayer1: Percentage;
+  /** Uncertainty-aware confidence (Percentage, 0-100), derived from each player's *effective* (recency/level-weighted) surface sample size rather than a flat count -- this now IS the same figure used to shrink `eloWinProbabilityPlayer1` toward 50. */
+  reliability: Percentage;
   /** Raw count of on-surface matches found for each player (unweighted) -- kept for existing consumers (`computeSurfaceSampleDepth`, `upsetRisk.ts`) that key off the plain match count. */
   sampleSizePlayer1: number;
   sampleSizePlayer2: number;
@@ -25,14 +34,14 @@ export interface SurfaceEloResult {
   /** Pure surface-only Elo (recency/level-weighted, but with NO overall-Elo blending) -- kept for transparency so the blend's effect is auditable. */
   player1SurfaceOnlyElo: number;
   player2SurfaceOnlyElo: number;
-  /** 0-1: how much of `player1SurfaceElo`/`player2SurfaceElo` came from the overall-Elo fallback rather than the player's own surface-only rating. 0 = pure surface Elo, 1 = pure overall Elo. Fades smoothly toward 0 as the player's effective surface sample grows. */
-  player1BlendWeight: number;
-  player2BlendWeight: number;
-  /** 0-1 share of each player's OVERALL (cross-surface) effective sample that came from genuine
+  /** Fraction (0-1): how much of `player1SurfaceElo`/`player2SurfaceElo` came from the overall-Elo fallback rather than the player's own surface-only rating. 0 = pure surface Elo, 1 = pure overall Elo. Fades smoothly toward 0 as the player's effective surface sample grows. */
+  player1BlendWeight: Fraction;
+  player2BlendWeight: Fraction;
+  /** Fraction (0-1) share of each player's OVERALL (cross-surface) effective sample that came from genuine
    * tour-level competition (ATP/WTA main tour or above), not Challenger/ITF/Other. Low share
    * means their rating leans on `tourLevelCredibility` shrink toward the corpus baseline. */
-  player1TourLevelShare: number;
-  player2TourLevelShare: number;
+  player1TourLevelShare: Fraction;
+  player2TourLevelShare: Fraction;
   warnings: string[];
 }
 
@@ -380,9 +389,9 @@ export function computeSurfaceEloModule(
     player1SurfaceElo,
     player2SurfaceElo,
     eloDifference,
-    eloWinProbabilityPlayer1: Math.round(eloWinProbabilityPlayer1 * 10) / 10,
-    rawEloWinProbabilityPlayer1: Math.round(rawEloWinProbabilityPlayer1 * 1000) / 10,
-    reliability: Math.round(reliability),
+    eloWinProbabilityPlayer1: asPercentage(Math.round(eloWinProbabilityPlayer1 * 10) / 10),
+    rawEloWinProbabilityPlayer1: asPercentage(Math.round(rawEloWinProbabilityPlayer1 * 1000) / 10),
+    reliability: asPercentage(Math.round(reliability)),
     sampleSizePlayer1: p1.sampleSize,
     sampleSizePlayer2: p2.sampleSize,
     effectiveSampleSizePlayer1: Math.round(p1.effectiveSampleSize * 10) / 10,
@@ -391,10 +400,10 @@ export function computeSurfaceEloModule(
     player2OverallElo: Math.round(p2.overallElo),
     player1SurfaceOnlyElo: Math.round(p1.surfaceOnlyElo),
     player2SurfaceOnlyElo: Math.round(p2.surfaceOnlyElo),
-    player1BlendWeight: Math.round(p1.blendWeight * 1000) / 1000,
-    player2BlendWeight: Math.round(p2.blendWeight * 1000) / 1000,
-    player1TourLevelShare: Math.round(p1.tourLevelShare * 1000) / 1000,
-    player2TourLevelShare: Math.round(p2.tourLevelShare * 1000) / 1000,
+    player1BlendWeight: asFraction(Math.round(p1.blendWeight * 1000) / 1000),
+    player2BlendWeight: asFraction(Math.round(p2.blendWeight * 1000) / 1000),
+    player1TourLevelShare: asFraction(Math.round(p1.tourLevelShare * 1000) / 1000),
+    player2TourLevelShare: asFraction(Math.round(p2.tourLevelShare * 1000) / 1000),
     warnings,
   };
 }

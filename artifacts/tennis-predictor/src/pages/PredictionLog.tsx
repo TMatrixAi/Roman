@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate, formatProbability } from "@/lib/utils"
+import { asPercentage } from "@/lib/percentage"
 import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon } from "lucide-react"
 
 /** Task #30: mirrors the Ledger's `HistoricalMatchFallbackBadge` (see `History.tsx`) -- real
@@ -100,9 +101,11 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
               {prediction.calibratedProbability != null && (
                 <Badge variant="outline" className="font-mono">
                   {formatProbability(
-                    prediction.predictedWinnerId === prediction.player1Id
-                      ? prediction.calibratedProbability
-                      : 100 - prediction.calibratedProbability,
+                    asPercentage(
+                      prediction.predictedWinnerId === prediction.player1Id
+                        ? prediction.calibratedProbability
+                        : 100 - prediction.calibratedProbability,
+                    ),
                   )}
                 </Badge>
               )}
