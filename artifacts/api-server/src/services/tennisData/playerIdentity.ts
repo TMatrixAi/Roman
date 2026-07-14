@@ -271,11 +271,56 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   const historicalSummaries: PlayerSummary[] = Array.from(historicalById.values()).map((row) => ({
     id: row.id,
     name: row.name,
-    countryCode: null, // not stored on historical_matches -- honestly omitted, never guessed
+    countryCode: null, // placeholder -- enriched below for the top few results, honestly left null otherwise
     currentRank: null, // no live ranking known -- this player wasn't in the standings feed
     tour: row.tour,
     source: "historical-match",
   }));
 
-  return [...liveResults, ...historicalSummaries].slice(0, 25);
+  const results = [...liveResults, ...historicalSummaries].slice(0, 25);
+  await enrichCountryCodes(provider, results);
+  return results;
+}
+
+/**
+ * Historical-match rows never carry a country (not stored on `historical_matches`), but
+ * API-Tennis's `get_players` DOES have it for any known `player_key` -- it's just not fetched
+ * for every search result to avoid an N+1 live call per keystroke. Bounded, best-effort
+ * enrichment: only the top `MAX_COUNTRY_ENRICHMENTS` historical-match results (the ones actually
+ * visible without scrolling) are resolved, each cached by player_key so repeated searches/keystrokes
+ * for the same player never re-hit the provider. A lookup failure (unavailable provider, unknown
+ * key) leaves `countryCode` honestly `null` -- never guessed.
+ */
+const MAX_COUNTRY_ENRICHMENTS = 5;
+const COUNTRY_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // country codes don't change; cache generously
+const countryCodeCache = new Map<string, { countryCode: string | null; cachedAt: number }>();
+
+async function enrichCountryCodes(provider: TennisDataProvider, results: PlayerSummary[]): Promise<void> {
+  const candidates = results.filter((r) => r.source === "historical-match" && r.countryCode === null).slice(0, MAX_COUNTRY_ENRICHMENTS);
+  if (candidates.length === 0) return;
+
+  await Promise.all(
+    candidates.map(async (summary) => {
+      const cached = countryCodeCache.get(summary.id);
+      if (cached && Date.now() - cached.cachedAt < COUNTRY_CACHE_TTL_MS) {
+        summary.countryCode = cached.countryCode;
+        return;
+      }
+      try {
+        const profile = await provider.getPlayer(summary.id);
+        const countryCode = profile?.countryCode ?? null;
+        countryCodeCache.set(summary.id, { countryCode, cachedAt: Date.now() });
+        summary.countryCode = countryCode;
+      } catch (err) {
+        // Provider unavailable or unknown key -- leave countryCode null (already its default),
+        // never guess. Don't cache failures so a transient outage gets retried next search.
+        logger.warn({ err, playerId: summary.id }, "Failed to enrich historical-match search result with a live country code");
+      }
+    }),
+  );
+}
+
+/** Test-only escape hatch: clears the module-level country-code cache between test cases. */
+export function clearCountryCodeCacheForTests(): void {
+  countryCodeCache.clear();
 }

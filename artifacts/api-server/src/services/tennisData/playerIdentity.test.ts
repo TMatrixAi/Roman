@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { db, historicalMatchesTable } from "@workspace/db";
 import { inArray } from "drizzle-orm";
-import { resolvePlayerProfile, searchKnownPlayers } from "./playerIdentity";
+import { clearCountryCodeCacheForTests, resolvePlayerProfile, searchKnownPlayers } from "./playerIdentity";
 import type { PlayerProfile, PlayerSummary, TennisDataProvider } from "./types";
 
 const PROVIDER = "player-identity-test";
@@ -46,18 +46,19 @@ function makeMatch(player1Id: string, player1Name: string) {
 /** Fake provider standing in for API-Tennis: knows the player_key exists (get_players always
  * resolves any known key) but has no live standings row for a Challenger-only player, so tour is
  * null -- exactly the real, verified behavior confirmed live against API-Tennis. */
-function makeFakeProvider(): TennisDataProvider {
+function makeFakeProvider(opts: { countryCode?: string | null; getPlayerCallCount?: { count: number } } = {}): TennisDataProvider {
   return {
     name: "fake",
     getStatus: () => ({ provider: "fake", connected: true, lastSuccessfulCallAt: null, lastError: null }),
     searchPlayers: async (): Promise<PlayerSummary[]> => [],
     getPlayer: async (playerId: string): Promise<PlayerProfile | null> => {
+      if (opts.getPlayerCallCount) opts.getPlayerCallCount.count += 1;
       if (playerId === NEVER_SEEN_ID) return null; // provider genuinely has no record at all
       return {
         id: playerId,
         name: CHALLENGER_ONLY_NAME,
         fullName: null,
-        countryCode: null,
+        countryCode: opts.countryCode ?? null,
         currentRank: null,
         tour: null, // not in current live standings
         age: null,
@@ -104,5 +105,36 @@ test("player identity resolution across historical match records", async (t) => 
     for (const r of results) {
       assert.ok(!r.name.includes("/"), `expected no doubles-pair name, got "${r.name}"`);
     }
+  });
+
+  await t.test("searchKnownPlayers enriches a historical-match-only result with a real live country code", async () => {
+    clearCountryCodeCacheForTests();
+    const results = await searchKnownPlayers(makeFakeProvider({ countryCode: "ESP" }), "Zzqtest Challengerplayer");
+    const match = results.find((p) => p.id === CHALLENGER_ONLY_ID);
+    assert.ok(match);
+    assert.equal(match!.countryCode, "ESP");
+  });
+
+  await t.test("searchKnownPlayers caches the enriched country code instead of re-calling the provider", async () => {
+    clearCountryCodeCacheForTests();
+    const callCount = { count: 0 };
+    const provider = makeFakeProvider({ countryCode: "ESP", getPlayerCallCount: callCount });
+    await searchKnownPlayers(provider, "Zzqtest Challengerplayer");
+    const callsAfterFirstSearch = callCount.count;
+    assert.ok(callsAfterFirstSearch > 0, "expected the first search to call getPlayer to enrich the country code");
+    await searchKnownPlayers(provider, "Zzqtest Challengerplayer");
+    assert.equal(callCount.count, callsAfterFirstSearch, "expected the second search to reuse the cached country code, not call getPlayer again");
+  });
+
+  await t.test("searchKnownPlayers leaves countryCode null when the provider lookup fails, never guessing", async () => {
+    clearCountryCodeCacheForTests();
+    const provider = makeFakeProvider({ countryCode: "ESP" });
+    provider.getPlayer = async () => {
+      throw new Error("simulated provider outage");
+    };
+    const results = await searchKnownPlayers(provider, "Zzqtest Challengerplayer");
+    const match = results.find((p) => p.id === CHALLENGER_ONLY_ID);
+    assert.ok(match);
+    assert.equal(match!.countryCode, null);
   });
 });
