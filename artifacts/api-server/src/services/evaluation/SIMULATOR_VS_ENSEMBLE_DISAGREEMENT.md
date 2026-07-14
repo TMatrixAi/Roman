@@ -81,6 +81,33 @@ design choices; neither was fabricated or miscalibrated by accident.
 This means: before the simulator is ever allowed to vote, its narrow input scope needs to be an
 explicit part of that decision (e.g. should voting weight be reduced further, or scoped only to
 matches where Surface Elo/Serve & Return reliability is *not* dominated by other signals?) rather
-than assumed away. No change to the simulator's or ensemble's math was made as part of this
-investigation -- see `simulatorValidation.ts` for how adoption is currently (and will continue to
-be) gated purely on measured logLoss performance, independent of this scope difference.
+than assumed away.
+
+## Decision (Task #61, implemented 2026-07-14): per-match scope gating on top of the global validation gate
+
+`simulatorValidation.ts`'s aggregate logLoss gate is unchanged -- adoption (whether the simulator
+earns a blend weight *at all*) is still measured purely on average performance across every graded
+outcome, exactly as before. What changed is `runPredictionEngine` (`../predictionEngine/index.ts`):
+once a weight has been earned globally, it is no longer applied uniformly to every match. Instead,
+for each individual match:
+
+1. Take the simulator's own reliability (`simulation.inputReliability` -- already the minimum of
+   Surface Elo's and Serve & Return's reliability, so it's the honest ceiling on how much the
+   simulator can trust its own two inputs).
+2. Take the highest reliability among every signal the simulator structurally cannot see for this
+   match: Recent Form, Fatigue, Availability, Head-to-Head, Match Load Recovery, the Segment
+   Specialist (when applied), and the General Model (`dataQuality`).
+3. The gap between (2) and (1), when positive, is a genuine scope mismatch -- the simulator is
+   blind to a signal that is measurably more trustworthy here than what it's built from. The
+   globally-validated weight is scaled down linearly by that gap (never up), reaching zero once the
+   gap spans a full 0-100 reliability range.
+
+Concretely: both reproduced cases above (prediction 90 and prediction 244) had Surface Elo/Serve &
+Return reliability of 5 while Fatigue/Recent Form/the Specialist measured in the 65-100 range --
+a 60-95 point gap. Under this rule, the simulator's vote on matches shaped like these is scaled
+down sharply (often to zero), while matches where Surface Elo/Serve & Return are *not* dominated by
+other signals keep the simulator's full globally-validated weight. See the regression test in
+`../predictionEngine/index.test.ts` ("the simulator's per-match blend weight is scaled down...")
+for a reproduction of this exact mechanism, and `index.ts`'s `simulatorScopeGap`/
+`simulatorScopeScale` for the implementation. The existing `simulatorNote` also now says explicitly,
+per match, when this scoping reduced or zeroed the simulator's vote -- never silently.

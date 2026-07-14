@@ -360,8 +360,38 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // services/evaluation/simulatorValidation.ts. Until then it stays supplementary/display-only,
   // with an honest note explaining exactly why.
   const simulatorAdoption = input.simulatorAdoption ?? null;
-  const simulatorApplied = !!(simulatorAdoption?.adopted && typeof simulatorAdoption.weight === "number");
-  const simulatorWeight = simulatorApplied ? simulatorAdoption!.weight! : 0;
+  const simulatorAdoptedGlobally = !!(simulatorAdoption?.adopted && typeof simulatorAdoption.weight === "number");
+
+  // Task #61: the simulator's blend weight above is validated purely on AVERAGE logLoss across
+  // every graded match -- it says nothing about matches where its two visible signals (Surface
+  // Elo, Serve & Return) are much less reliable than the signals it structurally cannot see
+  // (Recent Form, Fatigue, Availability, Head-to-Head, Match Load Recovery, the Segment
+  // Specialist/General Model blend). See ../evaluation/SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md for
+  // two reproduced real cases where that scope mismatch alone swings the simulator's number up to
+  // 40 points away from -- even to the opposite side of -- the card's final probability. A
+  // simulator that is valid on average must not still get outsized influence on the specific
+  // matches where it is blind to whatever is actually deciding the ensemble's vote, so its
+  // per-match weight is scaled down (never up) by how far its own reliability trails the most
+  // reliable signal it can't see.
+  const excludedSignalReliabilities = featureModels
+    .filter((m) => m.modelName !== "Surface Elo" && m.modelName !== "Serve & Return")
+    .map((m) => m.reliability);
+  const specialistReliability = specialistApplied && segment
+    ? Math.min(100, Math.round((segment.validationSampleSize / segment.minValidationSamples) * 50))
+    : null;
+  if (specialistReliability !== null) excludedSignalReliabilities.push(specialistReliability);
+  excludedSignalReliabilities.push(dataQuality); // the General Model's own reliability -- also outside the simulator's scope
+  const maxExcludedSignalReliability = excludedSignalReliabilities.length > 0 ? Math.max(...excludedSignalReliabilities) : 0;
+  // Positive only when a signal the simulator can't see is measurably MORE reliable than the
+  // simulator's own two-signal reliability floor -- a genuine scope mismatch, not routine noise.
+  const simulatorScopeGap = Math.max(0, maxExcludedSignalReliability - simulation.inputReliability);
+  // Linear falloff over a 0-100 reliability-point gap: no gap (or the simulator's own signals are
+  // at least as reliable as everything it can't see) leaves the globally-validated weight
+  // untouched; a full 100-point gap zeros the simulator's vote out entirely for this match.
+  const simulatorScopeScale = Math.max(0, 1 - simulatorScopeGap / 100);
+
+  const simulatorWeight = simulatorAdoptedGlobally ? Math.round(simulatorAdoption!.weight! * simulatorScopeScale * 1000) / 1000 : 0;
+  const simulatorApplied = simulatorWeight > 0;
 
   const calibratedProbability = simulatorApplied
     ? Math.round((simulatorWeight * simulation.player1WinProbability + (1 - simulatorWeight) * preSimulatorProbability) * 10) / 10
@@ -416,8 +446,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const disagreementNote = buildDisagreementNote(governingDisagreement, input.player1.name, input.player2.name);
   const matchupCloseness = computeMatchupCloseness(calibratedProbability);
 
-  const simulatorNote = simulatorAdoption?.note ??
-    `The Monte Carlo simulator has not been validated against enough real graded outcomes yet (needs a minimum sample; see the evaluation dashboard) -- shown for transparency only and not yet voted into the final probability.`;
+  let simulatorNote: string;
+  if (!simulatorAdoption) {
+    simulatorNote = `The Monte Carlo simulator has not been validated against enough real graded outcomes yet (needs a minimum sample; see the evaluation dashboard) -- shown for transparency only and not yet voted into the final probability.`;
+  } else if (!simulatorAdoptedGlobally) {
+    simulatorNote = simulatorAdoption.note;
+  } else if (!simulatorApplied) {
+    simulatorNote = `${simulatorAdoption.note} For this specific match, though, its vote was scoped out entirely: its own reliability (${simulation.inputReliability}) is far below the reliability of a signal it structurally can't see (up to ${maxExcludedSignalReliability}), so it is blind to whatever is actually deciding this match's ensemble vote (see SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md).`;
+  } else if (simulatorScopeScale < 1) {
+    simulatorNote = `${simulatorAdoption.note} Its blend weight was reduced from ${Math.round(simulatorAdoption.weight! * 100)}% to ${Math.round(simulatorWeight * 100)}% for this specific match because a signal it can't see is considerably more reliable here (see SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md).`;
+  } else {
+    simulatorNote = simulatorAdoption.note;
+  }
 
   let segmentNote: string;
   if (!segment) {

@@ -106,6 +106,47 @@ test("the predicted winner's projected set score never implies they lose the mat
   assert.ok(winnerSets > loserSets, `predictedSetScore "${output.predictedSetScore}" must show the winner (listed first) ahead even when player 2 is the pick`);
 });
 
+// Regression test for Task #61 (see ../evaluation/SIMULATOR_VS_ENSEMBLE_DISAGREEMENT.md): a
+// simulator validated on AVERAGE logLoss must not still get outsized influence on a specific
+// match where its two visible signals (Surface Elo, Serve & Return) are much less reliable than a
+// signal it structurally cannot see (here, Recent Form). Both players have only a single match on
+// the upcoming surface (Hard) but a full recent-form window pooled across all surfaces, so Surface
+// Elo's reliability is thin while Recent Form's is high -- exactly the scope-mismatch profile
+// documented in the investigation doc.
+test("the simulator's per-match blend weight is scaled down when its own signals are far less reliable than a signal it can't see", () => {
+  const player1 = player("p1", "Player One");
+  const player2 = player("p2", "Player Two");
+  const thinHardPlusDeepClay = (prefix: string, winRatio: number) => [
+    match(`${prefix}-hard-opp`, `${prefix} Hard Opp`, true, "Hard", 5, 65),
+    ...Array.from({ length: 8 }, (_, i) => match(`${prefix}-clay-${i}`, `${prefix} Clay Opp ${i}`, i % 3 !== (winRatio > 0.5 ? 3 : 0), "Clay", 20 + i * 10, 55)),
+  ];
+
+  const input: PredictionEngineInput = {
+    player1,
+    player2,
+    player1Matches: thinHardPlusDeepClay("p1", 0.7),
+    player2Matches: thinHardPlusDeepClay("p2", 0.3),
+    headToHead: { player1Id: player1.id, player2Id: player2.id, meetings: [] },
+    surface: "Hard",
+    matchFormat: "BestOf3",
+    tournamentName: "Fixture Open",
+    weather: null,
+    segment: null,
+    // A simulator globally validated with a healthy 40% weight -- the scenario this test exists
+    // to guard against is this weight being applied uniformly regardless of per-match scope fit.
+    simulatorAdoption: { adopted: true, weight: 0.4, sampleSize: 60, minSampleSize: 30, note: "Validated on 60 real graded outcomes: simulator beats the ensemble on average." },
+    activeCalibration: null,
+  };
+
+  const output = runPredictionEngine(input);
+  const { surfaceElo, recentForm } = output.engine;
+  assert.ok(recentForm.reliability - surfaceElo.reliability >= 30, `fixture must actually reproduce a real reliability gap (surfaceElo=${surfaceElo.reliability}, recentForm=${recentForm.reliability})`);
+
+  const simulatorVote = output.engine.models.find((m) => m.modelName === "Monte Carlo Simulator");
+  const appliedWeight = simulatorVote?.weightUsed ?? 0;
+  assert.ok(appliedWeight < 0.4, `simulator's per-match weight (${appliedWeight}) must be scaled down below its globally-validated weight (0.4) when it's blind to a much more reliable signal (Recent Form, reliability=${recentForm.reliability}) vs. its own (${surfaceElo.reliability})`);
+});
+
 test("the Monte Carlo simulator's reliability figure is never shown as if it were a passed validation score while the simulator is still unvalidated/display-only", () => {
   const output = runPredictionEngine(baseInput());
   if (!output.engine.simulatorApplied) {
