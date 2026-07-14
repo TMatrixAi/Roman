@@ -24,12 +24,12 @@ args = "prediction-engine-invariants"
 name = "prediction-engine-invariants"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx --test $(find src/services/predictionEngine -name '*.test.ts')"
-
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx --test $(find src/services/predictionEngine -name '*.test.ts') && cd ../tennis-predictor && pnpm exec tsx --test src/lib/monteCarloHeadline.test.ts"
 
 [agent]
 stack = "PNPM_WORKSPACE"

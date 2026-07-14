@@ -57,6 +57,8 @@ async function main(): Promise<void> {
       modelConflictNote: has("modelConflictNote") ? engine.modelConflictNote : null,
       upsetRiskNote: has("upsetRiskBreakdown") ? (engine.upsetRiskBreakdown?.note ?? "") : "",
       predictedSetScore: row.predictedSetScore,
+      dataQuality: row.dataQuality,
+      dataQualityLabel: row.dataQualityLabel as never,
     });
     if (violations.length > 0) {
       violationRows++;

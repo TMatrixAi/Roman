@@ -1,5 +1,7 @@
 import type { ModelAgreement } from "./disagreement";
 import type { UpsetRisk } from "./upsetRisk";
+import type { DataQualityLabel } from "./dataQuality";
+import { computeRecommendation } from "./recommendation";
 
 /**
  * Defense-in-depth guard applied as the LAST step inside `runPredictionEngine`, before
@@ -45,6 +47,10 @@ export interface FinalConsistencyInput {
   upsetRiskNote: string;
   /** "W-L" set-count string for the predicted winner (e.g. "2-0"), as shown to users. */
   predictedSetScore: string;
+  /** The same 0-100 Data Quality score `computeRecommendation` was actually given when `recommendation` was produced. */
+  dataQuality: number;
+  /** The same Data Quality label `computeRecommendation` was actually given when `recommendation` was produced. */
+  dataQualityLabel: DataQualityLabel;
 }
 
 export interface FinalConsistencyResult {
@@ -161,6 +167,23 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
     if (winnerSets <= loserSets) {
       violations.push(`Rule 9 (set score vs. winner): predictedSetScore "${input.predictedSetScore}" does not show the predicted winner (listed first) taking more sets than the opponent.`);
     }
+  }
+
+  // Rule 10: the stored `recommendation` must always equal what `computeRecommendation` actually
+  // produces for the same governing inputs (calibratedProbability, dataQuality/label, upsetRisk,
+  // modelAgreement) -- there is exactly one recommendation-computing function, and this reading
+  // must never be allowed to drift from it. This guards two different failure modes at once:
+  //  - a bug in `recommendation.ts` itself (e.g. the margin 8-10 catch-all gap) shows up
+  //    immediately on every NEW prediction, not just ones a human happens to eyeball;
+  //  - a STALE recommendation -- a row whose `recommendation` was computed and stored under an
+  //    older version of `computeRecommendation`'s logic and never recomputed -- is flagged the
+  //    moment `checkFinalConsistency` is re-run against it (e.g. via the live-ledger batch scan),
+  //    even though nothing about that specific bug's root cause needs to be known in advance.
+  const expectedRecommendation = computeRecommendation(input.calibratedProbability, input.dataQuality, input.dataQualityLabel, input.upsetRisk, input.modelAgreement);
+  if (input.recommendation !== expectedRecommendation) {
+    violations.push(
+      `Rule 10 (recommendation freshness): stored recommendation "${input.recommendation}" does not match what computeRecommendation currently produces ("${expectedRecommendation}") for calibratedProbability=${input.calibratedProbability}, dataQuality=${input.dataQuality}, dataQualityLabel=${input.dataQualityLabel}, upsetRisk=${input.upsetRisk}, modelAgreement=${input.modelAgreement} -- this recommendation is stale and was not recomputed under the current logic.`,
+    );
   }
 
   return { violations };

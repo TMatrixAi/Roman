@@ -23,12 +23,33 @@ function baseInput(overrides: Partial<FinalConsistencyInput> = {}): FinalConsist
     modelConflictNote: null,
     upsetRiskNote: "LOW: the favorite's edge is comfortable (15pts from a coin flip) and no other risk factor is present.",
     predictedSetScore: "2-0",
+    dataQuality: 70,
+    dataQualityLabel: "Strong",
     ...overrides,
   };
 }
 
 test("a fully consistent prediction has zero violations", () => {
   assert.deepEqual(checkFinalConsistency(baseInput()).violations, []);
+});
+
+test("rule 10: a stale stored recommendation that no longer matches computeRecommendation's current output is caught", () => {
+  // Same shape as the real bug class: a row's `recommendation` was computed and stored under
+  // older recommendation.ts logic (here simulated as "HIGH_RISK") and never recomputed, even
+  // though calibratedProbability=58 (margin 8), dataQuality=70/"Strong", upsetRisk=LOW, and
+  // modelAgreement=Strong now unambiguously compute to MODERATE_LEAN under current logic.
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, dataQuality: 70, dataQualityLabel: "Strong", upsetRisk: "LOW", modelAgreement: "Strong", recommendation: "HIGH_RISK" }),
+  );
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /Rule 10/);
+});
+
+test("rule 10: a recommendation that matches computeRecommendation's current output for the same inputs is not flagged", () => {
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 58, predictedWinnerProbability: 58, dataQuality: 70, dataQualityLabel: "Strong", upsetRisk: "LOW", modelAgreement: "Strong", recommendation: "MODERATE_LEAN" }),
+  );
+  assert.deepEqual(violations, []);
 });
 
 test("rule 1: predicted winner disagreeing with the probability's own direction is caught", () => {
@@ -92,7 +113,13 @@ test("rule 6: a Strong Recommendation paired with Mixed/High Model Disagreement 
 });
 
 test("rule 6: a Strong Recommendation with LOW upset risk and Strong agreement is clean", () => {
-  const { violations } = checkFinalConsistency(baseInput({ recommendation: "STRONG_RECOMMENDATION", upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "Strong" }));
+  // margin=25 (calibratedProbability=75) so this is a REAL STRONG_RECOMMENDATION under
+  // computeRecommendation's own logic (margin>=22, dataQuality>=55, LOW risk, Strong agreement)
+  // -- otherwise Rule 10 (added alongside this task) would itself flag the mismatch and this
+  // "clean" case would no longer be clean.
+  const { violations } = checkFinalConsistency(
+    baseInput({ calibratedProbability: 75, predictedWinnerProbability: 75, recommendation: "STRONG_RECOMMENDATION", upsetRisk: "LOW", upsetRiskBreakdownTier: "LOW", modelAgreement: "Strong" }),
+  );
   assert.deepEqual(violations, []);
 });
 

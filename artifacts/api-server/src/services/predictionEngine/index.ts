@@ -570,6 +570,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     modelConflictNote,
     upsetRiskNote: upsetRiskBreakdown.note,
     predictedSetScore,
+    dataQuality,
+    dataQualityLabel,
   });
   const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
   const eliteTierReason =

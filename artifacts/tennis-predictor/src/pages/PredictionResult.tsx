@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
+import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
@@ -293,23 +294,18 @@ export default function PredictionResultPage() {
 
       {/* PHASE 7: MONTE CARLO MATCH SIMULATION */}
       {engine.simulation && (() => {
-        // The simulator only stores player1WinProbability/rangeLow/rangeHigh (player1-relative).
-        // The headline slot must always show the PREDICTED WINNER's number, regardless of
-        // whether that player happens to be stored as player1 or player2 -- mirror when it's
-        // player2. At an exact 50/50 toss-up, predictedWinnerId is deterministically player1's
-        // id (see index.ts: `favorsPlayer1 = calibratedProbability >= 50`), so this still
-        // resolves to a single, well-defined player with no fallback/default needed.
-        const winnerIsPlayer1 = prediction.predictedWinnerId === prediction.player1Id;
-        const headlineWinnerName = winnerIsPlayer1 ? prediction.player1Name : prediction.player2Name;
-        const headlineWinProbability = winnerIsPlayer1
-          ? engine.simulation.player1WinProbability
-          : 100 - engine.simulation.player1WinProbability;
-        const headlineRangeLow = winnerIsPlayer1
-          ? engine.simulation.rangeLow
-          : 100 - engine.simulation.rangeHigh;
-        const headlineRangeHigh = winnerIsPlayer1
-          ? engine.simulation.rangeHigh
-          : 100 - engine.simulation.rangeLow;
+        // See lib/monteCarloHeadline.ts for the full rationale and regression-guard test: the
+        // simulator only stores player1-relative figures, so the headline must be re-derived
+        // for whichever player is actually the predicted winner.
+        const { headlineWinnerName, headlineWinProbability, headlineRangeLow, headlineRangeHigh } = deriveMonteCarloHeadline({
+          predictedWinnerId: prediction.predictedWinnerId,
+          player1Id: prediction.player1Id,
+          player1Name: prediction.player1Name,
+          player2Name: prediction.player2Name,
+          player1WinProbability: engine.simulation.player1WinProbability,
+          rangeLow: engine.simulation.rangeLow,
+          rangeHigh: engine.simulation.rangeHigh,
+        });
 
         return (
         <div>

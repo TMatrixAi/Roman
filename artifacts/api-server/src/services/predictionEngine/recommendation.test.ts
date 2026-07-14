@@ -72,3 +72,63 @@ test("margin 8-10 with EXTREME upset risk is still HIGH_RISK via the earlier EXT
   const result = computeRecommendation(58.7, 70, "Good", "EXTREME", "Strong");
   assert.equal(result, "HIGH_RISK");
 });
+
+// Regression guard for the margin 8-10 catch-all gap class of bug: sweep every margin from 0 to
+// 50 (in 0.1 steps) across every upsetRisk x modelAgreement combination, holding dataQuality/label
+// fixed at a value that can never trigger DO_NOT_RECOMMEND, and assert two structural properties
+// that must ALWAYS hold no matter how the branch order or thresholds inside computeRecommendation
+// change in the future:
+//  (a) every single margin value produces a real Recommendation -- there is no gap where some
+//      unanticipated combination of inputs falls through every rule unhandled (impossible in JS
+//      since the function always returns something, but this documents and locks the exhaustive
+//      combination space actually tested);
+//  (b) for a FIXED upsetRisk/modelAgreement combination, the "confidence" of the recommendation
+//      must never fall discontinuously as margin increases -- i.e. once a combination qualifies
+//      for a stronger-than-HIGH_RISK label at some margin, a larger margin under the same
+//      upsetRisk/modelAgreement must never regress to a weaker label. This is exactly the shape
+//      of bug that shipped: margin 10+ was MODERATE_LEAN, but margin 8-10 (a SMALLER, not larger,
+//      margin) fell through to HIGH_RISK -- so this specific gap would already have failed
+//      property (b) as originally written, before the fix. Kept post-fix as a standing invariant.
+const RECOMMENDATION_RANK: Record<string, number> = {
+  DO_NOT_RECOMMEND: 0,
+  NO_STRONG_SIGNAL: 0, // NO_STRONG_SIGNAL and DO_NOT_RECOMMEND are both "nothing usable" -- not ranked against each other, only against the three real leans below.
+  HIGH_RISK: 1,
+  MODERATE_LEAN: 2,
+  STRONG_RECOMMENDATION: 3,
+};
+const UPSET_RISKS = ["LOW", "MODERATE", "HIGH", "EXTREME"] as const;
+const MODEL_AGREEMENTS = ["Strong", "Moderate", "Mixed", "HighDisagreement"] as const;
+
+test("no margin ever falls through to an unhandled/undefined recommendation, across the full upsetRisk x modelAgreement grid", () => {
+  for (const upsetRisk of UPSET_RISKS) {
+    for (const modelAgreement of MODEL_AGREEMENTS) {
+      for (let margin = 0; margin <= 50; margin += 0.1) {
+        const calibratedProbability = 50 + margin;
+        const result = computeRecommendation(calibratedProbability, 70, "Strong", upsetRisk, modelAgreement);
+        assert.ok(result in RECOMMENDATION_RANK, `computeRecommendation(${calibratedProbability}, 70, "Strong", "${upsetRisk}", "${modelAgreement}") returned an unrecognized value: ${result}`);
+      }
+    }
+  }
+});
+
+test("recommendation strength never regresses to a weaker lean as margin increases, for any fixed upsetRisk/modelAgreement (guards catch-all gaps like the margin 8-10 bug)", () => {
+  for (const upsetRisk of UPSET_RISKS) {
+    for (const modelAgreement of MODEL_AGREEMENTS) {
+      let previousRank = -1;
+      let previousMargin = -1;
+      for (let margin = 0; margin <= 50; margin += 0.1) {
+        const calibratedProbability = 50 + margin;
+        const result = computeRecommendation(calibratedProbability, 70, "Strong", upsetRisk, modelAgreement);
+        const rank = RECOMMENDATION_RANK[result];
+        if (previousRank !== -1) {
+          assert.ok(
+            rank >= previousRank,
+            `upsetRisk=${upsetRisk}, modelAgreement=${modelAgreement}: margin ${margin.toFixed(1)} produced "${result}" (rank ${rank}), which is WEAKER than margin ${previousMargin.toFixed(1)}'s rank ${previousRank} -- a larger margin must never look like a smaller signal.`,
+          );
+        }
+        previousRank = rank;
+        previousMargin = margin;
+      }
+    }
+  }
+});
