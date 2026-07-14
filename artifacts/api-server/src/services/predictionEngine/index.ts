@@ -582,6 +582,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // High Disagreement and upsetRisk not to be High/Extreme.
   const { isEliteTier: eliteTierBeforeGuard, reason: eliteTierReasonBeforeGuard } = computeEliteTier({
     dataQuality,
+    calibratedProbability,
     surfaceEloFavorsPlayer1: voteFavorsPlayer1(featureModels, "Surface Elo"),
     serveReturnFavorsPlayer1: voteFavorsPlayer1(featureModels, "Serve & Return"),
     recentFormFavorsPlayer1: voteFavorsPlayer1(featureModels, "Recent Form"),

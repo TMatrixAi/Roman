@@ -50,9 +50,10 @@ function extractEngineBreakdown(snapshot: unknown): EngineBreakdown | null {
   return engine;
 }
 
-function toEliteTierInputs(engine: EngineBreakdown, dataQuality: number): EliteTierInputs {
+function toEliteTierInputs(engine: EngineBreakdown, dataQuality: number, calibratedProbability: number): EliteTierInputs {
   return {
     dataQuality,
+    calibratedProbability,
     surfaceEloFavorsPlayer1: voteFavorsPlayer1(engine.models, "Surface Elo"),
     serveReturnFavorsPlayer1: voteFavorsPlayer1(engine.models, "Serve & Return"),
     recentFormFavorsPlayer1: voteFavorsPlayer1(engine.models, "Recent Form"),
@@ -74,8 +75,9 @@ function toEliteTierInputs(engine: EngineBreakdown, dataQuality: number): EliteT
 export function classifyEliteTierRow(row: EvaluationPredictionRow): { isElite: boolean; isNearElite: boolean } {
   const engine = extractEngineBreakdown(row.featureSnapshot);
   if (!engine) return { isElite: false, isNearElite: false };
+  if (row.calibratedProbability === null) return { isElite: false, isNearElite: false };
   const dataQuality = (row.featureSnapshot as LiveFeatureSnapshot).dataQuality as number;
-  const inputs = toEliteTierInputs(engine, dataQuality);
+  const inputs = toEliteTierInputs(engine, dataQuality, row.calibratedProbability);
   const { isEliteTier } = computeEliteTier(inputs);
   if (isEliteTier) return { isElite: true, isNearElite: false };
   const { isNearEliteTier } = computeNearEliteTier(inputs);

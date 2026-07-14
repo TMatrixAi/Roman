@@ -4,8 +4,25 @@ import type { UpsetRisk } from "./upsetRisk";
 
 const ELITE_DATA_QUALITY_THRESHOLD = 65; // matches the engine's own "Strong" data-quality label floor
 
+/**
+ * Task #66 ("Fix overconfident predictions in the near-Elite group"): the original three-signal
+ * "all agree" gate checks DIRECTION only (`voteFavorsPlayer1` is true the instant a signal crosses
+ * 50%, whether by 0.1 point or 40) -- so it lets in matches where Surface Elo/Serve & Return/
+ * Recent Form all lean the same way by a hair, which "agree" on paper but are collectively barely
+ * more informative than a coin flip. A real-data investigation of the near-Elite backtest cohort
+ * (see NEAR_ELITE_ECE_INVESTIGATION.md) found this dominated the group by volume (55% of it sat in
+ * the 50-55% confidence band) and was the main driver of its calibration error. Requiring the
+ * FINAL calibrated pick to clear a minimum margin from a coin flip -- not just each signal's
+ * direction -- filters out that noise-dominated slice; 5 points was the smallest threshold that
+ * produced a clean, non-marginal ECE improvement on the real backtest data while keeping the
+ * sample far above `ELITE_TIER_BACKTEST_MIN_SAMPLE_SIZE`.
+ */
+const ELITE_MIN_CALIBRATED_MARGIN = 5;
+
 export interface EliteTierInputs {
   dataQuality: number;
+  /** Final calibrated probability for player1 (0-100) -- used only for the minimum-margin gate below. */
+  calibratedProbability: number;
   /** Sign (favors player1 when true) of each of the three primary signals. */
   surfaceEloFavorsPlayer1: boolean;
   serveReturnFavorsPlayer1: boolean;
@@ -51,6 +68,10 @@ export interface NearEliteTierResult {
  *  - High data quality (>=65, the engine's own "Strong" floor).
  *  - The three primary signals (Surface Elo, Serve & Return, Recent Form) all agreeing on the
  *    same player -- not just a weighted average that happens to lean one way.
+ *  - The final calibrated probability clearing a minimum margin from a coin flip
+ *    (`ELITE_MIN_CALIBRATED_MARGIN`) -- signal agreement on direction alone doesn't require any of
+ *    the signals to have a real edge, so a match where three signals each barely lean the same way
+ *    should not earn the same badge as one with genuine separation (see that constant's doc).
  *  - Real historical accuracy for this exact tour/surface segment supporting the confidence (a
  *    segment specialist that has actually cleared its data-sufficiency threshold and voted).
  *  - Calibration passing: the probability comes from the real fitted isotonic calibration (learned
@@ -65,6 +86,13 @@ export function computeEliteTier(input: EliteTierInputs): EliteTierResult {
   const allAgree = signals.every((s) => s === signals[0]);
   if (!allAgree) reasons.push("Surface Elo, Serve & Return, and Recent Form don't all agree on the same player");
 
+  const calibratedMargin = Math.abs(input.calibratedProbability - 50);
+  if (calibratedMargin < ELITE_MIN_CALIBRATED_MARGIN) {
+    reasons.push(
+      `the final calibrated probability (${input.calibratedProbability.toFixed(1)}%) is only ${calibratedMargin.toFixed(1)} points from a coin flip -- the three signals agreeing on DIRECTION isn't enough on its own, the pick needs a genuine margin (>=${ELITE_MIN_CALIBRATED_MARGIN})`,
+    );
+  }
+
   if (!input.specialistApplied) reasons.push(`no validated segment specialist${input.segmentLabel ? ` for ${input.segmentLabel}` : ""} is backing this prediction with real historical accuracy`);
 
   if (input.modelConflict) reasons.push("calibration/specialist blending flipped the pick away from the raw evidence (model conflict) -- calibration did not pass");
@@ -73,7 +101,10 @@ export function computeEliteTier(input: EliteTierInputs): EliteTierResult {
   if (input.upsetRisk === "HIGH" || input.upsetRisk === "EXTREME") reasons.push(`upset risk is ${input.upsetRisk} -- the risk label is not suppressed, only the Elite badge is withheld`);
 
   if (reasons.length === 0) {
-    return { isEliteTier: true, reason: "Elite: high data quality, Surface Elo/Serve & Return/Recent Form all agree, a validated segment specialist backs the call, and the calibrated pick agrees with the raw evidence (no model conflict)." };
+    return {
+      isEliteTier: true,
+      reason: `Elite: high data quality, Surface Elo/Serve & Return/Recent Form all agree with a genuine margin (${calibratedMargin.toFixed(1)} points from a coin flip), a validated segment specialist backs the call, and the calibrated pick agrees with the raw evidence (no model conflict).`,
+    };
   }
   return { isEliteTier: false, reason: `Not elite tier -- ${reasons.join("; ")}.` };
 }

@@ -40,15 +40,31 @@ function toRawPoint(row: EvaluationPredictionRow): CalibrationPoint | null {
 export const ECE_BUCKET_EDGES = [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
 
 /**
+ * A bucket with fewer than this many points has an observed accuracy that's either 0% or (close
+ * to) 100% far more often than a real underlying rate would produce -- e.g. a single point is
+ * ALWAYS 0% or 100% "accurate", guaranteeing a large confidence/accuracy gap regardless of true
+ * calibration. Small evaluation segments (a backtest cohort of a few hundred rows spread across
+ * ECE_BUCKET_EDGES' ten buckets, rather than the thousands the full dashboard segments have)
+ * concentrate most of their points in the low-confidence buckets and leave the high-confidence
+ * tail with only 1-2 points each -- those near-empty buckets otherwise swing the sample-size-
+ * weighted average by chance alone. Task #66's near-Elite backtest investigation found exactly
+ * this: a 70-75% bucket with n=1 and a 75-80% bucket with n=2 contributed noise indistinguishable
+ * from a real calibration problem. Buckets below this floor are excluded from ECE entirely (both
+ * numerator and denominator) rather than force-included at full weight or silently zero-weighted.
+ */
+export const MIN_ECE_BUCKET_SAMPLE = 5;
+
+/**
  * Expected Calibration Error: the sample-size-weighted average gap between confidence (distance
  * from a coin flip toward the predicted winner) and observed accuracy, across `ECE_BUCKET_EDGES`.
- * 0 = perfectly calibrated. Returns null when there are no points to bucket.
+ * Buckets with fewer than `MIN_ECE_BUCKET_SAMPLE` points are excluded (see its doc comment) so a
+ * handful of sparse high-confidence outcomes can't dominate the metric by chance. 0 = perfectly
+ * calibrated. Returns null when there are no buckets left with enough points to score.
  */
 export function computeECE(points: CalibrationPoint[]): number | null {
   if (points.length === 0) return null;
   const edges = ECE_BUCKET_EDGES.map((e) => e / 100);
-  const total = points.length;
-  let ece = 0;
+  const buckets: CalibrationPoint[][] = [];
   for (let i = 0; i < edges.length - 1; i++) {
     const min = edges[i];
     const max = edges[i + 1];
@@ -56,7 +72,13 @@ export function computeECE(points: CalibrationPoint[]): number | null {
       const confidence = Math.max(p.rawProbability, 1 - p.rawProbability);
       return confidence >= min && (max === 1 ? confidence <= 1 : confidence < max);
     });
-    if (inBucket.length === 0) continue;
+    if (inBucket.length >= MIN_ECE_BUCKET_SAMPLE) buckets.push(inBucket);
+  }
+  const total = buckets.reduce((sum, b) => sum + b.length, 0);
+  if (total === 0) return null;
+
+  let ece = 0;
+  for (const inBucket of buckets) {
     const avgConfidence = inBucket.reduce((sum, p) => sum + Math.max(p.rawProbability, 1 - p.rawProbability), 0) / inBucket.length;
     const accuracy = inBucket.filter((p) => (p.rawProbability >= 0.5 ? 1 : 0) === p.outcome).length / inBucket.length;
     ece += (inBucket.length / total) * Math.abs(avgConfidence - accuracy);
