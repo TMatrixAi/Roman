@@ -14,6 +14,16 @@
 -- once the owning evaluation_runs row exists, right after insert). Every other
 -- column -- including who won and whether the result counts -- is frozen.
 --
+-- Task #150: `model_agreement`/`upset_risk_tier` (denormalized copies of engine
+-- output used for tier-level accuracy queries) and the market-odds columns
+-- (`odds_provider`, `odds_player1_decimal`, `odds_player2_decimal`,
+-- `odds_fetched_at`, `implied_probability`, `market_edge` -- all captured once,
+-- at lock time, per their own column docs in schema/evaluation.ts) were added
+-- after this trigger was first written and were never folded into its frozen set,
+-- leaving a graded row's risk label and market context silently editable after
+-- settlement. They belong in the same "settled means frozen" guarantee as the
+-- original outcome columns below.
+--
 -- Idempotent (CREATE OR REPLACE / DROP + CREATE) so it can be re-applied safely on
 -- every push.
 CREATE OR REPLACE FUNCTION evaluation_predictions_prevent_settled_update()
@@ -32,7 +42,15 @@ BEGIN
     NEW.player1_id IS DISTINCT FROM OLD.player1_id OR
     NEW.player2_id IS DISTINCT FROM OLD.player2_id OR
     NEW.scheduled_start_at IS DISTINCT FROM OLD.scheduled_start_at OR
-    NEW.cutoff_at IS DISTINCT FROM OLD.cutoff_at
+    NEW.cutoff_at IS DISTINCT FROM OLD.cutoff_at OR
+    NEW.model_agreement IS DISTINCT FROM OLD.model_agreement OR
+    NEW.upset_risk_tier IS DISTINCT FROM OLD.upset_risk_tier OR
+    NEW.odds_provider IS DISTINCT FROM OLD.odds_provider OR
+    NEW.odds_player1_decimal IS DISTINCT FROM OLD.odds_player1_decimal OR
+    NEW.odds_player2_decimal IS DISTINCT FROM OLD.odds_player2_decimal OR
+    NEW.odds_fetched_at IS DISTINCT FROM OLD.odds_fetched_at OR
+    NEW.implied_probability IS DISTINCT FROM OLD.implied_probability OR
+    NEW.market_edge IS DISTINCT FROM OLD.market_edge
   ) THEN
     RAISE EXCEPTION
       'evaluation_predictions row % is already settled (status=%) and its outcome cannot be modified',

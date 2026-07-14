@@ -77,7 +77,7 @@ async function cleanup(ids: number[]) {
   if (ids.length > 0) await db.delete(predictionsTable).where(inArray(predictionsTable.id, ids));
 }
 
-test("saveOrUpdatePrediction: submitting the exact same match+inputs twice updates the existing row instead of inserting a duplicate", async () => {
+test("saveOrUpdatePrediction: submitting the exact same match+inputs twice reuses the existing row and never rewrites it, even before resolution", async () => {
   const values = baseValues();
   const first = await saveOrUpdatePrediction(values);
   const ids = [first.id];
@@ -86,12 +86,17 @@ test("saveOrUpdatePrediction: submitting the exact same match+inputs twice updat
       ...values,
       calibratedProbability: 61,
       predictedWinnerProbability: 61,
+      recommendation: "STRONG_RECOMMENDATION",
     } satisfies InsertPrediction);
     assert.equal(second.id, first.id, "an identical match+inputs repeat must reuse the same row id, not create a new one");
 
     const rows = await db.select().from(predictionsTable).where(inArray(predictionsTable.id, [first.id]));
     assert.equal(rows.length, 1, "there must be exactly one stored row for this match+inputs, not two");
-    assert.equal(rows[0]!.calibratedProbability, 61, "the reused row must reflect the latest re-prediction's values");
+    // Task #150: identical match+inputs means the original stored prediction always wins, even
+    // while the match is still unresolved -- a later resubmission (e.g. after an engine logic
+    // change with no change to the actual inputs) must never silently overwrite it.
+    assert.equal(rows[0]!.calibratedProbability, 55, "an unresolved row's stored prediction must not be rewritten by an identical-input resubmission");
+    assert.equal(rows[0]!.recommendation, "MODERATE_LEAN", "recommendation must stay the originally stored value");
   } finally {
     await cleanup(ids);
   }
