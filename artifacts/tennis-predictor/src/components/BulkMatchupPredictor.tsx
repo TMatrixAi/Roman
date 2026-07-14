@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useLocation } from "wouter"
 import {
   recognizeMatchupScreenshot,
@@ -11,9 +11,70 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { RecognizedChip } from "@/components/ScreenshotMatchupUpload"
-import { Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity } from "lucide-react"
+import { Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2 } from "lucide-react"
 
 const MAX_FILES = 20
+
+// Task #99: everything a BatchItem holds is plain JSON-serializable data (no File/Blob
+// references -- files are read to a base64 string and immediately discarded from state), so the
+// whole in-progress batch can be mirrored into sessionStorage as-is and offered back on reload.
+const STORAGE_KEY = "bulkMatchupPredictor.batch.v1"
+
+function readStoredBatch(): BatchItem[] | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.length === 0) return null
+    if (!parsed.every((it) => it && typeof it === "object" && typeof it.key === "string" && typeof it.fileName === "string")) {
+      return null
+    }
+    return parsed as BatchItem[]
+  } catch {
+    return null
+  }
+}
+
+function writeStoredBatch(items: BatchItem[]) {
+  try {
+    if (items.length === 0) {
+      sessionStorage.removeItem(STORAGE_KEY)
+    } else {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+    }
+  } catch {
+    // Best-effort only -- if sessionStorage is unavailable (private browsing quirks, quota),
+    // the batch simply won't survive a refresh, but nothing about the current run breaks.
+  }
+}
+
+function clearStoredBatch() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+// A refresh mid-run can catch an item still "resolving" (its screenshot file was never held in
+// state, so it can't be re-read) or a prediction still "pending" (we don't know if the request
+// that was in flight actually landed). Both get downgraded to a safe, re-runnable state instead
+// of silently pretending to still be in progress forever.
+function sanitizeResumedItems(items: BatchItem[]): BatchItem[] {
+  return items.map((it) => {
+    if (it.status === "resolving") {
+      return {
+        ...it,
+        status: "read-error" as ItemStatus,
+        errorMessage: "This screenshot's data was lost when the page refreshed. Re-upload it to include it in the batch.",
+      }
+    }
+    if (it.predictStatus === "pending") {
+      return { ...it, predictStatus: "idle" as PredictStatus }
+    }
+    return it
+  })
+}
 
 function fileToBase64DataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -48,6 +109,13 @@ function isReady(item: BatchItem): boolean {
   return item.status === "resolved"
 }
 
+// A resumed batch can already have items sitting at predictStatus "success" (predicted before an
+// accidental refresh, with a real predictionId already created) -- those must never be
+// re-submitted, or resuming mid-run would duplicate predictions for work that's already done.
+function needsPredicting(item: BatchItem): boolean {
+  return isReady(item) && item.predictStatus !== "success"
+}
+
 /**
  * Task #97: lets a user drop up to 20 matchup screenshots at once, resolves each one
  * independently through the same recognition/resolution call the single-screenshot flow uses
@@ -63,14 +131,53 @@ export function BulkMatchupPredictor() {
   const [selectionWarning, setSelectionWarning] = useState<string | null>(null)
   const [isPredicting, setIsPredicting] = useState(false)
   const [batchError, setBatchError] = useState<string | null>(null)
+  // Loaded from sessionStorage on mount but held separately from `items` until the user chooses
+  // to resume or discard it -- so an accidental refresh never silently re-shows stale state, it
+  // always asks first.
+  const [resumableBatch, setResumableBatch] = useState<BatchItem[] | null>(null)
+
+  useEffect(() => {
+    setResumableBatch(readStoredBatch())
+  }, [])
+
+  // Mirror the live batch into sessionStorage as it changes, so a refresh or accidental
+  // navigation mid-run has something to offer back on return. Deliberately only fires once this
+  // run actually has items -- `items` starts empty on every mount (including right after a
+  // refresh, before the user has chosen Resume/Discard), so writing unconditionally here would
+  // wipe out the very batch we just loaded into `resumableBatch` before the user ever saw it.
+  // Storage is only ever cleared by an explicit action: discard, starting a new selection, or
+  // successfully navigating to results.
+  useEffect(() => {
+    if (items.length > 0) {
+      writeStoredBatch(items)
+    }
+  }, [items])
 
   const resolvedCount = items.filter(isReady).length
+  const pendingPredictCount = items.filter(needsPredicting).length
+  const alreadyPredictedCount = resolvedCount - pendingPredictCount
   const hasItems = items.length > 0
   const anyResolving = items.some((i) => i.status === "resolving")
+
+  const handleResume = () => {
+    if (!resumableBatch) return
+    setBatchError(null)
+    setSelectionWarning(null)
+    setItems(sanitizeResumedItems(resumableBatch))
+    setResumableBatch(null)
+  }
+
+  const handleDiscardResumable = () => {
+    clearStoredBatch()
+    setResumableBatch(null)
+  }
 
   const handleFiles = async (files: File[]) => {
     setBatchError(null)
     setSelectionWarning(null)
+    // Starting a fresh selection supersedes any not-yet-resumed batch from a previous session.
+    clearStoredBatch()
+    setResumableBatch(null)
 
     let toProcess = files
     if (toProcess.length > MAX_FILES) {
@@ -137,14 +244,14 @@ export function BulkMatchupPredictor() {
     setBatchError(null)
     setIsPredicting(true)
 
-    const readyKeys = items.filter(isReady).map((i) => i.key)
+    const readyKeys = items.filter(needsPredicting).map((i) => i.key)
     setItems((prev) => prev.map((it) => (readyKeys.includes(it.key) ? { ...it, predictStatus: "pending" } : it)))
 
     // Run one at a time -- these hit the same real prediction engine as the single-match flow,
     // and keeping it sequential keeps provider load/rate limits predictable for a batch of up to
     // 20, while still letting one failure not block the rest.
     for (const item of items) {
-      if (!isReady(item) || !item.result?.player1.player || !item.result?.player2.player) continue
+      if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
       try {
         const prediction = await createPrediction({
           player1Id: item.result.player1.player.id,
@@ -176,6 +283,9 @@ export function BulkMatchupPredictor() {
     setItems((prev) => {
       const createdIds = prev.filter((it) => it.predictStatus === "success" && it.predictionId != null).map((it) => it.predictionId as number)
       if (createdIds.length > 0) {
+        // The batch's job is done -- nothing left to resume into, so drop the persisted copy
+        // rather than resurfacing a finished batch after the next refresh.
+        clearStoredBatch()
         setLocation(`/predictions/${createdIds[0]}?batch=${createdIds.join(",")}`)
       } else {
         setBatchError("None of the matchups in this batch could be predicted. Check the errors below and try again.")
@@ -231,6 +341,26 @@ export function BulkMatchupPredictor() {
             )}
           </Button>
         </div>
+
+        {resumableBatch && !hasItems && (
+          <div className="mt-4 p-3 border border-primary/30 bg-primary/5 text-sm rounded-md font-mono flex items-start gap-3 flex-wrap">
+            <History className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
+            <div className="flex-1 min-w-[220px]">
+              <p>
+                Found an unfinished batch from before the page refreshed --{" "}
+                {resumableBatch.length} screenshot{resumableBatch.length === 1 ? "" : "s"}, {resumableBatch.filter(isReady).length} resolved.
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="accent" className="font-mono" onClick={handleResume}>
+                RESUME BATCH
+              </Button>
+              <Button size="sm" variant="outline" className="font-mono" onClick={handleDiscardResumable}>
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> DISCARD
+              </Button>
+            </div>
+          </div>
+        )}
 
         {selectionWarning && (
           <div className="mt-4 p-3 border border-warning/30 bg-warning/10 text-sm rounded-md font-mono flex items-start gap-2">
@@ -297,11 +427,21 @@ export function BulkMatchupPredictor() {
               onClick={handlePredictClick}
             >
               {isPredicting ? (
-                <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {resolvedCount} PREDICTION{resolvedCount === 1 ? "" : "S"}...</>
+                <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
+              ) : pendingPredictCount === 0 ? (
+                // Everything ready in this batch was already predicted (e.g. resumed after a
+                // refresh that hit mid-run) -- nothing left to (re-)submit, just take the user to
+                // the results they already generated.
+                <><CheckCircle2 className="w-5 h-5 mr-2" /> VIEW {alreadyPredictedCount} PREDICTED RESULT{alreadyPredictedCount === 1 ? "" : "S"}</>
               ) : (
-                <><Activity className="w-5 h-5 mr-2" /> PREDICT {resolvedCount} MATCHUP{resolvedCount === 1 ? "" : "S"}</>
+                <><Activity className="w-5 h-5 mr-2" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
               )}
             </Button>
+            {alreadyPredictedCount > 0 && pendingPredictCount > 0 && !anyResolving && (
+              <p className="text-xs text-muted-foreground font-mono mt-2 text-center">
+                {alreadyPredictedCount} matchup{alreadyPredictedCount === 1 ? "" : "s"} already predicted from before -- only the remaining {pendingPredictCount} will run.
+              </p>
+            )}
             {resolvedCount === 0 && !anyResolving && (
               <p className="text-xs text-muted-foreground font-mono mt-2 text-center">
                 No screenshots in this batch resolved to a full matchup yet.
