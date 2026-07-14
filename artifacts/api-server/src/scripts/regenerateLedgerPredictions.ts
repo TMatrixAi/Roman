@@ -1,35 +1,37 @@
-// Step 3 (2026-07-13 invariant-checking task): regenerates real Ledger predictions for real
-// completed matches on 2026-07-10 and 2026-07-11, under a STRICT no-look-ahead rule.
+// Regenerates real Ledger predictions for real completed matches in a given recent date range,
+// under a STRICT no-look-ahead rule. Reusable any time real matches need adding to the Ledger
+// and/or existing Ledger rows in that window need regrading against the current engine (e.g.
+// after an engine upgrade) -- both are the same "surgical replace" operation below.
 //
 // Methodology (read before re-running):
 //  - `historical_matches` (the "leak-proof historical store" used by walk-forward/backfill) only
-//    covers 2025-01-01..2025-04-01 -- nowhere near July 2026 -- so it cannot be used here.
+//    covers 2025-01-01..2025-04-01 -- nowhere near recent real dates -- so it cannot be used here.
 //  - Real matches for the target dates are discovered via the SAME provider call the historical
-//    backfill pipeline uses, `getCompletedMatchesByDateRange`, just for a 2-day window.
+//    backfill pipeline uses, `getCompletedMatchesByDateRange`, for the requested window.
 //  - Each player's match history / head-to-head is pulled live from the provider (which returns
-//    everything up to TODAY, 2026-07-13) and then explicitly filtered down to only matches dated
-//    strictly BEFORE this match's own cutoff (scheduledStart - 30min, the same convention
+//    everything up to today) and then explicitly filtered down to only matches dated strictly
+//    BEFORE this match's own cutoff (scheduledStart - 30min, the same convention
 //    `historical_matches.cutoffAt` uses) -- so nothing that happened on or after the cutoff can
 //    leak into that match's own prediction. This is the same principle
 //    `reconstructPlayerMatchHistory` applies to the historical store, applied directly to live
 //    provider data instead, since no frozen historical snapshot exists for this period.
 //  - Player profiles (rank, country, etc) are resolved via the provider's CURRENT live standings,
 //    same as every other live/paper-trade prediction already does -- there is no point-in-time
-//    ranking snapshot available from this provider. For a match only ~3 days old this is a minor,
-//    disclosed limitation, not a fabrication.
+//    ranking snapshot available from this provider. For a match only days/weeks old this is a
+//    minor, disclosed limitation, not a fabrication.
 //  - Weather, the active (today-fit) calibration model, tour/surface specialist segments, and
 //    Monte Carlo simulator adoption are all deliberately omitted (null), exactly as
 //    `historicalScoring.ts` already documents for backtesting: calibration/specialists are FIT
-//    FROM data that includes this exact period (today is 2026-07-13), so using today's active
-//    versions on a 2026-07-10/11 match would itself be a look-ahead leak. `calibratedProbability`
-//    for these rows is therefore the raw ensemble probability, uncalibrated -- consistent with how
+//    FROM data that includes this exact period, so using today's active versions on a match still
+//    inside that fit window would itself be a look-ahead leak. `calibratedProbability` for these
+//    rows is therefore the raw ensemble probability, uncalibrated -- consistent with how
 //    walk-forward's own historical_test rows are produced.
 //  - Every match discovered already has a real, known result (it's in the past) -- each row is
 //    inserted already graded (actualWinnerId/actualWinnerName/resolvedAt set) rather than left
 //    pending, since there is no honest "wait for a future result" step for a match that already
 //    happened.
 //
-// Usage: pnpm --filter @workspace/api-server exec tsx src/scripts/regenerateLedgerPredictions.ts
+// Usage: pnpm --filter @workspace/api-server run regenerate-ledger -- --start 2026-07-06 --stop 2026-07-12
 import { eq } from "drizzle-orm";
 import { db, predictionsTable, pool } from "@workspace/db";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
@@ -40,8 +42,20 @@ import { resolveOpponentStrength } from "../services/predictionEngine/opponentSt
 import { computeMatchIdentityKey, computeInputSnapshotHash } from "../services/predictionEngine/predictionIdentity";
 import type { MatchRecord, HeadToHeadRecord } from "../services/tennisData/types";
 
-const DATE_START = "2026-07-10";
-const DATE_STOP = "2026-07-11";
+function parseArgs(argv: string[]): { dateStart: string; dateStop: string } {
+  const get = (flag: string): string | undefined => {
+    const idx = argv.indexOf(flag);
+    return idx >= 0 ? argv[idx + 1] : undefined;
+  };
+  const dateStart = get("--start");
+  const dateStop = get("--stop");
+  if (!dateStart || !dateStop) {
+    throw new Error("Usage: --start YYYY-MM-DD --stop YYYY-MM-DD");
+  }
+  return { dateStart, dateStop };
+}
+
+const { dateStart: DATE_START, dateStop: DATE_STOP } = parseArgs(process.argv.slice(2));
 const CUTOFF_MINUTES = 30;
 
 function toScheduledStart(date: string, time: string | null): Date {
