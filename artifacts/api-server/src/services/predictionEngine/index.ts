@@ -2,6 +2,7 @@ import { computeSurfaceEloModule } from "./surfaceElo";
 import { computeServeReturnModule } from "./serveReturn";
 import { computeRecentFormModule } from "./recentForm";
 import { computeFatigueModule } from "./fatigue";
+import { computeMatchLoadRecoveryModule } from "./matchLoadRecovery";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
@@ -24,6 +25,8 @@ export interface EngineBreakdown {
   serveReturn: ReturnType<typeof computeServeReturnModule>;
   recentForm: ReturnType<typeof computeRecentFormModule>;
   fatigue: ReturnType<typeof computeFatigueModule>;
+  /** Task #93: live-wired went-the-distance recovery signal (see matchLoadRecovery.ts). Not present on predictions made before this field existed. */
+  matchLoadRecovery: ReturnType<typeof computeMatchLoadRecoveryModule>;
   availability: ReturnType<typeof computeAvailabilityModule>;
   styleMatchup: ReturnType<typeof computeStyleMatchupModule>;
   headToHead: ReturnType<typeof computeHeadToHeadModule>;
@@ -196,6 +199,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
   const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches, input.asOfDate);
+  const matchLoadRecovery = computeMatchLoadRecoveryModule(input.player1Matches, input.player2Matches, input.asOfDate);
   const availability = computeAvailabilityModule(input.player1Matches, input.player2Matches, input.tournamentName ?? null);
   const styleMatchup = computeStyleMatchupModule(input.player1Matches, input.player2Matches);
   const headToHead = computeHeadToHeadModule(input.headToHead, input.surface);
@@ -254,6 +258,17 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       reliability: headToHead.reliability,
       importance: MODULE_IMPORTANCE.headToHead,
       weightPrior: ENSEMBLE_WEIGHT_PRIOR.headToHead,
+    },
+    {
+      key: "matchLoadRecovery" as const,
+      name: "Match Load Recovery",
+      // Higher recoveryRiskScore = more likely to LOSE (validated Candidate B, went-distance-only
+      // -- see docs/audit-fatigue-redesign-investigation.md), so the edge points toward whichever
+      // player has the LOWER risk score, mirroring fatigue's own (player2 - player1) orientation.
+      player1Edge: (matchLoadRecovery.player2RecoveryRiskScore - matchLoadRecovery.player1RecoveryRiskScore) / 2,
+      reliability: matchLoadRecovery.reliability,
+      importance: MODULE_IMPORTANCE.matchLoadRecovery,
+      weightPrior: ENSEMBLE_WEIGHT_PRIOR.matchLoadRecovery,
     },
   ].filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
 
@@ -587,6 +602,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     serveReturn,
     recentForm,
     fatigue,
+    matchLoadRecovery,
     availability,
     styleMatchup,
     headToHead,

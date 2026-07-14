@@ -24,6 +24,7 @@ export const MODEL_DEFS: ReadonlyArray<{ key: AblationModelKey; label: string }>
   { key: "fatigue", label: "Fatigue" },
   { key: "availability", label: "Availability (rest/travel/injury)" },
   { key: "headToHead", label: "Head-to-Head" },
+  { key: "matchLoadRecovery", label: "Match Load Recovery" },
   { key: "generalEnsemble", label: "General Ensemble" },
   { key: "segmentSpecialist", label: "Active Segment Specialist" },
 ];
@@ -264,6 +265,7 @@ function categorizeModelName(modelName: string): AblationModelKey | null {
   if (modelName === "Fatigue") return "fatigue";
   if (modelName.startsWith("Availability")) return "availability";
   if (modelName === "Head-to-Head") return "headToHead";
+  if (modelName === "Match Load Recovery") return "matchLoadRecovery";
   if (modelName === "General Model") return "generalEnsemble";
   if (modelName.startsWith("Segment Specialist")) return "segmentSpecialist";
   return null;

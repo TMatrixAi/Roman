@@ -562,6 +562,43 @@ export default function PredictionResultPage() {
             </div>
           </ModuleCard>
 
+          {engine.matchLoadRecovery && (
+            <ModuleCard title="MATCH LOAD RECOVERY" reliability={engine.matchLoadRecovery.reliability} icon={Activity}>
+              <EdgeBar
+                p1Name={prediction.player1Name}
+                p2Name={prediction.player2Name}
+                p1Value={engine.matchLoadRecovery.player1RecoveryRiskScore}
+                p2Value={engine.matchLoadRecovery.player2RecoveryRiskScore}
+                label="RECOVERY RISK"
+              />
+              <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                <div className="flex justify-between">
+                  <span>{prediction.player1Name} last match went the distance:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.matchLoadRecovery.player1RecentMatchWentDistance === null ? "—" : engine.matchLoadRecovery.player1RecentMatchWentDistance ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player2Name} last match went the distance:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {engine.matchLoadRecovery.player2RecentMatchWentDistance === null ? "—" : engine.matchLoadRecovery.player2RecentMatchWentDistance ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player1Name} rest days (informational only):</span>
+                  <span className="font-mono font-bold text-foreground">{engine.matchLoadRecovery.player1RestDays ?? "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{prediction.player2Name} rest days (informational only):</span>
+                  <span className="font-mono font-bold text-foreground">{engine.matchLoadRecovery.player2RestDays ?? "—"}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 italic">
+                A new, thin single-bit signal: whether each player's single most recent match went the distance (not a recency-weighted match count). Rest days are shown for transparency but don't feed the score.
+              </p>
+            </ModuleCard>
+          )}
+
           {engine.availability ? (
             <ModuleCard title="REST, TRAVEL & INJURY" reliability={engine.availability.reliability} icon={Activity}>
               <div className="text-xs text-muted-foreground space-y-1">

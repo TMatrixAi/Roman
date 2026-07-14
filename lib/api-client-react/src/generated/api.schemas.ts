@@ -362,6 +362,31 @@ export interface FatigueResult {
   warnings?: string[];
 }
 
+/**
+ * Task #93: went-the-distance recovery-risk signal (validated Candidate B from docs/audit-fatigue-redesign-investigation.md) -- based only on whether each player's single most recent prior match went the distance (3+ sets BestOf3 / 4+ BestOf5), not recency-weighted match counts. Rest days are computed and shown for transparency only; they do NOT feed the risk score (rest-days-only scoring was tested and rejected).
+ */
+export interface MatchLoadRecoveryResult {
+  /**
+     * Real calendar days since this player's single most recent prior match. Null when there's no prior match on record.
+     * @nullable
+     */
+  player1RestDays?: number | null;
+  /** @nullable */
+  player2RestDays?: number | null;
+  /**
+     * Whether that most recent prior match went the distance -- null when the format or set count for that match isn't known.
+     * @nullable
+     */
+  player1RecentMatchWentDistance?: boolean | null;
+  /** @nullable */
+  player2RecentMatchWentDistance?: boolean | null;
+  /** 0-100, higher = more acute-recovery risk. Driven entirely by whether the most recent match went the distance. */
+  player1RecoveryRiskScore: number;
+  player2RecoveryRiskScore: number;
+  reliability: number;
+  warnings?: string[];
+}
+
 export interface PlayerAvailability {
   /**
      * Exact real days since this player's most recent completed match. Null when there's no prior match on record.
@@ -558,6 +583,8 @@ export interface EngineBreakdown {
   serveReturn: ServeReturnResult;
   recentForm: RecentFormResult;
   fatigue: FatigueResult;
+  /** Task */
+  matchLoadRecovery?: MatchLoadRecoveryResult;
   availability?: AvailabilityResult;
   styleMatchup: StyleMatchupResult;
   headToHead: HeadToHeadResult;

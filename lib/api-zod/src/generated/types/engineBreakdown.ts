@@ -10,6 +10,7 @@ import type { EngineBreakdownMatchupCloseness } from './engineBreakdownMatchupCl
 import type { EngineBreakdownModelAgreement } from './engineBreakdownModelAgreement';
 import type { FatigueResult } from './fatigueResult';
 import type { HeadToHeadResult } from './headToHeadResult';
+import type { MatchLoadRecoveryResult } from './matchLoadRecoveryResult';
 import type { MatchSimulationResult } from './matchSimulationResult';
 import type { ModelVote } from './modelVote';
 import type { RecentFormResult } from './recentFormResult';
@@ -28,6 +29,8 @@ export interface EngineBreakdown {
   serveReturn: ServeReturnResult;
   recentForm: RecentFormResult;
   fatigue: FatigueResult;
+  /** Task */
+  matchLoadRecovery?: MatchLoadRecoveryResult;
   availability?: AvailabilityResult;
   styleMatchup: StyleMatchupResult;
   headToHead: HeadToHeadResult;

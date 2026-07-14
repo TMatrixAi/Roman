@@ -46,6 +46,7 @@ export * from './listPaperTradingJobRunsParams';
 export * from './listPredictionsParams';
 export * from './marketEdgeSummary';
 export * from './matchFormat';
+export * from './matchLoadRecoveryResult';
 export * from './matchRecord';
 export * from './matchRecordResult';
 export * from './matchSimulationResult';

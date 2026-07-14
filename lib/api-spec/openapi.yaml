@@ -1245,6 +1245,38 @@ components:
           items:
             type: string
 
+    MatchLoadRecoveryResult:
+      type: object
+      description: >-
+        Task #93: went-the-distance recovery-risk signal (validated Candidate B from
+        docs/audit-fatigue-redesign-investigation.md) -- based only on whether each player's
+        single most recent prior match went the distance (3+ sets BestOf3 / 4+ BestOf5), not
+        recency-weighted match counts. Rest days are computed and shown for transparency only;
+        they do NOT feed the risk score (rest-days-only scoring was tested and rejected).
+      required: [player1RecoveryRiskScore, player2RecoveryRiskScore, reliability]
+      properties:
+        player1RestDays:
+          type: ["integer", "null"]
+          description: Real calendar days since this player's single most recent prior match. Null when there's no prior match on record.
+        player2RestDays:
+          type: ["integer", "null"]
+        player1RecentMatchWentDistance:
+          type: ["boolean", "null"]
+          description: Whether that most recent prior match went the distance -- null when the format or set count for that match isn't known.
+        player2RecentMatchWentDistance:
+          type: ["boolean", "null"]
+        player1RecoveryRiskScore:
+          type: number
+          description: 0-100, higher = more acute-recovery risk. Driven entirely by whether the most recent match went the distance.
+        player2RecoveryRiskScore:
+          type: number
+        reliability:
+          type: number
+        warnings:
+          type: array
+          items:
+            type: string
+
     PlayerAvailability:
       type: object
       required: [daysSinceLastMatch, travelDistanceKm, recentRetirementOrWithdrawal, recentRetirementTournament]
@@ -1372,6 +1404,9 @@ components:
           $ref: "#/components/schemas/RecentFormResult"
         fatigue:
           $ref: "#/components/schemas/FatigueResult"
+        matchLoadRecovery:
+          $ref: "#/components/schemas/MatchLoadRecoveryResult"
+          description: Task #93 -- live-wired went-the-distance recovery signal. Absent on predictions made before this field existed.
         availability:
           $ref: "#/components/schemas/AvailabilityResult"
         styleMatchup:

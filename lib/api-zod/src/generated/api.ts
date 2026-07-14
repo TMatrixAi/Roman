@@ -330,6 +330,16 @@ export const CreatePredictionResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "matchLoadRecovery": zod.object({
+  "player1RestDays": zod.number().nullish().describe('Real calendar days since this player\'s single most recent prior match. Null when there\'s no prior match on record.'),
+  "player2RestDays": zod.number().nullish(),
+  "player1RecentMatchWentDistance": zod.boolean().nullish().describe('Whether that most recent prior match went the distance -- null when the format or set count for that match isn\'t known.'),
+  "player2RecentMatchWentDistance": zod.boolean().nullish(),
+  "player1RecoveryRiskScore": zod.number().describe('0-100, higher = more acute-recovery risk. Driven entirely by whether the most recent match went the distance.'),
+  "player2RecoveryRiskScore": zod.number(),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
+}).optional().describe('Task'),
   "availability": zod.object({
   "player1": zod.object({
   "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
@@ -591,6 +601,16 @@ export const GetPredictionResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "matchLoadRecovery": zod.object({
+  "player1RestDays": zod.number().nullish().describe('Real calendar days since this player\'s single most recent prior match. Null when there\'s no prior match on record.'),
+  "player2RestDays": zod.number().nullish(),
+  "player1RecentMatchWentDistance": zod.boolean().nullish().describe('Whether that most recent prior match went the distance -- null when the format or set count for that match isn\'t known.'),
+  "player2RecentMatchWentDistance": zod.boolean().nullish(),
+  "player1RecoveryRiskScore": zod.number().describe('0-100, higher = more acute-recovery risk. Driven entirely by whether the most recent match went the distance.'),
+  "player2RecoveryRiskScore": zod.number(),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
+}).optional().describe('Task'),
   "availability": zod.object({
   "player1": zod.object({
   "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),
@@ -860,6 +880,16 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "note": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional()
 }),
+  "matchLoadRecovery": zod.object({
+  "player1RestDays": zod.number().nullish().describe('Real calendar days since this player\'s single most recent prior match. Null when there\'s no prior match on record.'),
+  "player2RestDays": zod.number().nullish(),
+  "player1RecentMatchWentDistance": zod.boolean().nullish().describe('Whether that most recent prior match went the distance -- null when the format or set count for that match isn\'t known.'),
+  "player2RecentMatchWentDistance": zod.boolean().nullish(),
+  "player1RecoveryRiskScore": zod.number().describe('0-100, higher = more acute-recovery risk. Driven entirely by whether the most recent match went the distance.'),
+  "player2RecoveryRiskScore": zod.number(),
+  "reliability": zod.number(),
+  "warnings": zod.array(zod.string()).optional()
+}).optional().describe('Task'),
   "availability": zod.object({
   "player1": zod.object({
   "daysSinceLastMatch": zod.number().nullable().describe('Exact real days since this player\'s most recent completed match. Null when there\'s no prior match on record.'),

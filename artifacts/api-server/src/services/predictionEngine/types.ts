@@ -113,6 +113,7 @@ export type AblationModelKey =
   | "fatigue"
   | "availability"
   | "headToHead"
+  | "matchLoadRecovery"
   | "generalEnsemble"
   | "segmentSpecialist";
 

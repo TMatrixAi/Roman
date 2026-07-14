@@ -10,6 +10,7 @@ function modules(overrides: Partial<Record<keyof typeof MODULE_IMPORTANCE, numbe
     availability: 0,
     fatigue: 0,
     headToHead: 0,
+    matchLoadRecovery: 0,
   };
   const reliabilities = { ...defaults, ...overrides };
   return (Object.keys(MODULE_IMPORTANCE) as Array<keyof typeof MODULE_IMPORTANCE>).map((key) => ({
@@ -40,7 +41,7 @@ test("genuinely weak core signals still score low, even though Fatigue's reliabi
 });
 
 test("strong data across every module still scores Excellent", () => {
-  const allStrong = modules({ surfaceElo: 95, serveReturn: 90, recentForm: 90, fatigue: 70, availability: 95, headToHead: 90 });
+  const allStrong = modules({ surfaceElo: 95, serveReturn: 90, recentForm: 90, fatigue: 70, availability: 95, headToHead: 90, matchLoadRecovery: 70 });
   const { score, label } = computeDataQuality(allStrong);
 
   assert.ok(score >= 85, `expected a uniformly strong match to reach Excellent, got ${score}`);

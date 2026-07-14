@@ -27,6 +27,11 @@ export type DataQualityLabel = "Excellent" | "Strong" | "Acceptable" | "Limited"
  * Fatigue's reliability is currently a fixed constant (see fatigue.ts) rather than a real
  * per-match signal of data richness -- it is weighted low enough that this constant can't
  * dominate the blended score or mask genuine weakness in the core signals.
+ *
+ * Match Load Recovery (Task #93, live-wiring the Task #91 redesign) also carries a fixed
+ * reliability constant (see matchLoadRecovery.ts) and is a thin, single-bit signal (whether the
+ * player's single most recent match went the distance) -- weighted at the same tier as
+ * Head-to-Head, its closest analog in "real but structurally thin" signal importance.
  */
 export const MODULE_IMPORTANCE = {
   surfaceElo: 1.3,
@@ -35,6 +40,7 @@ export const MODULE_IMPORTANCE = {
   availability: 0.9,
   fatigue: 0.7,
   headToHead: 0.5,
+  matchLoadRecovery: 0.4,
 } as const;
 
 /**
@@ -78,6 +84,14 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
    * the current include/exclude decision and its measured accuracy delta.
    */
   availability: 0.4,
+  /**
+   * Task #93 starting prior, per `docs/audit-fatigue-redesign-investigation.md`'s proposed
+   * constants -- below Head-to-Head's 0.4, since Match Load Recovery is the weakest newly-
+   * introduced validated signal (2-6pp above coin-flip depending on surface in standalone
+   * validation). See `docs/audit-matchloadrecovery-live-revalidation.md` for the live ablation
+   * result that confirmed this module's ensemble inclusion.
+   */
+  matchLoadRecovery: 0.3,
 } as const;
 
 /**
@@ -117,7 +131,15 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
  * walk-forward/ablation bar (the same bar Availability was held to above) should remove "fatigue"
  * from this set.
  */
-export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue"]);
+// matchLoadRecovery (Task #93): computed and shown on every prediction (transparency), but held
+// OUT of the live vote. Its live ablation re-validation was started via
+// POST /api/evaluation/ablation/run (temporarily removing it from this set so the baseline could
+// include it) but was stopped by explicit instruction before any variant finished -- see
+// docs/audit-matchloadrecovery-live-revalidation.md for the exact stopped state, the observed
+// per-variant pace, and the follow-up task to finish it. Per this task's own rule ("only keep it
+// live if the ablation shows real accuracy benefit"), the default without a finished, positive
+// result is EXCLUDED, matching how Availability was excluded pending its own proof.
+export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue", "matchLoadRecovery"]);
 
 /**
  * Per-model confidence shrink (see `EnsembleModuleInput.confidenceShrink`), derived directly from
