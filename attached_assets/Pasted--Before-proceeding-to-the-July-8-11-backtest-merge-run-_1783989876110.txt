@@ -1,0 +1,27 @@
+"Before proceeding to the July 8-11 backtest merge, run a scoped backfill on the recommendation column.
+
+BACKFILL SCOPE
+
+- Target only the rows where the current stored recommendation value would change under the fixed computeRecommendation() logic — this should be exactly the 7 rows already identified in your simulated re-evaluation (out of the 202 currently HIGH_RISK rows).
+- Do NOT touch any of the other 195 HIGH_RISK rows, and do NOT touch any row outside the HIGH_RISK category (STRONG_RECOMMENDATION, MODERATE_LEAN, NO_STRONG_SIGNAL, DO_NOT_RECOMMEND) — those are confirmed unaffected by this fix.
+- Do NOT re-run or touch any other field on these 7 rows (win probability, upset risk, model agreement, Monte Carlo values, etc.) — only the recommendation column should change.
+
+PROCESS
+
+1. Back up the current predictions table (or at minimum, snapshot the exact pre-backfill values of these 7 rows with their IDs) before writing anything.
+2. Re-identify the 7 rows by re-running the same in-memory simulation logic used in the diagnostic report, confirm the list of 7 row IDs matches exactly what was reported earlier (including #1031), and flag if the count or row set differs at all before writing anything — if the count or IDs differ from the original 7, stop and report the discrepancy instead of proceeding.
+3. Update only the recommendation column for these 7 rows to their correct value under the fixed logic.
+4. Do not alter any timestamp field that would make these rows look like newly-generated predictions — if there's a "last updated" or "modified_at" field, either leave it untouched or add a separate flag/note indicating this was a backfill correction, not a new prediction, so it's distinguishable in future audits.
+5. If any of the 7 rows are already graded/resolved (i.e. the match has finished and the outcome is recorded), flag this explicitly before writing — confirm whether backfilling the recommendation label on an already-graded row is safe and intended, since this differs from correcting an still-open/ungraded prediction.
+
+VERIFICATION
+
+- Confirm exactly 7 rows were updated, with before/after values for each (including #1031).
+- Re-run the full invariant/consistency check suite against the entire live table afterward and confirm zero new contradictions were introduced.
+- Confirm all other 607 rows in the table are byte-for-byte unchanged (no accidental writes).
+- Confirm the backup/snapshot from step 1 is stored and retrievable.
+- Confirm no test suite (including upsetRisk.test.ts and recommendation.ts tests) regressed as a result of this backfill.
+
+Report back with the row-by-row before/after list, verification results, graded-row flag status (if any), and backup location. Do NOT proceed to the July 8-11 backtest merge until I explicitly confirm this backfill report looks correct."
+
+Sources
