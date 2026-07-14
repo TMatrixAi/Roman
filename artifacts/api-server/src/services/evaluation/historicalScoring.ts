@@ -1,7 +1,8 @@
-import type { HistoricalMatchRow } from "@workspace/db";
+import type { HistoricalMatchRow, SpecialistModelRow } from "@workspace/db";
 import { runPredictionEngine } from "../predictionEngine";
 import { resolveOpponentStrengthFromIndex, type EloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { reconstructHeadToHead, reconstructPlayerMatchHistory, type MatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
+import { resolveSegmentSpecialistInputSync } from "./specialistWeights";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import type { MatchFormat, PlayerProfile, Surface } from "../tennisData/types";
 import type { PlayerIdentityIndex } from "../tennisData/playerIdentity";
@@ -24,6 +25,15 @@ export interface HistoricalScoringContext {
    * canonicalized here but never actually merged in the index itself.
    */
   identityIndex: PlayerIdentityIndex;
+  /**
+   * Task #65: the tour/surface specialist state as it stood BEFORE this walk-forward run's own
+   * fold scoring -- i.e. whatever the PREVIOUS run's `computeAndStoreSpecialistSegments` last
+   * persisted (see `walkForward.ts`, which loads this once, before its own end-of-run refit
+   * overwrites the table). Applying that prior fit here lets `specialistApplied` genuinely be
+   * true for historical_test rows without circularity: a cycle's specialists are fit FROM this
+   * cycle's own validation output, so they must never be applied back to this SAME cycle's rows.
+   */
+  specialistRowsBySegmentKey: ReadonlyMap<string, SpecialistModelRow>;
 }
 
 function minimalProfile(id: string, name: string): PlayerProfile {
@@ -44,11 +54,15 @@ function minimalProfile(id: string, name: string): PlayerProfile {
  * legacy `HistoricalFeatureSnapshot` type in `./types.ts`): walk-forward accuracy now describes
  * the actual model users see when they run a live prediction, not a simplified stand-in for it.
  *
- * Segment specialists, the Phase 7 simulator's adoption vote, live calibration, and weather are
- * always omitted (null/undefined) here -- they are either themselves *outputs* of evaluation
- * (specialists/simulator adoption/calibration are fit FROM walk-forward results, so feeding them
- * back in would be circular) or have no honest historical reconstruction (no archived weather
- * data). This mirrors the engine's own "absent, not faked" contract.
+ * The Phase 7 simulator's adoption vote, live calibration, and weather are always omitted
+ * (null/undefined) here -- they are either themselves *outputs* of THIS SAME evaluation run
+ * (simulator adoption/live calibration are fit FROM this run's walk-forward results, so feeding
+ * them back in would be circular) or have no honest historical reconstruction (no archived
+ * weather data). This mirrors the engine's own "absent, not faked" contract.
+ *
+ * Segment specialists are the one exception (Task #65): `context.specialistRowsBySegmentKey` is
+ * the PREVIOUS run's persisted fit, not this run's own, so applying it here is not circular --
+ * see the doc on `HistoricalScoringContext.specialistRowsBySegmentKey`.
  *
  * Returns null when either player has zero prior recorded matches, or this match's own
  * surface/format weren't resolved at import time -- there is no honest probability to produce in
@@ -69,6 +83,9 @@ export function scoreHistoricalMatch(
   const player1OpponentStrength = resolveOpponentStrengthFromIndex(player1Matches, context.eloHistory, context.identityIndex);
   const player2OpponentStrength = resolveOpponentStrengthFromIndex(player2Matches, context.eloHistory, context.identityIndex);
   const headToHead = reconstructHeadToHead(context.matchHistory, match.player1Id, match.player2Id, match.cutoffAt);
+  // Task #65: previous-cycle specialist fit, never this cycle's own -- see the doc on
+  // `HistoricalScoringContext.specialistRowsBySegmentKey`.
+  const segment = resolveSegmentSpecialistInputSync(match.tour, surface, context.specialistRowsBySegmentKey);
 
   const output = runPredictionEngine({
     player1: minimalProfile(match.player1Id, match.player1Name),
@@ -82,7 +99,7 @@ export function scoreHistoricalMatch(
     player2OpponentElo: player2OpponentStrength.lookup,
     tournamentName: match.tournamentName,
     weather: null,
-    segment: null,
+    segment,
     simulatorAdoption: null,
     activeCalibration: null,
     // Task #77: this is the walk-forward evaluation's own run-scoped scoring path -- the caller

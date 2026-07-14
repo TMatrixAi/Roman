@@ -4,7 +4,7 @@ import { logger } from "../../lib/logger";
 import { fitBestCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
 import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
-import { computeAndStoreSpecialistSegments } from "./specialistWeights";
+import { computeAndStoreSpecialistSegments, getActiveSpecialistSegments } from "./specialistWeights";
 import { buildMatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
 import { buildEloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { buildPlayerIdentityIndex } from "../tennisData/playerIdentity";
@@ -76,10 +76,18 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   // both for `eloHistory`'s own canonicalized grouping and for every match's opponent-resolution
   // lookup below, so a fragmented player's Elo trajectory is merged and resolved consistently.
   const identityIndex = await buildPlayerIdentityIndex();
+  // Task #65: snapshot the PREVIOUS cycle's specialist fit before this run's own fold scoring --
+  // `computeAndStoreSpecialistSegments` below (which fits fresh specialists FROM this run's own
+  // validation output) only overwrites `specialist_models` at the very end of this function, so
+  // this read is guaranteed to see last cycle's rows, never this cycle's own. That's what makes
+  // applying it in `scoreHistoricalMatch` non-circular.
+  const previousSpecialistRows = await getActiveSpecialistSegments();
+  const specialistRowsBySegmentKey = new Map(previousSpecialistRows.map((row) => [row.segmentKey, row]));
   const scoringContext: HistoricalScoringContext = {
     matchHistory: buildMatchHistoryIndex(allMatches),
     eloHistory: await buildEloHistoryIndex(identityIndex),
     identityIndex,
+    specialistRowsBySegmentKey,
   };
 
   const warmupEndIdx = Math.floor(eligible.length * warmupFraction);

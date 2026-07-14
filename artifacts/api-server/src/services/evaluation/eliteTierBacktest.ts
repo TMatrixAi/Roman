@@ -21,9 +21,11 @@ export interface EliteTierBacktestSummary {
   /**
    * Backtest-only comparison group: every Elite gate met EXCEPT segment-specialist support (see
    * `computeNearEliteTier`). Disjoint from `elite` -- a row counted here is never also counted as
-   * `elite`. This is the group that actually accumulates from historical walk-forward scoring,
-   * since historical rows can never have a real specialist applied (see `computeNearEliteTier`'s
-   * doc comment).
+   * `elite`. Since Task #65, historical walk-forward rows CAN earn real Elite tier when a
+   * validated previous-cycle specialist exists for their segment (see
+   * `HistoricalScoringContext.specialistRowsBySegmentKey`); this group now catches rows/segments
+   * where no such specialist was available yet, rather than being the only group historical
+   * scoring could ever populate.
    */
   nearElite: SegmentMetrics;
   nearEliteMeetsMinSample: boolean;

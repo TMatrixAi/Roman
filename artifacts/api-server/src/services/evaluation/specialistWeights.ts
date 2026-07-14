@@ -216,8 +216,17 @@ export async function getSpecialistForSegment(segmentKeyValue: string): Promise<
 export async function resolveSegmentSpecialistInput(tour: string | null | undefined, surface: Surface | null | undefined): Promise<SegmentSpecialistInput | null> {
   const segment = resolveSegment(tour, surface);
   if (!segment) return null;
-
   const row = await getSpecialistForSegment(segment.segmentKey);
+  return toSegmentSpecialistInput(segment, row);
+}
+
+/**
+ * Pure, DB-free version of the mapping `resolveSegmentSpecialistInput` does, given a row already
+ * in hand (or null). Factored out so callers who need to resolve this for thousands of matches in
+ * one run (Task #65: walk-forward scoring) can preload every segment's row ONCE up front instead
+ * of round-tripping the DB per match.
+ */
+export function toSegmentSpecialistInput(segment: SegmentDefinition, row: SpecialistModelRow | null): SegmentSpecialistInput {
   if (!row) {
     // No walk-forward run has ever computed this segment yet -- same honest "not enough data"
     // disclaimer as a segment that was computed but fell short of threshold.
@@ -243,4 +252,20 @@ export async function resolveSegmentSpecialistInput(tour: string | null | undefi
     calibrationMapping: row.meetsThreshold ? (row.calibrationMapping as CalibrationKnot[]) : undefined,
     weight: row.meetsThreshold ? row.weight : undefined,
   };
+}
+
+/**
+ * Sync counterpart of `resolveSegmentSpecialistInput` for callers holding a preloaded
+ * segmentKey -> row map (Task #65's walk-forward scoring). Returns null under the exact same
+ * condition `resolveSegmentSpecialistInput` would (tour/surface isn't a candidate segment at
+ * all), never a fabricated "not enough data" result for a non-candidate segment.
+ */
+export function resolveSegmentSpecialistInputSync(
+  tour: string | null | undefined,
+  surface: Surface | null | undefined,
+  rowsBySegmentKey: ReadonlyMap<string, SpecialistModelRow>,
+): SegmentSpecialistInput | null {
+  const segment = resolveSegment(tour, surface);
+  if (!segment) return null;
+  return toSegmentSpecialistInput(segment, rowsBySegmentKey.get(segment.segmentKey) ?? null);
 }

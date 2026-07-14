@@ -117,14 +117,16 @@ export function voteFavorsPlayer1(models: ModelVote[], modelName: string): boole
 
 /**
  * "Near-Elite" (backtest-only, task 46): identical to `computeEliteTier` except the segment-
- * specialist requirement is relaxed to "satisfied" rather than checked. This exists purely to
- * accumulate a meaningful backtest sample: historical walk-forward scoring (`historicalScoring.ts`)
- * always runs with `segment: null` (segment specialists are themselves FIT from walk-forward
- * validation output, so feeding one back into the scoring that produces that same output would be
- * circular -- see the comment on `scoreHistoricalMatch`), so `specialistApplied` is structurally
- * always false there and real Elite tier can never be earned by a historical_test row. That's a
- * limitation of the backtesting context, not evidence the other three Elite gates (data quality,
- * signal agreement, calibration integrity, and the disagreement/upset-risk guardrail) are unsound.
+ * specialist requirement is relaxed to "satisfied" rather than checked. This exists to catch
+ * matches that clear every other Elite gate but land in a tour/surface segment with no validated
+ * specialist yet -- e.g. a segment still below `MIN_HISTORICAL_MATCHES_FOR_SEGMENT` /
+ * `MIN_VALIDATION_SAMPLES_FOR_SEGMENT`, or (since Task #65) a historical_test row scored before
+ * any specialist had ever been fit for its segment. Since Task #65, historical walk-forward
+ * scoring (`historicalScoring.ts`) DOES apply a real segment specialist when one exists -- the
+ * PREVIOUS run's persisted fit, never the run's own (see the doc on
+ * `HistoricalScoringContext.specialistRowsBySegmentKey`), so real Elite tier can genuinely be
+ * earned by a historical_test row now. Near-Elite remains as the honest fallback for rows/segments
+ * where no real specialist backing was available to check.
  *
  * Never used to decide what tier is shown in the live/paper-trade prediction UI -- only to
  * classify already-graded rows for the Elite tier backtest (`eliteTierBacktest.ts`). A row that is
