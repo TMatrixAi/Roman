@@ -1,3 +1,4 @@
+import { logger } from "../../lib/logger";
 import { inferVenue, type Venue } from "./venueMap";
 
 export interface WeatherConditions {
@@ -35,16 +36,32 @@ export async function getUpcomingConditions(tournamentName: string | null | unde
   let response: Response;
   try {
     response = await fetch(url);
-  } catch {
-    return null; // network failure -- report "not available", never a guessed forecast
+  } catch (err) {
+    // Network failure -- still report "not available" to the caller (never a guessed forecast),
+    // but log it so a persistent outage is diagnosable instead of looking identical to a match
+    // with no resolvable venue.
+    logger.warn({ err, venueName: venue.name }, "Open-Meteo weather lookup failed (network error)");
+    return null;
   }
-  if (!response.ok) return null;
+  if (!response.ok) {
+    logger.warn(
+      { status: response.status, venueName: venue.name },
+      "Open-Meteo weather lookup failed (non-OK response)",
+    );
+    return null;
+  }
 
   const data = (await response.json()) as {
     hourly?: { time: string[]; temperature_2m: number[]; wind_speed_10m: number[]; precipitation_probability: number[] };
   };
   const hourly = data.hourly;
-  if (!hourly || hourly.time.length === 0) return null;
+  if (!hourly || hourly.time.length === 0) {
+    // A genuinely valid response with no hourly data for the requested date is unexpected (the
+    // date is within the forecast horizon), so this is treated as a provider anomaly worth
+    // logging, not a normal "no forecast available" case.
+    logger.warn({ venueName: venue.name, dateStr }, "Open-Meteo weather lookup returned no hourly data");
+    return null;
+  }
 
   const targetHour = scheduledAt.getUTCHours();
   let bestIndex = 0;
