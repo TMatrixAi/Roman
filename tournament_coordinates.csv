@@ -1,0 +1,12 @@
+tournament_name,search_address,latitude,longitude,formatted_address,status
+Wimbledon,"All England Lawn Tennis and Croquet Club, Wimbledon, London, United Kingdom",51.519792,-0.138718,"All Souls Church of England Primary School, London, W1W 7JJ, United Kingdom",matched
+Roland-Garros,"Stade Roland Garros, Paris, France",48.846869,2.2484179,"Stade Roland-Garros, 3 Avenue Gordon-Bennett, 75016 Paris, France",matched
+US Open,"USTA Billie Jean King National Tennis Center, Queens, New York, USA",40.7495765,-73.8465422,"USTA Billie Jean King National Tennis Center, United Nations Avenue North, Queens, New York, NY 11368, United States of America",matched
+Australian Open,"Melbourne Park, Melbourne, Australia",-37.8213608,144.9790884,"Melbourne Park, Capital City Trail / Main Yarra Trail, Melbourne VIC 3004, Australia",matched
+Indian Wells,"Indian Wells Tennis Garden, Indian Wells, California, USA",33.7201239,-116.3012579,"Indian Wells Tennis Garden, 78-200 Miles Avenue, Indian Wells, CA 92210, United States of America",matched
+Miami Open,"Hard Rock Stadium, Miami Gardens, Florida, USA",25.9579032,-80.2388497,"Hard Rock Stadium, 347 Northwest 199th Street, Miami Gardens, FL 33056, United States of America",matched
+Madrid Open,"Caja Magica, Madrid, Spain",40.3713283,-3.6818094,"Caja Mágica, Autovía del Sur, 28053 Madrid, Spain",matched
+Italian Open,"Foro Italico, Rome, Italy",41.9325174,12.4570742,"Foro Italico, Municipio Roma XV, Rome, Roma Capitale, Italy",matched
+Canadian Open Toronto,"Sobeys Stadium, Toronto, Ontario, Canada",43.7715881,-79.5120776,"Sobeys Stadium, Shoreham Drive, Toronto, ON M3N 3A7, Canada",matched
+Canadian Open Montreal,"IGA Stadium, Montreal, Quebec, Canada",45.5329553,-73.6267358,"Stade IGA, 285 Rue Saint-Roch, Montreal, QC H2R 2W1, Canada",matched
+Cincinnati Open,"Lindner Family Tennis Center, Mason, Ohio, USA",39.346673,-84.2771507,"Lindner Family Tennis Center, 6100 Legacy Park Way, Mason, OH 45040, United States of America",matched

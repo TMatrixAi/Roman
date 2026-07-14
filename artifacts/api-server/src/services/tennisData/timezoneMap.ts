@@ -77,7 +77,87 @@ const TOUR_CITY_TIMEZONE: CityTimezoneEntry[] = [
   { match: /\bumag\b/i, timezone: "Europe/Zagreb" }, // Croatia
 ];
 
-const CITY_TIMEZONE: CityTimezoneEntry[] = [...MAJOR_CITY_TIMEZONE, ...TOUR_CITY_TIMEZONE];
+// Task #74: widened from real `get_fixtures` tournament names sampled across two real windows
+// -- 2026-01-29..2026-02-11 (winter hard-court swing) and 2026-07-13..2026-08-24 (summer
+// clay/grass swing) -- rather than just the single 2-week window `TOUR_CITY_TIMEZONE` above was
+// built from. Each entry below is a specific, single-location city with one unambiguous
+// tennis-relevant timezone. Genuinely ambiguous bare city names shared by multiple well-known
+// tennis-hosting locations (e.g. a bare "Birmingham", which could be Birmingham, UK or
+// Birmingham, Alabama, USA depending on the week) are deliberately left out rather than guessed
+// from seasonal context. US cities that the provider itself disambiguates with a ", STATE" suffix
+// (e.g. "Naples, FL" vs. the much more famous Naples, Italy) are matched on that exact
+// "city, ST" text, not the bare city name, so an unrelated same-named event without the suffix
+// correctly falls through to "Time TBD" instead of being misattributed.
+const SEASON_CITY_TIMEZONE: CityTimezoneEntry[] = [
+  { match: /\bbaton rouge\b/i, timezone: "America/Chicago" }, // Louisiana, USA
+  { match: /\bbuenos aires\b/i, timezone: "America/Argentina/Buenos_Aires" }, // Argentina
+  { match: /\brosario\b/i, timezone: "America/Argentina/Buenos_Aires" }, // Argentina (single national timezone)
+  { match: /\bdallas\b/i, timezone: "America/Chicago" }, // Texas, USA
+  { match: /\bmontpellier\b/i, timezone: "Europe/Paris" }, // France
+  { match: /\bbrisbane\b/i, timezone: "Australia/Brisbane" }, // Queensland, Australia -- no DST, single fixed offset year-round
+  { match: /\bcesenatico\b/i, timezone: "Europe/Rome" }, // Italy
+  { match: /\bchennai\b/i, timezone: "Asia/Kolkata" }, // India
+  { match: /\bmumbai\b/i, timezone: "Asia/Kolkata" }, // India
+  { match: /\bhyderabad\b/i, timezone: "Asia/Kolkata" }, // India
+  { match: /\bpune\b/i, timezone: "Asia/Kolkata" }, // India
+  { match: /\bcleveland\b/i, timezone: "America/New_York" }, // Ohio, USA
+  { match: /\bconcepcion\b/i, timezone: "America/Santiago" }, // Chile (established ATP Challenger stop)
+  { match: /\bkoblenz\b/i, timezone: "Europe/Berlin" }, // Germany
+  { match: /\balmoradi\b/i, timezone: "Europe/Madrid" }, // Spain
+  { match: /\bantalya\b/i, timezone: "Europe/Istanbul" }, // Turkey
+  { match: /\bcastelo branco\b/i, timezone: "Europe/Lisbon" }, // Portugal
+  { match: /\bgubbio\b/i, timezone: "Europe/Rome" }, // Italy
+  { match: /\btorino\b/i, timezone: "Europe/Rome" }, // Italy
+  { match: /\bhuamantla\b/i, timezone: "America/Mexico_City" }, // Mexico
+  { match: /\bjavea\b/i, timezone: "Europe/Madrid" }, // Spain
+  { match: /\bmanacor\b/i, timezone: "Europe/Madrid" }, // Balearic Islands, Spain (same zone as mainland)
+  { match: /\bkursumlijska banja\b/i, timezone: "Europe/Belgrade" }, // Serbia
+  { match: /\bmonastir\b/i, timezone: "Africa/Tunis" }, // Tunisia -- very high-volume ITF hub
+  { match: /\bsharm el ?sheikh\b/i, timezone: "Africa/Cairo" }, // Egypt
+  { match: /\bzahra\b/i, timezone: "Africa/Cairo" }, // Egypt (Cairo-area ITF hub)
+  { match: /\bnova gorica\b/i, timezone: "Europe/Ljubljana" }, // Slovenia
+  { match: /\bkrsko\b/i, timezone: "Europe/Ljubljana" }, // Slovenia
+  { match: /\boberhaching\b/i, timezone: "Europe/Berlin" }, // Germany
+  { match: /\buslar\b/i, timezone: "Europe/Berlin" }, // Germany
+  { match: /\bnussloch\b/i, timezone: "Europe/Berlin" }, // Germany
+  { match: /\bslobozia\b/i, timezone: "Europe/Bucharest" }, // Romania
+  { match: /\bcluj-napoca\b/i, timezone: "Europe/Bucharest" }, // Romania
+  { match: /\bgandia\b/i, timezone: "Europe/Madrid" }, // Spain
+  { match: /\bglasgow\b/i, timezone: "Europe/London" }, // Scotland, UK
+  { match: /\bsheffield\b/i, timezone: "Europe/London" }, // England, UK
+  { match: /\bnottingham\b/i, timezone: "Europe/London" }, // England, UK
+  { match: /\bhillcrest\b/i, timezone: "Africa/Johannesburg" }, // KwaZulu-Natal, South Africa -- established ITF hub
+  { match: /\bkramsach\b/i, timezone: "Europe/Vienna" }, // Austria
+  { match: /\buriage\b/i, timezone: "Europe/Paris" }, // France (Uriage-les-Bains)
+  { match: /\bandrezieux-boutheon\b/i, timezone: "Europe/Paris" }, // France
+  { match: /\bgrenoble\b/i, timezone: "Europe/Paris" }, // France
+  { match: /\bpau\b/i, timezone: "Europe/Paris" }, // France
+  { match: /\bquimper\b/i, timezone: "Europe/Paris" }, // France
+  { match: /\bvila real de santo antonio\b/i, timezone: "Europe/Lisbon" }, // Portugal
+  { match: /\boeiras\b/i, timezone: "Europe/Lisbon" }, // Portugal
+  { match: /\bporto\b(?!\s*alegre)/i, timezone: "Europe/Lisbon" }, // Portugal (excludes Porto Alegre, Brazil -- different country/timezone)
+  { match: /\bmanama\b/i, timezone: "Asia/Bahrain" }, // Bahrain
+  { match: /\bmanila\b/i, timezone: "Asia/Manila" }, // Philippines
+  { match: /\bphan thiet\b/i, timezone: "Asia/Ho_Chi_Minh" }, // Vietnam
+  { match: /\btenerife\b/i, timezone: "Atlantic/Canary" }, // Canary Islands, Spain -- one hour behind mainland Spain, NOT Europe/Madrid
+  { match: /\bfujairah\b/i, timezone: "Asia/Dubai" }, // United Arab Emirates
+  { match: /\babu dhabi\b/i, timezone: "Asia/Dubai" }, // United Arab Emirates
+  { match: /\bastana\b/i, timezone: "Asia/Almaty" }, // Kazakhstan (single national timezone)
+  { match: /\bostrava\b/i, timezone: "Europe/Prague" }, // Czech Republic
+  { match: /\bolomouc\b/i, timezone: "Europe/Prague" }, // Czech Republic
+  { match: /\bprague\b/i, timezone: "Europe/Prague" }, // Czech Republic
+  { match: /\bnaples,\s*fl\b/i, timezone: "America/New_York" }, // Florida, USA -- NOT the much more famous Naples, Italy; only the explicit ", FL" form matches
+  { match: /\bpalm coast,\s*fl\b/i, timezone: "America/New_York" }, // Florida, USA
+  { match: /\bsunrise,\s*fl\b/i, timezone: "America/New_York" }, // Florida, USA
+  { match: /\bvero beach,\s*fl\b/i, timezone: "America/New_York" }, // Florida, USA
+  { match: /\borlando,\s*fl\b/i, timezone: "America/New_York" }, // Florida, USA
+  { match: /\brochester,\s*ny\b/i, timezone: "America/New_York" }, // New York, USA -- not Rochester, UK
+  { match: /\blouisville,\s*ky\b/i, timezone: "America/Kentucky/Louisville" }, // Kentucky, USA
+  { match: /\bsan diego\b/i, timezone: "America/Los_Angeles" }, // California, USA
+  { match: /\bsao paulo\b/i, timezone: "America/Sao_Paulo" }, // Brazil -- specific city, not a bare multi-timezone country match
+];
+
+const CITY_TIMEZONE: CityTimezoneEntry[] = [...MAJOR_CITY_TIMEZONE, ...TOUR_CITY_TIMEZONE, ...SEASON_CITY_TIMEZONE];
 
 /**
  * Countries with one effective timezone for tennis-hosting purposes, keyed by the exact country
