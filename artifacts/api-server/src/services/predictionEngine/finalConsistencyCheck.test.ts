@@ -165,7 +165,7 @@ test("rule 6: a Strong Recommendation paired with Mixed/High Model Disagreement 
 
 test("rule 6: a Strong Recommendation with LOW upset risk and Strong agreement is clean", () => {
   // margin=25 (calibratedProbability=75) so this is a REAL STRONG_RECOMMENDATION under
-  // computeRecommendation's own logic (margin>=22, dataQuality>=55, LOW risk, Strong agreement)
+  // computeRecommendation's own logic (margin>=22, dataQuality>=45, LOW risk, Strong agreement)
   // -- otherwise Rule 10 (added alongside this task) would itself flag the mismatch and this
   // "clean" case would no longer be clean.
   const { violations } = checkFinalConsistency(

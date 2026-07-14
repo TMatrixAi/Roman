@@ -1,0 +1,157 @@
+Update my Tennis Stats Engine so tournament-name handling is reliable and travel/weather venue lookup works from the prediction form.
+
+Current architecture:
+- Prediction requests pass `tournamentName` and `tournamentLevel` into:
+  `artifacts/api-server/src/routes/predictions.ts`
+- The prediction engine calls:
+  `computeAvailabilityModule(player1Matches, player2Matches, input.tournamentName)`
+- Venue matching lives in:
+  `artifacts/api-server/src/services/predictionEngine/venueMap.ts`
+- The current UI appears to collect tournament level, but the prediction result often says:
+  “This match's venue isn't in the known-venue list.”
+
+Please make these changes:
+
+1. Find the prediction form in the frontend and add a required or clearly labeled Tournament Name field.
+   - Keep Tournament Level as a separate field.
+   - Do not derive tournament name from tournament level.
+   - Send the exact tournament name in the existing `tournamentName` request field.
+
+2. Replace the regex-only venue map with a maintainable alias-based structure.
+   Each venue entry should include:
+   - canonical tournament name
+   - aliases
+   - latitude
+   - longitude
+   - timezone
+   - tournament level when known
+
+3. Preserve the existing `inferVenue(tournamentName)` API so existing callers do not break.
+
+4. Normalize names before matching:
+   - lowercase
+   - trim whitespace
+   - remove punctuation and repeated spaces
+   - handle hyphen and accent variations
+
+5. Add aliases for at least these tournaments:
+   Grand Slams:
+   - Australian Open
+   - Roland Garros
+   - French Open
+   - Wimbledon
+   - US Open
+
+   Masters / WTA 1000:
+   - Indian Wells
+   - BNP Paribas Open
+   - Miami Open
+   - Monte Carlo Masters
+   - Monte-Carlo
+   - Madrid Open
+   - Mutua Madrid Open
+   - Italian Open
+   - Rome
+   - Internazionali BNL d'Italia
+   - Canadian Open
+   - National Bank Open
+   - Toronto
+   - Montreal
+   - Cincinnati
+   - Cincinnati Open
+   - Shanghai Masters
+   - Paris Masters
+   - Rolex Paris Masters
+   - Wuhan Open
+   - China Open
+   - Qatar Open
+   - Dubai Championships
+
+   ATP/WTA 500 and common 250 events:
+   - Queen's Club
+   - Halle
+   - Barcelona
+   - Hamburg
+   - Washington
+   - Citi Open
+   - Beijing
+   - Tokyo
+   - Vienna
+   - Basel
+   - Acapulco
+   - Dubai
+   - Rio Open
+   - Adelaide
+   - Auckland
+   - Brisbane
+   - Doha
+   - Marseille
+   - Montpellier
+   - Delray Beach
+   - Los Cabos
+   - Estoril
+   - Geneva
+   - Lyon
+   - Mallorca
+   - Eastbourne
+   - Newport
+   - Atlanta
+   - Winston-Salem
+   - Chengdu
+   - Antwerp
+   - Stockholm
+   - Metz
+   - Gstaad
+   - Bastad
+   - Kitzbuhel
+   - Umag
+   - Cordoba
+   - Santiago
+   - Buenos Aires
+   - Abu Dhabi
+   - Charleston
+   - Stuttgart
+   - Berlin
+   - San Diego
+   - Zhengzhou
+   - Hobart
+   - Linz
+   - Bogota
+   - Rabat
+   - Nottingham
+   - Birmingham
+   - Cleveland
+   - Monastir
+   - Cluj-Napoca
+   - Guangzhou
+   - Osaka
+
+6. Keep Challenger, ITF, qualifying, junior, boys, and girls events from falsely matching major-event aliases.
+   Do not guess coordinates for unknown events.
+   Unknown tournaments must still return `null`.
+
+7. Fix Toronto and Montreal so they resolve separately, not to one shared Canadian location.
+
+8. Add lightweight tests for:
+   - Wimbledon
+   - French Open
+   - Roland-Garros
+   - US Open
+   - BNP Paribas Open
+   - Mutua Madrid Open
+   - Internazionali BNL d'Italia
+   - National Bank Open Toronto
+   - National Bank Open Montreal
+   - Cincinnati Open
+   - an unknown Challenger event returning null
+   - an ITF event returning null
+
+9. Run the repository typecheck and relevant tests.
+   Use pnpm, not npm.
+   Report every file changed and any tournament aliases still unresolved.
+
+Important:
+- Do not fabricate coordinates.
+- Preserve existing weather and travel calculations.
+- Do not change the prediction math except where needed to pass the tournament name correctly.
+- Do not delete existing venue coverage unless replacing it with an equivalent alias entry.

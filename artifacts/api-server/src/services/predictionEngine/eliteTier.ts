@@ -2,7 +2,22 @@ import type { ModelVote } from "./ensemble";
 import type { ModelAgreement } from "./disagreement";
 import type { UpsetRisk } from "./upsetRisk";
 
-const ELITE_DATA_QUALITY_THRESHOLD = 65; // matches the engine's own "Strong" data-quality label floor
+/**
+ * Task #75 re-validation: this floor was originally set to 65 (the "Strong" data-quality label
+ * floor) on the assumption that higher Data Quality means a more trustworthy prediction. After
+ * Task #68 excluded Head-to-Head from the Data Quality blend (pushing most real scores higher), a
+ * fresh walk-forward re-run plus the live ledger (n=4,111 graded rows,
+ * docs/audit-task75-dq-threshold-revalidation.md) shows that assumption no longer holds: isolating
+ * Data Quality's effect from every other Elite gate (all-3-signals-agree + margin>=5, n=3,014),
+ * the DQ>=65 slice is WORSE calibrated (-5.6pt overconfidence gap, log loss 0.691) than the DQ<65
+ * slice (-1.1pt gap, log loss 0.670) -- and the effect gets monotonically worse the higher Data
+ * Quality climbs (65-85: -4.6pt gap; 85-100: -10.7pt gap, worse than a coin-flip's log loss). The
+ * best-calibrated band in the whole distribution is actually 45-55. Raising this threshold further
+ * would only select a more overconfident group; lowered to 55 (matching Data Quality's own
+ * "Acceptable" floor) so Elite tier stops privileging exactly the regime the evidence says is
+ * least trustworthy, while still requiring more than the weakest end of the distribution.
+ */
+const ELITE_DATA_QUALITY_THRESHOLD = 55;
 
 /**
  * Task #66 ("Fix overconfident predictions in the near-Elite group"): the original three-signal

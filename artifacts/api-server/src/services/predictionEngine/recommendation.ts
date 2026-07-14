@@ -23,9 +23,16 @@ export function computeRecommendation(
   if (dataQualityLabel === "Poor" || dataQuality < 25) return "DO_NOT_RECOMMEND";
   if (margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement")) return "NO_STRONG_SIGNAL";
   if (upsetRisk === "EXTREME") return "HIGH_RISK";
+  // Task #75: the dataQuality>=55 floor here was tuned before Task #68 excluded Head-to-Head from
+  // the Data Quality blend, which pushed most real scores higher. A real walk-forward re-run
+  // (docs/audit-task75-dq-threshold-revalidation.md) shows the 45-55 band is now the
+  // best-calibrated slice of the whole distribution (log loss 0.662, only +2.6pt gap vs. observed
+  // favorite win rate) -- better than 55-65 (log loss 0.693, -2.9pt gap), which the old >=55 floor
+  // let through untouched while excluding the stronger 45-55 band. Lowered to 45 (the "Acceptable"
+  // label floor) so STRONG_RECOMMENDATION reaches the segment the evidence actually supports.
   if (
     margin >= 22 &&
-    dataQuality >= 55 &&
+    dataQuality >= 45 &&
     (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
     modelAgreement !== "Mixed" &&
     modelAgreement !== "HighDisagreement"

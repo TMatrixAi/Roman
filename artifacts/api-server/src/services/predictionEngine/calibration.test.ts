@@ -2,9 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { calibrateProbability } from "./calibration";
 
-test("does not shrink at all once data quality reaches the Strong threshold (65)", () => {
-  assert.equal(calibrateProbability(65, 65), 65);
-  assert.equal(calibrateProbability(65, 90), 65);
+test("caps the confidence factor at 0.85 once data quality reaches 55, never claiming full raw trust (Task #75 re-validation)", () => {
+  // factor = min(0.85, (dq-20)/35), reaches its 0.85 cap at dq=55 and stays there for any higher dq.
+  const at55 = calibrateProbability(65, 55);
+  const at65 = calibrateProbability(65, 65);
+  const at90 = calibrateProbability(65, 90);
+  assert.equal(at55, at65);
+  assert.equal(at65, at90);
+  assert.ok(at55 < 65, `expected some residual shrinkage even at high data quality, got ${at55}`);
+  assert.equal(at55, 62.8); // 50 + (65-50)*0.85 = 62.75, rounded to 1 decimal
 });
 
 test("shrinks moderately, not severely, at typical 'Acceptable' data quality (48-63)", () => {
