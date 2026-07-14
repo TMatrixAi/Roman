@@ -1,0 +1,111 @@
+Review the current tennis prediction app and execute these tasks in this exact order, with no code changes outside the scope unless required to fix a directly related bug.
+
+***
+
+### 1. Task #122 — Update UI language immediately
+
+The app currently overstates the validation strength of “Strong Recommendation” and “Elite Tier.” Update all user-facing labels, tooltips, descriptions, badges, and supporting copy so they accurately reflect current evidence and do not imply these tiers are fully proven.
+
+Requirements:
+- Do not remove the features unless necessary.
+- Keep the product polished and trustworthy.
+- Replace any wording that suggests proven superiority with wording that reflects limited or still-developing validation.
+- Make the messaging consistent across all screens, cards, tables, filters, badge legends, hover states, and explanatory text.
+- If there is a disclaimer/help text area, update it too.
+- Make sure nothing in the UI contradicts the latest audit findings.
+
+Deliverables for #122:
+- List of all places where Strong Recommendation and Elite Tier are mentioned.
+- Before/after snippets of the UI copy.
+- Confirmation that messaging is consistent and aligned with current statistical validation status.
+
+***
+
+### 2. Task #121 — Fix and start the paper-trading pipeline
+
+Get the live paper-trading system running correctly so the app starts collecting, storing, and grading real live predictions automatically.
+
+Requirements:
+- Diagnose why the ledger currently has rows marked “missed” and zero properly graded live predictions.
+- Identify every failure point in the pipeline, including scheduling, prediction capture, result settlement, status transitions, timestamps, and persistence.
+- Fix the issue so new live predictions are actually recorded and later graded correctly.
+- Preserve historical records.
+- Do not fabricate or backfill fake “graded” live results.
+- Confirm the pipeline handles repeated runs safely and does not create duplicates.
+- Confirm the grading job only grades completed matches and leaves unfinished matches pending.
+- Confirm status labels are logically correct and mutually consistent.
+- Add defensive checks so silent failures are surfaced clearly in logs or admin output.
+
+Validation requirements:
+- Verify a new paper-trade prediction can be created.
+- Verify it persists in the ledger/database.
+- Verify completed matches can transition from pending/ungraded to graded.
+- Verify no new entries are incorrectly marked “missed” unless that status is truly warranted.
+- Verify the system can continue running unattended.
+
+Deliverables for #121:
+- Root-cause analysis of why the ledger had zero graded predictions and 111 “missed” rows.
+- Description of pipeline changes (capture, grading, status logic).
+- Evidence of at least one full end-to-end paper-trade cycle (created → stored → graded).
+- Log or admin output that makes future failures visible.
+
+***
+
+### 3. Task #120 — Re-evaluate Strong Recommendation thresholds
+
+After the paper-trading system is fixed and collecting data, review the Strong Recommendation threshold logic and validation methodology.
+
+Requirements:
+- Do not assume the current Strong thresholds are valid.
+- Re-evaluate performance by tournament level rather than only using the combined dataset.
+- Break results down at minimum by: Grand Slams, Masters, ATP/WTA tour-level, Challenger, and ITF.
+- Check whether sample sizes are large enough before drawing conclusions for any subgroup.
+- If a subgroup sample is too small, explicitly mark it as inconclusive rather than forcing a rule change.
+- Compare Strong Recommendation performance against Moderate/other recommendation tiers using accuracy and calibration-oriented metrics already used by the project.
+- Do not present a threshold change as justified unless the evidence is actually strong enough.
+- If the best outcome is “leave thresholds unchanged for now,” state that clearly.
+
+Deliverables for #120:
+- Per-tournament-level performance summary for Strong vs other tiers, including sample sizes.
+- Clear notes on which segments are statistically weak or inconclusive.
+- Any proposed threshold adjustments and the evidence supporting or rejecting them.
+
+***
+
+### Guardrails
+
+- No fake data.
+- No placeholder fixes.
+- No cosmetic-only “success” claim unless the underlying issue is actually resolved.
+- Do not break existing functionality while making these changes.
+- Keep changes minimal, targeted, and production-safe.
+- If a migration or data repair is required, make it reversible and safe.
+
+***
+
+### Validation standard
+
+Do not describe the work as bug-free or error-free. Instead, complete full validation and confirm there are no known critical or high-severity defects in the changed areas.
+
+Required validation:
+- Reproduce each issue before fixing it where possible.
+- Verify the fix after implementation.
+- Check for regressions in related flows.
+- Test edge cases around missing data, duplicate runs, incomplete matches, stale statuses, and persistence failures.
+- Report anything not fully proven as unresolved or needing monitoring.
+- Do not mark the task complete unless the system is working as intended in real conditions or a clearly documented test equivalent.
+
+***
+
+### Final deliverables
+
+When all three tasks are done, provide:
+
+1. A short summary of what was changed.
+2. A list of root causes found.
+3. A list of files changed.
+4. A clear validation report for Tasks #122, #121, and #120.
+5. Any remaining risks, unknowns, or follow-up recommendations.
+6. Confirmation that the system is production-safe and free of any known critical defects in the affected areas, without claiming absolute zero bugs.
+
+Sources
