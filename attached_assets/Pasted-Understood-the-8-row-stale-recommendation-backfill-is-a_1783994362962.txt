@@ -1,0 +1,26 @@
+Understood — the 8-row stale-recommendation backfill is already running, so send the Fatigue fix as a queued follow-up rather than an immediate parallel task, since both involve writes to the same live table and running them simultaneously risks the same kind of race condition Replit already caught once tonight with the drift-check halts.
+
+## Prompt to Send Replit
+
+"Note: I understand the 8-row stale-recommendation backfill is already in progress. Do not start the Fatigue asOfDate fix until that backfill fully completes and reports back — queue it to run immediately after, not in parallel.
+
+Once the 8-row backfill is confirmed complete and verified, proceed with the Fatigue asOfDate fix:
+
+FIX SCOPE
+
+- Add an explicit asOfDate parameter to computeFatigueModule and thread it through from the walk-forward evaluator, so backtest/historical evaluation checks match recency against each row's actual historical as-of date, not Date.now().
+- Confirm the live (non-backtest) prediction path already correctly uses the real current date and is unaffected by this change — Fatigue's live behavior should not change at all, only its behavior when evaluating historical/backtest rows.
+- Do NOT change Fatigue's underlying 3/7/14-day window logic, weighting, or thresholds — only fix what date it's measured against.
+- Do NOT touch any other module (Surface Elo, Serve & Return, Recent Form, Head-to-Head), the ensemble weighting formula, or anything related to the 8-row backfill that just ran.
+
+VERIFICATION REQUIRED
+
+- After the fix, re-run Fatigue against the full graded backtest corpus and report its new coverage percentage and conditional accuracy (compare directly against the previous 0.0% coverage / n/a accuracy baseline).
+- Confirm live predictions generated today still produce identical Fatigue output as before this fix (i.e. no regression to the live path).
+- Re-run the full calibration analysis on the 48-59% probability band after this fix and report whether the gap between predicted and observed win rate changes.
+- Confirm no new label contradictions or invariant violations were introduced anywhere in the live table as a result of this fix, and confirm the 8 rows just backfilled are unaffected.
+- Confirm all existing tests pass, and add a regression test confirming Fatigue correctly varies (not always 50/50) when evaluated against historical as-of dates with real recent-match data.
+
+Report back with: confirmation the 8-row backfill finished first, then the Fatigue fix's exact code change, before/after coverage and accuracy stats, live-path regression confirmation, updated calibration results, and test suite status."
+
+Sources
