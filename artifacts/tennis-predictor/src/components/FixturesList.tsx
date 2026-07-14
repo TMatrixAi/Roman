@@ -21,11 +21,18 @@ const ITF_LEVELS = new Set(["Challenger", "ITF"])
  * fixture without more data, so a Slam match is honestly counted in BOTH buckets rather than
  * guessed into one. Challenger and ITF are folded into a single "ITF" bucket since the requested
  * filter has no separate slot for them.
+ *
+ * Task #84: a fixture whose level couldn't be resolved at all (null) is NOT the same as a fixture
+ * we know doesn't belong to the selected tour -- it's a real, upcoming match we simply can't
+ * classify yet (shown with the generic "TOURNAMENT" badge). Hiding it under every specific tour
+ * filter silently loses real matches with no indication they exist, so -- same honesty principle
+ * as GrandSlam above -- it's shown under every tour filter rather than guessed into one or
+ * dropped.
  */
 function matchesFilter(fixture: Fixture, filter: TourFilter): boolean {
   if (filter === "all") return true
   const level = fixture.tournamentLevel
-  if (!level) return false
+  if (!level) return true
   if (filter === "wta") return WTA_LEVELS.has(level) || level === "GrandSlam"
   if (filter === "atp") return ATP_LEVELS.has(level) || level === "GrandSlam"
   if (filter === "itf") return ITF_LEVELS.has(level)
