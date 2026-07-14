@@ -7,6 +7,12 @@ const BASE_URL = "https://api.odds-api.io/v3";
 const EVENTS_TTL_MS = 5 * 60 * 1000;
 const ODDS_TTL_MS = 5 * 60 * 1000;
 const COMMENCE_TIME_TOLERANCE_MS = 36 * 60 * 60 * 1000;
+// The `/odds` endpoint 400s with "Missing bookmakers" if this isn't sent explicitly on every call
+// -- selecting bookmakers via PUT /bookmakers/selected/select (done once, out of band) only
+// authorizes these names for the account, it does not make the query param optional. Our plan
+// caps this at 2 bookmakers (see /bookmakers/selected for the account's current allowance), so
+// this must stay in sync with whatever is actually selected on the account.
+const REQUESTED_BOOKMAKERS = "Bet365,Unibet";
 
 interface EventRow {
   id: number;
@@ -92,11 +98,19 @@ export class OddsApiIoProvider implements OddsProvider {
   }
 
   private async getTennisEvents(): Promise<EventRow[]> {
-    return this.cache.getOrFetch("events:tennis", EVENTS_TTL_MS, () => this.request<EventRow[]>("/events", { sport: "tennis", limit: "100" }));
+    // Without a status filter, /events returns a rolling window ordered such that already-settled
+    // matches from the last ~24h can crowd out today's genuinely upcoming ones once enough of them
+    // accumulate -- a real, still-pending ATP main-draw match can silently fall outside even a
+    // limit=100 window. Restricting to pending/live keeps this window meaningful for pre-match odds.
+    return this.cache.getOrFetch("events:tennis", EVENTS_TTL_MS, () =>
+      this.request<EventRow[]>("/events", { sport: "tennis", status: "pending,live", limit: "100" }),
+    );
   }
 
   private async getOddsForEvent(eventId: number): Promise<OddsResponse> {
-    return this.cache.getOrFetch(`odds:${eventId}`, ODDS_TTL_MS, () => this.request<OddsResponse>("/odds", { eventId: String(eventId) }));
+    return this.cache.getOrFetch(`odds:${eventId}`, ODDS_TTL_MS, () =>
+      this.request<OddsResponse>("/odds", { eventId: String(eventId), bookmakers: REQUESTED_BOOKMAKERS }),
+    );
   }
 
   async getMatchOdds(player1Name: string, player2Name: string, scheduledStart: Date | null): Promise<OddsQuote | null> {

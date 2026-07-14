@@ -1,0 +1,227 @@
+Investigate bulk match paste failures in the prediction search
+
+What happened
+
+I pasted a list of tennis matches into the bulk “Paste Search” area using the supported format:
+
+Player 1 vs. Player 2 — Event
+
+The app was supposed to parse each line, match both players to the ledger/player database, and populate the matches for prediction.
+
+Instead, most rows returned one of these errors:
+
+* NO MATCH
+* No Ledger player found for [player name]
+* AMBIGUOUS
+* Multiple unrelated player suggestions
+* Failure on names that appear to be valid active players
+
+Examples shown in the UI include:
+
+* Murphy Cassone vs. Tristan Schoolkate
+* Liam Draxl vs. James Kent Trotter
+* Fajing Sun vs. Arthur Gea
+* Daniel Milavsky vs. Duncan Chan
+* Alexander Rozin vs. Keegan Rice
+* Titouan Droguet vs. Alexander Blockx
+* Hugo Dellien vs. Ioannis Xilas
+* Andrej Nedic vs. Enrico Dalla Valle
+* Maria Timofeeva vs. Ann Li
+* Anna Blinkova vs. Aliaksandra Sasnovich
+* Tereza Valentova vs. Sofia Costoulas
+* Christian Langmo vs. Yibing Wu
+* Masamichi Imamura vs. James McCabe
+* Darwin Blanch vs. Bernard Tomic
+* Mark Lajal vs. Trevor Svajda
+* Spencer Johnson vs. Remy Bertola
+* Suresh vs. Echargui
+* Matsuoka vs. Moriya
+
+There were also ambiguous surname-only entries such as:
+
+* Added vs. Leong
+* Zhou vs. Kozlov
+* Zhu vs. Bu
+* Bicknell vs. Miyoshi
+
+Goal
+
+Perform a complete read-only root-cause analysis of why bulk pasted matches are not resolving correctly.
+
+Do not change code yet. Do not change matching thresholds, aliases, normalization rules, or database records. Produce a written diagnostic report first.
+
+⸻
+
+Questions the analysis must answer
+
+1. Bulk parser behavior
+
+Inspect the code that parses pasted lines and determine:
+
+* Whether leading bullet characters such as *, -, or • are being removed correctly.
+* Whether event text after an em dash is stripped before player matching.
+* Whether separators such as vs., vs, v, hyphen, em dash, @, and in are parsed consistently.
+* Whether hidden Unicode characters, non-breaking spaces, curly punctuation, or mobile copy/paste formatting are affecting the names.
+* Whether each line is being parsed into the correct player1, player2, and event fields.
+* Whether the app is accidentally passing strings like * Murphy Cassone into player lookup instead of Murphy Cassone.
+
+The error messages visibly include the leading *, for example:
+
+No Ledger player found for * Murphy Cassone
+
+That strongly suggests the bullet character may not be removed before lookup. Confirm whether this is the primary failure.
+
+2. Player lookup source
+
+Identify exactly which data source the search box uses:
+
+* ledger_players
+* predictions ledger
+* canonical player table
+* aliases table
+* recent match feed
+* another table or cache
+
+Explain whether the search only matches players who already exist in the ledger instead of searching the full player database.
+
+If the bulk tool is limited to “ledger players,” explain why valid players who have never had a prior prediction return NO MATCH.
+
+3. Name normalization
+
+Inspect the normalization and matching pipeline for:
+
+* Full names
+* Initials
+* Surname-only names
+* Diacritics
+* Alternate spellings
+* Middle names
+* Compound surnames
+* Name ordering
+* ATP/WTA provider naming differences
+* Abbreviated feed names
+
+For every failed full-name example, report:
+
+* Raw pasted text
+* Normalized lookup text
+* Whether an exact canonical player exists
+* Closest database matches
+* Why the exact match failed
+* Whether the issue is parser-related, missing data, alias-related, or lookup-scope-related
+
+4. Ambiguous surname-only players
+
+For entries such as Leong, Bu, Zhou, Added, Bicknell, Miyoshi, Suresh, Echargui, Matsuoka, and Moriya, determine:
+
+* Whether multiple players share that surname
+* Whether the database contains full names
+* Whether event context can disambiguate the correct player
+* Whether ATP/WTA tour, tournament, date, opponent, country, or live match-feed data can resolve the identity automatically
+* Why the current suggestions sometimes appear unrelated
+
+Do not guess identities. State which cases genuinely require user confirmation.
+
+5. Event-context matching
+
+Determine whether the pasted event name is used during player resolution.
+
+Examples:
+
+* ATP Challenger Granby
+* ATP Challenger Lincoln (NE)
+* ATP Challenger Cordenons
+* ATP Challenger Pozoblanco
+* ATP Umag
+* WTA Athens
+
+Check whether the app can use the event, date, tour, and opponent pairing to identify the correct scheduled match even when one or both names are abbreviated.
+
+Explain whether the current system does pure player-name lookup instead of match lookup.
+
+6. Database coverage
+
+For all pasted players, determine whether each player exists in:
+
+* The canonical player table
+* The ledger-player table
+* The alias table
+* The current tournament or odds feed
+* The recent results data source
+
+Produce a table with:
+
+Pasted name | Canonical match found? | Ledger match found? | Alias found? | Current event match found? | Root cause
+
+7. Data synchronization
+
+Check whether player and match data are current.
+
+Determine:
+
+* When the player database was last refreshed
+* Whether current Challenger and WTA players are included
+* Whether the odds feed contains these matches but the ledger database does not
+* Whether there is a failed or stale ingestion job
+* Whether ATP, Challenger, ITF, and WTA players are stored in separate datasets
+* Whether newly added players are missing from the lookup index or cache
+
+8. Bulk processing behavior
+
+Check whether one unresolved line affects the rest of the batch.
+
+Determine:
+
+* Whether lines are processed independently
+* Whether the batch stops, partially fails, or corrupts following rows
+* Whether all valid rows can still be populated while ambiguous rows wait for confirmation
+* Whether duplicate matches are detected properly
+* Whether live matches are intentionally rejected or should still be searchable
+
+9. Reproduction
+
+Reproduce the issue locally using the exact pasted list and capture:
+
+* Parsed output for every line
+* Normalized names
+* Database query used
+* Query results
+* Final status: matched, no match, or ambiguous
+
+Include logs or a compact debug table in the report. Do not expose secrets or API keys.
+
+10. Final root-cause summary
+
+End the report with a prioritized diagnosis:
+
+1. Primary root cause
+2. Secondary root causes
+3. Which failures come from pasted formatting
+4. Which failures come from missing player records
+5. Which failures come from surname ambiguity
+6. Which failures come from stale or incomplete data
+7. Which failures come from searching only the ledger instead of the full player database
+
+Then recommend the smallest safe fixes, but do not implement them yet.
+
+⸻
+
+Expected deliverable
+
+Create a markdown report such as:
+
+docs/audit-bulk-match-paste-player-resolution.md
+
+The report should contain:
+
+* Executive summary
+* Exact reproduction results
+* Parser findings
+* Player lookup findings
+* Database coverage table
+* Ambiguous-name analysis
+* Root cause for every failed row
+* Recommended repair plan
+* Suggested tests to prevent regression
+
+No source code, database records, thresholds, aliases, or formulas should be modified during this task.
