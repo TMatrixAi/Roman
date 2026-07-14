@@ -15,6 +15,11 @@ function escapeLikeToken(token: string): string {
   return token.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+/** Escape POSIX regex metacharacters in a raw user token so it's matched literally by `~*`. */
+function escapeRegexToken(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`);
+}
+
 /**
  * Search players who appear (as either side) in at least one saved Ledger prediction, matched by
  * name. This is intentionally scoped to `predictionsTable` -- it never touches the live
@@ -32,13 +37,27 @@ function escapeLikeToken(token: string): string {
  * A player's id/name pairing can drift slightly over time (e.g. a display-name correction
  * upstream), so results are grouped by id with the most recently-used name shown, rather than
  * grouping by the (id, name) pair -- otherwise the same real player could show up twice.
+ *
+ * Stored first names are also abbreviated to a bare initial (e.g. "L. Draxl", "J. K. Trotter"),
+ * while pasted names almost always spell the first name out in full (e.g. "Liam Draxl"). A plain
+ * substring match can never bridge that gap -- "liam" is never a substring of "l. draxl" -- so
+ * each query word is *also* accepted when it matches a same-first-letter initial token (a single
+ * letter immediately followed by a period, e.g. "L.") elsewhere in the name. This is purely
+ * additive to the existing substring rule: it only lets a full first name find its already-known
+ * abbreviated form, it never removes or narrows any match the substring rule already found, and a
+ * genuinely ambiguous surname (two distinct players who both satisfy every query word this way)
+ * still surfaces as multiple candidates for the caller to resolve, not a silent pick.
  */
 export async function searchLedgerPlayers(query: string): Promise<LedgerPlayerSummary[]> {
   const words = query.trim().split(/\s+/).filter((w) => w.length > 0);
   if (words.length === 0) return [];
 
   const wordConditions = sql.join(
-    words.map((word) => sql`combined.name ilike ${`%${escapeLikeToken(word)}%`} escape '\\'`),
+    words.map((word) => {
+      const substringMatch = sql`combined.name ilike ${`%${escapeLikeToken(word)}%`} escape '\\'`;
+      const initialMatch = sql`combined.name ~* ${`(^|[^a-zA-Z])${escapeRegexToken(word[0])}\\.`}`;
+      return sql`(${substringMatch} or ${initialMatch})`;
+    }),
     sql` and `,
   );
 
