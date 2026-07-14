@@ -376,7 +376,16 @@ export function computeSurfaceEloModule(
     warnings.push(`${blendedPlayer}'s surface history is shallow -- their surface Elo is blended ${pct}% toward their overall (cross-surface) Elo.`);
   }
   if (surface === "Hard") {
-    warnings.push("Indoor vs outdoor hard-court split is only known for major tournaments; most Hard matches are treated as one pool.");
+    // Task #123: indoor/outdoor hard-court status is now resolved for the large majority of
+    // ATP/WTA tour-level tournaments (real per-tournament provider data plus a maintained
+    // reference list of fixed-venue indoor events -- no longer just the ~26 majors/Masters/500s
+    // this warning used to imply). This still only fires for a match that itself resolved to the
+    // generic Hard pool rather than IndoorHard -- i.e. a real tournament that either isn't
+    // classified as indoor by any source, or whose historical sample may include older matches
+    // imported before this classification existed.
+    warnings.push(
+      "This match's surface resolved to the generic Hard-court pool (not specifically Indoor Hard) -- its historical sample may still blend indoor and outdoor results for tournaments outside known indoor coverage.",
+    );
   }
   const minTourShare = Math.min(p1.tourLevelShare, p2.tourLevelShare);
   if (minTourShare < 0.25) {

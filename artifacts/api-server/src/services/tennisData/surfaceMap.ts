@@ -17,7 +17,7 @@ import type { Surface, TournamentLevel } from "./types";
 // `get_tournaments` doesn't expose that granularity -- only a coarse tour/event-type label. For
 // everything else, `inferLevelFromEventType` below assigns a defensible default tier from that
 // coarse label. Anything that can't be resolved by either path stays `null` -- never guessed.
-const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: TournamentLevel }> = [
+const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: TournamentLevel; tour?: "ATP" | "WTA" }> = [
   { match: /wimbledon/i, surface: "Grass", level: "GrandSlam" },
   { match: /roland garros|french open/i, surface: "Clay", level: "GrandSlam" },
   { match: /\bus open\b/i, surface: "Hard", level: "GrandSlam" },
@@ -55,6 +55,27 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
   { match: /\biasi\b/i, surface: "Clay" },
   { match: /\bkitzbuhel\b|kitzb\u00fchel/i, surface: "Clay" },
   { match: /\bathens\b/i, surface: "Hard" },
+  // Fall indoor hard-court swing (ATP/WTA) -- fixed indoor arenas every year, verified live
+  // (2026-07-14) against `get_tournaments`: the provider already tags most of these correctly as
+  // "Hard (Indoor)" for their ATP/WTA rows, but a `tour` restriction is still applied wherever the
+  // same city name is shared with a *different*, unconfirmed-surface edition on the other tour or
+  // with a lower-tier ITF/Challenger event of the same bare name -- never assume both tours (or
+  // both tiers) at a shared city name share a surface. Entries with no `tour` are only reachable
+  // for real ATP/WTA rows anyway (see the event-type guard in resolveSurfaceAndLevel below), so
+  // they're safe to leave unrestricted when both tours that exist there share the surface.
+  { match: /\bmarseille\b/i, surface: "IndoorHard", tour: "ATP" },
+  { match: /\bmetz\b/i, surface: "IndoorHard", tour: "ATP" },
+  { match: /\bsofia\b/i, surface: "IndoorHard" },
+  { match: /st\.?\s*petersburg/i, surface: "IndoorHard" },
+  { match: /\balmaty\b/i, surface: "IndoorHard", tour: "ATP" },
+  { match: /\bastana\b/i, surface: "IndoorHard", tour: "ATP" },
+  { match: /\blinz\b/i, surface: "IndoorHard", tour: "WTA" },
+  { match: /\btel aviv\b/i, surface: "IndoorHard", tour: "ATP" },
+  { match: /z[u\u00fc]rich/i, surface: "IndoorHard", tour: "WTA" },
+  // Only the 2020 pandemic-bubble "Cologne" ATP 250 (the bare-name edition; "Cologne 2" is
+  // already tagged correctly by the provider) -- both editions were played indoors at Lanxess
+  // Arena, but this fixes a real, confirmed-live provider tagging gap for the first one.
+  { match: /\bcologne\b/i, surface: "IndoorHard", tour: "ATP" },
 ];
 
 // Verified live (2026-07-11): tournament names for lower-tier events routinely contain
@@ -66,6 +87,48 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
 // 500-level tournament is ever named with these words, so this can only prevent false positives,
 // never suppress a real match.
 const NEVER_NAMED_TABLE = /challenger|\bitf\b|\bqualif|\bjunior|\bboys\b|\bgirls\b/i;
+
+// Verified live (2026-07-14): API-Tennis's `tournament_name` field is NOT reliably prefixed with
+// a tier marker -- e.g. some ITF events come back as "M15 St. Petersburg 4" (catches
+// NEVER_NAMED_TABLE above), but others come back as a completely bare city name like "Marseille"
+// with no ITF/Challenger marker anywhere in the name string, only in the separate
+// `event_type_type` field ("Itf Women Singles"). A name-only guard can never catch these. Any
+// caller that has real `event_type_type` data (i.e. everything except the legacy name-only
+// `inferSurfaceAndLevel` used for OCR'd screenshot text) must gate the named table on this too.
+const NEVER_NAMED_TABLE_EVENT_TYPE = /challenger|\bitf\b|\bqualif|\bjunior|\bboys\b|\bgirls\b|exhibition|teams|\bmixed\b/i;
+
+/** Real tour derived from the provider's own event-type label -- null when it doesn't say. */
+function tourFromEventType(eventTypeType: string | null | undefined): "ATP" | "WTA" | null {
+  const type = eventTypeType ?? "";
+  if (/wta/i.test(type)) return "WTA";
+  if (/atp/i.test(type)) return "ATP";
+  return null;
+}
+
+/**
+ * Named-table lookup used by `resolveSurfaceAndLevel`, which (unlike the legacy
+ * `inferSurfaceAndLevel`) has real `event_type_type` data available. Applies two guards the
+ * legacy path can't: skips the table entirely for real non-tour event types (closing the
+ * bare-name ITF/Challenger collision above), and skips any tour-restricted entry when the row's
+ * real tour doesn't match -- never assumes a shared city name means a shared surface across tours
+ * or tiers.
+ */
+function inferSurfaceAndLevelForResolve(
+  tournamentName: string | null | undefined,
+  eventTypeType: string | null | undefined,
+): { surface: Surface | null; level: TournamentLevel | null } {
+  if (!tournamentName || NEVER_NAMED_TABLE.test(tournamentName) || NEVER_NAMED_TABLE_EVENT_TYPE.test(eventTypeType ?? "")) {
+    return { surface: null, level: null };
+  }
+  const tour = tourFromEventType(eventTypeType);
+  for (const entry of TOURNAMENT_SURFACE) {
+    if (entry.tour && entry.tour !== tour) continue;
+    if (entry.match.test(tournamentName)) {
+      return { surface: entry.surface, level: entry.level ?? null };
+    }
+  }
+  return { surface: null, level: null };
+}
 
 // Deliberately never added to the named table above, even when a specific single-surface city is
 // known for a given edition: any "ATP Challenger <city>"/"ITF <event>" name is caught by
@@ -143,7 +206,7 @@ export function resolveSurfaceAndLevel(params: {
   eventTypeType: string | null | undefined;
   surfaceByTournamentKey: ReadonlyMap<string, Surface | null>;
 }): { surface: Surface | null; level: TournamentLevel | null } {
-  const named = inferSurfaceAndLevel(params.tournamentName);
+  const named = inferSurfaceAndLevelForResolve(params.tournamentName, params.eventTypeType);
   if (named.surface !== null) return named;
 
   const surfaceFromKey = params.tournamentKey ? (params.surfaceByTournamentKey.get(params.tournamentKey) ?? null) : null;

@@ -77,3 +77,50 @@ test("legacy inferSurfaceAndLevel still resolves the named majors/Masters table 
   assert.deepEqual(inferSurfaceAndLevel("Miami Open"), { surface: "Hard", level: "Masters1000" });
   assert.deepEqual(inferSurfaceAndLevel("Some Challenger Event"), { surface: null, level: null });
 });
+
+test("Task #123: resolveSurfaceAndLevel resolves known fixed-venue indoor hard-court events via the reference list", () => {
+  for (const name of ["Marseille", "Metz", "Sofia", "St. Petersburg", "Almaty", "Astana", "Tel Aviv", "Cologne"]) {
+    const result = resolveSurfaceAndLevel({
+      tournamentName: name,
+      tournamentKey: "999999",
+      eventTypeType: "Atp Singles",
+      // Deliberately wrong in the key lookup to prove the reference list overrides an
+      // unreliable/missing provider tag, exactly as it does for majors/Masters.
+      surfaceByTournamentKey: new Map([["999999", "Hard"]]),
+    });
+    assert.equal(result.surface, "IndoorHard", `expected ${name} to resolve IndoorHard`);
+  }
+});
+
+test("Task #123: WTA-only reference entries (Linz, Zurich) don't leak onto an ATP row at the same name", () => {
+  for (const name of ["Linz", "Zurich"]) {
+    const result = resolveSurfaceAndLevel({
+      tournamentName: name,
+      tournamentKey: "1",
+      eventTypeType: "Atp Singles",
+      surfaceByTournamentKey: new Map([["1", "Hard"]]),
+    });
+    // Falls through to the real tournament_key lookup instead of the WTA-only reference fact.
+    assert.equal(result.surface, "Hard", `expected ${name} ATP row to fall through to the key lookup, not the WTA-only fact`);
+  }
+  const wtaResult = resolveSurfaceAndLevel({
+    tournamentName: "Linz",
+    tournamentKey: "1",
+    eventTypeType: "Wta Singles",
+    surfaceByTournamentKey: new Map([["1", "Hard"]]),
+  });
+  assert.equal(wtaResult.surface, "IndoorHard");
+});
+
+test("Task #123: a bare tournament name shared with a lower-tier ITF/Challenger event never matches the reference list, even without an ITF/Challenger marker in the name itself", () => {
+  // Verified live (2026-07-14): API-Tennis returns some ITF rows with a completely bare city name
+  // (no "ITF"/"M15"/"W25" prefix) -- only `event_type_type` says it's a lower tier. The name-only
+  // NEVER_NAMED_TABLE guard can't catch this; resolveSurfaceAndLevel must use event_type_type too.
+  const result = resolveSurfaceAndLevel({
+    tournamentName: "Marseille",
+    tournamentKey: "555",
+    eventTypeType: "Itf Women Singles",
+    surfaceByTournamentKey: new Map([["555", "Clay"]]),
+  });
+  assert.deepEqual(result, { surface: "Clay", level: "ITF" });
+});

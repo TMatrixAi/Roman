@@ -196,7 +196,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     input.trackEloFallback ? input.player1.id : undefined,
     input.trackEloFallback ? input.player2.id : undefined,
   );
-  const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, player1OpponentElo, player2OpponentElo);
+  const serveReturn = computeServeReturnModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const recentForm = computeRecentFormModule(input.player1Matches, input.player2Matches, input.surface, player1OpponentElo, player2OpponentElo);
   const fatigue = computeFatigueModule(input.player1Matches, input.player2Matches, input.asOfDate);
   const matchLoadRecovery = computeMatchLoadRecoveryModule(input.player1Matches, input.player2Matches, input.asOfDate);

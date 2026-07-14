@@ -49,7 +49,7 @@ function baseMatch(overrides: Partial<MatchRecord>): MatchRecord {
 
 test("falls back to the margin proxy (capped at 60) when no match has real stats", () => {
   const matches: MatchRecord[] = Array.from({ length: 6 }, (_, i) => baseMatch({ id: `m${i}` }));
-  const result = computeServeReturnModule(matches, matches);
+  const result = computeServeReturnModule(matches, matches, "Hard");
   assert.ok(result.reliability <= 60, `expected proxy cap <= 60, got ${result.reliability}`);
   assert.match(result.note ?? "", /does not expose point-level/);
 });
@@ -61,7 +61,7 @@ test("uses real point-level stats and allows reliability above the proxy's 60 ca
       stats: statLine({ servicePointsWonPct: 68, returnPointsWon: 42 }),
     }),
   );
-  const result = computeServeReturnModule(withRealStats, withRealStats);
+  const result = computeServeReturnModule(withRealStats, withRealStats, "Hard");
   assert.ok(result.reliability > 60, `expected reliability > 60 with real stats, got ${result.reliability}`);
   assert.match(result.note ?? "", /real match-level point statistics/);
   // Both players have identical stats, so ratings should be roughly symmetric around 50.
@@ -74,7 +74,7 @@ test("falls back to the proxy when only one player has enough matches with real 
     baseMatch({ id: `real${i}`, stats: statLine({ servicePointsWonPct: 68, returnPointsWon: 42 }) }),
   );
   const proxyOnly: MatchRecord[] = Array.from({ length: 6 }, (_, i) => baseMatch({ id: `proxy${i}` }));
-  const result = computeServeReturnModule(withRealStats, proxyOnly);
+  const result = computeServeReturnModule(withRealStats, proxyOnly, "Hard");
   assert.match(result.note ?? "", /does not expose point-level/);
   assert.ok(result.reliability <= 60);
 });
@@ -87,7 +87,7 @@ test("exposes point-level breakdown (first-serve win %, BP saved/converted, game
       opponentStats: statLine({ breakPointsSaved: 1, breakPointsFaced: 3 }),
     }),
   );
-  const result = computeServeReturnModule(matches, matches);
+  const result = computeServeReturnModule(matches, matches, "Hard");
 
   assert.equal(result.player1PointLevel.firstServeWinPct, 75);
   assert.equal(result.player1PointLevel.breakPointsSavedPct, 75); // 3/4
@@ -101,7 +101,7 @@ test("point-level fields resolve independently and stay null when their source s
   const matches: MatchRecord[] = Array.from({ length: 5 }, (_, i) =>
     baseMatch({ id: `bp${i}`, stats: statLine({ servicePointsWonPct: 65, returnPointsWon: 40 }) }),
   );
-  const result = computeServeReturnModule(matches, matches);
+  const result = computeServeReturnModule(matches, matches, "Hard");
   assert.equal(result.player1PointLevel.firstServeWinPct, null);
   assert.equal(result.player1PointLevel.breakPointsSavedPct, null);
   assert.equal(result.player1PointLevel.breakPointsConvertedPct, null);
@@ -110,7 +110,7 @@ test("point-level fields resolve independently and stay null when their source s
 
 test("point-level breakdown is still computed (all null) on the margin-proxy fallback path, never crashing", () => {
   const matches: MatchRecord[] = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `m${i}` }));
-  const result = computeServeReturnModule(matches, matches);
+  const result = computeServeReturnModule(matches, matches, "Hard");
   assert.equal(result.player1PointLevel.firstServeWinPct, null);
   assert.equal(result.player1PointLevel.sampleSize, 0);
 });
@@ -139,8 +139,8 @@ test("real data quirk: padded {0,0} trailing setGameMargins entries must not dil
     ],
   });
   const matches3 = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `filler${i}` }));
-  const paddedResult = computeServeReturnModule([paddedMatch, ...matches3], [paddedMatch, ...matches3]);
-  const trimmedResult = computeServeReturnModule([trimmedMatch, ...matches3], [trimmedMatch, ...matches3]);
+  const paddedResult = computeServeReturnModule([paddedMatch, ...matches3], [paddedMatch, ...matches3], "Hard");
+  const trimmedResult = computeServeReturnModule([trimmedMatch, ...matches3], [trimmedMatch, ...matches3], "Hard");
   assert.equal(paddedResult.player1ServeRating, trimmedResult.player1ServeRating);
   assert.equal(paddedResult.player1ReturnRating, trimmedResult.player1ReturnRating);
 });
@@ -157,16 +157,35 @@ test("a match with only padded {0,0} entries (no real set data at all) is exclud
     ],
   });
   const realMatches = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `real${i}` }));
-  const withNoDataMatch = computeServeReturnModule([noRealDataMatch, ...realMatches], [noRealDataMatch, ...realMatches]);
-  const withoutNoDataMatch = computeServeReturnModule(realMatches, realMatches);
+  const withNoDataMatch = computeServeReturnModule([noRealDataMatch, ...realMatches], [noRealDataMatch, ...realMatches], "Hard");
+  const withoutNoDataMatch = computeServeReturnModule(realMatches, realMatches, "Hard");
   // The no-real-data match must be excluded entirely, so ratings match the 3-real-match-only run.
   assert.equal(withNoDataMatch.player1ServeRating, withoutNoDataMatch.player1ServeRating);
   assert.equal(withNoDataMatch.player1ReturnRating, withoutNoDataMatch.player1ReturnRating);
 });
 
+test("Task #123: a match on a different surface than the one being predicted is de-weighted, not excluded or full-weighted", () => {
+  // One real-stats match on the predicted surface (Clay) plus enough off-surface (Hard) matches
+  // to clear MIN_REAL_SAMPLE -- if surface weighting is applied, the off-surface matches should
+  // count for less than they would if predicting on Hard instead.
+  const onSurface: MatchRecord[] = Array.from({ length: 2 }, (_, i) =>
+    baseMatch({ id: `clay${i}`, surface: "Clay", stats: statLine({ servicePointsWonPct: 70, returnPointsWon: 45 }) }),
+  );
+  const offSurface: MatchRecord[] = Array.from({ length: 4 }, (_, i) =>
+    baseMatch({ id: `hard${i}`, surface: "Hard", stats: statLine({ servicePointsWonPct: 50, returnPointsWon: 30 }) }),
+  );
+  const mixed = [...onSurface, ...offSurface];
+
+  const onClay = computeServeReturnModule(mixed, mixed, "Clay");
+  const onHard = computeServeReturnModule(mixed, mixed, "Hard");
+  // Predicting on Clay should weight the (higher-rated) Clay matches more heavily than predicting
+  // on Hard does, where the (lower-rated) Hard matches are the full-weight majority instead.
+  assert.ok(onClay.player1ServeRating > onHard.player1ServeRating, `expected Clay-weighted rating (${onClay.player1ServeRating}) > Hard-weighted rating (${onHard.player1ServeRating})`);
+});
+
 test("does not regress a proxy-only prediction: identical inputs and outputs to the pre-existing margin logic", () => {
   const matches: MatchRecord[] = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `m${i}` }));
-  const result = computeServeReturnModule(matches, matches, new Map(), new Map());
+  const result = computeServeReturnModule(matches, matches, "Hard", new Map(), new Map());
   // 3 matches * 6 = 18 reliability. Both players have identical 6-4 6-4 wins (avg margin +2/set),
   // so ratings should be identical and symmetric, per the pre-existing margin-proxy formula
   // (50 + avgMargin * 6 = 50 + 2*6 = 62).

@@ -1,4 +1,4 @@
-import type { MatchRecord } from "../tennisData/types";
+import type { MatchRecord, Surface } from "../tennisData/types";
 import type { OpponentEloLookup } from "./opponentStrength";
 import { realSetGameMargins } from "./setMargins";
 
@@ -65,6 +65,18 @@ const POINT_LEVEL_RATING_SCALE = 1.8;
 const POINT_LEVEL_BLEND_WEIGHT = 0.2;
 const MIN_POINT_LEVEL_SAMPLE = 3;
 
+// A match on a different surface than the one being predicted is still real signal about a
+// player's serve/return game, just less directly transferable -- same de-weighting `recentForm.ts`
+// already applies, not a full exclusion. `serveReturn.ts` previously had zero surface awareness
+// (every match at any weight regardless of surface), even though hard-court dominance in
+// particular can look very different indoors vs outdoors.
+const SURFACE_MISMATCH_WEIGHT = 0.7;
+
+/** Real per-match weight multiplier for a surface mismatch -- 1 when the surface is unknown or matches. */
+function surfaceWeight(match: MatchRecord, surface: Surface): number {
+  return match.surface !== null && match.surface !== surface ? SURFACE_MISMATCH_WEIGHT : 1;
+}
+
 /**
  * Closed-form probability of winning a standard (advantage) tennis game given a real, per-point
  * probability `p` of winning each point on serve -- the well-established Newton & Keller (1974)
@@ -88,7 +100,7 @@ function estimateServiceGameHoldProbability(pointWinProbPct: number): number {
  * provider can supply break-point counts without first-serve splits, or vice versa -- so this
  * never gates one field's availability on another's.
  */
-function computePointLevelStats(matches: MatchRecord[], opponentElo: OpponentEloLookup): PointLevelStats {
+function computePointLevelStats(matches: MatchRecord[], opponentElo: OpponentEloLookup, surface: Surface): PointLevelStats {
   let firstServeWeightedSum = 0;
   let firstServeWeightTotal = 0;
   let bpSavedSum = 0;
@@ -101,7 +113,7 @@ function computePointLevelStats(matches: MatchRecord[], opponentElo: OpponentElo
 
   for (const m of matches) {
     const elo = opponentElo.get(m.id);
-    const strengthFactor = elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1;
+    const strengthFactor = (elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1) * surfaceWeight(m, surface);
 
     if (m.stats?.firstServeWon != null) {
       firstServeWeightedSum += m.stats.firstServeWon * strengthFactor;
@@ -109,15 +121,15 @@ function computePointLevelStats(matches: MatchRecord[], opponentElo: OpponentElo
       contributingMatchIds.add(m.id);
     }
     if (m.stats?.breakPointsSaved != null && m.stats?.breakPointsFaced != null && m.stats.breakPointsFaced > 0) {
-      bpSavedSum += m.stats.breakPointsSaved;
-      bpFacedSum += m.stats.breakPointsFaced;
+      bpSavedSum += m.stats.breakPointsSaved * surfaceWeight(m, surface);
+      bpFacedSum += m.stats.breakPointsFaced * surfaceWeight(m, surface);
       contributingMatchIds.add(m.id);
     }
     if (m.opponentStats?.breakPointsFaced != null && m.opponentStats?.breakPointsSaved != null && m.opponentStats.breakPointsFaced > 0) {
       // The opponent's own break points faced/saved on THEIR serve, during this same match, is
       // exactly how many break points this player generated/converted while returning.
-      bpConvertedSum += m.opponentStats.breakPointsFaced - m.opponentStats.breakPointsSaved;
-      bpReturnFacedSum += m.opponentStats.breakPointsFaced;
+      bpConvertedSum += (m.opponentStats.breakPointsFaced - m.opponentStats.breakPointsSaved) * surfaceWeight(m, surface);
+      bpReturnFacedSum += m.opponentStats.breakPointsFaced * surfaceWeight(m, surface);
       contributingMatchIds.add(m.id);
     }
     if (m.stats?.servicePointsWonPct != null) {
@@ -157,6 +169,7 @@ function blendPointLevel(baseRating: number, p1Pct: number | null, p2Pct: number
 function ratingsFromMargins(
   matches: MatchRecord[],
   opponentElo: OpponentEloLookup,
+  surface: Surface,
 ): { serve: number; ret: number; sample: number; coverage: number } {
   // `setGameMargins` is a fixed-length (5-slot) array padded with {0,0} trailing entries for
   // unplayed sets -- `.length` is always 5 regardless of real set count, so filtering (and later
@@ -172,7 +185,7 @@ function ratingsFromMargins(
   let coveredMatches = 0;
   for (const { match: m, realMargins } of withMargins) {
     const elo = opponentElo.get(m.id);
-    const strengthFactor = elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1;
+    const strengthFactor = (elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1) * surfaceWeight(m, surface);
     if (elo !== undefined) coveredMatches += 1;
     for (const set of realMargins) {
       weightedMarginSum += (set.playerGames - set.opponentGames) * strengthFactor;
@@ -194,6 +207,7 @@ function ratingsFromMargins(
 function realRatingsFromStats(
   matches: MatchRecord[],
   opponentElo: OpponentEloLookup,
+  surface: Surface,
 ): { serve: number; ret: number; sample: number; coverage: number } | null {
   const withStats = matches.filter((m) => m.stats?.servicePointsWonPct != null && m.stats?.returnPointsWon != null);
   if (withStats.length < MIN_REAL_SAMPLE) return null;
@@ -204,7 +218,7 @@ function realRatingsFromStats(
   let coveredMatches = 0;
   for (const m of withStats) {
     const elo = opponentElo.get(m.id);
-    const strengthFactor = elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1;
+    const strengthFactor = (elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1) * surfaceWeight(m, surface);
     if (elo !== undefined) coveredMatches += 1;
     serveWeightedSum += m.stats!.servicePointsWonPct! * strengthFactor;
     retWeightedSum += m.stats!.returnPointsWon! * strengthFactor;
@@ -220,17 +234,18 @@ function realRatingsFromStats(
 export function computeServeReturnModule(
   player1Matches: MatchRecord[],
   player2Matches: MatchRecord[],
+  surface: Surface,
   player1OpponentElo: OpponentEloLookup = new Map(),
   player2OpponentElo: OpponentEloLookup = new Map(),
 ): ServeReturnResult {
   // Prefer real, provider-reported point-level stats when both players have enough matches with
   // them -- a mix of real stats for one player and a proxy for the other isn't a fair comparison,
   // so the module falls back to the margin-based proxy for both players unless both clear the bar.
-  const p1Real = realRatingsFromStats(player1Matches, player1OpponentElo);
-  const p2Real = realRatingsFromStats(player2Matches, player2OpponentElo);
+  const p1Real = realRatingsFromStats(player1Matches, player1OpponentElo, surface);
+  const p2Real = realRatingsFromStats(player2Matches, player2OpponentElo, surface);
 
-  const p1PointLevel = computePointLevelStats(player1Matches, player1OpponentElo);
-  const p2PointLevel = computePointLevelStats(player2Matches, player2OpponentElo);
+  const p1PointLevel = computePointLevelStats(player1Matches, player1OpponentElo, surface);
+  const p2PointLevel = computePointLevelStats(player2Matches, player2OpponentElo, surface);
 
   if (p1Real && p2Real) {
     const minSample = Math.min(p1Real.sample, p2Real.sample);
@@ -279,8 +294,8 @@ export function computeServeReturnModule(
     };
   }
 
-  const p1 = ratingsFromMargins(player1Matches, player1OpponentElo);
-  const p2 = ratingsFromMargins(player2Matches, player2OpponentElo);
+  const p1 = ratingsFromMargins(player1Matches, player1OpponentElo, surface);
+  const p2 = ratingsFromMargins(player2Matches, player2OpponentElo, surface);
 
   const minSample = Math.min(p1.sample, p2.sample);
   const reliability = Math.max(5, Math.min(60, minSample * 6)); // capped -- this is a proxy, never "excellent"
