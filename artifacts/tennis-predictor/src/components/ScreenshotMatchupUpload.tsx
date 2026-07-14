@@ -16,6 +16,7 @@ function fileToBase64DataUrl(file: File): Promise<string> {
 
 export function ScreenshotMatchupUpload({
   onResolved,
+  onMultipleFiles,
 }: {
   onResolved: (result: {
     player1: ScreenshotMatchupResult["player1"]
@@ -25,6 +26,11 @@ export function ScreenshotMatchupUpload({
     eventName: string | null
     warnings: string[]
   }) => void
+  // This card is single-matchup-only, but a lot of users reach for it first and select several
+  // screenshots at once expecting it to just work. Rather than silently processing only the
+  // first file (or erroring), hand the whole selection off to bulk upload -- which is exactly
+  // built for this -- instead of making "20 at once" only discoverable via the small toggle below.
+  onMultipleFiles?: (files: File[]) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -80,10 +86,15 @@ export function ScreenshotMatchupUpload({
             ref={inputRef}
             type="file"
             accept="image/png,image/jpeg,image/webp"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void handleFile(file)
+              const files = Array.from(e.target.files ?? [])
+              if (files.length > 1 && onMultipleFiles) {
+                onMultipleFiles(files)
+              } else if (files.length === 1) {
+                void handleFile(files[0])
+              }
               e.target.value = ""
             }}
           />

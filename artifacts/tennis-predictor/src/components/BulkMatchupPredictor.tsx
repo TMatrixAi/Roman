@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { useLocation } from "wouter"
 import {
   recognizeMatchupScreenshot,
@@ -141,7 +141,11 @@ function needsPredicting(item: BatchItem): boolean {
  * that fail to resolve a full matchup are flagged in their own row and simply excluded from the
  * predict step -- they never block the rest of the batch.
  */
-export function BulkMatchupPredictor() {
+export interface BulkMatchupPredictorHandle {
+  handleFiles: (files: File[]) => void
+}
+
+export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(function BulkMatchupPredictor(_props, ref) {
   const [, setLocation] = useLocation()
   const inputRef = useRef<HTMLInputElement>(null)
   const [items, setItems] = useState<BatchItem[]>([])
@@ -188,6 +192,12 @@ export function BulkMatchupPredictor() {
     clearStoredBatch()
     setResumableBatch(null)
   }
+
+  useImperativeHandle(ref, () => ({
+    handleFiles: (files: File[]) => {
+      void handleFiles(files)
+    },
+  }))
 
   const handleFiles = async (files: File[]) => {
     setBatchError(null)
@@ -468,7 +478,7 @@ export function BulkMatchupPredictor() {
       </CardContent>
     </Card>
   )
-}
+})
 
 function ItemStatusBadge({ item }: { item: BatchItem }) {
   if (item.predictStatus === "success") {

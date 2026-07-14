@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useLocation, useSearch } from "wouter"
 import { useGetPlayer, getGetPlayerQueryKey, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { ScreenshotMatchupUpload } from "@/components/ScreenshotMatchupUpload"
-import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
+import { BulkMatchupPredictor, type BulkMatchupPredictorHandle } from "@/components/BulkMatchupPredictor"
 import { DataWarning } from "@/components/DataWarning"
 import { Activity, Swords, Settings2, RefreshCw, Layers } from "lucide-react"
 
@@ -121,8 +121,17 @@ export default function PredictBuilderPage() {
   const [screenshotTournamentName, setScreenshotTournamentName] = useState<string | null>(null)
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel) || screenshotDetectedSurface
   const [showBulkUpload, setShowBulkUpload] = useState(false)
+  const bulkRef = useRef<BulkMatchupPredictorHandle>(null)
 
   const createPrediction = useCreatePrediction()
+
+  // Selecting more than one file in the single-screenshot uploader above hands the whole
+  // selection to bulk upload -- a user shouldn't need to discover the small toggle below just to
+  // process more than one screenshot at a time.
+  const handleMultipleFiles = (files: File[]) => {
+    setShowBulkUpload(true)
+    bulkRef.current?.handleFiles(files)
+  }
 
   const handleScreenshotResolved = ({
     player1,
@@ -194,23 +203,24 @@ export default function PredictBuilderPage() {
           the last upload stay visible even after a fully successful match fills both players --
           otherwise this card would unmount the instant both slots fill and the confirmation the
           user just saw would vanish before they could read it. */}
-      <ScreenshotMatchupUpload onResolved={handleScreenshotResolved} />
+      <ScreenshotMatchupUpload onResolved={handleScreenshotResolved} onMultipleFiles={handleMultipleFiles} />
 
       <div>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="font-mono text-xs text-muted-foreground"
+          className="font-mono text-xs"
           onClick={() => setShowBulkUpload((v) => !v)}
         >
           <Layers className="w-3.5 h-3.5 mr-1.5" />
           {showBulkUpload ? "HIDE BULK UPLOAD" : "GOT MULTIPLE SCREENSHOTS? BULK UPLOAD & BATCH PREDICT"}
         </Button>
-        {showBulkUpload && (
-          <div className="mt-3">
-            <BulkMatchupPredictor />
-          </div>
-        )}
+        {/* Always mounted (never unmounted by the toggle) so `bulkRef` stays valid and a
+            multi-file selection from the single uploader above can be handed off immediately,
+            even before the user has ever clicked this toggle themselves. */}
+        <div className={showBulkUpload ? "mt-3" : "hidden"}>
+          <BulkMatchupPredictor ref={bulkRef} />
+        </div>
       </div>
 
       {(!player1Id || !player2Id) && (
