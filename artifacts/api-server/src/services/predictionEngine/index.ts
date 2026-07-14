@@ -270,9 +270,27 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       importance: MODULE_IMPORTANCE.matchLoadRecovery,
       weightPrior: ENSEMBLE_WEIGHT_PRIOR.matchLoadRecovery,
     },
-  ].filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
+  ];
 
-  const { models: featureModels, ensembleProbability: rawEnsembleProbability, modelAgreement: featureAgreement } = buildEnsemble(moduleEdges);
+  // Task #111 root-cause fix: the Data Quality blend must draw from every module NOT in
+  // `EXCLUDED_FROM_DATA_QUALITY` (currently just Head-to-Head), independent of which modules are
+  // excluded from the ensemble VOTE. Before this fix, `moduleEdges` below was pre-filtered by
+  // `EXCLUDED_FROM_ENSEMBLE` for the ensemble build, and the Data Quality blend was reading from
+  // that SAME already-filtered array -- so Availability/Fatigue/Match Load Recovery silently
+  // never reached `computeDataQuality` at all, despite `MODULE_IMPORTANCE` documenting real
+  // weights (0.9/0.7/0.4) and rationale for including them. A 4,111-row walk-forward audit
+  // (docs/audit-task111-dq-degradation-above-55.md) traced the calibration reversal above DQ~55
+  // directly to this: with only Surface Elo/Serve & Return/Recent Form actually contributing (all
+  // three saturate once both players are well-logged tour regulars), DQ had nothing to dampen its
+  // score for exactly the matchups where extensive history correlates with deeper, more
+  // competitive -- and so structurally harder-to-call -- draws. Restoring the documented modules
+  // shrank the worst-miscalibrated (DQ 85-100) segment from n=422 to n=96 in that audit. Excluded
+  // models from an ablation run (`excludedModels`) are still honored here -- an ablation run that
+  // turns a module off should not silently keep counting toward Data Quality either.
+  const allModuleEdgesForDataQuality = moduleEdges.filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_DATA_QUALITY.has(m.key));
+
+  const ensembleModuleEdges = moduleEdges.filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
+  const { models: featureModels, ensembleProbability: rawEnsembleProbability, modelAgreement: featureAgreement } = buildEnsemble(ensembleModuleEdges);
   // Recomputed (pure, deterministic) so we keep the full weighted-disagreement breakdown --
   // stddev/support/conflicting models -- for the disagreement explanation below, not just the
   // category buildEnsemble already returned.
@@ -297,15 +315,16 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   });
   const ensembleProbability = tieBreaker.applied ? tieBreaker.adjustedProbability : rawEnsembleProbability;
 
-  // Availability is still fully computed and shown (below, via `availability`/`availabilityNote`)
-  // but excluded from both the ensemble vote and the Data Quality blend -- see
-  // `EXCLUDED_FROM_ENSEMBLE`'s rationale: its own leave-one-out removal measurably improved
-  // accuracy in the 2026-07-13 ablation report, so it is disabled rather than merely down-weighted.
-  // Head-to-Head is additionally excluded from the Data Quality blend ONLY (it still votes in the
-  // ensemble above) -- see `EXCLUDED_FROM_DATA_QUALITY`'s rationale: the common "no prior
-  // meetings" case isn't a fixable data gap, so it shouldn't be able to drag the score down.
+  // Availability/Fatigue/Match Load Recovery are excluded from the ensemble VOTE (see
+  // `EXCLUDED_FROM_ENSEMBLE`'s rationale -- each failed its own leave-one-out/ablation bar for
+  // voting accuracy) but, per Task #111, DO still count toward the Data Quality blend via
+  // `allModuleEdgesForDataQuality` above, matching `MODULE_IMPORTANCE`'s documented weights/
+  // rationale for them. Head-to-Head remains excluded from the Data Quality blend specifically
+  // (it still votes in the ensemble above) -- see `EXCLUDED_FROM_DATA_QUALITY`'s rationale: the
+  // common "no prior meetings" case isn't a fixable data gap, so it shouldn't be able to drag the
+  // score down.
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
-    moduleEdges.filter((m) => !EXCLUDED_FROM_DATA_QUALITY.has(m.key)).map((m) => ({ reliability: m.reliability, importance: m.importance })),
+    allModuleEdgesForDataQuality.map((m) => ({ reliability: m.reliability, importance: m.importance })),
   );
 
   // Requirement 2 of this phase: expose the surface sample-depth count that `surfaceElo.ts`

@@ -1,0 +1,376 @@
+I want you to perform a complete statistical audit of my Tennis Stats Engine using my entire available prediction history (not a sample — every prediction record on file).
+
+DO NOT modify any code.
+
+DO NOT make any changes.
+
+This is an audit only.
+
+Your job is to identify anything that is statistically incorrect, misleading, inconsistent, poorly calibrated, overconfident, underconfident, unnecessary, redundant, or potentially harming prediction accuracy.
+
+Treat this like a professional quantitative model validation.
+
+Before starting, confirm and report:
+
+- Total number of prediction records available and the date range they span.
+- Whether this evaluation is a true walk-forward/out-of-time validation (each prediction using only data available before that match) or something else — state explicitly which one it is, and flag if any data leakage is possible.
+- Whether the dataset spans the Task #68/#75 Data Quality recalibration change. If so, report calibration and all downstream metrics separately for the pre-change period, the post-change period, and combined, since blending both regimes could distort findings.
+
+Inspect every available prediction and analyze:
+
+- Final prediction
+- Actual winner
+- Win probability
+- Actual result
+- Raw ensemble probability
+- Calibrated probability
+- Data Quality
+- Upset Risk
+- Model Agreement
+- Matchup Closeness
+- Recommendation
+- Elite Tier
+- Segment Specialist
+- Monte Carlo Simulator
+- Every individual model vote
+- Surface Elo
+- Serve & Return
+- Recent Form
+- Fatigue
+- Availability
+- Head-to-Head
+- Match Load Recovery
+- Weather (if used)
+
+For every issue you report, include statistical evidence, including a 95% confidence interval (via bootstrap or equivalent) for every headline metric (Brier Score, log loss, ECE, calibration-in-the-large, subgroup accuracy).
+
+Do NOT speculate.
+
+Do NOT recommend changes unless the historical evidence supports them.
+
+For any subgroup or bucket (e.g., Elite tier, a specific model, a recommendation tier, a DQ band) with fewer than 100 observations, explicitly flag that finding as statistically unstable due to small sample size, and state the actual n for that bucket.
+
+When testing many thresholds or models at once, note where an apparent pattern could plausibly be due to chance given the number of comparisons made, rather than a real effect.
+
+-------------------------------------------------------
+1. Calibration audit
+-------------------------------------------------------
+
+Determine whether probabilities are properly calibrated.
+
+Examples:
+
+Do 80% predictions win roughly 80%?
+
+Do 70% predictions win roughly 70%?
+
+Do 60% predictions win roughly 60%?
+
+Do favorites become too conservative?
+
+Do underdogs become inflated?
+
+Produce:
+
+- Reliability plots/tables
+- Brier Score
+- Log Loss
+- Expected Calibration Error (ECE)
+- Confidence intervals for every metric above
+
+-------------------------------------------------------
+2. Model agreement audit
+-------------------------------------------------------
+
+Find matches where:
+
+- all models generally agree but are labelled High Disagreement
+- disagreement is overstated
+- disagreement is understated
+- disagreement explanation is misleading
+
+Determine whether disagreement thresholds should change.
+
+-------------------------------------------------------
+3. Recommendation audit
+-------------------------------------------------------
+
+Determine whether:
+
+Strong Lean
+
+Moderate Lean
+
+Small Lean
+
+No Strong Signal
+
+accurately reflect historical performance, with sample size per tier reported.
+
+Do stronger recommendations actually perform better?
+
+-------------------------------------------------------
+4. Elite Tier audit
+-------------------------------------------------------
+
+Does Elite Tier outperform normal predictions?
+
+Find:
+
+False positives
+
+False negatives
+
+Borderline cases
+
+Determine whether Elite requirements should change. Report n for the Elite bucket and flag if too small for confident conclusions.
+
+-------------------------------------------------------
+5. Upset Risk audit
+-------------------------------------------------------
+
+Determine whether:
+
+Low
+
+Moderate
+
+High
+
+Extreme
+
+actually predict upset frequency.
+
+Find matches where upset risk appears overstated or understated.
+
+-------------------------------------------------------
+6. Individual model audit
+-------------------------------------------------------
+
+For every model compute:
+
+Win %
+
+Log Loss
+
+Brier Score
+
+Calibration
+
+Average confidence
+
+Average error
+
+Correlation with actual outcomes
+
+ROI (supplementary only—not the primary metric)
+
+Determine whether any model is:
+
+- hurting the ensemble
+- redundant
+- overweighted
+- underweighted
+
+-------------------------------------------------------
+7. Calibration drift
+-------------------------------------------------------
+
+Determine whether any module consistently pushes probabilities too high or too low.
+
+Analyze:
+
+Surface Elo
+
+Serve & Return
+
+Recent Form
+
+Fatigue
+
+Availability
+
+Head-to-Head
+
+Match Load Recovery
+
+Segment Specialist
+
+Simulator
+
+-------------------------------------------------------
+8. UI honesty audit
+-------------------------------------------------------
+
+Review every user-facing label.
+
+Examples:
+
+High Disagreement
+
+Moderate Lean
+
+Strong Lean
+
+Low Upset Risk
+
+Excellent Data Quality
+
+Elite Tier
+
+Determine whether any wording is statistically misleading or could reasonably confuse users.
+
+Separate UI wording issues from engine issues.
+
+-------------------------------------------------------
+9. Confidence inflation
+-------------------------------------------------------
+
+Find every incorrect prediction at:
+
+80%+
+
+75%+
+
+70%+
+
+65%+
+
+Explain whether confidence was justified based on the underlying evidence.
+
+-------------------------------------------------------
+10. Confidence suppression
+-------------------------------------------------------
+
+Find matches where predictions between 55-60% won comfortably.
+
+Determine whether confidence was unnecessarily reduced.
+
+-------------------------------------------------------
+11. Correlation analysis
+-------------------------------------------------------
+
+Measure whether these metrics actually predict future accuracy:
+
+Data Quality
+
+Agreement
+
+Upset Risk
+
+Elite Tier
+
+Recommendation
+
+If they have weak predictive value, explain why, and report confidence intervals on each correlation.
+
+-------------------------------------------------------
+12. Threshold optimization
+-------------------------------------------------------
+
+Without changing code, estimate improved thresholds for:
+
+Elite Tier
+
+Recommendation
+
+Agreement
+
+Upset Risk
+
+Model Conflict
+
+Calibration
+
+Only recommend changes that produce measurable improvements on historical validation, with confidence intervals on the before/after estimates.
+
+Show estimated before-and-after performance.
+
+-------------------------------------------------------
+13. UI consistency audit
+-------------------------------------------------------
+
+Find any pages where:
+
+labels
+
+colors
+
+badges
+
+probabilities
+
+scores
+
+or explanations
+
+contradict one another or could confuse users.
+
+-------------------------------------------------------
+14. Overall engine health
+-------------------------------------------------------
+
+Score every subsystem out of 10.
+
+Surface Elo
+
+Serve & Return
+
+Recent Form
+
+Fatigue
+
+Availability
+
+Head-to-Head
+
+Match Load Recovery
+
+Segment Specialist
+
+Simulator
+
+Calibration
+
+Recommendation
+
+Upset Risk
+
+Elite Tier
+
+Overall Engine
+
+Explain every score, and note where scores are based on limited sample sizes.
+
+-------------------------------------------------------
+15. Final report
+-------------------------------------------------------
+
+Rank every issue by severity:
+
+Critical
+
+High
+
+Medium
+
+Low
+
+For every issue include:
+
+- statistical evidence with confidence intervals
+- sample size the finding is based on
+- why it matters
+- how often it occurred
+- estimated impact
+- recommended fix
+
+If you believe a subsystem is already statistically correct, explicitly say so.
+
+Do NOT invent problems.
+
+If you cannot demonstrate an issue with historical evidence, state that no issue was found.
+
+If a finding is based on a small sample, explicitly say the evidence is suggestive but not conclusive rather than presenting it as definitive.
+
+Sources

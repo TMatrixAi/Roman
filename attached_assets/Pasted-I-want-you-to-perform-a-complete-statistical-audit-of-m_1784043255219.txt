@@ -1,0 +1,373 @@
+I want you to perform a complete statistical audit of my Tennis Stats Engine using the most recent 1,250 prediction records (or every available prediction if fewer than 1,250 exist).
+
+DO NOT modify any code.
+
+DO NOT make any changes.
+
+This is an audit only.
+
+Your job is to identify anything that is statistically incorrect, misleading, inconsistent, poorly calibrated, overconfident, underconfident, unnecessary, redundant, or potentially harming prediction accuracy.
+
+Treat this like a professional quantitative model validation.
+
+Inspect every available prediction and analyze:
+
+• Final prediction
+• Actual winner
+• Win probability
+• Actual result
+• Raw ensemble probability
+• Calibrated probability
+• Data Quality
+• Upset Risk
+• Model Agreement
+• Matchup Closeness
+• Recommendation
+• Elite Tier
+• Segment Specialist
+• Monte Carlo Simulator
+• Every individual model vote
+• Surface Elo
+• Serve & Return
+• Recent Form
+• Fatigue
+• Availability
+• Head-to-Head
+• Match Load Recovery
+• Weather (if used)
+
+For every issue you report, include statistical evidence.
+
+Do NOT speculate.
+
+Do NOT recommend changes unless the historical evidence supports them.
+
+-------------------------------------------------------
+1. Calibration audit
+-------------------------------------------------------
+
+Determine whether probabilities are properly calibrated.
+
+Examples:
+
+Do 80% predictions win roughly 80%?
+
+Do 70% predictions win roughly 70%?
+
+Do 60% predictions win roughly 60%?
+
+Do favorites become too conservative?
+
+Do underdogs become inflated?
+
+Produce:
+
+• Reliability plots/tables
+• Brier Score
+• Log Loss
+• Expected Calibration Error (ECE)
+• Confidence intervals where appropriate
+
+-------------------------------------------------------
+2. Model agreement audit
+-------------------------------------------------------
+
+Find matches where:
+
+• all models generally agree but are labelled High Disagreement
+
+• disagreement is overstated
+
+• disagreement is understated
+
+• disagreement explanation is misleading
+
+Determine whether disagreement thresholds should change.
+
+-------------------------------------------------------
+3. Recommendation audit
+-------------------------------------------------------
+
+Determine whether:
+
+Strong Lean
+
+Moderate Lean
+
+Small Lean
+
+No Strong Signal
+
+accurately reflect historical performance.
+
+Do stronger recommendations actually perform better?
+
+-------------------------------------------------------
+4. Elite Tier audit
+-------------------------------------------------------
+
+Does Elite Tier outperform normal predictions?
+
+Find:
+
+False positives
+
+False negatives
+
+Borderline cases
+
+Determine whether Elite requirements should change.
+
+-------------------------------------------------------
+5. Upset Risk audit
+-------------------------------------------------------
+
+Determine whether:
+
+Low
+
+Moderate
+
+High
+
+Extreme
+
+actually predict upset frequency.
+
+Find matches where upset risk appears overstated or understated.
+
+-------------------------------------------------------
+6. Individual model audit
+-------------------------------------------------------
+
+For every model compute:
+
+Win %
+
+Log Loss
+
+Brier Score
+
+Calibration
+
+Average confidence
+
+Average error
+
+Correlation with actual outcomes
+
+ROI (supplementary only—not the primary metric)
+
+Determine whether any model is:
+
+• hurting the ensemble
+
+• redundant
+
+• overweighted
+
+• underweighted
+
+-------------------------------------------------------
+7. Calibration drift
+-------------------------------------------------------
+
+Determine whether any module consistently pushes probabilities too high or too low.
+
+Analyze:
+
+Surface Elo
+
+Serve & Return
+
+Recent Form
+
+Fatigue
+
+Availability
+
+Head-to-Head
+
+Match Load Recovery
+
+Segment Specialist
+
+Simulator
+
+-------------------------------------------------------
+8. UI honesty audit
+-------------------------------------------------------
+
+Review every user-facing label.
+
+Examples:
+
+High Disagreement
+
+Moderate Lean
+
+Strong Lean
+
+Low Upset Risk
+
+Excellent Data Quality
+
+Elite Tier
+
+Determine whether any wording is statistically misleading or could reasonably confuse users.
+
+Separate UI wording issues from engine issues.
+
+-------------------------------------------------------
+9. Confidence inflation
+-------------------------------------------------------
+
+Find every incorrect prediction at:
+
+80%+
+
+75%+
+
+70%+
+
+65%+
+
+Explain whether confidence was justified based on the underlying evidence.
+
+-------------------------------------------------------
+10. Confidence suppression
+-------------------------------------------------------
+
+Find matches where predictions between 55–60% won comfortably.
+
+Determine whether confidence was unnecessarily reduced.
+
+-------------------------------------------------------
+11. Correlation analysis
+-------------------------------------------------------
+
+Measure whether these metrics actually predict future accuracy:
+
+Data Quality
+
+Agreement
+
+Upset Risk
+
+Elite Tier
+
+Recommendation
+
+If they have weak predictive value, explain why.
+
+-------------------------------------------------------
+12. Threshold optimization
+-------------------------------------------------------
+
+Without changing code,
+
+estimate improved thresholds for:
+
+Elite Tier
+
+Recommendation
+
+Agreement
+
+Upset Risk
+
+Model Conflict
+
+Calibration
+
+Only recommend changes that produce measurable improvements on historical validation.
+
+Show estimated before-and-after performance.
+
+-------------------------------------------------------
+13. UI consistency audit
+-------------------------------------------------------
+
+Find any pages where:
+
+labels
+
+colors
+
+badges
+
+probabilities
+
+scores
+
+or explanations
+
+contradict one another or could confuse users.
+
+-------------------------------------------------------
+14. Overall engine health
+-------------------------------------------------------
+
+Score every subsystem out of 10.
+
+Surface Elo
+
+Serve & Return
+
+Recent Form
+
+Fatigue
+
+Availability
+
+Head-to-Head
+
+Match Load Recovery
+
+Segment Specialist
+
+Simulator
+
+Calibration
+
+Recommendation
+
+Upset Risk
+
+Elite Tier
+
+Overall Engine
+
+Explain every score.
+
+-------------------------------------------------------
+15. Final report
+-------------------------------------------------------
+
+Rank every issue by severity:
+
+Critical
+
+High
+
+Medium
+
+Low
+
+For every issue include:
+
+• statistical evidence
+
+• why it matters
+
+• how often it occurred
+
+• estimated impact
+
+• recommended fix
+
+If you believe a subsystem is already statistically correct, explicitly say so.
+
+Do NOT invent problems.
+
+If you cannot demonstrate an issue with historical evidence, state that no issue was found.
