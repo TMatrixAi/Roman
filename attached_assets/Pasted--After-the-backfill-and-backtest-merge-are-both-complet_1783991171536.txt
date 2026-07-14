@@ -1,0 +1,30 @@
+"After the backfill and backtest merge are both complete and verified, add three new rules to the invariant/consistency guard so these exact bug categories get caught automatically going forward, instead of relying on manual review to find them again.
+
+BEFORE ADDING ANYTHING
+
+- Confirm the exact current highest rule number in the guard system (do not assume it's 9 — verify directly against the code) and use the next sequential numbers for these three new rules instead of hardcoding 10/11/12.
+- Confirm the field predictedWinnerId (used in the Fix 1 patch) exists as a stored, queryable column — not just a variable computed at render time — since this rule must check stored data, not re-run UI rendering logic.
+- Do not modify, renumber, or alter the logic of Rules 6-9 or any other existing rule in any way.
+
+NEW GUARD RULES TO ADD
+
+RULE — Monte Carlo headline binding check
+Flag any row where the win probability associated with predictedWinnerId doesn't match what the headline display would derive (i.e. catch any future regression of the player1-position binding bug fixed earlier). This checks stored data consistency, not the rendered UI — it verifies that the predicted winner's win probability is correctly derivable from stored simulation values regardless of whether that player is stored as player1 or player2.
+
+RULE — Recommendation catch-all gap check
+Flag any row where margin is between 8 and 10 (inclusive of the low end, exclusive of 10), upset risk is LOW or MODERATE, and model agreement is not Mixed/HighDisagreement, but the stored recommendation is HIGH_RISK. This re-checks for the exact gap just fixed, so if a future code change reopens it, it's caught immediately.
+
+RULE — Stale/unrecomputed recommendation check
+Flag any row where the stored recommendation value doesn't match what computeRecommendation() would currently produce given that row's stored margin/upsetRisk/modelAgreement inputs. This is the same check that surfaced the 8 unrelated stale rows (4, 9, 10, 14, 15, 16, 19, 24) — this should run as a standing rule, not a one-off script, so any row whose inputs change without recommendation being recomputed gets caught automatically.
+
+REQUIREMENTS FOR THESE NEW RULES
+
+- Add these as permanent, always-on checks in the same invariant/consistency guard system already running (the one with Rules 6-9), not as separate one-off scripts.
+- Run all three new rules against the full live table immediately after adding them and report how many rows (if any) currently violate each one, beyond the 7 already backfilled and the 8 already identified as stale.
+- Confirm these new rules do not create false positives against: the 7 just-backfilled rows (should now pass all three), the 8 known stale rows (should still correctly fail the third rule until separately fixed), and any other row already confirmed clean in prior audits.
+- Confirm none of these three new rules overlap with or duplicate the logic of existing Rules 6-9 (e.g. Rule 8's upset-risk note check or Rule 9's impossible set-score check) — if any overlap exists, flag it instead of adding a redundant rule.
+- Confirm adding these rules does not change the pass/fail outcome of any row that was already passing all existing Rules 6-9 checks, other than correctly flagging the still-unfixed 8 stale rows.
+
+Report back with: the confirmed next rule numbers used, the exact logic implemented for each, full-table violation counts for each new rule, confirmation of no false positives against the 7 backfilled rows, and confirmation of no overlap with existing rules — as a separate section after the backfill and backtest merge reports."
+
+Sources
