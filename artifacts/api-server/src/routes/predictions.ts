@@ -35,6 +35,7 @@ import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrad
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
 import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evaluation/ledgerPlayers";
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router: IRouter = Router();
 
@@ -130,7 +131,7 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
   res.json(GetLedgerPlayerPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
 
-router.post("/predictions", async (req, res): Promise<void> => {
+router.post("/predictions", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreatePredictionBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -257,7 +258,7 @@ router.get("/predictions/:predictionId", async (req, res): Promise<void> => {
   res.json(GetPredictionResponse.parse(row));
 });
 
-router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {
+router.delete("/predictions/:predictionId", requireAdmin, async (req, res): Promise<void> => {
   const params = DeletePredictionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -277,7 +278,7 @@ router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {
   res.status(204).end();
 });
 
-router.post("/predictions/bulk-delete", async (req, res): Promise<void> => {
+router.post("/predictions/bulk-delete", requireAdmin, async (req, res): Promise<void> => {
   const parsed = BulkDeletePredictionsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -298,12 +299,12 @@ router.post("/predictions/duplicates/preview", async (_req, res): Promise<void> 
   res.json(PreviewDuplicatePredictionsResponse.parse({ removableCount, groups }));
 });
 
-router.post("/predictions/duplicates/remove", async (_req, res): Promise<void> => {
+router.post("/predictions/duplicates/remove", requireAdmin, async (_req, res): Promise<void> => {
   const { removedCount, groups } = await removeDuplicatePredictions();
   res.json(RemoveDuplicatePredictionsResponse.parse({ removedCount, groups }));
 });
 
-router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {
+router.post("/predictions/grade-pending", requireAdmin, async (_req, res): Promise<void> => {
   try {
     const summary = await gradePendingLedgerPredictions();
     res.json(GradePendingLedgerPredictionsResponse.parse(summary));
@@ -316,7 +317,7 @@ router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {
   }
 });
 
-router.patch("/predictions/:predictionId/outcome", async (req, res): Promise<void> => {
+router.patch("/predictions/:predictionId/outcome", requireAdmin, async (req, res): Promise<void> => {
   const params = RecordPredictionOutcomeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

@@ -20,7 +20,60 @@ tags:
     description: Data provider status
   - name: evaluation
     description: Out-of-sample testing, calibration, and paper trading (Phase 4)
+  - name: auth
+    description: Owner-only login gate protecting data-changing and job-triggering endpoints
 paths:
+  /auth/status:
+    get:
+      operationId: getAdminAuthStatus
+      tags: [auth]
+      summary: Whether the current browser session is logged in as the owner
+      responses:
+        "200":
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuthStatus"
+
+  /auth/login:
+    post:
+      operationId: adminLogin
+      tags: [auth]
+      summary: Log in as the owner using the shared access key, setting a signed session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginInput"
+      responses:
+        "200":
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuthStatus"
+        "401":
+          description: Access key was incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /auth/logout:
+    post:
+      operationId: adminLogout
+      tags: [auth]
+      summary: Clear the owner session cookie
+      responses:
+        "200":
+          description: Logout succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuthStatus"
+
   /healthz:
     get:
       operationId: healthCheck
@@ -829,6 +882,21 @@ components:
           type: string
       required:
         - status
+
+    AdminAuthStatus:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+
+    AdminLoginInput:
+      type: object
+      required: [accessKey]
+      properties:
+        accessKey:
+          type: string
+          minLength: 1
 
     ProviderError:
       type: object

@@ -7,9 +7,11 @@ import h2hRouter from "./h2h";
 import matchupsRouter from "./matchups";
 import predictionsRouter from "./predictions";
 import evaluationRouter from "./evaluation";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
+router.use(authRouter);
 router.use(healthRouter);
 router.use(providerRouter);
 router.use(playersRouter);

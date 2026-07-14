@@ -9,6 +9,15 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface AdminAuthStatus {
+  authenticated: boolean;
+}
+
+export interface AdminLoginInput {
+  /** @minLength 1 */
+  accessKey: string;
+}
+
 export interface ProviderError {
   error: string;
   /** @nullable */

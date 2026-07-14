@@ -51,6 +51,7 @@ import {
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
 } from "@workspace/api-zod";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router: IRouter = Router();
 
@@ -72,7 +73,7 @@ router.get("/evaluation/runs", async (_req, res): Promise<void> => {
   res.json(ListEvaluationRunsResponse.parse(rows));
 });
 
-router.post("/evaluation/walk-forward/run", async (req, res): Promise<void> => {
+router.post("/evaluation/walk-forward/run", requireAdmin, async (req, res): Promise<void> => {
   const parsed = RunWalkForwardBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -213,7 +214,7 @@ router.get("/evaluation/settings", async (_req, res): Promise<void> => {
   res.json(GetEvaluationSettingsResponse.parse(settings));
 });
 
-router.patch("/evaluation/settings", async (req, res): Promise<void> => {
+router.patch("/evaluation/settings", requireAdmin, async (req, res): Promise<void> => {
   const parsed = UpdateEvaluationSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -254,7 +255,7 @@ router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
   res.json(GetSimulatorValidationResponse.parse(row));
 });
 
-router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> => {
+router.post("/evaluation/simulator/validate", requireAdmin, async (_req, res): Promise<void> => {
   const summary = await validateAndStoreSimulator();
   res.json(
     GetSimulatorValidationResponse.parse({
@@ -264,7 +265,7 @@ router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> =
   );
 });
 
-router.post("/paper-trading/run-cycle", async (_req, res): Promise<void> => {
+router.post("/paper-trading/run-cycle", requireAdmin, async (_req, res): Promise<void> => {
   const summary = await runPaperTradingCycle();
   res.json(RunPaperTradingCycleResponse.parse(summary));
 });
@@ -303,7 +304,7 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
   res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
 });
 
-router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Promise<void> => {
+router.post("/evaluation/historical-backfill/run-cycle", requireAdmin, async (_req, res): Promise<void> => {
   const provider = getTennisDataProvider();
   const result = await runIncrementalHistoricalBackfill(provider);
   res.json(RunHistoricalBackfillCycleResponse.parse(result));
@@ -338,7 +339,7 @@ router.get("/evaluation/historical-backfill/freshness", async (_req, res): Promi
   res.json(GetHistoricalDataFreshnessResponse.parse({ latestCoveredDate, daysBehind, asOf: asOf.toISOString() }));
 });
 
-router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
+router.post("/evaluation/ablation/run", requireAdmin, async (req, res): Promise<void> => {
   const parsed = RunAblationAnalysisBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

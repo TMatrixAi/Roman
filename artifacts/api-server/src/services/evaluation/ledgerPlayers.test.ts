@@ -124,6 +124,123 @@ test("searchLedgerPlayers: genuine surname ambiguity between two initial-abbrevi
   }
 });
 
+test("searchLedgerPlayers: a short surname that is not actually anyone's surname finds no candidates (not a wall of unrelated substring hits)", async () => {
+  const buenoId = `${RUN_TAG}-bueno`;
+  const opponentId = `${RUN_TAG}-opponentBu`;
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({
+        player1Id: buenoId,
+        player1Name: "G. Bueno",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+    ])
+    .returning({ id: predictionsTable.id });
+
+  try {
+    const results = await searchLedgerPlayers("Bu");
+    assert.ok(
+      !results.some((r) => r.id === buenoId),
+      `"Bu" should not substring-match unrelated "G. Bueno", got: ${JSON.stringify(results)}`,
+    );
+  } finally {
+    await cleanup(inserted.map((r) => r.id));
+  }
+});
+
+test("searchLedgerPlayers: a short bare surname that IS a real whole-token surname still resolves (e.g. \"Zhu\" -> \"E. Zhu\")", async () => {
+  const zhuId = `${RUN_TAG}-zhuE`;
+  const opponentId = `${RUN_TAG}-opponentZhu`;
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({
+        player1Id: zhuId,
+        player1Name: "E. Zhu",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+    ])
+    .returning({ id: predictionsTable.id });
+
+  try {
+    const results = await searchLedgerPlayers("Zhu");
+    assert.ok(
+      results.some((r) => r.id === zhuId),
+      `expected "Zhu" to find "E. Zhu", got: ${JSON.stringify(results)}`,
+    );
+  } finally {
+    await cleanup(inserted.map((r) => r.id));
+  }
+});
+
+test("searchLedgerPlayers: a short surname query does not spuriously match an unrelated player via the initial-match rule (e.g. \"Bu\" vs \"B. Tomic\")", async () => {
+  const tomicId = `${RUN_TAG}-tomic`;
+  const opponentId = `${RUN_TAG}-opponentTomic`;
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({
+        player1Id: tomicId,
+        player1Name: "B. Tomic",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+    ])
+    .returning({ id: predictionsTable.id });
+
+  try {
+    const results = await searchLedgerPlayers("Bu");
+    assert.ok(
+      !results.some((r) => r.id === tomicId),
+      `"Bu" should not match "B. Tomic" via the initial-match rule, got: ${JSON.stringify(results)}`,
+    );
+  } finally {
+    await cleanup(inserted.map((r) => r.id));
+  }
+});
+
+test("searchLedgerPlayers: doubles-pairing rows are never returned as a singles candidate", async () => {
+  const suresh1Id = `${RUN_TAG}-suresh1`;
+  const suresh2Id = `${RUN_TAG}-suresh2`;
+  const doublesId = `${RUN_TAG}-doublesSuresh`;
+  const opponentId = `${RUN_TAG}-opponentSuresh`;
+  const inserted = await db
+    .insert(predictionsTable)
+    .values([
+      baseRow({
+        player1Id: suresh1Id,
+        player1Name: "D. Suresh",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+      baseRow({
+        player1Id: suresh2Id,
+        player1Name: "K. Suresh",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+      baseRow({
+        player1Id: doublesId,
+        player1Name: "Vishal Balsekar/ Suresh",
+        player2Id: opponentId,
+        player2Name: "Test Opponent",
+      }),
+    ])
+    .returning({ id: predictionsTable.id });
+
+  try {
+    const results = await searchLedgerPlayers("Suresh");
+    const ids = results.map((r) => r.id);
+    assert.ok(ids.includes(suresh1Id) && ids.includes(suresh2Id), `expected both real Sureshes, got: ${JSON.stringify(results)}`);
+    assert.ok(!ids.includes(doublesId), `doubles-pairing row should never be a singles candidate, got: ${JSON.stringify(results)}`);
+  } finally {
+    await cleanup(inserted.map((r) => r.id));
+  }
+});
+
 test("searchLedgerPlayers: multi-word full names match multi-initial stored names (e.g. \"James Kent Trotter\" -> \"J. K. Trotter\")", async () => {
   const trotterId = `${RUN_TAG}-trotter`;
   const opponentId = `${RUN_TAG}-opponent4`;

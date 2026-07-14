@@ -47,14 +47,47 @@ function escapeRegexToken(token: string): string {
  * abbreviated form, it never removes or narrows any match the substring rule already found, and a
  * genuinely ambiguous surname (two distinct players who both satisfy every query word this way)
  * still surfaces as multiple candidates for the caller to resolve, not a silent pick.
+ *
+ * Two further real bugs found by Task #132's audit (`docs/audit-bulk-match-paste-player-resolution.md`)
+ * are also guarded against here:
+ *
+ * 1. A short surname-only query (<= `SHORT_WORD_MAX_LENGTH` characters, e.g. "Bu") used a plain
+ *    substring `ILIKE`, which matches that substring ANYWHERE in a stored name -- "Bu" matched 20
+ *    unrelated players (Tabur, Bueno, Burcescu, ...) none of whom are actually surnamed "Bu". Short
+ *    words are instead required to match a whole name-token (bounded by a non-letter or a string
+ *    edge), so "Bu" only matches a name that actually contains the standalone token "Bu" -- which,
+ *    since no real player is surnamed "Bu", correctly yields zero candidates instead of a wall of
+ *    false positives. Genuinely short real surnames (e.g. "Zhu", "Wu") still match correctly this
+ *    way since they *are* a whole token in the stored name (e.g. "E. Zhu").
+ * 2. The same short-word substring hazard applies to `initialMatch`: it's designed to let a full
+ *    first name (e.g. "Liam") find its stored bare-initial form (e.g. "L. Draxl") in a *multi-word*
+ *    full-name query, by matching against any initial with the same first letter. But for a
+ *    single-word, surname-only query (e.g. "Bu"), there is no accompanying first-name context --
+ *    applying `initialMatch` there would match ANY stored name whose (unrelated) first initial
+ *    happens to start with the same letter (e.g. "Bu" spuriously matching "B. Tomic" via "B."),
+ *    which is not what the user searched for at all. `initialMatch` is therefore only applied when
+ *    the query has more than one word.
+ *
+ * Doubles-pairing rows (stored as "Player1/ Player2", see `playerIdentity.ts`'s `isSinglesName`)
+ * are also excluded from the candidate pool -- Task #132's audit confirmed they otherwise show up
+ * as confusing extra "candidates" for an already-ambiguous singles surname search (e.g. "Suresh",
+ * "Leong", "Zhu").
  */
+const SHORT_WORD_MAX_LENGTH = 3;
+
 export async function searchLedgerPlayers(query: string): Promise<LedgerPlayerSummary[]> {
   const words = query.trim().split(/\s+/).filter((w) => w.length > 0);
   if (words.length === 0) return [];
 
+  const isMultiWordQuery = words.length > 1;
+
   const wordConditions = sql.join(
     words.map((word) => {
-      const substringMatch = sql`combined.name ilike ${`%${escapeLikeToken(word)}%`} escape '\\'`;
+      const substringMatch =
+        word.length <= SHORT_WORD_MAX_LENGTH
+          ? sql`combined.name ~* ${`(^|[^a-zA-Z])${escapeRegexToken(word)}($|[^a-zA-Z])`}`
+          : sql`combined.name ilike ${`%${escapeLikeToken(word)}%`} escape '\\'`;
+      if (!isMultiWordQuery) return sql`(${substringMatch})`;
       const initialMatch = sql`combined.name ~* ${`(^|[^a-zA-Z])${escapeRegexToken(word[0])}\\.`}`;
       return sql`(${substringMatch} or ${initialMatch})`;
     }),
@@ -71,7 +104,7 @@ export async function searchLedgerPlayers(query: string): Promise<LedgerPlayerSu
       union all
       select player2_id as id, player2_name as name, created_at from ${predictionsTable}
     ) as combined
-    where ${wordConditions}
+    where combined.name not like '%/%' and (${wordConditions})
     group by combined.id
     order by prediction_count desc, name asc
     limit 20
