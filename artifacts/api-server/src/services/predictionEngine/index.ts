@@ -171,7 +171,7 @@ function buildAvailabilityNote(availability: ReturnType<typeof computeAvailabili
 // assumed. So any prediction favoring player 2 rendered a set score that looked like the winner
 // lost (e.g. "0-2" next to the winner's own name). `favorsPlayer1` is intentionally unused now --
 // the winner's own set count must always be shown first, independent of which player it is.
-function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbability: number): string {
+export function predictSetScore(matchFormat: "BestOf3" | "BestOf5", calibratedProbability: number): string {
   const margin = Math.abs(calibratedProbability - 50);
   const setsToWin = matchFormat === "BestOf5" ? 3 : 2;
   const decisive = margin >= 20;
