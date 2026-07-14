@@ -14,7 +14,6 @@ import {
   getGetLedgerPlayerPredictionsQueryKey,
   type PredictionSummary,
   type DuplicatePredictionsPreviewResult,
-  type LedgerPlayerSummary,
 } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -22,9 +21,7 @@ import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
-import { LedgerMatchupSearch } from "@/components/LedgerMatchupSearch"
+import { readAndClearPasteSearchHandoff } from "@/lib/pasteSearchHandoff"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Link } from "wouter"
+import { Link, useLocation, useSearch } from "wouter"
 import {
   Target,
   CheckCircle2,
@@ -391,7 +388,6 @@ export default function HistoryPage() {
   // once there's more than one prediction to step through.
   const [activePlayer, setActivePlayer] = useState<{ id: string; name: string } | null>(null)
   const [playerIndex, setPlayerIndex] = useState(0)
-  const [activeTab, setActiveTab] = useState<"recent" | "search" | "pasteSearch">("recent")
   const focusRef = useRef<HTMLDivElement>(null)
 
   // Task #110: paste-search focus/navigation. Mutually exclusive with the single-player focus
@@ -442,10 +438,9 @@ export default function HistoryPage() {
     jumpedForPlayerId.current = null
   }
 
-  const selectPlayer = (player: LedgerPlayerSummary) => {
+  const selectPlayer = (player: { id: string; name: string }) => {
     clearPasteNavigation()
     setActivePlayer({ id: player.id, name: player.name })
-    setActiveTab("recent")
   }
 
   const clearPasteNavigation = () => {
@@ -461,11 +456,39 @@ export default function HistoryPage() {
     clearPlayerNavigation()
     setPasteMatches(predictions)
     setPasteMatchIndex(Math.max(0, Math.min(startIndex, predictions.length - 1)))
-    setActiveTab("recent")
     requestAnimationFrame(() => {
       pasteFocusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
     })
   }
+
+  // The "Search Players" / "Paste Search" lookup tools now live on Build Matchup
+  // (`SavedPredictionsLookup.tsx`), since they're for finding an *existing* saved prediction
+  // before starting a new one -- but the focus/step-through UI they drive only exists here. A
+  // selection there navigates here with a handoff: a single player via plain URL params (small,
+  // safe to put in a URL), a paste-search result set via sessionStorage (an arbitrary-length array
+  // of full PredictionSummary objects doesn't fit cleanly in a URL). Runs once per navigation
+  // (`consumedDeepLinkRef`) and immediately strips the query string so a manual refresh afterwards
+  // doesn't re-trigger it or re-read an already-cleared handoff.
+  const search = useSearch()
+  const [, navigate] = useLocation()
+  const consumedDeepLinkRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!search || consumedDeepLinkRef.current === search) return
+    consumedDeepLinkRef.current = search
+    const params = new URLSearchParams(search)
+    const playerId = params.get("playerId")
+    const playerName = params.get("playerName")
+    if (playerId && playerName) {
+      selectPlayer({ id: playerId, name: playerName })
+      navigate("/history", { replace: true })
+      return
+    }
+    if (params.get("pasteSearch") === "1") {
+      const handoff = readAndClearPasteSearchHandoff()
+      if (handoff) viewPasteMatches(handoff.predictions, handoff.startIndex)
+      navigate("/history", { replace: true })
+    }
+  }, [search])
 
   const safePasteMatchIndex = pasteMatches.length > 0 ? Math.min(pasteMatchIndex, pasteMatches.length - 1) : 0
 
@@ -562,136 +585,114 @@ export default function HistoryPage() {
         </div>
       ) : null}
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recent" | "search" | "pasteSearch")}>
-        <TabsList>
-          <TabsTrigger value="recent" className="font-mono">RECENT PREDICTIONS</TabsTrigger>
-          <TabsTrigger value="search" className="font-mono">
-            <UserSearch className="w-4 h-4 mr-2" />
-            SEARCH PLAYERS
-          </TabsTrigger>
-          <TabsTrigger value="pasteSearch" className="font-mono">
-            <ClipboardPaste className="w-4 h-4 mr-2" />
-            PASTE SEARCH
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="search">
-          <LedgerPlayerSearch onSelect={selectPlayer} onQueryChange={clearPlayerNavigation} />
-        </TabsContent>
-
-        <TabsContent value="pasteSearch">
-          <LedgerMatchupSearch onView={viewPasteMatches} />
-        </TabsContent>
-
-        <TabsContent value="recent" className="space-y-4">
-          {activePlayer && (
-            <div ref={focusRef} className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
-                  <UserSearch className="w-4 h-4" />
-                  PLAYER FOCUS: {activePlayer.name}
-                  {playerPredictions && playerPredictions.length > 0 && (
-                    <span className="text-muted-foreground/70">
-                      ({safePlayerIndex + 1} of {playerPredictions.length})
-                    </span>
-                  )}
-                </h3>
-                <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPlayerNavigation}>
-                  <X className="w-4 h-4 mr-1" />
-                  CLEAR
-                </Button>
-              </div>
-
-              {playerPredictionsQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
-              ) : playerPredictions && playerPredictions.length > 0 ? (
-                <PlayerFocusRow prediction={playerPredictions[safePlayerIndex]} />
-              ) : (
-                <div className="p-4 border border-dashed rounded-md text-center text-sm font-mono text-muted-foreground">
-                  NO PREDICTIONS FOUND FOR THIS PLAYER
-                </div>
-              )}
-            </div>
-          )}
-
-          {pasteMatches.length > 0 && (
-            <div ref={pasteFocusRef} className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
-                  <ClipboardPaste className="w-4 h-4" />
-                  MATCH FOCUS
+      <div className="space-y-4">
+        {activePlayer && (
+          <div ref={focusRef} className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
+                <UserSearch className="w-4 h-4" />
+                PLAYER FOCUS: {activePlayer.name}
+                {playerPredictions && playerPredictions.length > 0 && (
                   <span className="text-muted-foreground/70">
-                    ({safePasteMatchIndex + 1} of {pasteMatches.length})
+                    ({safePlayerIndex + 1} of {playerPredictions.length})
                   </span>
-                </h3>
-                <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPasteNavigation}>
-                  <X className="w-4 h-4 mr-1" />
-                  CLEAR
-                </Button>
-              </div>
-              <PlayerFocusRow prediction={pasteMatches[safePasteMatchIndex]} />
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              RECENT PREDICTIONS
-            </h2>
-            {predictions && predictions.length > 0 && (
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 accent-primary cursor-pointer"
-                  />
-                  SELECT ALL
-                </label>
-                {selectedIds.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="font-mono"
-                    disabled={bulkDelete.isPending}
-                    onClick={() => bulkDelete.mutate({ data: { ids: Array.from(selectedIds) } })}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    DELETE {selectedIds.size}
-                  </Button>
                 )}
+              </h3>
+              <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPlayerNavigation}>
+                <X className="w-4 h-4 mr-1" />
+                CLEAR
+              </Button>
+            </div>
+
+            {playerPredictionsQuery.isLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : playerPredictions && playerPredictions.length > 0 ? (
+              <PlayerFocusRow prediction={playerPredictions[safePlayerIndex]} />
+            ) : (
+              <div className="p-4 border border-dashed rounded-md text-center text-sm font-mono text-muted-foreground">
+                NO PREDICTIONS FOUND FOR THIS PLAYER
               </div>
             )}
           </div>
+        )}
 
-          {predictionsLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+        {pasteMatches.length > 0 && (
+          <div ref={pasteFocusRef} className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
+                <ClipboardPaste className="w-4 h-4" />
+                MATCH FOCUS
+                <span className="text-muted-foreground/70">
+                  ({safePasteMatchIndex + 1} of {pasteMatches.length})
+                </span>
+              </h3>
+              <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPasteNavigation}>
+                <X className="w-4 h-4 mr-1" />
+                CLEAR
+              </Button>
             </div>
-          ) : predictions && predictions.length > 0 ? (
-            <div className="space-y-3">
-              {predictions.map(pred => (
-                <PredictionRow
-                  key={pred.id}
-                  prediction={pred}
-                  selected={selectedIds.has(pred.id)}
-                  onToggleSelect={() => toggleSelect(pred.id)}
-                  onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
-                  isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
+            <PlayerFocusRow prediction={pasteMatches[safePasteMatchIndex]} />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            RECENT PREDICTIONS
+          </h2>
+          {predictions && predictions.length > 0 && (
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 accent-primary cursor-pointer"
                 />
-              ))}
-            </div>
-          ) : (
-            <div className="p-12 border border-dashed rounded-lg text-center text-muted-foreground">
-              <Target className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p className="font-mono text-sm">NO PREDICTIONS SAVED YET</p>
-              <Link href="/predict">
-                <Button variant="outline" className="mt-4 font-mono">RUN FIRST PREDICTION</Button>
-              </Link>
+                SELECT ALL
+              </label>
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="font-mono"
+                  disabled={bulkDelete.isPending}
+                  onClick={() => bulkDelete.mutate({ data: { ids: Array.from(selectedIds) } })}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  DELETE {selectedIds.size}
+                </Button>
+              )}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+
+        {predictionsLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+          </div>
+        ) : predictions && predictions.length > 0 ? (
+          <div className="space-y-3">
+            {predictions.map(pred => (
+              <PredictionRow
+                key={pred.id}
+                prediction={pred}
+                selected={selectedIds.has(pred.id)}
+                onToggleSelect={() => toggleSelect(pred.id)}
+                onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
+                isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="p-12 border border-dashed rounded-lg text-center text-muted-foreground">
+            <Target className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p className="font-mono text-sm">NO PREDICTIONS SAVED YET</p>
+            <Link href="/predict">
+              <Button variant="outline" className="mt-4 font-mono">RUN FIRST PREDICTION</Button>
+            </Link>
+          </div>
+        )}
+      </div>
 
       {activePlayer && playerPredictions && playerPredictions.length > 1 && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5">

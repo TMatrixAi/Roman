@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
+import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
 import { DataWarning } from "@/components/DataWarning"
 import { Activity, Swords, Settings2, RefreshCw } from "lucide-react"
 
@@ -168,8 +169,14 @@ export default function PredictBuilderPage() {
 
       {/* Bulk upload is the only screenshot path now -- it handles a single screenshot just as
           well as a full batch, so there's no separate single-upload button or toggle to show/hide
-          it; it's just always here. */}
-      <BulkMatchupPredictor />
+          it; it's just always here. Saved-prediction lookup sits next to it: both are "before you
+          predict, check this" tools -- one uploads a batch to grade, the other checks whether a
+          matchup's already been predicted -- so they're grouped side by side rather than one
+          being buried under History. */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <BulkMatchupPredictor />
+        <SavedPredictionsLookup />
+      </div>
 
       {(!player1Id || !player2Id) && (
         <Card>
