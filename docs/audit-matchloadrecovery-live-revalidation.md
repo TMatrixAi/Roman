@@ -23,7 +23,11 @@ tested but never wired into the live ensemble. This task:
    `POST /api/evaluation/ablation/run`, mirroring the Availability precedent
    (`docs/audit-phase45-availability-revalidation.md`).
 
-## Live ablation re-validation: started but not completed this session
+## Live ablation re-validation: PARTIAL ONLY -- explicitly not a completed validation
+
+**Labeling this clearly: nothing below constitutes the full validation this task originally
+scoped. It is a partial, interrupted run, and the specific comparison needed for
+`matchLoadRecovery` never started.**
 
 Per this task's own rule ("only keep it live if the ablation shows real accuracy benefit"), the
 correct next step was to run the non-destructive ablation replay with `matchLoadRecovery`
@@ -31,28 +35,61 @@ temporarily removed from `EXCLUDED_FROM_ENSEMBLE` (so the baseline vote could ac
 -- `moduleEdges` filters through that set unconditionally, so a hard-excluded module can never
 appear in an ablation baseline and its leave-one-out delta would otherwise be meaningless), then
 reading its leave-one-out delta. This was started three times via
-`POST /api/evaluation/ablation/run` (full run = baseline + 9 leave-one-out + 4 combo = 14 variants
-over 18,242 matches each):
+`POST /api/evaluation/ablation/run`.
 
-- Attempt 1 reached variant 5/14 before the API Server workflow was restarted for an unrelated
-  reason and the in-memory job was lost.
-- Attempt 2 was still in the "baseline" phase when this task's first completion attempt was
+The harness runs variants in a fixed order (`[BASELINE, ...LEAVE_ONE_OUT_VARIANTS (in MODEL_DEFS
+order), ...COMBO_VARIANTS]`, `ablation.ts`): index 0 = baseline (everything active), index 1 =
+Surface Elo removed, index 2 = Serve & Return removed, index 3 = Recent Form removed, index 4 =
+Fatigue removed, index 5 = Availability removed, index 6 = Head-to-Head removed, **index 7 =
+Match Load Recovery removed**, index 8 = General Ensemble removed, index 9 = Segment Specialist
+removed, indices 10-13 = the 4 combo variants.
+
+- Attempt 1 reached variant 5/14 (Availability removed) before the API Server workflow was
+  restarted for an unrelated reason and the in-memory job was lost.
+- Attempt 2 was still in the baseline phase when this task's first completion attempt was
   reviewed and rejected (`matchLoadRecovery` was still hard-excluded at that point, which the
   review correctly flagged as making any such run non-informative for this module).
-- Attempt 3 (with `matchLoadRecovery` genuinely included in the baseline) reached
-  variant 1/14, matchIndex ~2000/18242 before being stopped by explicit instruction.
+- Attempt 3 (the only attempt with `matchLoadRecovery` genuinely included in the baseline vote)
+  completed the baseline pass in full (18,242/18,242 matches), then reached **variant index 1
+  (Surface Elo removed)** at matchIndex ~2,000/18,242 (~11% into that one variant) before being
+  stopped by explicit instruction.
 
-**No completed leave-one-out delta for `matchLoadRecovery` exists.** No `reports/*.json` / `.md`
-ablation report captures a finished number for this module.
+### Exact completion percentage
+
+- **Overall run**: ~20,242 of 255,388 total match-computations (14 variants x 18,242 matches) =
+  **~7.9% of the full ablation**.
+- **The comparison that actually matters for this decision** -- variant index 7, Match Load
+  Recovery removed, versus the baseline that includes it -- **never started running. 0%.**
+  The baseline pass alone (module active, no removal) cannot isolate `matchLoadRecovery`'s
+  incremental effect; only comparing baseline against its own leave-one-out variant can, and that
+  leave-one-out variant has zero completed matches.
+
+### Representativeness and statistical significance
+
+Both questions are moot at this stage: **there is no partial sample of the required comparison to
+evaluate for representativeness or significance.** The 2,000 matches that did run belong to a
+*different* variant (Surface Elo removed), which says nothing about Match Load Recovery. Had that
+2,000-match slice belonged to the right variant, it would still need checking against known
+non-uniformities in the historical corpus (the corpus is chronologically ordered, so an early
+partial slice over-represents older tournaments/surfaces relative to the full multi-year, all-surface
+set -- this is exactly the kind of bias a partial run risks). That check was not needed here because
+there is no matchLoadRecovery-variant data at all to check.
+
+**Bottom line: confidence level in matchLoadRecovery's ensemble effect from this session's ablation
+work is zero, not "partial-but-informative."** The module remains excluded from voting for lack of
+evidence, not because of a negative or ambiguous partial result.
 
 ### Observed pace / time-to-completion estimate
 
 Attempt 3's baseline pass (18,242 matches) completed in ~7 minutes (started 05:33:26 UTC, entered
-the "variants" phase by ~05:40:xx UTC), i.e. roughly **40-45 matches/second** sustained. At that
+the "variants" phase by ~05:40 UTC), i.e. roughly **40-45 matches/second** sustained. At that
 rate, one full run (14 variant passes, each a fresh 18,242-match walk-forward replay) needs
 **roughly 95-115 minutes (~1.5-2 hours) of wall-clock time, uninterrupted** -- the ablation job
 blocks the Node event loop while running, so nothing else on the API Server can be served
-concurrently, and any workflow restart during the run loses all progress (no checkpointing).
+concurrently, and any workflow restart or stop during the run loses all progress (no
+checkpointing). Reaching variant index 7 specifically (Match Load Recovery removed) from a cold
+start requires the baseline pass plus 7 leave-one-out passes ahead of it, i.e. roughly
+**8 x ~7 min = ~55-60 minutes** before that variant's own data even begins collecting.
 
 ## Decision made in the absence of a finished result
 
