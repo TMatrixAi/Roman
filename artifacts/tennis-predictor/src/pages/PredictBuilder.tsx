@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useState } from "react"
 import { useLocation, useSearch } from "wouter"
 import { useGetPlayer, getGetPlayerQueryKey, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -7,10 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
-import { ScreenshotMatchupUpload } from "@/components/ScreenshotMatchupUpload"
-import { BulkMatchupPredictor, type BulkMatchupPredictorHandle } from "@/components/BulkMatchupPredictor"
+import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { DataWarning } from "@/components/DataWarning"
-import { Activity, Swords, Settings2, RefreshCw, Layers } from "lucide-react"
+import { Activity, Swords, Settings2, RefreshCw } from "lucide-react"
 
 function PlayerCard({ 
   playerId, 
@@ -114,47 +113,9 @@ export default function PredictBuilderPage() {
   const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
   const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
   const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
-  // Set when the surface/level came from reading an uploaded screenshot instead of a real
-  // fixture -- reuses the same "AUTO-DETECTED" indicator as the Custom Match fixture flow above,
-  // since both mean "we filled this in for you, but you should double check it."
-  const [screenshotDetectedSurface, setScreenshotDetectedSurface] = useState(false)
-  const [screenshotTournamentName, setScreenshotTournamentName] = useState<string | null>(null)
-  const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel) || screenshotDetectedSurface
-  const [showBulkUpload, setShowBulkUpload] = useState(false)
-  const bulkRef = useRef<BulkMatchupPredictorHandle>(null)
+  const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
   const createPrediction = useCreatePrediction()
-
-  // Selecting more than one file in the single-screenshot uploader above hands the whole
-  // selection to bulk upload -- a user shouldn't need to discover the small toggle below just to
-  // process more than one screenshot at a time.
-  const handleMultipleFiles = (files: File[]) => {
-    setShowBulkUpload(true)
-    bulkRef.current?.handleFiles(files)
-  }
-
-  const handleScreenshotResolved = ({
-    player1,
-    player2,
-    surface: detectedSurface,
-    level: detectedLevel,
-    eventName,
-  }: {
-    player1: { player: { id: string } | null }
-    player2: { player: { id: string } | null }
-    surface: Surface | null
-    level: TournamentLevel | null
-    eventName: string | null
-  }) => {
-    if (player1.player) setPlayer1Id(player1.player.id)
-    if (player2.player) setPlayer2Id(player2.player.id)
-    if (detectedSurface) {
-      setSurface(detectedSurface)
-      setScreenshotDetectedSurface(true)
-    }
-    if (detectedLevel) setLevel(detectedLevel)
-    if (eventName) setScreenshotTournamentName(eventName)
-  }
 
   const handleRunModel = () => {
     if (!player1Id || !player2Id) return
@@ -166,7 +127,7 @@ export default function PredictBuilderPage() {
         surface,
         matchFormat: format,
         tournamentLevel: level,
-        tournamentName: prefillTournamentName ?? screenshotTournamentName ?? undefined
+        tournamentName: prefillTournamentName ?? undefined
       }
     }, {
       onSuccess: (prediction) => {
@@ -199,29 +160,10 @@ export default function PredictBuilderPage() {
         />
       </div>
 
-      {/* Always rendered (not just while a slot is empty) so the recognition chips/warnings from
-          the last upload stay visible even after a fully successful match fills both players --
-          otherwise this card would unmount the instant both slots fill and the confirmation the
-          user just saw would vanish before they could read it. */}
-      <ScreenshotMatchupUpload onResolved={handleScreenshotResolved} onMultipleFiles={handleMultipleFiles} />
-
-      <div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          onClick={() => setShowBulkUpload((v) => !v)}
-        >
-          <Layers className="w-3.5 h-3.5 mr-1.5" />
-          {showBulkUpload ? "HIDE BULK UPLOAD" : "GOT MULTIPLE SCREENSHOTS? BULK UPLOAD & BATCH PREDICT"}
-        </Button>
-        {/* Always mounted (never unmounted by the toggle) so `bulkRef` stays valid and a
-            multi-file selection from the single uploader above can be handed off immediately,
-            even before the user has ever clicked this toggle themselves. */}
-        <div className={showBulkUpload ? "mt-3" : "hidden"}>
-          <BulkMatchupPredictor ref={bulkRef} />
-        </div>
-      </div>
+      {/* Bulk upload is the only screenshot path now -- it handles a single screenshot just as
+          well as a full batch, so there's no separate single-upload button or toggle to show/hide
+          it; it's just always here. */}
+      <BulkMatchupPredictor />
 
       {(!player1Id || !player2Id) && (
         <Card>
