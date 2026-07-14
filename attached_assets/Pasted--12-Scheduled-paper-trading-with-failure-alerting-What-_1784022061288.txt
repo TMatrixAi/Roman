@@ -1,0 +1,22 @@
+#12 - Scheduled paper trading with failure alerting
+
+What & Why
+
+The paper-trading cycle is now a standalone, retry-and-log job (artifacts/api-server/src/jobs/runPaperTradingJob.ts, built to dist/jobs/runPaperTradingJob.mjs, run via pnpm --filter @workspace/api-server run job:paper-trading) instead of an in-process timer. Replit's deployment type (autoscale/vm/scheduled) can only be changed by a person in the Deployments pane, not by an agent -- so no scheduled deployment has actually been created yet. Until one exists, paper trading will not run automatically at all in production.
+
+Failed job runs are already durably recorded in job_runs (see lib/db/src/schema/evaluation.ts, exposed via GET /paper-trading/job-runs) and the job process exits non-zero, but nothing actively notifies a person yet -- someone has to remember to check manually. Turning on the schedule without also wiring up failure alerting would let scheduled automation run unmonitored, so both must ship together.
+
+Done looks like
+
+A Replit Scheduled Deployment (or equivalent external cron) exists, running pnpm --filter @workspace/api-server run job:paper-trading roughly every 15 minutes
+Confirmed via GET /paper-trading/job-runs that rows keep appearing on that cadence in production
+Some notification (email, Slack, webhook, etc.) fires when the paper-trading job has failed N times in a row, or when no successful run has landed within its expected cadence, using an existing/available integration rather than inventing new credentials
+Both the schedule and the alerting are live before this task is considered done -- the schedule must not ship without its alerting in the same deployment
+Out of scope
+
+Calibration refit scheduling/alerting (tracked separately)
+Steps
+
+Enable the scheduled deployment -- Configure a Replit Scheduled Deployment (or equivalent) to run the paper-trading job on its intended cadence.
+Wire up failure alerting -- Notify a real channel when the job fails repeatedly or misses its expected cadence, using an existing/available integration.
+Verify end-to-end in production -- Confirm both the recurring runs and a triggered alert actually work before marking done.
