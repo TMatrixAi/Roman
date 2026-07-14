@@ -17,9 +17,15 @@ import type { OpponentEloLookup } from "./opponentStrength";
  * write time.
  */
 
+// Sentinel for "no tournament name" -- must never collide with a real (trimmed, lowercased)
+// tournament name, and must be a plain string Postgres text columns will accept (unlike the
+// literal null byte U+0000 this used to be, which Postgres rejects outright in a text column
+// and broke every no-tournament insert into `predictions.match_identity_key`).
+const NO_TOURNAMENT_SENTINEL = "__no_tournament__";
+
 function normalizeTournamentName(name: string | null | undefined): string {
   const trimmed = (name ?? "").trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : "\u0000";
+  return trimmed.length > 0 ? trimmed : NO_TOURNAMENT_SENTINEL;
 }
 
 /**
