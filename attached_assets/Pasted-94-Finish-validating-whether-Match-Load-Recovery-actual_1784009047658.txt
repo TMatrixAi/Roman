@@ -1,0 +1,23 @@
+94 - Finish validating whether Match Load Recovery actually earns a vote
+
+What & Why
+
+Task #93 wired the new "went-the-distance" Match Load Recovery signal (matchLoadRecovery.ts) into every prediction and the UI, but the live ablation re-validation that decides whether it should actually vote on predictions did not finish in that session (the API server was CPU-blocked for 15-20+ min per pass and the run was interrupted twice, with the matchLoadRecovery variant specifically never starting). Per the task's own rule, an unfinished ablation means the signal defaults to OFF: it's currently in EXCLUDED_FROM_ENSEMBLE (artifacts/api-server/src/services/predictionEngine/dataQuality.ts), so it's computed and shown on every prediction but never moves calibratedProbability.
+
+Done looks like
+
+Before running the full ablation again, run it on a representative random sample first — sampled proportionally across all surfaces and time periods in the historical corpus (not a recent-date slice, which would be both too small and non-representative) — targeting roughly 3,000-5,000 matches, sized to reliably detect a small effect similar to task #91's original n=5,411 standalone validation, while completing in one sitting without blocking the server for 15-20+ minutes per variant.
+Run POST /api/evaluation/ablation/run against this sampled subset and poll GET /api/evaluation/ablation/status with a long-timeout client. If server blocking is still a problem at this smaller size, investigate running it as a background job or batched process rather than a single uninterrupted session.
+Read the leave-one-out delta for matchLoadRecovery specifically (the comparison that never actually completed last session) from the finished sampled report.
+If time and infrastructure allow, follow up with the full 18,242-match, 14-variant run for final confirmation; if not, the sampled result stands as the basis for the decision, clearly labeled in all reporting as a representative sample rather than the full corpus.
+If removing matchLoadRecovery from the ensemble measurably hurts overall accuracy, remove "matchLoadRecovery" from EXCLUDED_FROM_ENSEMBLE so it starts voting; otherwise, leave it excluded.
+Update docs/audit-matchloadrecovery-live-revalidation.md with the real measured numbers, explicitly stating the sample size used and whether it reflects the full corpus or a representative subset.
+Confirm the real module-vote-share shift matches (or corrects) the predicted renormalization table in docs/audit-fatigue-redesign-investigation.md.
+
+Out of scope
+
+Task #92's Serve & Return fix (already completed and shipped separately).
+Any other module's ensemble weight or exclusion status.
+The underlying matchLoadRecovery.ts formula or signal design itself (already validated in task #91) — this task is re-validation within the live ensemble, not a redesign.
+
+Sources
