@@ -174,6 +174,14 @@ export interface TennisDataProvider {
   getPlayer(playerId: string): Promise<PlayerProfile | null>;
   getPlayerMatches(playerId: string): Promise<MatchRecord[]>;
   getUpcomingFixtures(date: string): Promise<Fixture[]>;
+  /**
+   * Same data as `getUpcomingFixtures`, but for an entire calendar-day range in a single
+   * provider round trip instead of one call per day. Used by the upcoming-matches window
+   * (`collectUpcomingWindow`), which otherwise needs several sequential per-day calls to fill its
+   * result cap during a sparse (e.g. off-season) stretch. `dateStart`/`dateStop` are inclusive,
+   * `YYYY-MM-DD`.
+   */
+  getUpcomingFixturesRange(dateStart: string, dateStop: string): Promise<Fixture[]>;
   getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord>;
   /**
    * Bulk, player-agnostic pull of every definitively-terminated match in a date range (finished,

@@ -25,6 +25,9 @@ class NotConfiguredProvider implements TennisDataProvider {
   async getUpcomingFixtures(): Promise<never> {
     throw new ProviderUnavailableError(NOT_CONFIGURED_MESSAGE);
   }
+  async getUpcomingFixturesRange(): Promise<never> {
+    throw new ProviderUnavailableError(NOT_CONFIGURED_MESSAGE);
+  }
   async getHeadToHead(): Promise<never> {
     throw new ProviderUnavailableError(NOT_CONFIGURED_MESSAGE);
   }

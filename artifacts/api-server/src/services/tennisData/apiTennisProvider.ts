@@ -575,42 +575,55 @@ export class ApiTennisProvider implements TennisDataProvider {
     };
   }
 
+  private mapUpcomingFixture(m: RawMatch, surfaceByTournamentKey: Map<string, Surface | null>): Fixture {
+    const { surface, level } = resolveSurfaceAndLevel({
+      tournamentName: m.tournament_name,
+      tournamentKey: m.tournament_key ? str(m.tournament_key) : null,
+      eventTypeType: m.event_type_type,
+      surfaceByTournamentKey,
+    });
+    const timezone = resolveTournamentTimezone(m.tournament_name);
+    const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time, timezone);
+    return {
+      id: str(m.event_key),
+      date: m.event_date,
+      scheduledStart,
+      timeConfirmed: scheduledStart !== null,
+      tournamentName: m.tournament_name ?? null,
+      tournamentLevel: level,
+      round: m.tournament_round ?? null,
+      surface,
+      indoor: surface === "IndoorHard" ? true : null,
+      matchFormat: determineMatchFormat(m.event_type_type, level),
+      player1Id: str(m.first_player_key),
+      player1Name: m.event_first_player,
+      player2Id: str(m.second_player_key),
+      player2Name: m.event_second_player,
+    };
+  }
+
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {
+    return this.getUpcomingFixturesRange(date, date);
+  }
+
+  /**
+   * Same as `getUpcomingFixtures`, but for a whole date range in one provider round trip.
+   * Confirmed live (2026-07-11, see `getCompletedMatchesByDateRange` below): `get_fixtures`
+   * accepts a plain `date_start`/`date_stop` window and returns every match across that whole
+   * span, so a caller that needs several days (e.g. the upcoming-matches window widening through
+   * a sparse/off-season stretch) can fetch them in a single call instead of one call per day.
+   * Cached by the exact `dateStart:dateStop` key -- callers should request the same aligned
+   * batches repeatedly (rather than arbitrary ad hoc ranges) to get real cache reuse.
+   */
+  async getUpcomingFixturesRange(dateStart: string, dateStop: string): Promise<Fixture[]> {
     const [raw, surfaceByTournamentKey] = await Promise.all([
-      this.cache.getOrFetch(`fixtures:${date}`, FIXTURES_TTL_MS, () =>
-        this.call<RawMatch[]>("get_fixtures", { date_start: date, date_stop: date }),
+      this.cache.getOrFetch(`fixtures:${dateStart}:${dateStop}`, FIXTURES_TTL_MS, () =>
+        this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop }),
       ),
       this.getTournamentSurfaceMap(),
     ]);
 
-    return (raw ?? [])
-      .filter((m) => m.event_winner === null)
-      .map((m) => {
-        const { surface, level } = resolveSurfaceAndLevel({
-          tournamentName: m.tournament_name,
-          tournamentKey: m.tournament_key ? str(m.tournament_key) : null,
-          eventTypeType: m.event_type_type,
-          surfaceByTournamentKey,
-        });
-        const timezone = resolveTournamentTimezone(m.tournament_name);
-        const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time, timezone);
-        return {
-          id: str(m.event_key),
-          date: m.event_date,
-          scheduledStart,
-          timeConfirmed: scheduledStart !== null,
-          tournamentName: m.tournament_name ?? null,
-          tournamentLevel: level,
-          round: m.tournament_round ?? null,
-          surface,
-          indoor: surface === "IndoorHard" ? true : null,
-          matchFormat: determineMatchFormat(m.event_type_type, level),
-          player1Id: str(m.first_player_key),
-          player1Name: m.event_first_player,
-          player2Id: str(m.second_player_key),
-          player2Name: m.event_second_player,
-        };
-      });
+    return (raw ?? []).filter((m) => m.event_winner === null).map((m) => this.mapUpcomingFixture(m, surfaceByTournamentKey));
   }
 
   /**

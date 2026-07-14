@@ -234,6 +234,9 @@ test("an orphaned match (terminal result, missing feature snapshots for a player
       async getUpcomingFixtures() {
         throw new Error("not used in this test");
       },
+      async getUpcomingFixturesRange() {
+        throw new Error("not used in this test");
+      },
       async getHeadToHead() {
         throw new Error("not used in this test");
       },

@@ -19,7 +19,11 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
   const provider = getTennisDataProvider();
 
   try {
-    const window = await collectUpcomingWindow((date) => provider.getUpcomingFixtures(date), { limit, offset, nowMs: Date.now() });
+    const window = await collectUpcomingWindow((dateStart, dateStop) => provider.getUpcomingFixturesRange(dateStart, dateStop), {
+      limit,
+      offset,
+      nowMs: Date.now(),
+    });
     res.json(GetUpcomingFixturesResponse.parse(window));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {

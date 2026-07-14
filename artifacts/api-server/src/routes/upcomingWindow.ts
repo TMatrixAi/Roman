@@ -23,11 +23,18 @@ export interface UpcomingWindowResult {
 }
 
 /**
- * Assembles a rolling "now forward" window of upcoming fixtures: fetches successive calendar
- * days (in parallel batches, via `fetchDay`) starting today, widening the window further out
- * whenever the near-term days are sparse, until `offset + limit` results are collected (so a
- * page further into the list can be sliced out) or `MAX_LOOKAHEAD_DAYS` is reached. Always sorted
- * soonest-first.
+ * Assembles a rolling "now forward" window of upcoming fixtures: fetches successive calendar-day
+ * batches (each batch as a SINGLE multi-day range call, via `fetchRange`) starting today,
+ * widening the window further out whenever the near-term days are sparse, until `offset + limit`
+ * results are collected (so a page further into the list can be sliced out) or
+ * `MAX_LOOKAHEAD_DAYS` is reached. Always sorted soonest-first.
+ *
+ * Batches are fetched one range call at a time rather than one call per day -- during a sparse
+ * (e.g. off-season) stretch, the old per-day-call approach needed up to `BATCH_DAYS` round trips
+ * just to fill the first batch; a single range call gets the same data in one round trip. Batch
+ * boundaries are anchored to `nowMs`'s calendar day (not to `limit`/`offset`), so repeated calls
+ * for different pages on the same day request the exact same range keys and get real cache reuse
+ * from the provider.
  *
  * "Upcoming" means not yet started: a fixture with a confirmed `scheduledStart` in the past
  * (relative to `nowMs`) is already live/in-progress and is excluded. A fixture with no confirmed
@@ -38,7 +45,7 @@ export interface UpcomingWindowResult {
  * 50+ matches before noon) instead of being permanently capped at the first `limit` fixtures.
  */
 export async function collectUpcomingWindow(
-  fetchDay: (date: string) => Promise<Fixture[]>,
+  fetchRange: (dateStart: string, dateStop: string) => Promise<Fixture[]>,
   opts: { limit: number; nowMs: number; offset?: number },
 ): Promise<UpcomingWindowResult> {
   const { limit, nowMs, offset = 0 } = opts;
@@ -48,16 +55,15 @@ export async function collectUpcomingWindow(
 
   for (let dayOffset = 0; dayOffset < MAX_LOOKAHEAD_DAYS; dayOffset += BATCH_DAYS) {
     const dayCount = Math.min(BATCH_DAYS, MAX_LOOKAHEAD_DAYS - dayOffset);
-    const batchDates = Array.from({ length: dayCount }, (_, i) => utcDateString(nowMs + (dayOffset + i) * 86_400_000));
-    const batchResults = await Promise.all(batchDates.map(fetchDay));
+    const batchStart = utcDateString(nowMs + dayOffset * 86_400_000);
+    const batchStop = utcDateString(nowMs + (dayOffset + dayCount - 1) * 86_400_000);
+    const fixtures = await fetchRange(batchStart, batchStop);
 
-    for (const fixtures of batchResults) {
-      for (const fixture of fixtures) {
-        if (seenIds.has(fixture.id)) continue;
-        if (fixture.scheduledStart && new Date(fixture.scheduledStart).getTime() < nowMs) continue;
-        seenIds.add(fixture.id);
-        collected.push(fixture);
-      }
+    for (const fixture of fixtures) {
+      if (seenIds.has(fixture.id)) continue;
+      if (fixture.scheduledStart && new Date(fixture.scheduledStart).getTime() < nowMs) continue;
+      seenIds.add(fixture.id);
+      collected.push(fixture);
     }
 
     // Collect one extra beyond `target` so we can tell whether a further page would be

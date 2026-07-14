@@ -67,6 +67,7 @@ function makeFakeProvider(opts: { countryCode?: string | null; getPlayerCallCoun
     },
     getPlayerMatches: async () => [],
     getUpcomingFixtures: async () => [],
+    getUpcomingFixturesRange: async () => [],
     getHeadToHead: async (player1Id: string, player2Id: string) => ({ player1Id, player2Id, meetings: [] }),
     getCompletedMatchesByDateRange: async () => [],
   };

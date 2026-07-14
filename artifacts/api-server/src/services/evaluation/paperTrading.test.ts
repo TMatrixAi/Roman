@@ -37,6 +37,9 @@ class FakeProvider implements TennisDataProvider {
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {
     return this.fixtures.filter((f) => f.date.slice(0, 10) === date);
   }
+  async getUpcomingFixturesRange(dateStart: string, dateStop: string): Promise<Fixture[]> {
+    return this.fixtures.filter((f) => f.date.slice(0, 10) >= dateStart && f.date.slice(0, 10) <= dateStop);
+  }
   async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
     return { player1Id, player2Id, meetings: [] };
   }
