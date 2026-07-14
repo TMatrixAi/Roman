@@ -15,10 +15,10 @@
     "test:tennisData": "tsx --test src/services/tennisData/surfaceMap.test.ts src/services/tennisData/playerIdentity.test.ts src/services/tennisData/fixtureTime.test.ts src/services/tennisData/screenshotMatchupResolver.test.ts",
     "test:evaluation": "tsx --test src/services/evaluation/walkForward.test.ts src/services/evaluation/paperTrading.test.ts src/services/evaluation/specialistWeights.test.ts src/services/evaluation/ledgerDuplicates.test.ts src/services/evaluation/metrics.test.ts src/services/evaluation/savePrediction.test.ts",
     "test:job-smoke": "pnpm run build && tsx --test src/jobs/runPaperTradingJob.smoke.test.ts src/jobs/runCalibrationRefitJob.smoke.test.ts",
-    "job:paper-trading": "node --enable-source-maps ./dist/jobs/runPaperTradingJob.mjs",
-    "job:paper-trading:dev": "tsx src/jobs/runPaperTradingJob.ts",
-    "job:calibration-refit": "node --enable-source-maps ./dist/jobs/runCalibrationRefitJob.mjs",
-    "job:calibration-refit:dev": "tsx src/jobs/runCalibrationRefitJob.ts"
+    "job:paper-trading": "export PAPER_TRADING_JOB_STANDALONE=1 && node --enable-source-maps ./dist/jobs/runPaperTradingJob.mjs",
+    "job:paper-trading:dev": "export PAPER_TRADING_JOB_STANDALONE=1 && tsx src/jobs/runPaperTradingJob.ts",
+    "job:calibration-refit": "export CALIBRATION_REFIT_JOB_STANDALONE=1 && node --enable-source-maps ./dist/jobs/runCalibrationRefitJob.mjs",
+    "job:calibration-refit:dev": "export CALIBRATION_REFIT_JOB_STANDALONE=1 && tsx src/jobs/runCalibrationRefitJob.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

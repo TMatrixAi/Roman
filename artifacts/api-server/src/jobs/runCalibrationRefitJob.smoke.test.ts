@@ -23,6 +23,7 @@ test("job:calibration-refit script actually runs the job and writes a durable jo
   const result = spawnSync("node", ["--enable-source-maps", builtJobPath], {
     cwd: artifactDir,
     encoding: "utf8",
+    env: { ...process.env, CALIBRATION_REFIT_JOB_STANDALONE: "1" },
   });
 
   assert.equal(result.status, 0, `job process should exit 0 on success; stderr: ${result.stderr}`);

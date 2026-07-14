@@ -7,7 +7,7 @@
  * app's autoscale/vm deployment): a schedule of every 15 minutes, matching the previous in-process
  * interval, pointed at:
  *
- *   node --enable-source-maps dist/jobs/runPaperTradingJob.mjs
+ *   PAPER_TRADING_JOB_STANDALONE=1 node --enable-source-maps dist/jobs/runPaperTradingJob.mjs
  *
  * (built by the same `build.mjs` that produces `dist/index.mjs`; see package.json's
  * `job:paper-trading` script for the equivalent local/dev invocation).
@@ -22,8 +22,6 @@
  * per-fixture provider hiccup is already handled and recorded inside `runPaperTradingCycle`
  * itself (see its `summary.errors`) and is NOT a reason to retry the whole cycle.
  */
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { db, jobRunsTable } from "@workspace/db";
 import { runPaperTradingCycle, type PaperTradingCycleSummary } from "../services/evaluation/paperTrading";
 import { gradePendingLedgerPredictions, type LedgerGradingSummary } from "../services/evaluation/ledgerGrading";
@@ -95,13 +93,17 @@ export async function runPaperTradingJob(): Promise<{ ok: boolean }> {
   return { ok: false };
 }
 
-// Only run when invoked directly (e.g. `node dist/jobs/runPaperTradingJob.mjs`), not when
-// imported as a module. Compares resolved filesystem paths rather than raw URL strings --
-// `process.argv[1]` is whatever path the shell was given (often relative, e.g. `./dist/...`),
-// while `import.meta.url` is always an absolute `file://` URL, so a naive string comparison
-// between the two is false even for a direct invocation.
-const isMainModule = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
-if (isMainModule) {
+// Only run when invoked directly via the standalone CLI (e.g. `pnpm run job:paper-trading`), not
+// when imported as a module. This can't be detected by comparing `import.meta.url` to
+// `process.argv[1]`: `build.mjs` bundles this file's code into TWO separate esbuild entry-point
+// bundles (`dist/index.mjs`, which imports `runPaperTradingJob` and calls it in-process, and
+// `dist/jobs/runPaperTradingJob.mjs`, the real standalone entry). Once bundled, this code's
+// `import.meta.url` resolves to whichever bundle it ended up in -- so when running
+// `dist/index.mjs`, the comparison against `process.argv[1]` (also `dist/index.mjs`) false-
+// matched, calling `process.exit()` and killing the whole API server ~10s after every startup.
+// An explicit env var set only by the standalone CLI scripts (`job:paper-trading` /
+// `job:paper-trading:dev`) is immune to that bundling collision.
+if (process.env["PAPER_TRADING_JOB_STANDALONE"] === "1") {
   runPaperTradingJob()
     .then(({ ok }) => process.exit(ok ? 0 : 1))
     .catch((err) => {

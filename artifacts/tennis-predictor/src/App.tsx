@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import { Layout } from '@/components/Layout';
+import { AdminAuthGate } from '@/components/AdminAuthGate';
 import Home from '@/pages/Home';
 import PredictBuilderPage from '@/pages/PredictBuilder';
 import HistoryPage from '@/pages/History';
@@ -50,9 +51,11 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
+        <AdminAuthGate>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Router />
+          </WouterRouter>
+        </AdminAuthGate>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

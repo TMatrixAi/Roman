@@ -1,0 +1,21 @@
+Plan #146 - Stop correlated modules from double-counting the same evidence
+#146 - Stop correlated modules from double-counting the same evidence
+
+What & Why
+
+The ensemble vote blends Surface Elo, Recent Form, and Serve & Return as if they were independent evidence (buildEnsemble in ensemble.ts does a simple reliability-weighted average with no correlation term). In reality, all three lean heavily on the same underlying recent-match history: a player's hot streak on the current surface simultaneously pushes up their Surface Elo rating, falls inside Recent Form's 10-match window, and improves their Serve & Return numbers. When those three modules agree (because they're fed by the same recent results, not because three independent signals happened to align), the ensemble currently treats that as three separate confirmations and produces a more confident win probability than the underlying evidence actually supports -- a real, structural source of overconfident predictions, distinct from the calibration-curve fixes already done in Tasks #128/#133.
+
+Done looks like
+
+The ensemble's confidence in a vote no longer scales up simply because multiple modules are all reacting to the same recent matches.
+This is validated against real walk-forward/out-of-sample outcomes (matches where Elo, Form, and Serve & Return all lean the same way because of shared recent data should not show worse real-world calibration than matches where they agree for genuinely independent reasons) -- not just adjusted on plausibility.
+If a correlation-aware adjustment measurably improves calibration, it's wired into the ensemble weighting; if it doesn't hold up under a real backtest, that negative result is documented rather than shipped anyway.
+Out of scope
+
+Removing or restructuring which modules exist -- this is about how they're weighted together, not what they measure.
+The separate "matchup closeness" signal work already tracked in Task #115.
+Steps
+
+Quantify the actual correlation -- Using real historical data, measure how often Surface Elo, Recent Form, and Serve & Return move together because they're drawing on the same recent matches, and how that co-movement relates to real prediction accuracy (does it help or does it overstate confidence?).
+Design a correlation-aware adjustment -- Introduce a way for the ensemble to discount agreement between modules that's driven by shared recent-match data, rather than treating every module's vote as fully independent evidence.
+Validate against real walk-forward outcomes -- Confirm the adjustment improves (or at least doesn't hurt) calibration on real out-of-sample data before wiring it into live predictions, following the same validation approach used for prior calibration audits.

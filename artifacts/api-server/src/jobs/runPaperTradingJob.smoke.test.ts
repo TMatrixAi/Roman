@@ -28,6 +28,7 @@ test("job:paper-trading script actually runs the job and writes a durable job_ru
   const result = spawnSync("node", ["--enable-source-maps", builtJobPath], {
     cwd: artifactDir,
     encoding: "utf8",
+    env: { ...process.env, PAPER_TRADING_JOB_STANDALONE: "1" },
   });
 
   assert.equal(result.status, 0, `job process should exit 0 on success; stderr: ${result.stderr}`);

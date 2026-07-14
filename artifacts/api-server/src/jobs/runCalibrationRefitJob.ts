@@ -15,7 +15,7 @@
  * move as fast as new graded historical/paper-trading outcomes accumulate -- unlike paper trading's
  * 15-minute fixture-locking cadence, there is no benefit to refitting more often than that), pointed at:
  *
- *   node --enable-source-maps dist/jobs/runCalibrationRefitJob.mjs
+ *   CALIBRATION_REFIT_JOB_STANDALONE=1 node --enable-source-maps dist/jobs/runCalibrationRefitJob.mjs
  *
  * (built by the same `build.mjs` that produces `dist/index.mjs`; see package.json's
  * `job:calibration-refit` script for the equivalent local/dev invocation).
@@ -30,8 +30,6 @@
  * "not enough historical matches yet" outcome is not an error -- it's recorded as a successful run
  * with `foldsRun: 0` so it's visible without being treated as a failure worth retrying.
  */
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { db, jobRunsTable } from "@workspace/db";
 import { runWalkForwardEvaluation, type WalkForwardSummary } from "../services/evaluation/walkForward";
 import { logger } from "../lib/logger";
@@ -96,12 +94,13 @@ export async function runCalibrationRefitJob(): Promise<{ ok: boolean }> {
   return { ok: false };
 }
 
-// Only run when invoked directly (e.g. `node dist/jobs/runCalibrationRefitJob.mjs`), not when
-// imported as a module -- same absolute-path comparison as `runPaperTradingJob.ts` (a naive
-// string comparison against `process.argv[1]` breaks for the exact relative-path invocation the
-// job is documented to run with).
-const isMainModule = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
-if (isMainModule) {
+// Only run when invoked directly via the standalone CLI (e.g. `pnpm run job:calibration-refit`),
+// not when imported as a module -- an explicit env var, not an `import.meta.url`/`process.argv[1]`
+// comparison, because `build.mjs` bundles each esbuild entry point independently: if this file's
+// code were ever imported into another entry point (as happened with `runPaperTradingJob.ts` and
+// `dist/index.mjs`), that comparison would false-match inside the *other* bundle and call
+// `process.exit()` there too. See `runPaperTradingJob.ts` for the incident this mirrors.
+if (process.env["CALIBRATION_REFIT_JOB_STANDALONE"] === "1") {
   runCalibrationRefitJob()
     .then(({ ok }) => process.exit(ok ? 0 : 1))
     .catch((err) => {
