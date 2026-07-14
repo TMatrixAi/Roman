@@ -76,6 +76,23 @@ function sanitizeResumedItems(items: BatchItem[]): BatchItem[] {
   })
 }
 
+// Screenshot recognition of one item costs a real vision-model call, so firing all up to 20 at
+// once used to burst the provider's rate limit and fail several screenshots in a large batch with
+// no recovery. Capping how many resolve at once (independent of the backend's own retry/backoff,
+// added alongside this) keeps a full batch from tripping the limit in the first place.
+const RESOLVE_CONCURRENCY = 4
+
+async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T, index: number) => Promise<void>): Promise<void> {
+  let nextIndex = 0
+  async function runNext(): Promise<void> {
+    const index = nextIndex++
+    if (index >= items.length) return
+    await worker(items[index], index)
+    await runNext()
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext))
+}
+
 function fileToBase64DataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -202,42 +219,41 @@ export function BulkMatchupPredictor() {
 
     // Each file is read and resolved completely independently -- separate base64 read, separate
     // API call, separate result object -- so nothing from one screenshot can leak into another's
-    // detected player/surface/tournament even when several resolve concurrently.
-    await Promise.all(
-      toProcess.map(async (file, index) => {
-        const key = initialItems[index].key
-        try {
-          const imageBase64 = await fileToBase64DataUrl(file)
-          const result = await recognizeMatchupScreenshot({ imageBase64 })
-          const ready = !!result.player1.player && !!result.player2.player
-          setItems((prev) =>
-            prev.map((it) =>
-              it.key === key
-                ? {
-                    ...it,
-                    status: ready ? "resolved" : "unresolved",
-                    result,
-                    errorMessage: ready
-                      ? null
-                      : result.warnings[0] ?? "Couldn't confidently resolve both players from this screenshot.",
-                    surface: result.event.surface ?? it.surface,
-                    level: result.event.level ?? it.level,
-                    tournamentName: result.event.recognizedName ?? null,
-                  }
-                : it,
-            ),
-          )
-        } catch {
-          setItems((prev) =>
-            prev.map((it) =>
-              it.key === key
-                ? { ...it, status: "read-error", errorMessage: "Couldn't read this screenshot. Try a clearer image." }
-                : it,
-            ),
-          )
-        }
-      }),
-    )
+    // detected player/surface/tournament. Capped at RESOLVE_CONCURRENCY at a time (see above)
+    // rather than all firing at once.
+    await runWithConcurrency(toProcess, RESOLVE_CONCURRENCY, async (file, index) => {
+      const key = initialItems[index].key
+      try {
+        const imageBase64 = await fileToBase64DataUrl(file)
+        const result = await recognizeMatchupScreenshot({ imageBase64 })
+        const ready = !!result.player1.player && !!result.player2.player
+        setItems((prev) =>
+          prev.map((it) =>
+            it.key === key
+              ? {
+                  ...it,
+                  status: ready ? "resolved" : "unresolved",
+                  result,
+                  errorMessage: ready
+                    ? null
+                    : result.warnings[0] ?? "Couldn't confidently resolve both players from this screenshot.",
+                  surface: result.event.surface ?? it.surface,
+                  level: result.event.level ?? it.level,
+                  tournamentName: result.event.recognizedName ?? null,
+                }
+              : it,
+          ),
+        )
+      } catch {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.key === key
+              ? { ...it, status: "read-error", errorMessage: "Couldn't read this screenshot. Try a clearer image." }
+              : it,
+          ),
+        )
+      }
+    })
   }
 
   const handlePredict = async () => {

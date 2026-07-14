@@ -1,4 +1,5 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { batchProcess, isRateLimitError } from "@workspace/integrations-openai-ai-server/batch";
 import { logger } from "../../lib/logger";
 
 /**
@@ -69,26 +70,39 @@ export class ScreenshotRecognitionUnavailableError extends Error {}
  * Calls the vision model on the uploaded image. Throws ScreenshotRecognitionUnavailableError only
  * for genuine provider/network failures (worth a 502) -- a low-confidence or empty read from a
  * real response is NOT an error, it's a valid "found nothing" result.
+ *
+ * Task: a bulk upload (up to 20 screenshots) fires one of these per screenshot as a separate HTTP
+ * request, and the frontend used to fan them all out with no coordination -- bursting up to 20
+ * simultaneous vision calls at once routinely tripped the provider's rate limit, so several
+ * screenshots in a large batch would fail with no automatic recovery. `batchProcess` (built for
+ * exactly this "many LLM calls" case) wraps the single call with retry+backoff specifically for
+ * rate-limit errors, so a 429 here is retried transparently instead of surfacing as a failure.
  */
 export async function recognizeMatchupScreenshot(imageBase64: string): Promise<RawScreenshotRecognition> {
   let response;
   try {
-    response = await openai.chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 500,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Extract the player names and event name from this screenshot." },
-            { type: "image_url", image_url: { url: toImageDataUrl(imageBase64) } },
+    [response] = await batchProcess(
+      [imageBase64],
+      (image) =>
+        openai.chat.completions.create({
+          model: "gpt-5.4",
+          max_completion_tokens: 500,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Extract the player names and event name from this screenshot." },
+                { type: "image_url", image_url: { url: toImageDataUrl(image) } },
+              ],
+            },
           ],
-        },
-      ],
-    });
+        }),
+      { concurrency: 1, retries: 5 },
+    );
   } catch (err) {
-    logger.error({ err }, "Vision AI provider call failed for screenshot matchup recognition");
+    const rateLimited = isRateLimitError(err);
+    logger.error({ err, rateLimited }, "Vision AI provider call failed for screenshot matchup recognition");
     throw new ScreenshotRecognitionUnavailableError("Vision AI provider unavailable");
   }
 
