@@ -234,7 +234,8 @@ function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
           a validated segment specialist backing the call, and a calibrated pick that agrees with the raw evidence (no
           model conflict, no High Disagreement, no High/Extreme upset risk). Scored against genuinely-unseen graded
           outcomes only (historical test-segment + paper trading), with the same accuracy/logLoss/Brier/ECE methodology
-          used everywhere else on this dashboard.
+          used everywhere else on this dashboard. Elite is the engine's most selective bar, not a proven track record --
+          read the numbers below rather than assuming superiority from the label alone.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

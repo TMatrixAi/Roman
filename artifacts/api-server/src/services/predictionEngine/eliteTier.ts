@@ -118,7 +118,7 @@ export function computeEliteTier(input: EliteTierInputs): EliteTierResult {
   if (reasons.length === 0) {
     return {
       isEliteTier: true,
-      reason: `Elite: high data quality, Surface Elo/Serve & Return/Recent Form all agree with a genuine margin (${calibratedMargin.toFixed(1)} points from a coin flip), a validated segment specialist backs the call, and the calibrated pick agrees with the raw evidence (no model conflict).`,
+      reason: `Elite: high data quality, Surface Elo/Serve & Return/Recent Form all agree with a genuine margin (${calibratedMargin.toFixed(1)} points from a coin flip), a validated segment specialist backs the call, and the calibrated pick agrees with the raw evidence (no model conflict). Elite is the engine's most selective bar, not a proven track record -- see the Accuracy dashboard's Elite Tier Backtest for real-world performance so far.`,
     };
   }
   return { isEliteTier: false, reason: `Not elite tier -- ${reasons.join("; ")}.` };

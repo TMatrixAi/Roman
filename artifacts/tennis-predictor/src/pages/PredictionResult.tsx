@@ -26,6 +26,17 @@ const CLOSENESS_LABELS: Record<string, string> = {
   Clear: "Clear favorite",
 }
 
+// "STRONG_RECOMMENDATION" is displayed as "HIGH CONFIDENCE" rather than a literal
+// underscore-replace of its name: a fresh walk-forward audit (docs/audit-task116-full-statistical-audit.md,
+// section 4) found this tier currently has the worst log loss of any recommendation tier on
+// held-out data (n=189) -- "strong recommendation" reads as an endorsement the evidence doesn't
+// yet back. "HIGH CONFIDENCE" describes what the tier actually is (the engine's highest-margin
+// threshold) without implying a proven track record. Keep this label consistent everywhere the
+// tier is shown (Ledger list rows, Ledger stats, this page).
+const RECOMMENDATION_LABELS: Record<string, string> = {
+  STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
+}
+
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
   const total = p1Value + p2Value;
   const p1Pct = total > 0 ? (p1Value / total) * 100 : 50;
@@ -130,7 +141,7 @@ export default function PredictionResultPage() {
                     prediction.recommendation === 'HIGH_RISK' ? 'warning' :
                     prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
                   } className="text-sm">
-                    {prediction.recommendation.replace(/_/g, ' ')}
+                    {RECOMMENDATION_LABELS[prediction.recommendation] ?? prediction.recommendation.replace(/_/g, ' ')}
                   </Badge>
                   {engine.isEliteTier && (
                     <Badge variant="success" className="text-sm gap-1">
@@ -141,6 +152,12 @@ export default function PredictionResultPage() {
                     SET SCORE: {prediction.predictedSetScore}
                   </Badge>
                 </div>
+                {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
+                  <p className="text-xs text-muted-foreground mt-2 max-w-md">
+                    The engine's highest-confidence tier based on today's thresholds -- its own validation sample is
+                    still small, so treat this as a signal, not a guarantee.
+                  </p>
+                )}
                 {engine.eliteTierReason && (
                   <p className="text-xs text-muted-foreground mt-2 max-w-md">{engine.eliteTierReason}</p>
                 )}
