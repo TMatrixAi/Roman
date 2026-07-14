@@ -8,8 +8,9 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { ScreenshotMatchupUpload } from "@/components/ScreenshotMatchupUpload"
+import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { DataWarning } from "@/components/DataWarning"
-import { Activity, Swords, Settings2, RefreshCw } from "lucide-react"
+import { Activity, Swords, Settings2, RefreshCw, Layers } from "lucide-react"
 
 function PlayerCard({ 
   playerId, 
@@ -119,6 +120,7 @@ export default function PredictBuilderPage() {
   const [screenshotDetectedSurface, setScreenshotDetectedSurface] = useState(false)
   const [screenshotTournamentName, setScreenshotTournamentName] = useState<string | null>(null)
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel) || screenshotDetectedSurface
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
 
   const createPrediction = useCreatePrediction()
 
@@ -193,6 +195,23 @@ export default function PredictBuilderPage() {
           otherwise this card would unmount the instant both slots fill and the confirmation the
           user just saw would vanish before they could read it. */}
       <ScreenshotMatchupUpload onResolved={handleScreenshotResolved} />
+
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="font-mono text-xs text-muted-foreground"
+          onClick={() => setShowBulkUpload((v) => !v)}
+        >
+          <Layers className="w-3.5 h-3.5 mr-1.5" />
+          {showBulkUpload ? "HIDE BULK UPLOAD" : "GOT MULTIPLE SCREENSHOTS? BULK UPLOAD & BATCH PREDICT"}
+        </Button>
+        {showBulkUpload && (
+          <div className="mt-3">
+            <BulkMatchupPredictor />
+          </div>
+        )}
+      </div>
 
       {(!player1Id || !player2Id) && (
         <Card>

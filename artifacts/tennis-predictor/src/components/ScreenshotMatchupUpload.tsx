@@ -133,7 +133,7 @@ export function ScreenshotMatchupUpload({
   )
 }
 
-function RecognizedChip({ label, name, matched }: { label: string; name: string | null; matched: boolean }) {
+export function RecognizedChip({ label, name, matched }: { label: string; name: string | null; matched: boolean }) {
   if (!name) {
     return (
       <Badge variant="outline" className="font-mono">

@@ -14,7 +14,7 @@ import PredictionLogPage from '@/pages/PredictionLog';
 // Lazy-loaded because they pull in recharts (a large charting library) -- keeping them out of
 // the main bundle means the home/predict-builder flow (the common path) doesn't pay for a chart
 // library it never renders.
-const PredictionResultPage = lazy(() => import('@/pages/PredictionResult'));
+const PredictionResultView = lazy(() => import('@/pages/PredictionResultView'));
 const AccuracyDashboardPage = lazy(() => import('@/pages/AccuracyDashboard'));
 
 const queryClient = new QueryClient();
@@ -35,7 +35,7 @@ function Router() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/predict" component={PredictBuilderPage} />
-          <Route path="/predictions/:id" component={PredictionResultPage} />
+          <Route path="/predictions/:id" component={PredictionResultView} />
           <Route path="/history" component={HistoryPage} />
           <Route path="/evaluation/log" component={PredictionLogPage} />
           <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
