@@ -1,0 +1,128 @@
+Fix the model-agreement classification in my Tennis Stats Engine.
+
+Current issue:
+The engine can classify a matchup as its highest disagreement category even when every meaningfully weighted model favors the same player.
+
+Example:
+- Surface Elo: Player 1 at 74%
+- Serve & Return: Player 1 at 51%
+- Recent Form: Player 1 at 51%
+- 100% of effective model weight supports Player 1
+
+The current system still reports the highest disagreement category because the probability spread is large. This is misleading: the models differ in confidence, but not in direction.
+
+Primary file:
+artifacts/api-server/src/services/predictionEngine/disagreement.ts
+
+Requirements:
+
+1. Separate these concepts:
+   - Directional disagreement: meaningful effective weight supports both Player 1 and Player 2.
+   - Confidence spread: models support the same player but differ in how strongly.
+
+2. Preserve the existing public `ModelAgreement` type, enum values, strings, API schemas, and response contracts.
+   - Do not rename agreement categories unless absolutely necessary.
+   - Use the existing highest-disagreement category, whatever its exact current string or enum value is.
+
+3. Direction rules:
+   - probability > 50 supports Player 1
+   - probability < 50 supports Player 2
+   - probability === 50 is neutral and supports neither side
+
+4. The highest disagreement category must require genuine directional conflict:
+   - meaningful effective weight must exist on both sides of 50%
+   - both sides must satisfy the existing meaningful-support or meaningful-weight threshold
+   - weighted standard deviation alone must never trigger the highest disagreement category
+
+5. If all meaningfully weighted non-neutral models favor the same player:
+   - never assign the highest disagreement category
+   - classify the result using the existing lower agreement categories
+   - a wide confidence spread may reduce the strongest agreement category to a middle category
+   - preserve weighted standard deviation as the confidence-spread measurement
+
+6. A tiny-weight dissenting model must not trigger the highest disagreement category by itself.
+   Use effective model weight and the existing meaningful-weight threshold rather than a raw model count.
+
+7. Update explanation text:
+   - For unanimous direction with wide confidence spread, say:
+     “All meaningfully weighted models favor Player 1, but their confidence levels vary.”
+   - Use the actual player name where available.
+   - Explicitly include the percentage of effective weight supporting the leader.
+   - Do not describe unanimous-direction models as being in conflict.
+
+8. Genuine directional conflict should still be disclosed clearly.
+   Example:
+   - Surface Elo: 74% for Player 1
+   - Serve & Return: 46% for Player 1, therefore favors Player 2
+   - Recent Form: 43% for Player 1, therefore favors Player 2
+   If meaningful effective weight exists on both sides and the current thresholds are met, the highest disagreement category should remain possible.
+
+9. Review downstream consumers, but change them only where necessary to reflect the corrected agreement result:
+   - ensemble.ts
+   - upsetRisk.ts
+   - eliteTier.ts
+   - recommendation.ts
+   - index.ts
+   - UI components displaying `modelAgreement` or `disagreementNote`
+
+Do not independently redesign upset-risk, Elite-tier, recommendation, calibration, ensemble weights, or prediction probabilities.
+
+10. Add tests covering:
+
+Case A — unanimous direction, wide spread:
+- 74%, 51%, 51%
+- all equal meaningful weights
+- expected: not the highest disagreement category
+- explanation states unanimous direction with varying confidence
+- leader support should equal 100% of meaningful effective weight
+
+Case B — genuine directional conflict:
+- 74%, 46%, 43%
+- equal meaningful weights
+- expected: highest disagreement category if existing spread and support thresholds are met
+
+Case C — negligible dissent:
+- two meaningful-weight models favor Player 1
+- one very small-weight model favors Player 2
+- expected: the tiny dissent alone does not trigger the highest disagreement category
+
+Case D — unanimous and tightly grouped:
+- 61%, 59%, 58%
+- expected: strongest agreement category, subject to the existing thresholds
+
+Case E — neutral model:
+- 65%, 50%, 62%
+- the 50% model supports neither player
+- expected: unanimous directional support among non-neutral meaningful models
+
+Case F — all neutral:
+- 50%, 50%, 50%
+- expected: no fabricated directional leader
+- preserve the most appropriate existing neutral/uncertain agreement behavior
+
+11. Verify edge cases:
+- zero total model weight
+- missing or empty model array
+- rounded probabilities near 50
+- effective weights that do not sum exactly to 1
+- duplicate model names
+- models with zero or negative effective weight, according to existing validation behavior
+
+12. Run:
+pnpm run typecheck
+
+Run all relevant disagreement, prediction-engine, upset-risk, recommendation, and Elite-tier tests.
+
+Report:
+- files changed
+- previous behavior
+- corrected behavior
+- exact meaningful-weight, directional-support, and spread thresholds used
+- whether any downstream upset-risk, Elite-tier, or recommendation result changed in the test cases
+- confirmation that prediction probabilities and ensemble weights were not changed
+
+Important:
+This is a classification and explanation fix only.
+Do not alter underlying model probabilities, reliability values, calibration, confidence shrinkage, or ensemble voting weights.
+Do not suppress genuine directional disagreement.
+Show the implementation plan before modifying files.

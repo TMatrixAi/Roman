@@ -14,14 +14,23 @@ const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
   { value: "wta", label: "WTA Tournaments" },
 ]
 
+const ALL_TOURNAMENTS = "all"
+
 export default function Home() {
   const [, setLocation] = useLocation()
   const [tourFilter, setTourFilter] = useState<TourFilter>("all")
   const [appliedTourFilter, setAppliedTourFilter] = useState<TourFilter>("all")
+  // Task #110: event/tournament filter, applied together with the tour/level filter via the same
+  // "Go" button. Options are populated from real tournamentName values FixturesList reports among
+  // the fixtures it currently has loaded -- never a fabricated or hardcoded list.
+  const [tournamentOptions, setTournamentOptions] = useState<string[]>([])
+  const [tournamentFilter, setTournamentFilter] = useState<string>(ALL_TOURNAMENTS)
+  const [appliedTournamentFilter, setAppliedTournamentFilter] = useState<string>(ALL_TOURNAMENTS)
   const fixturesRef = useRef<FixturesListHandle>(null)
 
   const handleGo = () => {
     setAppliedTourFilter(tourFilter)
+    setAppliedTournamentFilter(tournamentFilter)
     fixturesRef.current?.refetch()
   }
 
@@ -53,17 +62,34 @@ export default function Home() {
               BUILD MATCHUP
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={tourFilter}
-              onChange={(e) => setTourFilter(e.target.value as TourFilter)}
-              className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
-              aria-label="Filter upcoming fixtures by tour"
-            >
-              {TOUR_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
-              ))}
-            </Select>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-mono font-bold text-primary-foreground/70 tracking-wider">LEVEL</label>
+              <Select
+                value={tourFilter}
+                onChange={(e) => setTourFilter(e.target.value as TourFilter)}
+                className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
+                aria-label="Filter upcoming fixtures by tour"
+              >
+                {TOUR_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-mono font-bold text-primary-foreground/70 tracking-wider">EVENT</label>
+              <Select
+                value={tournamentFilter}
+                onChange={(e) => setTournamentFilter(e.target.value)}
+                className="w-auto bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 font-mono text-sm"
+                aria-label="Filter upcoming fixtures by tournament"
+              >
+                <option value={ALL_TOURNAMENTS} className="text-foreground">All Tournaments</option>
+                {tournamentOptions.map((name) => (
+                  <option key={name} value={name} className="text-foreground">{name}</option>
+                ))}
+              </Select>
+            </div>
             <Button
               variant="secondary"
               size="sm"
@@ -84,7 +110,12 @@ export default function Home() {
             <h2 className="text-xl font-bold">UPCOMING FIXTURES</h2>
           </div>
           <p className="text-sm text-muted-foreground font-mono mb-4">QUICK START PREDICTIONS</p>
-          <FixturesList ref={fixturesRef} tourFilter={appliedTourFilter} />
+          <FixturesList
+            ref={fixturesRef}
+            tourFilter={appliedTourFilter}
+            tournamentFilter={appliedTournamentFilter}
+            onTournamentsChange={setTournamentOptions}
+          />
         </section>
 
         <section className="space-y-4">

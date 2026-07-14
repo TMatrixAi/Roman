@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react"
 import { useGetUpcomingFixtures, useCreatePrediction, type Fixture } from "@workspace/api-client-react"
 import { useLocation } from "wouter"
 import { Card } from "@/components/ui/card"
@@ -40,6 +40,16 @@ function matchesFilter(fixture: Fixture, filter: TourFilter): boolean {
 }
 
 /**
+ * Task #110: real, independent second filter alongside the tour/level one -- matches on the
+ * fixture's actual tournamentName, never a guess. A null/undefined tournamentFilter (or the
+ * "all" sentinel) matches everything, same convention as TourFilter's "all".
+ */
+function matchesTournament(fixture: Fixture, tournamentFilter: string | null): boolean {
+  if (!tournamentFilter || tournamentFilter === "all") return true
+  return fixture.tournamentName === tournamentFilter
+}
+
+/**
  * Sort key for a fixture's real start time. Fixtures with no provider-confirmed time ("Time TBD")
  * sort after every confirmed fixture on the same calendar date, rather than being guessed into
  * some position -- never fabricated, never inherited from another match or the tournament date.
@@ -54,9 +64,9 @@ function timeSortKey(fixture: Fixture): number {
  * tourFilter is "all", every fixture matches, so nothing is hidden and this collapses back to a
  * plain chronological sort.
  */
-function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter): Fixture[] {
+function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter, tournamentFilter: string | null): Fixture[] {
   return fixtures
-    .filter((fixture) => matchesFilter(fixture, tourFilter))
+    .filter((fixture) => matchesFilter(fixture, tourFilter) && matchesTournament(fixture, tournamentFilter))
     .sort((a, b) => timeSortKey(a) - timeSortKey(b))
 }
 
@@ -86,8 +96,11 @@ export type FixturesListHandle = {
 const INITIAL_PAGE_SIZE = 50
 const PAGE_SIZE_INCREMENT = 50
 
-export const FixturesList = forwardRef<FixturesListHandle, { tourFilter?: TourFilter }>(
-  function FixturesList({ tourFilter = "all" }, ref) {
+export const FixturesList = forwardRef<
+  FixturesListHandle,
+  { tourFilter?: TourFilter; tournamentFilter?: string | null; onTournamentsChange?: (names: string[]) => void }
+>(
+  function FixturesList({ tourFilter = "all", tournamentFilter = null, onTournamentsChange }, ref) {
   const [limit, setLimit] = useState(INITIAL_PAGE_SIZE)
   const { data, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures({ limit })
   const fixtures = data?.fixtures
@@ -101,10 +114,20 @@ export const FixturesList = forwardRef<FixturesListHandle, { tourFilter?: TourFi
     refetch: () => { setLimit(INITIAL_PAGE_SIZE); refetch() },
   }), [refetch])
 
+  // Task #110: real distinct tournament names among the currently loaded fixtures (independent
+  // of tourFilter, so switching the level dropdown doesn't make event options disappear/reappear
+  // out from under the user), reported up for the Home page's event dropdown. Never fabricated --
+  // only tournamentName values fixtures actually have.
+  useEffect(() => {
+    if (!onTournamentsChange) return
+    const names = Array.from(new Set((fixtures ?? []).map((f) => f.tournamentName).filter((n): n is string => !!n))).sort()
+    onTournamentsChange(names)
+  }, [fixtures, onTournamentsChange])
+
   const visibleFixtures = useMemo(() => {
     if (!fixtures) return []
-    return filterFixtures(fixtures, tourFilter)
-  }, [fixtures, tourFilter])
+    return filterFixtures(fixtures, tourFilter, tournamentFilter)
+  }, [fixtures, tourFilter, tournamentFilter])
 
   const handlePredictNow = (fixture: Fixture) => {
     setPredictNowError(null)

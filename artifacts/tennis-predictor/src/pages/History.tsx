@@ -24,6 +24,7 @@ import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
+import { LedgerMatchupSearch } from "@/components/LedgerMatchupSearch"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +50,7 @@ import {
   Copy,
   X,
   UserSearch,
+  ClipboardPaste,
   History as HistoryIcon,
 } from "lucide-react"
 
@@ -389,8 +391,15 @@ export default function HistoryPage() {
   // once there's more than one prediction to step through.
   const [activePlayer, setActivePlayer] = useState<{ id: string; name: string } | null>(null)
   const [playerIndex, setPlayerIndex] = useState(0)
-  const [activeTab, setActiveTab] = useState<"recent" | "search">("recent")
+  const [activeTab, setActiveTab] = useState<"recent" | "search" | "pasteSearch">("recent")
   const focusRef = useRef<HTMLDivElement>(null)
+
+  // Task #110: paste-search focus/navigation. Mutually exclusive with the single-player focus
+  // above -- selecting into one clears the other -- since both drive the same bottom-right
+  // floating stepper and would otherwise conflict about which list it's stepping through.
+  const [pasteMatches, setPasteMatches] = useState<PredictionSummary[]>([])
+  const [pasteMatchIndex, setPasteMatchIndex] = useState(0)
+  const pasteFocusRef = useRef<HTMLDivElement>(null)
 
   const playerPredictionsQuery = useGetLedgerPlayerPredictions(activePlayer?.id ?? "", {
     query: {
@@ -434,9 +443,31 @@ export default function HistoryPage() {
   }
 
   const selectPlayer = (player: LedgerPlayerSummary) => {
+    clearPasteNavigation()
     setActivePlayer({ id: player.id, name: player.name })
     setActiveTab("recent")
   }
+
+  const clearPasteNavigation = () => {
+    setPasteMatches([])
+    setPasteMatchIndex(0)
+  }
+
+  // Task #110: called by the paste-search tab once the user asks to view its resolved matches
+  // (either "view all" or a specific row's "view"). Clears any single-player focus so the two
+  // navigators never show at once, jumps to the requested match, and switches to the tab where
+  // the focus row actually renders.
+  const viewPasteMatches = (predictions: PredictionSummary[], startIndex: number) => {
+    clearPlayerNavigation()
+    setPasteMatches(predictions)
+    setPasteMatchIndex(Math.max(0, Math.min(startIndex, predictions.length - 1)))
+    setActiveTab("recent")
+    requestAnimationFrame(() => {
+      pasteFocusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+  }
+
+  const safePasteMatchIndex = pasteMatches.length > 0 ? Math.min(pasteMatchIndex, pasteMatches.length - 1) : 0
 
   const invalidateLedger = () => {
     queryClient.invalidateQueries({ queryKey: getListPredictionsQueryKey({ limit: 50 }) })
@@ -531,17 +562,25 @@ export default function HistoryPage() {
         </div>
       ) : null}
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recent" | "search")}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recent" | "search" | "pasteSearch")}>
         <TabsList>
           <TabsTrigger value="recent" className="font-mono">RECENT PREDICTIONS</TabsTrigger>
           <TabsTrigger value="search" className="font-mono">
             <UserSearch className="w-4 h-4 mr-2" />
             SEARCH PLAYERS
           </TabsTrigger>
+          <TabsTrigger value="pasteSearch" className="font-mono">
+            <ClipboardPaste className="w-4 h-4 mr-2" />
+            PASTE SEARCH
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="search">
           <LedgerPlayerSearch onSelect={selectPlayer} onQueryChange={clearPlayerNavigation} />
+        </TabsContent>
+
+        <TabsContent value="pasteSearch">
+          <LedgerMatchupSearch onView={viewPasteMatches} />
         </TabsContent>
 
         <TabsContent value="recent" className="space-y-4">
@@ -572,6 +611,25 @@ export default function HistoryPage() {
                   NO PREDICTIONS FOUND FOR THIS PLAYER
                 </div>
               )}
+            </div>
+          )}
+
+          {pasteMatches.length > 0 && (
+            <div ref={pasteFocusRef} className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-sm font-mono font-bold text-muted-foreground flex items-center gap-2">
+                  <ClipboardPaste className="w-4 h-4" />
+                  MATCH FOCUS
+                  <span className="text-muted-foreground/70">
+                    ({safePasteMatchIndex + 1} of {pasteMatches.length})
+                  </span>
+                </h3>
+                <Button variant="ghost" size="sm" className="font-mono text-muted-foreground" onClick={clearPasteNavigation}>
+                  <X className="w-4 h-4 mr-1" />
+                  CLEAR
+                </Button>
+              </div>
+              <PlayerFocusRow prediction={pasteMatches[safePasteMatchIndex]} />
             </div>
           )}
 
@@ -657,6 +715,34 @@ export default function HistoryPage() {
             disabled={safePlayerIndex === playerPredictions.length - 1}
             onClick={() => setPlayerIndex(Math.min(playerPredictions.length - 1, safePlayerIndex + 1))}
             aria-label="Next prediction for this player"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
+
+      {pasteMatches.length > 1 && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={safePasteMatchIndex === 0}
+            onClick={() => setPasteMatchIndex(Math.max(0, safePasteMatchIndex - 1))}
+            aria-label="Previous resolved paste-search match"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <span className="text-xs font-mono text-muted-foreground px-1 min-w-[3.5rem] text-center">
+            {safePasteMatchIndex + 1} / {pasteMatches.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            disabled={safePasteMatchIndex === pasteMatches.length - 1}
+            onClick={() => setPasteMatchIndex(Math.min(pasteMatches.length - 1, safePasteMatchIndex + 1))}
+            aria-label="Next resolved paste-search match"
           >
             <ChevronRight className="w-5 h-5" />
           </Button>
