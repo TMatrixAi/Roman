@@ -1,0 +1,23 @@
+"Proceed with both remaining tasks sequentially — do not run them in parallel, since both may touch overlapping model output. Complete Task A fully, report back, then move to Task B only after I've reviewed Task A's results are clean. Actually — proceed directly through both if Task A's verification is fully clean with zero unexpected side effects; otherwise stop and report before starting Task B.
+
+TASK A — Fatigue asOfDate fix
+
+- Add an explicit asOfDate parameter to computeFatigueModule and thread it through the walk-forward evaluator, so backtest/historical evaluation checks match recency against each row's actual historical as-of date, not Date.now().
+- Confirm the live (non-backtest) prediction path already uses the real current date correctly and remains unaffected — Fatigue's live behavior should not change, only its behavior when evaluating historical/backtest rows.
+- Do NOT change Fatigue's underlying 3/7/14-day window logic, weighting, or thresholds — only fix what date it's measured against.
+- Do NOT touch any other module (Surface Elo, Serve & Return, Recent Form, Head-to-Head), the ensemble weighting formula, or any of the 15 already-backfilled rows.
+
+Verification required: re-run Fatigue against the full graded backtest corpus and report new coverage percentage and conditional accuracy versus the previous 0.0%/n/a baseline; confirm live predictions generated today produce identical Fatigue output as before (no live-path regression); re-run the calibration analysis on the 48-59% probability band and report if the gap changes; confirm zero new invariant violations or label contradictions anywhere in the live table, and confirm the 15 backfilled rows are unaffected; confirm all existing tests pass plus a new regression test proving Fatigue varies correctly against historical as-of dates.
+
+TASK B — EXTREME upset-risk badge investigation (report only, no changes yet)
+
+For the 5 rows where the stored EXTREME badge wouldn't reproduce under today's recalibrated upset-risk formula (9, 10, 16, 24, and the partial case 19):
+
+- Confirm definitively whether this is isolated to these 5 rows or exists more broadly across the live table — scan all rows for any case where the stored upsetRisk badge doesn't match what today's computeUpsetRisk would produce from the row's own stored raw inputs.
+- For each mismatched row found, show old badge vs. recomputed badge and the specific driver (e.g. H2H outlier vs genuine core-model conflict).
+- Determine root cause the same way as the recommendation staleness case: were these rows created before the 2026-07-13 recalibration commit, or is there an ongoing recompute gap?
+- Propose a fix design only (same backfill-with-provenance-flag pattern, or a different approach if root cause suggests otherwise) — do not implement.
+
+Report back with full results for both tasks in order. Do not touch anything outside these two explicitly scoped changes."
+
+Sources

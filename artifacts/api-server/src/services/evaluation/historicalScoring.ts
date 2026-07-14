@@ -90,6 +90,9 @@ export function scoreHistoricalMatch(
     // to attribute events here. Live/paper-trading/ablation callers must NOT set this (see
     // `PredictionEngineInput.trackEloFallback`'s doc).
     trackEloFallback: true,
+    // 2026-07-14 Fatigue asOfDate fix: measure Fatigue's 3/7/14-day windows against this match's
+    // own frozen cutoffAt, not today's wall-clock time -- see `PredictionEngineInput.asOfDate`.
+    asOfDate: match.cutoffAt,
   });
 
   const snapshot: LiveFeatureSnapshot = {

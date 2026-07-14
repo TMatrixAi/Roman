@@ -20,8 +20,8 @@ export interface FatigueResult {
 const NOTE =
   "Fatigue is estimated from real match dates and set scores over 3/7/14-day windows. 'Estimated games played' is a real, derived-from-actual-scores proxy for court time, not a measured duration -- the provider does not expose match duration/court-time data at all.";
 
-function matchesInWindow(matches: MatchRecord[], days: number): MatchRecord[] {
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+function matchesInWindow(matches: MatchRecord[], days: number, asOf: number): MatchRecord[] {
+  const cutoff = asOf - days * 24 * 60 * 60 * 1000;
   return matches.filter((m) => new Date(m.date).getTime() >= cutoff);
 }
 
@@ -38,13 +38,24 @@ function fatigueScore(last3: number, last7: number, last14: number, games14: num
   return Math.round(Math.min(100, matchLoad * 8 + gameLoadBonus));
 }
 
-export function computeFatigueModule(player1Matches: MatchRecord[], player2Matches: MatchRecord[]): FatigueResult {
-  const p1Last3 = matchesInWindow(player1Matches, 3).length;
-  const p1Last7 = matchesInWindow(player1Matches, 7).length;
-  const p1Last14 = matchesInWindow(player1Matches, 14);
-  const p2Last3 = matchesInWindow(player2Matches, 3).length;
-  const p2Last7 = matchesInWindow(player2Matches, 7).length;
-  const p2Last14 = matchesInWindow(player2Matches, 14);
+/**
+ * `asOfDate` is the instant fatigue is measured against -- defaults to the real current time,
+ * which is correct for every live prediction. Walk-forward/backtest evaluation (`historicalScoring.ts`)
+ * passes each match's own frozen `cutoffAt` here instead, so historical rows measure recency
+ * against their own as-of moment rather than today's wall-clock time (2026-07-14 fix: before
+ * this, backtest fatigue always compared match dates from years ago against `Date.now()`, so the
+ * 3/7/14-day windows were always empty and this module silently voted a flat 50/50 on the entire
+ * backtest corpus). Does not change the 3/7/14-day window logic, weighting, or thresholds --
+ * only what instant they're measured from.
+ */
+export function computeFatigueModule(player1Matches: MatchRecord[], player2Matches: MatchRecord[], asOfDate?: Date): FatigueResult {
+  const asOf = (asOfDate ?? new Date()).getTime();
+  const p1Last3 = matchesInWindow(player1Matches, 3, asOf).length;
+  const p1Last7 = matchesInWindow(player1Matches, 7, asOf).length;
+  const p1Last14 = matchesInWindow(player1Matches, 14, asOf);
+  const p2Last3 = matchesInWindow(player2Matches, 3, asOf).length;
+  const p2Last7 = matchesInWindow(player2Matches, 7, asOf).length;
+  const p2Last14 = matchesInWindow(player2Matches, 14, asOf);
 
   const p1Games14 = estimatedGames(p1Last14);
   const p2Games14 = estimatedGames(p2Last14);

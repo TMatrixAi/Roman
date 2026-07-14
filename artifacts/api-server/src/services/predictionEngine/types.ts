@@ -94,6 +94,15 @@ export interface PredictionEngineInput {
    * this never changes live prediction behavior.
    */
   excludedModels?: ReadonlySet<AblationModelKey>;
+  /**
+   * The instant Fatigue's 3/7/14-day recency windows are measured against (see `fatigue.ts`).
+   * Omit for every live call -- it defaults to the real current time, which is correct there.
+   * Walk-forward/backtest evaluation (`historicalScoring.ts`) passes each match's own frozen
+   * `cutoffAt` here instead, so historical rows measure recency against their own as-of moment
+   * rather than today's wall-clock time. 2026-07-14 fix -- before this, backtest fatigue always
+   * compared match dates from years ago against `Date.now()`, so the windows were always empty.
+   */
+  asOfDate?: Date;
 }
 
 /** The 8 named vote sources the ablation analysis can remove one (or a few) of at a time. */
