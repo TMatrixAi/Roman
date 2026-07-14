@@ -5,7 +5,23 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate, formatProbability } from "@/lib/utils"
-import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio } from "lucide-react"
+import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon } from "lucide-react"
+
+/** Task #30: mirrors the Ledger's `HistoricalMatchFallbackBadge` (see `History.tsx`) -- real
+ * disclosure that at least one player in this prediction was resolved via the historical-match
+ * fallback (not in current live ATP/WTA standings) rather than a live ranking, per
+ * `usedHistoricalMatchFallback` (derived server-side from this row's own stored
+ * `featureSnapshot.engine.warnings`, never guessed). */
+function HistoricalMatchFallbackBadge() {
+  return (
+    <span
+      className="px-1.5 py-0.5 bg-muted text-muted-foreground rounded-[2px] normal-case text-xs font-mono flex items-center gap-1 shrink-0"
+      title="At least one player's tour/rank came from their own past match record, not a live ranking"
+    >
+      <HistoryIcon className="w-3 h-3" /> PAST-MATCH RANK
+    </span>
+  )
+}
 
 const RUN_KIND_LABEL: Record<string, string> = {
   historical_test: "Historical Test",
@@ -56,6 +72,7 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
           {prediction.status !== "missed" && prediction.includedInAccuracy === false && (
             <span className="italic">excluded from accuracy</span>
           )}
+          {prediction.usedHistoricalMatchFallback && <HistoricalMatchFallbackBadge />}
         </div>
         {prediction.status === "missed" ? (
           <div className="text-sm text-muted-foreground italic">

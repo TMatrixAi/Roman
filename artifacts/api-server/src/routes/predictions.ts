@@ -26,7 +26,7 @@ import {
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
 import { runPredictionEngine } from "../services/predictionEngine";
-import { buildPlayerProfileWarnings } from "../services/predictionEngine/playerProfileWarnings";
+import { buildPlayerProfileWarnings, usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
 import { computeMatchIdentityKey, computeInputSnapshotHash } from "../services/predictionEngine/predictionIdentity";
 import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
@@ -37,6 +37,18 @@ import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evalua
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
 
 const router: IRouter = Router();
+
+/**
+ * Task #30: attaches the real historical-match-fallback disclosure (derived from this row's own
+ * stored `engine.warnings`, per `usedHistoricalMatchFallback`) to a raw `predictionsTable` row so
+ * list endpoints -- which serialize through the trimmed `PredictionSummary` schema and would
+ * otherwise silently drop the full `engine` blob -- can still surface it as a real, non-guessed
+ * boolean.
+ */
+function withHistoricalMatchFallbackFlag<T extends { engine: unknown }>(row: T): T & { usedHistoricalMatchFallback: boolean } {
+  const warnings = (row.engine as { warnings?: unknown } | null)?.warnings;
+  return { ...row, usedHistoricalMatchFallback: usedHistoricalMatchFallback(warnings) };
+}
 
 router.get("/predictions", async (req, res): Promise<void> => {
   const parsed = ListPredictionsQueryParams.safeParse(req.query);
@@ -51,7 +63,7 @@ router.get("/predictions", async (req, res): Promise<void> => {
     .orderBy(desc(predictionsTable.createdAt))
     .limit(parsed.data.limit);
 
-  res.json(ListPredictionsResponse.parse(rows));
+  res.json(ListPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
 
 router.get("/predictions/stats", async (_req, res): Promise<void> => {
@@ -115,7 +127,7 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
   }
 
   const rows = await getPredictionsForPlayer(params.data.playerId);
-  res.json(GetLedgerPlayerPredictionsResponse.parse(rows));
+  res.json(GetLedgerPlayerPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
 
 router.post("/predictions", async (req, res): Promise<void> => {

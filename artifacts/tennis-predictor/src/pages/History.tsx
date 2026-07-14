@@ -48,7 +48,24 @@ import {
   Copy,
   X,
   UserSearch,
+  History as HistoryIcon,
 } from "lucide-react"
+
+/** Task #30: real disclosure -- shown when this saved prediction involved a player resolved via
+ * the historical-match fallback (not in current live ATP/WTA standings) rather than a live
+ * ranking, per `usedHistoricalMatchFallback` (derived server-side from this row's own stored
+ * `engine.warnings`, never guessed). Shares the "muted, normal-case" styling `PlayerSearch.tsx`
+ * uses for the same real disclosure at prediction-creation time. */
+function HistoricalMatchFallbackBadge() {
+  return (
+    <span
+      className="px-1.5 py-0.5 bg-muted text-muted-foreground rounded-[2px] normal-case text-xs font-mono flex items-center gap-1 shrink-0"
+      title="At least one player's tour/rank came from their own past match record, not a live ranking"
+    >
+      <HistoryIcon className="w-3 h-3" /> PAST-MATCH RANK
+    </span>
+  )
+}
 
 function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
   const [preview, setPreview] = useState<DuplicatePredictionsPreviewResult | null>(null)
@@ -209,6 +226,7 @@ function PredictionRow({
                 <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
               </>
             )}
+            {prediction.usedHistoricalMatchFallback && <HistoricalMatchFallbackBadge />}
           </div>
           <div className="flex items-center gap-3 text-lg font-bold">
             <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary" : "text-muted-foreground"}>
@@ -306,6 +324,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
               <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
             </>
           )}
+          {prediction.usedHistoricalMatchFallback && <HistoricalMatchFallbackBadge />}
         </div>
         <div className="flex items-center gap-3 text-lg font-bold">
           <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary" : "text-muted-foreground"}>

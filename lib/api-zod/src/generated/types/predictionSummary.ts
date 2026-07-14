@@ -28,4 +28,6 @@ export interface PredictionSummary {
   /** @nullable */
   actualWinnerName?: string | null;
   createdAt: Date;
+  /** Task #30: true when player1 and/or player2 was resolved via the historical-match fallback (not in current live ATP/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded at prediction time -- never a new guess. */
+  usedHistoricalMatchFallback: boolean;
 }

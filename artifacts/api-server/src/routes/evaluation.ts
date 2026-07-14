@@ -41,8 +41,22 @@ import { getActiveSpecialistSegments } from "../services/evaluation/specialistWe
 import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
+import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 
 const router: IRouter = Router();
+
+/**
+ * Task #30: mirrors `withHistoricalMatchFallbackFlag` in `routes/predictions.ts` for evaluation
+ * rows -- the real engine warnings live inside `featureSnapshot.engine.warnings` here (a free-form
+ * JSONB blob, reduced-shape for historical_test rows and full `EngineBreakdown` for paper_trade/
+ * live -- see `historicalScoring.ts`/`paperTrading.ts`), never a new guess.
+ */
+function withEvaluationHistoricalMatchFallbackFlag<T extends { featureSnapshot: unknown }>(
+  row: T,
+): T & { usedHistoricalMatchFallback: boolean } {
+  const snapshot = row.featureSnapshot as { engine?: { warnings?: unknown } } | null;
+  return { ...row, usedHistoricalMatchFallback: usedHistoricalMatchFallback(snapshot?.engine?.warnings) };
+}
 
 router.get("/evaluation/runs", async (_req, res): Promise<void> => {
   const rows = await db.select().from(evaluationRunsTable).orderBy(desc(evaluationRunsTable.foldIndex));
@@ -79,7 +93,7 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     .orderBy(desc(evaluationPredictionsTable.scheduledStartAt))
     .limit(limit);
 
-  res.json(ListEvaluationPredictionsResponse.parse(rows));
+  res.json(ListEvaluationPredictionsResponse.parse(rows.map(withEvaluationHistoricalMatchFallbackFlag)));
 });
 
 router.get("/evaluation/predictions/:predictionId", async (req, res): Promise<void> => {
@@ -94,7 +108,7 @@ router.get("/evaluation/predictions/:predictionId", async (req, res): Promise<vo
     res.status(404).json({ error: "Evaluation prediction not found" });
     return;
   }
-  res.json(GetEvaluationPredictionResponse.parse(row));
+  res.json(GetEvaluationPredictionResponse.parse(withEvaluationHistoricalMatchFallbackFlag(row)));
 });
 
 router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {

@@ -800,6 +800,8 @@ export interface PredictionSummary {
   /** @nullable */
   actualWinnerName?: string | null;
   createdAt: string;
+  /** Task #30: true when player1 and/or player2 was resolved via the historical-match fallback (not in current live ATP/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded at prediction time -- never a new guess. */
+  usedHistoricalMatchFallback: boolean;
 }
 
 export type PredictionStatsByRecommendationItem = {
@@ -983,6 +985,8 @@ export interface EvaluationPrediction {
   /** @nullable */
   actualWinnerName?: string | null;
   resultType?: ResultType | null;
+  /** Task #30: true when player1 and/or player2 was resolved via the historical-match fallback (not in current live ATP/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded inside this row's `featureSnapshot` -- never a new guess. Always false for older rows whose snapshot predates this disclosure existing. */
+  usedHistoricalMatchFallback: boolean;
   /** @nullable */
   includedInAccuracy?: boolean | null;
   /** @nullable */

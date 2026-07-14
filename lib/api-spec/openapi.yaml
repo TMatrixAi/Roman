@@ -1871,6 +1871,7 @@ components:
           upsetRisk,
           recommendation,
           createdAt,
+          usedHistoricalMatchFallback,
         ]
       properties:
         id:
@@ -1907,6 +1908,12 @@ components:
         createdAt:
           type: string
           format: date-time
+        usedHistoricalMatchFallback:
+          type: boolean
+          description: >-
+            Task #30: true when player1 and/or player2 was resolved via the historical-match
+            fallback (not in current live ATP/WTA standings) rather than a live ranking, per the
+            real `engine.warnings` recorded at prediction time -- never a new guess.
 
     PredictionStats:
       type: object
@@ -2105,6 +2112,7 @@ components:
           lockedAt,
           modelVersion,
           status,
+          usedHistoricalMatchFallback,
         ]
       properties:
         id:
@@ -2176,6 +2184,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ResultType"
             - type: "null"
+        usedHistoricalMatchFallback:
+          type: boolean
+          description: >-
+            Task #30: true when player1 and/or player2 was resolved via the historical-match
+            fallback (not in current live ATP/WTA standings) rather than a live ranking, per the
+            real `engine.warnings` recorded inside this row's `featureSnapshot` -- never a new
+            guess. Always false for older rows whose snapshot predates this disclosure existing.
         includedInAccuracy:
           type: ["boolean", "null"]
         gradedAt:

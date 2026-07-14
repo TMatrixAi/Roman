@@ -242,7 +242,8 @@ export const ListPredictionsResponseItem = zod.object({
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
   "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "actualWinnerName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "usedHistoricalMatchFallback": zod.boolean().describe('Task #30: true when player1 and\/or player2 was resolved via the historical-match fallback (not in current live ATP\/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded at prediction time -- never a new guess.')
 })
 export const ListPredictionsResponse = zod.array(ListPredictionsResponseItem)
 
@@ -519,7 +520,8 @@ export const GetLedgerPlayerPredictionsResponseItem = zod.object({
   "upsetRisk": zod.enum(['LOW', 'MODERATE', 'HIGH', 'EXTREME']),
   "recommendation": zod.enum(['STRONG_RECOMMENDATION', 'MODERATE_LEAN', 'HIGH_RISK', 'NO_STRONG_SIGNAL', 'DO_NOT_RECOMMEND']),
   "actualWinnerName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "usedHistoricalMatchFallback": zod.boolean().describe('Task #30: true when player1 and\/or player2 was resolved via the historical-match fallback (not in current live ATP\/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded at prediction time -- never a new guess.')
 })
 export const GetLedgerPlayerPredictionsResponse = zod.array(GetLedgerPlayerPredictionsResponseItem)
 
@@ -1127,6 +1129,7 @@ export const ListEvaluationPredictionsResponseItem = zod.object({
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
   "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
+  "usedHistoricalMatchFallback": zod.boolean().describe('Task #30: true when player1 and\/or player2 was resolved via the historical-match fallback (not in current live ATP\/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded inside this row\'s `featureSnapshot` -- never a new guess. Always false for older rows whose snapshot predates this disclosure existing.'),
   "includedInAccuracy": zod.boolean().nullish(),
   "gradedAt": zod.coerce.date().nullish(),
   "oddsProvider": zod.string().nullish().describe('Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time'),
@@ -1175,6 +1178,7 @@ export const GetEvaluationPredictionResponse = zod.object({
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
   "resultType": zod.union([zod.enum(['normal', 'retired', 'walkover', 'cancelled']),zod.null()]).optional(),
+  "usedHistoricalMatchFallback": zod.boolean().describe('Task #30: true when player1 and\/or player2 was resolved via the historical-match fallback (not in current live ATP\/WTA standings) rather than a live ranking, per the real `engine.warnings` recorded inside this row\'s `featureSnapshot` -- never a new guess. Always false for older rows whose snapshot predates this disclosure existing.'),
   "includedInAccuracy": zod.boolean().nullish(),
   "gradedAt": zod.coerce.date().nullish(),
   "oddsProvider": zod.string().nullish().describe('Which provider (The Odds API or Odds-API.io) supplied the odds below, null when neither had this matchup at lock time'),
