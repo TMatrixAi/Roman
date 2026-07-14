@@ -113,12 +113,18 @@ export default function PredictBuilderPage() {
   const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
   const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
   const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
+  // Free-text tournament name, separate from Level -- this is what venue/weather/travel lookups
+  // match against, so it needs to be the real tournament name (e.g. "Cincinnati Open"), not
+  // derived or guessed from the Level dropdown.
+  const [tournamentName, setTournamentName] = useState(prefillTournamentName ?? '')
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
   const createPrediction = useCreatePrediction()
 
   const handleRunModel = () => {
     if (!player1Id || !player2Id) return
+
+    const trimmedTournamentName = tournamentName.trim()
 
     createPrediction.mutate({
       data: {
@@ -127,7 +133,7 @@ export default function PredictBuilderPage() {
         surface,
         matchFormat: format,
         tournamentLevel: level,
-        tournamentName: prefillTournamentName ?? undefined
+        tournamentName: trimmedTournamentName || undefined
       }
     }, {
       onSuccess: (prediction) => {
@@ -192,6 +198,21 @@ export default function PredictBuilderPage() {
             <CardDescription>Engine weights adjust based on these parameters.</CardDescription>
           </CardHeader>
           <CardContent className="p-6">
+            <div className="space-y-2 mb-6">
+              <label className="text-xs font-mono font-bold text-muted-foreground flex items-center gap-1.5">
+                TOURNAMENT NAME
+                {prefillTournamentName && <Badge variant="secondary" className="text-[9px] px-1 py-0">AUTO-DETECTED</Badge>}
+              </label>
+              <Input
+                value={tournamentName}
+                onChange={(e) => setTournamentName(e.target.value)}
+                placeholder="e.g. Cincinnati Open"
+              />
+              <p className="text-xs text-muted-foreground font-mono">
+                Used to look up real venue weather and travel distance. Separate from Level below -- enter the actual tournament name, not a category.
+              </p>
+            </div>
+
             <div className="grid sm:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <label className="text-xs font-mono font-bold text-muted-foreground flex items-center gap-1.5">

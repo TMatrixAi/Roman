@@ -1,0 +1,23 @@
+Here's a ready-to-use prompt you can hand off to your coding agent/AI model to create the follow-up task properly.
+
+## Task creation prompt
+
+> Create a new task documenting unfinished audit work from cancelled Task #75. Use the following details:
+>
+> **Title:** Investigate root cause of Data Quality miscalibration above DQ~55
+>
+> **Background:** Task #75 (cancelled before completion) found that after Task #68 removed Head-to-Head from Data Quality (DQ) scoring, DQ stopped tracking real trustworthiness above roughly DQ 55. Calibration is best in the 45-55 band and gets progressively worse as DQ climbs higher, with the old Elite tier (DQ≥65) being the worst-calibrated group in the system (68.5% average confidence vs 57% real accuracy, log loss worse than a coin flip). As a stopgap, three thresholds were retuned and are already live in the code: calibration.ts's full-trust point (65→55, capped at 0.85), recommendation.ts's STRONG_RECOMMENDATION gate (55→45), and eliteTier.ts's ELITE_DATA_QUALITY_THRESHOLD (65→55). All 168 prediction-engine tests pass. Full findings are documented in artifacts/api-server/docs/audit-task75-dq-threshold-revalidation.md.
+>
+> **What's still unresolved:** These threshold changes are a workaround, not a fix. The actual problem is structural — Data Quality's underlying formula (how its component modules blend together) stops correlating with real trustworthiness once DQ exceeds ~55. This needs a deeper audit of the DQ calculation itself, not just threshold retuning.
+>
+> **Scope for this new task:**
+> 1. Audit each component module feeding into the DQ blend to identify which one(s) lose signal or introduce noise above DQ~55.
+> 2. Determine whether the blend weighting, a specific module's scoring logic, or an interaction effect between modules is responsible.
+> 3. Propose either a corrected blend formula or a redesigned DQ calculation that maintains calibration across the full score range.
+> 4. Re-run the same walk-forward evaluation methodology used in Task #75 to validate the fix.
+>
+> **Priority:** Medium-high — the current thresholds are a working patch, but the root cause could resurface if DQ inputs change again in the future.
+
+You can copy this directly into your project management tool or hand it to your dev agent to formally log it, ensuring the root-cause investigation doesn't get lost the way #75 nearly did.
+
+Sources
