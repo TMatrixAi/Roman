@@ -36,6 +36,62 @@ export const CORE_MODEL_NAMES = new Set(["Surface Elo", "Serve & Return", "Recen
  */
 const MEANINGFUL_WEIGHT_SHARE = 0.15;
 
+/**
+ * Task #146 ("stop correlated modules from double-counting the same evidence"): Surface Elo,
+ * Serve & Return, and Recent Form all derive their edges from largely the same underlying
+ * recent-match history for each player (see surfaceElo.ts/serveReturn.ts/recentForm.ts), so their
+ * agreement is not three independent confirmations -- it's frequently the same evidence expressed
+ * three ways. A real-data check (docs/audit-task146-correlated-cluster-overconfidence.md) over
+ * 1,031 graded rows with a stored engine breakdown found: (1) the trio's pairwise same-direction
+ * rate is 74.2% (vs ~50% expected if genuinely independent); (2) with Fatigue/Availability/Match
+ * Load Recovery excluded from the ensemble vote (`EXCLUDED_FROM_ENSEMBLE`, dataQuality.ts),
+ * Head-to-Head is the ONLY other module that ever votes alongside the trio, and it never reaches
+ * `MEANINGFUL_WEIGHT_SHARE` -- so in practice every "Strong" reading today is driven by the trio
+ * alone, with no genuinely independent confirmation; (3) rows where "Strong" is driven only by
+ * the trio show log loss 0.715 (WORSE than a coin flip's 0.693) and calibrated ECE 0.079, both
+ * markedly worse than rows where the trio genuinely disagrees (log loss 0.692, ECE 0.040) -- the
+ * confidence the trio's agreement currently buys is not supported by real outcomes.
+ */
+export const CORRELATED_CORE_CLUSTER = new Set(["Surface Elo", "Serve & Return", "Recent Form"]);
+
+/**
+ * Collapses any present members of `CORRELATED_CORE_CLUSTER` into a single combined vote (same
+ * total weight, weight-averaged probability) before the spread/support statistics below are
+ * computed, so their mutual agreement can no longer manufacture an artificially tight weighted
+ * spread / high `leadingSupportPercent` on its own -- it now counts for exactly what one combined
+ * vote of that size would. This intentionally does NOT touch `ensembleProbability` (computed
+ * separately in `ensemble.ts`, out of this task's scope -- see its own doc) or the raw, per-module
+ * `coreModelsConflict`/`meaningfulModelsConflict` checks below, which still read the ORIGINAL
+ * per-module votes so a genuine internal split within the trio (e.g. Surface Elo favoring player 1
+ * while Recent Form favors player 2) is never hidden by the collapse.
+ */
+function collapseCorrelatedCluster(models: DisagreementModelInput[]): DisagreementModelInput[] {
+  const clusterMembers = models.filter((m) => CORRELATED_CORE_CLUSTER.has(m.modelName));
+  const clusterWeight = clusterMembers.reduce((sum, m) => sum + m.weightUsed, 0);
+  if (clusterMembers.length < 2 || clusterWeight === 0) return models;
+
+  // Only collapse when the cluster members actually AGREE on direction. When they genuinely
+  // conflict (e.g. Surface Elo favors player 1 while Recent Form favors player 2), that spread is
+  // real, independent-of-shared-data information -- collapsing it away would flatten a genuine
+  // internal split into a single artificial ~50/50 point and erase the weighted-spread magnitude
+  // the disagreement explanation displays (`coreModelsConflict`, computed separately below off the
+  // raw list, still catches the conflict for the category itself either way).
+  const firstDirection = clusterMembers[0].player1Probability >= 50;
+  const allAgreeOnDirection = clusterMembers.every((m) => (m.player1Probability >= 50) === firstDirection);
+  if (!allAgreeOnDirection) return models;
+
+  const clusterProbability = clusterMembers.reduce((sum, m) => sum + m.player1Probability * m.weightUsed, 0) / clusterWeight;
+  const others = models.filter((m) => !CORRELATED_CORE_CLUSTER.has(m.modelName));
+  return [
+    ...others,
+    {
+      modelName: clusterMembers.map((m) => m.modelName).join(" / "),
+      player1Probability: clusterProbability,
+      weightUsed: clusterWeight,
+    },
+  ];
+}
+
 export interface DisagreementModelInput {
   modelName: string;
   player1Probability: number;
@@ -77,14 +133,28 @@ export function computeWeightedDisagreement(models: DisagreementModelInput[]): W
   }
   const totalWeight = totalWeightRaw;
 
-  const weightedMean = models.reduce((sum, m) => sum + m.player1Probability * m.weightUsed, 0) / totalWeight;
-  const weightedVariance = models.reduce((sum, m) => sum + m.weightUsed * (m.player1Probability - weightedMean) ** 2, 0) / totalWeight;
+  // Task #146: spread/support are computed over the CORRELATED-CLUSTER-COLLAPSED vote list (see
+  // `collapseCorrelatedCluster`'s doc), not the raw per-module list, so Surface Elo/Serve &
+  // Return/Recent Form all pointing the same way -- likely the same underlying recent-match
+  // evidence, not three independent confirmations -- can't by itself manufacture a tighter spread
+  // or higher leading-support reading than one combined vote of that size would produce. Total
+  // weight is unchanged by collapsing (it's a partition of the same weights), so `totalWeight`
+  // above still applies to the collapsed list too.
+  const effectiveModels = collapseCorrelatedCluster(models);
+
+  const weightedMean = effectiveModels.reduce((sum, m) => sum + m.player1Probability * m.weightUsed, 0) / totalWeight;
+  const weightedVariance = effectiveModels.reduce((sum, m) => sum + m.weightUsed * (m.player1Probability - weightedMean) ** 2, 0) / totalWeight;
   const weightedStdDev = Math.sqrt(weightedVariance);
 
-  const player1Support = models.filter((m) => m.player1Probability >= 50).reduce((sum, m) => sum + m.weightUsed, 0);
+  const player1Support = effectiveModels.filter((m) => m.player1Probability >= 50).reduce((sum, m) => sum + m.weightUsed, 0);
   const player2Support = totalWeight - player1Support;
   const leadingSupportPercent = (Math.max(player1Support, player2Support) / totalWeight) * 100;
 
+  // The genuine-conflict checks below intentionally keep reading the RAW, uncollapsed `models` --
+  // collapsing would blend away a real internal split within the trio (e.g. Surface Elo favoring
+  // player 1 while Recent Form favors player 2), which is exactly the case `coreModelsConflict`
+  // exists to catch. `conflictingModels` (used for the human-readable explanation) is built from
+  // the raw list too, so the explanation still names each real module's own vote.
   const meaningfulModels = models.filter((m) => m.weightUsed / totalWeight >= MEANINGFUL_WEIGHT_SHARE);
   const meaningfulCoreModels = meaningfulModels.filter((m) => CORE_MODEL_NAMES.has(m.modelName));
   const coreModelsConflict =

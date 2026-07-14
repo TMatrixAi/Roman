@@ -96,6 +96,64 @@ test("buildDisagreementNote is null exactly when modelAgreement is Strong, and n
   assert.match(note!, /Recent Form favors Alice/);
 });
 
+test("Task #146: the correlated core trio agreeing collapses to one combined vote, so it reads no stronger than a single confirming signal of the same size", () => {
+  // Surface Elo/Serve & Return/Recent Form all favor the same player -- likely the same
+  // underlying recent-match evidence expressed three ways, not three independent confirmations.
+  const trioAgreeing = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 62, weightUsed: 0.35 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 60, weightUsed: 0.35 },
+      recentForm: { modelName: "Recent Form", player1Probability: 58, weightUsed: 0.3 },
+    }),
+  );
+  // A single vote of the same combined weight and (weighted-average) probability as the trio.
+  const singleEquivalent = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 60.1, weightUsed: 1 },
+    }),
+  );
+  assert.equal(trioAgreeing.weightedStdDev, singleEquivalent.weightedStdDev, "three agreeing correlated votes must produce the exact same spread as one combined vote of the same size");
+  assert.equal(trioAgreeing.leadingSupportPercent, singleEquivalent.leadingSupportPercent);
+  assert.equal(trioAgreeing.modelAgreement, singleEquivalent.modelAgreement);
+});
+
+test("Task #146: a real, independent confirming vote (Head-to-Head) still adds genuine extra support beyond the correlated trio alone", () => {
+  const trioOnly = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 62, weightUsed: 0.4 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 60, weightUsed: 0.35 },
+      recentForm: { modelName: "Recent Form", player1Probability: 58, weightUsed: 0.25 },
+    }),
+  );
+  const trioPlusH2H = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 62, weightUsed: 0.32 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 60, weightUsed: 0.28 },
+      recentForm: { modelName: "Recent Form", player1Probability: 58, weightUsed: 0.2 },
+      headToHead: { modelName: "Head-to-Head", player1Probability: 70, weightUsed: 0.2 },
+    }),
+  );
+  // Head-to-Head is not in the correlated cluster, so it is never collapsed away -- it's real
+  // additional weight/evidence and should be able to move the reading (unlike a fourth correlated
+  // module agreeing, which the previous test shows changes nothing).
+  assert.notEqual(trioOnly.weightedStdDev, trioPlusH2H.weightedStdDev);
+});
+
+test("Task #146: a genuine internal split within the correlated trio is never hidden by collapsing", () => {
+  // Same inputs as the pre-existing "real disagreement... lands well away from 50" test above --
+  // the trio genuinely conflicts, so collapsing must NOT apply and the real spread must still show.
+  const { modelAgreement, weightedStdDev, coreModelsConflict } = computeWeightedDisagreement(
+    models({
+      surfaceElo: { modelName: "Surface Elo", player1Probability: 68, weightUsed: 0.36 },
+      serveReturn: { modelName: "Serve & Return", player1Probability: 39, weightUsed: 0.33 },
+      recentForm: { modelName: "Recent Form", player1Probability: 66, weightUsed: 0.31 },
+    }),
+  );
+  assert.equal(coreModelsConflict, true);
+  assert.equal(modelAgreement, "HighDisagreement");
+  assert.ok(weightedStdDev > 11, `expected the real internal spread to still show once uncollapsed, got ${weightedStdDev}`);
+});
+
 test("matchupCloseness is independent of the disagreement category", () => {
   assert.equal(computeMatchupCloseness(51), "VeryClose");
   assert.equal(computeMatchupCloseness(60), "Close");
