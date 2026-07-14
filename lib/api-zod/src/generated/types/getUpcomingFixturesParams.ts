@@ -13,4 +13,9 @@ export type GetUpcomingFixturesParams = {
  * @maximum 200
  */
 limit?: number;
+/**
+ * Number of soonest-first fixtures to skip before returning `limit` more. Defaults to 0.
+ * @minimum 0
+ */
+offset?: number;
 };

@@ -15,11 +15,12 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
   }
 
   const limit = parsed.data.limit ?? DEFAULT_LIMIT;
+  const offset = parsed.data.offset ?? 0;
   const provider = getTennisDataProvider();
 
   try {
-    const sorted = await collectUpcomingWindow((date) => provider.getUpcomingFixtures(date), { limit, nowMs: Date.now() });
-    res.json(GetUpcomingFixturesResponse.parse(sorted));
+    const window = await collectUpcomingWindow((date) => provider.getUpcomingFixtures(date), { limit, offset, nowMs: Date.now() });
+    res.json(GetUpcomingFixturesResponse.parse(window));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {
       res.status(502).json({ error: "Tennis data provider unavailable", detail: err.message });

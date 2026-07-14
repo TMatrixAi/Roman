@@ -31,6 +31,7 @@ export * from './evaluationStatus';
 export * from './fatigueResult';
 export * from './fixture';
 export * from './getHeadToHeadParams';
+export * from './getUpcomingFixtures200';
 export * from './getUpcomingFixturesParams';
 export * from './headToHeadMeeting';
 export * from './headToHeadRecord';

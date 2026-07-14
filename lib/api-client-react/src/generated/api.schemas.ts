@@ -1279,6 +1279,17 @@ export type GetUpcomingFixturesParams = {
  * @maximum 200
  */
 limit?: number;
+/**
+ * Number of soonest-first fixtures to skip before returning `limit` more. Defaults to 0.
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type GetUpcomingFixtures200 = {
+  fixtures: Fixture[];
+  /** True when at least one more fixture exists beyond `offset + limit` within the lookahead window. */
+  hasMore: boolean;
 };
 
 export type GetHeadToHeadParams = {

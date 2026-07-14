@@ -34,7 +34,8 @@ test("collectUpcomingWindow gathers matches across multiple calendar days, sorte
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 50, nowMs: NOW_MS });
 
-  assert.deepEqual(result.map((f) => f.id), ["today-late", "tomorrow-early"]);
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["today-late", "tomorrow-early"]);
+  assert.equal(result.hasMore, false);
 });
 
 test("collectUpcomingWindow excludes a fixture whose confirmed start time has already passed (in-progress)", async () => {
@@ -48,7 +49,7 @@ test("collectUpcomingWindow excludes a fixture whose confirmed start time has al
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 50, nowMs: NOW_MS });
 
-  assert.deepEqual(result.map((f) => f.id), ["not-started-yet"]);
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["not-started-yet"]);
 });
 
 test("collectUpcomingWindow keeps an unconfirmed (Time TBD) fixture rather than guessing whether it has started", async () => {
@@ -59,7 +60,7 @@ test("collectUpcomingWindow keeps an unconfirmed (Time TBD) fixture rather than 
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 50, nowMs: NOW_MS });
 
-  assert.deepEqual(result.map((f) => f.id), ["tbd"]);
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["tbd"]);
 });
 
 test("collectUpcomingWindow auto-extends the window further out when the near term is sparse", async () => {
@@ -72,7 +73,7 @@ test("collectUpcomingWindow auto-extends the window further out when the near te
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 50, nowMs: NOW_MS });
 
-  assert.deepEqual(result.map((f) => f.id), ["two-weeks-out"]);
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["two-weeks-out"]);
 });
 
 test("collectUpcomingWindow caps the result at `limit`, keeping the soonest matches", async () => {
@@ -85,7 +86,25 @@ test("collectUpcomingWindow caps the result at `limit`, keeping the soonest matc
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 3, nowMs: NOW_MS });
 
-  assert.deepEqual(result.map((f) => f.id), ["m0", "m1", "m2"]);
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["m0", "m1", "m2"]);
+  assert.equal(result.hasMore, true);
+});
+
+test("collectUpcomingWindow pages further into the window using `offset`, and reports `hasMore` accurately", async () => {
+  const byDate: Record<string, Fixture[]> = {
+    "2026-07-13": Array.from({ length: 5 }, (_, i) =>
+      fixture({ id: `m${i}`, scheduledStart: `2026-07-13T${13 + i}:00:00Z` }),
+    ),
+  };
+  const fetchDay = async (date: string) => byDate[date] ?? [];
+
+  const page1 = await collectUpcomingWindow(fetchDay, { limit: 3, nowMs: NOW_MS, offset: 0 });
+  assert.deepEqual(page1.fixtures.map((f) => f.id), ["m0", "m1", "m2"]);
+  assert.equal(page1.hasMore, true);
+
+  const page2 = await collectUpcomingWindow(fetchDay, { limit: 3, nowMs: NOW_MS, offset: 3 });
+  assert.deepEqual(page2.fixtures.map((f) => f.id), ["m3", "m4"]);
+  assert.equal(page2.hasMore, false);
 });
 
 test("collectUpcomingWindow de-duplicates a fixture id seen more than once", async () => {
@@ -96,5 +115,5 @@ test("collectUpcomingWindow de-duplicates a fixture id seen more than once", asy
 
   const result = await collectUpcomingWindow(fetchDay, { limit: 50, nowMs: NOW_MS });
 
-  assert.equal(result.length, 1);
+  assert.equal(result.fixtures.length, 1);
 });

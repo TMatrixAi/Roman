@@ -83,16 +83,22 @@ export type FixturesListHandle = {
   refetch: () => void
 }
 
+const INITIAL_PAGE_SIZE = 50
+const PAGE_SIZE_INCREMENT = 50
+
 export const FixturesList = forwardRef<FixturesListHandle, { tourFilter?: TourFilter }>(
   function FixturesList({ tourFilter = "all" }, ref) {
-  const { data: fixtures, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures()
+  const [limit, setLimit] = useState(INITIAL_PAGE_SIZE)
+  const { data, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures({ limit })
+  const fixtures = data?.fixtures
+  const hasMore = data?.hasMore ?? false
   const [, setLocation] = useLocation()
   const createPrediction = useCreatePrediction()
   const [predictNowFixtureId, setPredictNowFixtureId] = useState<string | null>(null)
   const [predictNowError, setPredictNowError] = useState<string | null>(null)
 
   useImperativeHandle(ref, () => ({
-    refetch: () => { refetch() },
+    refetch: () => { setLimit(INITIAL_PAGE_SIZE); refetch() },
   }), [refetch])
 
   const visibleFixtures = useMemo(() => {
@@ -221,6 +227,23 @@ export const FixturesList = forwardRef<FixturesListHandle, { tourFilter?: TourFi
           </div>
         </Card>
         ))
+      )}
+
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            disabled={isFetching}
+            onClick={() => setLimit((l) => l + PAGE_SIZE_INCREMENT)}
+          >
+            {isFetching ? (
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            ) : null}
+            LOAD MORE MATCHES
+          </Button>
+        </div>
       )}
     </div>
   )

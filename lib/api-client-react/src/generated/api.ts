@@ -28,8 +28,8 @@ import type {
   EvaluationDashboard,
   EvaluationPrediction,
   EvaluationRun,
-  Fixture,
   GetHeadToHeadParams,
+  GetUpcomingFixtures200,
   GetUpcomingFixturesParams,
   HeadToHeadRecord,
   HealthStatus,
@@ -501,12 +501,12 @@ export const getGetUpcomingFixturesUrl = (params?: GetUpcomingFixturesParams,) =
 }
 
 /**
- * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary.
+ * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary. Use `offset` together with `hasMore` in the response to page further into the window on busy days (e.g. Challenger/ITF days with 50+ matches before noon).
  * @summary Upcoming scheduled matches
  */
-export const getUpcomingFixtures = async (params?: GetUpcomingFixturesParams, options?: RequestInit): Promise<Fixture[]> => {
+export const getUpcomingFixtures = async (params?: GetUpcomingFixturesParams, options?: RequestInit): Promise<GetUpcomingFixtures200> => {
 
-  return customFetch<Fixture[]>(getGetUpcomingFixturesUrl(params),
+  return customFetch<GetUpcomingFixtures200>(getGetUpcomingFixturesUrl(params),
   {
     ...options,
     method: 'GET'

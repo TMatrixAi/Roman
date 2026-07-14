@@ -16,28 +16,39 @@ export function sortKey(f: Fixture): number {
   return f.scheduledStart ? new Date(f.scheduledStart).getTime() : new Date(`${f.date}T23:59:59.999Z`).getTime();
 }
 
+export interface UpcomingWindowResult {
+  fixtures: Fixture[];
+  /** True when at least one more fixture exists beyond `offset + limit` within the lookahead window (i.e. paging further would return more). */
+  hasMore: boolean;
+}
+
 /**
  * Assembles a rolling "now forward" window of upcoming fixtures: fetches successive calendar
  * days (in parallel batches, via `fetchDay`) starting today, widening the window further out
- * whenever the near-term days are sparse, until `limit` results are collected or
- * `MAX_LOOKAHEAD_DAYS` is reached. Always sorted soonest-first and capped at `limit`.
+ * whenever the near-term days are sparse, until `offset + limit` results are collected (so a
+ * page further into the list can be sliced out) or `MAX_LOOKAHEAD_DAYS` is reached. Always sorted
+ * soonest-first.
  *
  * "Upcoming" means not yet started: a fixture with a confirmed `scheduledStart` in the past
  * (relative to `nowMs`) is already live/in-progress and is excluded. A fixture with no confirmed
  * time ("Time TBD") is kept regardless -- we genuinely can't tell whether it has started, and
  * this codebase never hides real data over uncertainty (see combineDateTimeUtc's contract).
+ *
+ * `offset` lets a caller page past an earlier page's results (e.g. a busy Challenger/ITF day with
+ * 50+ matches before noon) instead of being permanently capped at the first `limit` fixtures.
  */
 export async function collectUpcomingWindow(
   fetchDay: (date: string) => Promise<Fixture[]>,
-  opts: { limit: number; nowMs: number },
-): Promise<Fixture[]> {
-  const { limit, nowMs } = opts;
+  opts: { limit: number; nowMs: number; offset?: number },
+): Promise<UpcomingWindowResult> {
+  const { limit, nowMs, offset = 0 } = opts;
+  const target = offset + limit;
   const collected: Fixture[] = [];
   const seenIds = new Set<string>();
 
-  for (let offset = 0; offset < MAX_LOOKAHEAD_DAYS; offset += BATCH_DAYS) {
-    const dayCount = Math.min(BATCH_DAYS, MAX_LOOKAHEAD_DAYS - offset);
-    const batchDates = Array.from({ length: dayCount }, (_, i) => utcDateString(nowMs + (offset + i) * 86_400_000));
+  for (let dayOffset = 0; dayOffset < MAX_LOOKAHEAD_DAYS; dayOffset += BATCH_DAYS) {
+    const dayCount = Math.min(BATCH_DAYS, MAX_LOOKAHEAD_DAYS - dayOffset);
+    const batchDates = Array.from({ length: dayCount }, (_, i) => utcDateString(nowMs + (dayOffset + i) * 86_400_000));
     const batchResults = await Promise.all(batchDates.map(fetchDay));
 
     for (const fixtures of batchResults) {
@@ -49,8 +60,14 @@ export async function collectUpcomingWindow(
       }
     }
 
-    if (collected.length >= limit) break;
+    // Collect one extra beyond `target` so we can tell whether a further page would be
+    // non-empty (`hasMore`), without that lookahead fixture leaking into this page's slice.
+    if (collected.length > target) break;
   }
 
-  return collected.sort((a, b) => sortKey(a) - sortKey(b)).slice(0, limit);
+  const sorted = collected.sort((a, b) => sortKey(a) - sortKey(b));
+  return {
+    fixtures: sorted.slice(offset, target),
+    hasMore: sorted.length > target,
+  };
 }

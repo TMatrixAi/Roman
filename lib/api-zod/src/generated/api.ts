@@ -119,18 +119,22 @@ export const GetPlayerMatchesResponse = zod.array(GetPlayerMatchesResponseItem)
 
 
 /**
- * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary.
+ * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary. Use `offset` together with `hasMore` in the response to page further into the window on busy days (e.g. Challenger/ITF days with 50+ matches before noon).
  * @summary Upcoming scheduled matches
  */
 export const getUpcomingFixturesQueryLimitMax = 200;
 
+export const getUpcomingFixturesQueryOffsetMin = 0;
+
 
 
 export const GetUpcomingFixturesQueryParams = zod.object({
-  "limit": zod.coerce.number().min(1).max(getUpcomingFixturesQueryLimitMax).optional().describe('Maximum number of fixtures to return. Defaults to 50.')
+  "limit": zod.coerce.number().min(1).max(getUpcomingFixturesQueryLimitMax).optional().describe('Maximum number of fixtures to return. Defaults to 50.'),
+  "offset": zod.coerce.number().min(getUpcomingFixturesQueryOffsetMin).optional().describe('Number of soonest-first fixtures to skip before returning `limit` more. Defaults to 0.')
 })
 
-export const GetUpcomingFixturesResponseItem = zod.object({
+export const GetUpcomingFixturesResponse = zod.object({
+  "fixtures": zod.array(zod.object({
   "id": zod.string(),
   "date": zod.coerce.date().describe('Calendar date the match is scheduled for (YYYY-MM-DD). Always present.'),
   "scheduledStart": zod.union([zod.null(),zod.coerce.date()]).optional().describe('Full real start instant (UTC) for this exact fixture, combining the provider\'s per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show \"Time TBD\" when null. IMPORTANT -- null must be listed first in this oneOf union. The generated zod.coerce.date() silently accepts a null input as epoch 1970 instead of failing, so if the date branch were checked first a real null would be miscoerced into a fake timestamp.'),
@@ -145,8 +149,9 @@ export const GetUpcomingFixturesResponseItem = zod.object({
   "player1Name": zod.string(),
   "player2Id": zod.string(),
   "player2Name": zod.string()
+})),
+  "hasMore": zod.boolean().describe('True when at least one more fixture exists beyond `offset + limit` within the lookahead window.')
 })
-export const GetUpcomingFixturesResponse = zod.array(GetUpcomingFixturesResponseItem)
 
 
 /**
