@@ -1,6 +1,7 @@
 import { useGetProviderStatus } from "@workspace/api-client-react"
 import { Badge } from "@/components/ui/badge"
 import { Activity, AlertCircle, CheckCircle2, Clock } from "lucide-react"
+import { formatEasternClock } from "@/lib/timezone"
 
 export function ProviderStatusIndicator() {
   const { data: status, isLoading, isError } = useGetProviderStatus()
@@ -48,7 +49,7 @@ export function ProviderStatusIndicator() {
       {status.lastSuccessfulCallAt && (
         <div className="flex items-center gap-1.5 hidden sm:flex text-muted-foreground">
           <Clock className="w-3 h-3" />
-          <span>LAST SYNC: {new Date(status.lastSuccessfulCallAt).toLocaleTimeString()}</span>
+          <span>LAST SYNC: {formatEasternClock(status.lastSuccessfulCallAt)}</span>
         </div>
       )}
     </div>

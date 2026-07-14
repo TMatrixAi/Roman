@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyDataState } from "./DataWarning"
 import { Calendar, Swords, Zap, RefreshCw } from "lucide-react"
+import { formatEasternDateTime } from "@/lib/timezone"
 
 export type TourFilter = "all" | "atp" | "wta" | "itf"
 
@@ -53,20 +54,12 @@ function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter): Fixture[] 
 }
 
 /**
- * Formats a fixture's real start time consistently in Eastern time (America/New_York), or
- * "Time TBD" when the provider hasn't confirmed one. Match times are stored/compared in UTC
- * everywhere else -- this is a render-time-only conversion, and intentionally not the viewer's
- * arbitrary local timezone, so every viewer sees the same schedule.
+ * Formats a fixture's real start time consistently in Eastern time, or "Time TBD" when the
+ * provider hasn't confirmed one. See `formatEasternDateTime` for why Eastern (not the viewer's
+ * local timezone) is used everywhere in this app.
  */
 function formatFixtureTime(fixture: Fixture): string {
-  if (!fixture.scheduledStart) return "Time TBD"
-  return new Date(fixture.scheduledStart).toLocaleString("en-US", {
-    timeZone: "America/New_York",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }) + " ET"
+  return formatEasternDateTime(fixture.scheduledStart)
 }
 
 function buildCustomMatchUrl(fixture: Fixture): string {
