@@ -1,5 +1,5 @@
 tournament_name,search_address,latitude,longitude,formatted_address,status
-Wimbledon,"All England Lawn Tennis and Croquet Club, Wimbledon, London, United Kingdom",51.519792,-0.138718,"All Souls Church of England Primary School, London, W1W 7JJ, United Kingdom",matched
+Wimbledon,"All England Lawn Tennis and Croquet Club, Church Road, Wimbledon, London SW19 5AE, United Kingdom",51.4342,-0.2147,"All England Lawn Tennis and Croquet Club, Church Road, Wimbledon, London SW19 5AE, United Kingdom",manual_override
 Roland-Garros,"Stade Roland Garros, Paris, France",48.846869,2.2484179,"Stade Roland-Garros, 3 Avenue Gordon-Bennett, 75016 Paris, France",matched
 US Open,"USTA Billie Jean King National Tennis Center, Queens, New York, USA",40.7495765,-73.8465422,"USTA Billie Jean King National Tennis Center, United Nations Avenue North, Queens, New York, NY 11368, United States of America",matched
 Australian Open,"Melbourne Park, Melbourne, Australia",-37.8213608,144.9790884,"Melbourne Park, Capital City Trail / Main Yarra Trail, Melbourne VIC 3004, Australia",matched
