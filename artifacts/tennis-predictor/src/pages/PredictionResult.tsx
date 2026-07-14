@@ -135,17 +135,29 @@ export default function PredictionResultPage() {
                   {prediction.predictedWinnerName}
                 </h2>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge variant={
-                    prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
-                    prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
-                    prediction.recommendation === 'HIGH_RISK' ? 'warning' :
-                    prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
-                  } className="text-sm">
+                  <Badge
+                    variant={
+                      prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
+                      prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
+                      prediction.recommendation === 'HIGH_RISK' ? 'warning' :
+                      prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
+                    }
+                    className="text-sm"
+                    title={
+                      prediction.recommendation === 'STRONG_RECOMMENDATION'
+                        ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
+                        : undefined
+                    }
+                  >
                     {RECOMMENDATION_LABELS[prediction.recommendation] ?? prediction.recommendation.replace(/_/g, ' ')}
                   </Badge>
                   {engine.isEliteTier && (
-                    <Badge variant="success" className="text-sm gap-1">
-                      <Crown className="w-3.5 h-3.5" /> ELITE PREDICTION
+                    <Badge
+                      variant="success"
+                      className="text-sm gap-1"
+                      title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
+                    >
+                      <Crown className="w-3.5 h-3.5" /> ELITE (HIGHEST-CONFIDENCE)
                     </Badge>
                   )}
                   <Badge variant="outline" className="text-sm">
@@ -154,12 +166,17 @@ export default function PredictionResultPage() {
                 </div>
                 {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
                   <p className="text-xs text-muted-foreground mt-2 max-w-md">
-                    The engine's highest-confidence tier based on today's thresholds -- its own validation sample is
-                    still small, so treat this as a signal, not a guarantee.
+                    "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
+                    validation on real outcomes is still limited (n=189 in the latest backtest), and this tier hasn't
+                    yet been shown to beat other tiers. Treat it as one input, not a proven edge.
                   </p>
                 )}
-                {engine.eliteTierReason && (
-                  <p className="text-xs text-muted-foreground mt-2 max-w-md">{engine.eliteTierReason}</p>
+                {engine.isEliteTier && (
+                  <p className="text-xs text-muted-foreground mt-2 max-w-md">
+                    {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
+                    Elite is an early, small-sample tier (n=468 in the latest backtest) -- directionally promising but not
+                    yet statistically proven to outperform non-Elite predictions.
+                  </p>
                 )}
               </div>
 

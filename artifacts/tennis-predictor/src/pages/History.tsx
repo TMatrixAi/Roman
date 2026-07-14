@@ -195,7 +195,7 @@ function PredictionRow({
 
   const renderRecommendationBadge = () => {
     switch (prediction.recommendation) {
-      case 'STRONG_RECOMMENDATION': return <Badge variant="success">HIGH CONF</Badge>
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
       case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
       case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
       case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
@@ -299,7 +299,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
 
   const renderRecommendationBadge = () => {
     switch (prediction.recommendation) {
-      case 'STRONG_RECOMMENDATION': return <Badge variant="success">HIGH CONF</Badge>
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
       case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
       case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
       case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
@@ -580,6 +580,7 @@ export default function HistoryPage() {
           <StatCard 
             title="HIGH CONF" 
             value={stats.byRecommendation?.find(r => r.recommendation === 'STRONG_RECOMMENDATION')?.count || 0} 
+            subtext="Highest-confidence tier -- not yet proven better than other tiers"
             icon={AlertTriangle} 
           />
         </div>

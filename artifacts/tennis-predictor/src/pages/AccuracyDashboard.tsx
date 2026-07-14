@@ -235,7 +235,8 @@ function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
           model conflict, no High Disagreement, no High/Extreme upset risk). Scored against genuinely-unseen graded
           outcomes only (historical test-segment + paper trading), with the same accuracy/logLoss/Brier/ECE methodology
           used everywhere else on this dashboard. Elite is the engine's most selective bar, not a proven track record --
-          read the numbers below rather than assuming superiority from the label alone.
+          the accuracy gap below is directionally positive but not yet statistically significant at current sample
+          sizes, so read the numbers rather than assuming superiority from the label alone.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
