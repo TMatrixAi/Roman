@@ -292,7 +292,26 @@ export default function PredictionResultPage() {
       </div>
 
       {/* PHASE 7: MONTE CARLO MATCH SIMULATION */}
-      {engine.simulation && (
+      {engine.simulation && (() => {
+        // The simulator only stores player1WinProbability/rangeLow/rangeHigh (player1-relative).
+        // The headline slot must always show the PREDICTED WINNER's number, regardless of
+        // whether that player happens to be stored as player1 or player2 -- mirror when it's
+        // player2. At an exact 50/50 toss-up, predictedWinnerId is deterministically player1's
+        // id (see index.ts: `favorsPlayer1 = calibratedProbability >= 50`), so this still
+        // resolves to a single, well-defined player with no fallback/default needed.
+        const winnerIsPlayer1 = prediction.predictedWinnerId === prediction.player1Id;
+        const headlineWinnerName = winnerIsPlayer1 ? prediction.player1Name : prediction.player2Name;
+        const headlineWinProbability = winnerIsPlayer1
+          ? engine.simulation.player1WinProbability
+          : 100 - engine.simulation.player1WinProbability;
+        const headlineRangeLow = winnerIsPlayer1
+          ? engine.simulation.rangeLow
+          : 100 - engine.simulation.rangeHigh;
+        const headlineRangeHigh = winnerIsPlayer1
+          ? engine.simulation.rangeHigh
+          : 100 - engine.simulation.rangeLow;
+
+        return (
         <div>
           <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
             <Dices className="w-5 h-5" /> MONTE CARLO SIMULATION
@@ -312,19 +331,19 @@ export default function PredictionResultPage() {
             <Card>
               <CardContent className="p-6 space-y-6">
                 <div>
-                  <p className="text-xs font-mono text-muted-foreground mb-1">SIMULATED WIN PROBABILITY ({prediction.player1Name})</p>
+                  <p className="text-xs font-mono text-muted-foreground mb-1">SIMULATED WIN PROBABILITY ({headlineWinnerName})</p>
                   <p className="text-4xl font-black tracking-tighter">
-                    {engine.simulation.player1WinProbability.toFixed(1)}%
+                    {headlineWinProbability.toFixed(1)}%
                   </p>
                   <p className="text-sm text-muted-foreground mt-1 font-mono">
-                    range {engine.simulation.rangeLow.toFixed(0)}–{engine.simulation.rangeHigh.toFixed(0)}%
+                    range {headlineRangeLow.toFixed(0)}–{headlineRangeHigh.toFixed(0)}%
                   </p>
                   <div className="relative h-3 w-full bg-secondary rounded-full overflow-hidden mt-3">
                     <div
                       className="absolute h-full bg-primary/30"
-                      style={{ left: `${engine.simulation.rangeLow}%`, width: `${Math.max(0, engine.simulation.rangeHigh - engine.simulation.rangeLow)}%` }}
+                      style={{ left: `${headlineRangeLow}%`, width: `${Math.max(0, headlineRangeHigh - headlineRangeLow)}%` }}
                     />
-                    <div className="absolute top-0 h-full w-0.5 bg-primary" style={{ left: `${engine.simulation.player1WinProbability}%` }} />
+                    <div className="absolute top-0 h-full w-0.5 bg-primary" style={{ left: `${headlineWinProbability}%` }} />
                   </div>
                 </div>
 
@@ -389,7 +408,8 @@ export default function PredictionResultPage() {
             </ModuleCard>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* FULL ENGINE BREAKDOWN */}
       <div>

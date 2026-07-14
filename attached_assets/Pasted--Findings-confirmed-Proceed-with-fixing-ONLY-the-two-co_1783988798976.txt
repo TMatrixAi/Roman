@@ -1,0 +1,31 @@
+"Findings confirmed. Proceed with fixing ONLY the two confirmed code errors — do not touch anything else, including the confirmed-intentional HighDisagreement behavior, the upset-risk calibration, or any other file not directly tied to these two root causes.
+
+FIX 1 — Monte Carlo display binding (PredictionResult.tsx)
+
+The headline 'SIMULATED WIN PROBABILITY' number currently binds to whichever player is stored as player1, not to the predicted winner. Fix this by:
+- Changing the headline display logic to select the predicted winner's win probability (derived from the stable predicted-winner player ID), regardless of whether that player is stored as player1 or player2.
+- Adding an equivalent primary-level display path so player2's number can also render in the headline slot when player2 is the predicted winner — right now only player1 has a primary slot and player2's number is buried in secondary stats.
+- Do NOT alter the underlying stored value (engine.simulation.player1WinProbability) or its storage schema — only fix how the headline number is selected and displayed.
+- Handle the edge case where calibratedProbability is exactly 50 (a true toss-up) — confirm which player is treated as "predicted winner" in that scenario and that the display doesn't break or default incorrectly.
+- Show me the exact before/after code for the render logic, not just a description.
+
+FIX 2 — Recommendation catch-all gap (recommendation.ts)
+
+The final catch-all branch (margin 8–10, LOW/MODERATE upset risk, Strong/Moderate agreement) currently defaults to HIGH_RISK, contradicting the file's own documented intent that HIGH_RISK requires genuine upset danger. Fix this by:
+- Adding a specific, named rule for this exact band — margin in the 8–10 range AND upset risk is LOW or MODERATE AND agreement is not Mixed/HighDisagreement — that routes to MODERATE_LEAN instead of falling through to the catch-all.
+- Do NOT change the existing >=10 or >=22 margin thresholds themselves.
+- Do NOT touch the EXTREME upset-risk rule, the DO_NOT_RECOMMEND rule, or the NO_STRONG_SIGNAL rule — only add the new named rule and narrow the catch-all so it only fires for genuinely leftover/ambiguous cases (e.g. margin under 8 with non-Mixed agreement, or any other truly unclassified combination).
+- Confirm the new rule and the existing margin<8 NO_STRONG_SIGNAL rule don't overlap or conflict at the exact boundary values (margin = 8 and margin = 10) — check for off-by-one/boundary gaps where a row could fall through untouched or get caught by two rules at once.
+- Show me the exact before/after code for this logic block.
+
+VERIFICATION (required before you report back):
+
+- Re-run the full invariant/consistency check suite against the ENTIRE live predictions table — not just the 3 originally flagged matches — and report exact counts of how many rows changed label as a result of Fix 2, and how many rows changed headline display as a result of Fix 1.
+- Confirm zero new contradictions were introduced anywhere else in the table by either fix (i.e. no row that was previously consistent is now flagged as inconsistent).
+- Show specific before/after evidence for: A. Shcherbinina's row (both matches, #860 and #1043), S. Johnson (#1031), V. Morvayova (#1036), and Maja.
+- Confirm neither fix touched any file, threshold, or rule outside the two scoped changes above.
+- Confirm both fixes pass existing test suites (including upsetRisk.test.ts and any recommendation.ts tests) with zero failures, and add/update tests to cover the two boundary cases fixed here so they don't regress.
+
+Report back with: the exact code diffs for both fixes, the full verification results above, and explicit confirmation that scope was not exceeded. Do NOT proceed to the July 8-11 backtest merge yet — wait for my explicit go-ahead after I review this report."
+
+Sources

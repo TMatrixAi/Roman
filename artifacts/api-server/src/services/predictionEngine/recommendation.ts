@@ -32,5 +32,16 @@ export function computeRecommendation(
   )
     return "STRONG_RECOMMENDATION";
   if (margin >= 10) return "MODERATE_LEAN";
+  // Margin 8-10 (exclusive of the >=10 branch above, so effectively [8, 10)) with a genuinely
+  // low/moderate upset risk and non-Mixed/HighDisagreement agreement is a real, if modest, lean --
+  // not a case of "genuine upset danger" (HIGH_RISK's documented meaning above). Falling through
+  // to HIGH_RISK for these rows mislabeled otherwise-unremarkable matches as risky.
+  if (
+    margin >= 8 &&
+    (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
+    modelAgreement !== "Mixed" &&
+    modelAgreement !== "HighDisagreement"
+  )
+    return "MODERATE_LEAN";
   return "HIGH_RISK";
 }

@@ -46,3 +46,29 @@ test("a high-margin match that fails the agreement check but not the margin-only
   const result = computeRecommendation(80, 70, "Strong", "LOW", "HighDisagreement");
   assert.equal(result, "MODERATE_LEAN");
 });
+
+test("margin 8-10 with LOW upset risk and Moderate agreement is MODERATE_LEAN, not HIGH_RISK (regression: previously fell through the catch-all)", () => {
+  // margin = 8.7, matches the real S. Johnson case that surfaced this bug.
+  const result = computeRecommendation(58.7, 70, "Good", "LOW", "Moderate");
+  assert.equal(result, "MODERATE_LEAN");
+});
+
+test("margin exactly 8 with MODERATE upset risk and Strong agreement is MODERATE_LEAN (lower boundary of the new band)", () => {
+  const result = computeRecommendation(58, 70, "Good", "MODERATE", "Strong");
+  assert.equal(result, "MODERATE_LEAN");
+});
+
+test("margin just under 8 with Strong agreement (so NOT caught by NO_STRONG_SIGNAL) still falls through to HIGH_RISK -- the new rule must not swallow sub-8 margins", () => {
+  const result = computeRecommendation(57.9, 70, "Good", "LOW", "Strong");
+  assert.equal(result, "HIGH_RISK");
+});
+
+test("margin 8-10 with HighDisagreement agreement is NOT rescued by the new rule -- still HIGH_RISK (agreement gate must still apply)", () => {
+  const result = computeRecommendation(58.7, 70, "Good", "LOW", "HighDisagreement");
+  assert.equal(result, "HIGH_RISK");
+});
+
+test("margin 8-10 with EXTREME upset risk is still HIGH_RISK via the earlier EXTREME rule, not reclassified by the new band", () => {
+  const result = computeRecommendation(58.7, 70, "Good", "EXTREME", "Strong");
+  assert.equal(result, "HIGH_RISK");
+});
