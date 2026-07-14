@@ -294,17 +294,52 @@ export interface CalibrationFitResult {
   method: "isotonic" | "platt";
   isotonicHoldoutLogLoss: number | null;
   plattHoldoutLogLoss: number | null;
+  /** Weighted mean absolute calibration gap (predicted vs. observed) on the holdout slice, binned with `binCalibrationPoints`. Null whenever there's no holdout slice. */
+  isotonicHoldoutEce: number | null;
+  plattHoldoutEce: number | null;
   fitSampleSize: number;
   holdoutSampleSize: number;
 }
 
 /**
+ * Weighted mean absolute calibration gap (|avg predicted - avg observed|) across the same
+ * reliability-bucket structure `binCalibrationPoints` already uses, applied to a mapping's
+ * OUTPUT on a held-out slice. This is what makes the Platt-vs-isotonic comparison catch a
+ * failure mode plain average log loss can miss: a smooth, globally-monotonic Platt sigmoid can
+ * win on average log loss while still bridging over a real local non-monotonic dip in one
+ * narrow probability band (Task #128 -- a fold's own validation data showed raw ~62% predictions
+ * only won ~51% of the time, a real local violation isotonic's PAVA step is built to absorb but
+ * Platt's fixed sigmoid shape cannot represent). Log loss alone doesn't penalize that enough
+ * when it's confined to one band, because it's averaged over every point, not every band.
+ */
+function holdoutCalibrationError(mapping: CalibrationKnot[], holdoutPoints: CalibrationPoint[]): number | null {
+  const calibratedPoints: CalibrationPoint[] = holdoutPoints.map((p) => ({
+    rawProbability: applyCalibration(mapping, p.rawProbability),
+    outcome: p.outcome,
+  }));
+  const bins = binCalibrationPoints(calibratedPoints);
+  if (bins.length === 0) return null;
+  let totalWeight = 0;
+  let weightedGap = 0;
+  for (const bin of bins) {
+    weightedGap += Math.abs(bin.x - bin.y) * bin.weight;
+    totalWeight += bin.weight;
+  }
+  return totalWeight > 0 ? weightedGap / totalWeight : null;
+}
+
+/**
  * Fits both a binned isotonic curve and a Platt/sigmoid curve on the same fit-only slice of
  * validation data (see `splitForCalibrationHoldout`), evaluates both on the genuinely held-out
- * slice via log loss, and activates whichever generalizes better -- the choice is never
- * hand-picked. When there isn't enough data to hold out a meaningful comparison slice, isotonic
+ * slice via log loss AND per-bucket calibration error (ECE), and activates whichever generalizes
+ * better -- the choice is never hand-picked. Platt only wins when it beats isotonic on log loss
+ * AND does not have a worse holdout ECE: Task #128 found a real fold where Platt won on average
+ * log loss alone while being meaningfully *more* miscalibrated than isotonic in one specific
+ * probability band (a narrow local dip in the true win rate that Platt's smooth sigmoid bridges
+ * over but isotonic's PAVA step correctly absorbs) -- exactly the failure mode this ECE guard is
+ * for. When there isn't enough data to hold out a meaningful comparison slice, isotonic
  * (the already-shipped default) is used without a comparison, and that is recorded explicitly
- * (`holdoutSampleSize: 0`, both holdout log losses `null`) rather than silently guessed.
+ * (`holdoutSampleSize: 0`, all holdout metrics `null`) rather than silently guessed.
  */
 export function fitBestCalibration(points: CalibrationPoint[]): CalibrationFitResult {
   if (points.length === 0) {
@@ -316,6 +351,8 @@ export function fitBestCalibration(points: CalibrationPoint[]): CalibrationFitRe
       method: "isotonic",
       isotonicHoldoutLogLoss: null,
       plattHoldoutLogLoss: null,
+      isotonicHoldoutEce: null,
+      plattHoldoutEce: null,
       fitSampleSize: 0,
       holdoutSampleSize: 0,
     };
@@ -330,6 +367,8 @@ export function fitBestCalibration(points: CalibrationPoint[]): CalibrationFitRe
       method: "isotonic",
       isotonicHoldoutLogLoss: null,
       plattHoldoutLogLoss: null,
+      isotonicHoldoutEce: null,
+      plattHoldoutEce: null,
       fitSampleSize: fitPoints.length,
       holdoutSampleSize: 0,
     };
@@ -344,14 +383,21 @@ export function fitBestCalibration(points: CalibrationPoint[]): CalibrationFitRe
   const plattHoldoutLogLoss = logLoss(
     holdoutPoints.map((p) => ({ rawProbability: applyCalibration(plattKnots, p.rawProbability), outcome: p.outcome })),
   );
+  const isotonicHoldoutEce = holdoutCalibrationError(isotonicKnots, holdoutPoints);
+  const plattHoldoutEce = holdoutCalibrationError(plattKnots, holdoutPoints);
 
-  const plattWins = plattHoldoutLogLoss !== null && (isotonicHoldoutLogLoss === null || plattHoldoutLogLoss < isotonicHoldoutLogLoss);
+  const plattBeatsLogLoss =
+    plattHoldoutLogLoss !== null && (isotonicHoldoutLogLoss === null || plattHoldoutLogLoss < isotonicHoldoutLogLoss);
+  const plattNotWorseCalibrated = plattHoldoutEce === null || isotonicHoldoutEce === null || plattHoldoutEce <= isotonicHoldoutEce;
+  const plattWins = plattBeatsLogLoss && plattNotWorseCalibrated;
 
   return {
     knots: plattWins ? plattKnots : isotonicKnots,
     method: plattWins ? "platt" : "isotonic",
     isotonicHoldoutLogLoss,
     plattHoldoutLogLoss,
+    isotonicHoldoutEce,
+    plattHoldoutEce,
     fitSampleSize: fitPoints.length,
     holdoutSampleSize: holdoutPoints.length,
   };
