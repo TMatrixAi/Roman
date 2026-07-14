@@ -147,9 +147,10 @@ function computeOnePlayer(matches: MatchRecord[], currentVenue: Venue | null, no
     const lastVenue = inferVenue(last.tournamentName);
     if (lastVenue && currentVenue) {
       travelDistanceKm = haversineKm(lastVenue, currentVenue);
-    } else {
-      warnings.push(`${playerLabel}: travel distance unavailable -- the venue for this match and/or ${playerLabel}'s most recent tournament isn't in the known-venue list.`);
     }
+    // Unresolved travel distance (venue not in the known-venue list) is expected/common and not
+    // surfaced as a user-facing warning -- it's still displayed as "n/a" in the UI and still barely
+    // moves `reliability` below, but it isn't a signal worth interrupting the user with.
   } else {
     warnings.push(`${playerLabel}: no prior match history at all -- rest days and travel distance can't be computed.`);
   }
@@ -206,23 +207,26 @@ export function computeAvailabilityModule(
 ): AvailabilityResult {
   const currentVenue = inferVenue(tournamentName);
   const warnings: string[] = [];
-  if (!currentVenue) {
-    warnings.push("This match's venue isn't in the known-venue list -- travel distance can't be computed for either player.");
-  }
+  // An unresolved match venue (not in the known-venue list) is common and expected -- travel
+  // distance simply displays as "n/a" and barely moves `reliability` below; it is not surfaced
+  // as a user-facing warning.
 
   const player1 = computeOnePlayer(player1Matches, currentVenue, now, warnings, "Player 1");
   const player2 = computeOnePlayer(player2Matches, currentVenue, now, warnings, "Player 2");
 
   // Reliability reflects how much of this module is actually backed by resolvable data for THIS
-  // match, not a flat constant -- rest days need only a prior match (usually available); travel
-  // needs two resolved venues (much rarer, gated by venueMap's current ~18-tournament coverage).
-  let resolvedSignals = 0;
-  const totalSignals = 4; // rest x2, travel x2
-  if (player1.daysSinceLastMatch !== null) resolvedSignals++;
-  if (player2.daysSinceLastMatch !== null) resolvedSignals++;
-  if (player1.travelDistanceKm !== null) resolvedSignals++;
-  if (player2.travelDistanceKm !== null) resolvedSignals++;
-  const reliability = Math.round((resolvedSignals / totalSignals) * 100);
+  // match, weighted so rest days (need only a prior match, usually available) dominate and travel
+  // distance (needs two resolved venues, much rarer -- gated by venueMap's current ~18-tournament
+  // coverage) barely moves the score either way. Unresolved travel is the expected common case,
+  // not a data gap worth dragging reliability (and therefore Data Quality) down over.
+  const REST_SIGNAL_WEIGHT = 0.4; // per player -- dominant driver
+  const TRAVEL_SIGNAL_WEIGHT = 0.1; // per player -- barely moves the score when unresolved
+  let weightedResolved = 0;
+  if (player1.daysSinceLastMatch !== null) weightedResolved += REST_SIGNAL_WEIGHT;
+  if (player2.daysSinceLastMatch !== null) weightedResolved += REST_SIGNAL_WEIGHT;
+  if (player1.travelDistanceKm !== null) weightedResolved += TRAVEL_SIGNAL_WEIGHT;
+  if (player2.travelDistanceKm !== null) weightedResolved += TRAVEL_SIGNAL_WEIGHT;
+  const reliability = Math.round(weightedResolved * 100);
 
   if (player1.recentWalkoverGiven) {
     warnings.push(`Player 1 was withdrawn (walkover) at ${player1.recentWalkoverTournament ?? "a recent tournament"} within the last 3 weeks -- a real, confirmed pre-match withdrawal, weighted more heavily than a mid-match retirement.`);

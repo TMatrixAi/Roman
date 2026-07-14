@@ -41,7 +41,7 @@ test("computes real rest days and travel distance when both venues resolve", () 
   assert.equal(result.reliability, 100);
 });
 
-test("reports travel as unavailable (never guessed) when a venue can't be resolved", () => {
+test("reports travel as unavailable (never guessed) when a venue can't be resolved, without a user-facing warning", () => {
   const now = new Date("2026-07-11T12:00:00Z");
   const p1 = [match({ date: "2026-07-05", tournamentName: "Obscure Challenger Event" })];
   const p2 = [match({ date: "2026-07-08", tournamentName: "Roland Garros" })];
@@ -49,8 +49,12 @@ test("reports travel as unavailable (never guessed) when a venue can't be resolv
   const result = computeAvailabilityModule(p1, p2, "US Open", now);
 
   assert.equal(result.player1.travelDistanceKm, null);
-  assert.ok(result.warnings.some((w) => w.includes("travel distance unavailable")));
-  assert.ok(result.reliability < 100);
+  // Unresolved travel distance is expected/common noise, not a warning worth surfacing.
+  assert.ok(!result.warnings.some((w) => w.includes("travel distance unavailable")));
+  assert.ok(!result.warnings.some((w) => w.includes("known-venue list")));
+  // Rest days for both players still resolved, so reliability barely dips below 100 --
+  // rest dominates the weighting and unresolved travel only costs a little.
+  assert.ok(result.reliability < 100 && result.reliability >= 90);
 });
 
 test("flags a real recent retirement only for the player who actually retired, within the window", () => {
