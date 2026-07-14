@@ -163,6 +163,43 @@ export const CONFIDENCE_SHRINK = {
   recentForm: 0.35,
 } as const;
 
+/**
+ * Additional post-calibration shrink toward 50%, applied in `predictionEngine/index.ts` ONLY when
+ * no segment specialist actually voted for this match (a segment that clears its own threshold
+ * already gets a real, data-fit correction instead of this coarse fallback -- see
+ * `specialistWeights.ts`).
+ *
+ * Task #151: the 2026-07-13 full-corpus ablation report found ATP-tour predictions genuinely
+ * underperform (54.6% baseline accuracy, n=1,242) against both the pooled average (57.3%) and
+ * ITF's own baseline (58.9%), with no ATP surface segment currently clearing the segment-
+ * specialist volume threshold to correct for it directly. Sized the same way `CONFIDENCE_SHRINK`
+ * above was: (observedAccuracy - 50) / (poolAccuracy - 50) = 4.6 / 7.3 ~= 0.63. Keyed by tour
+ * (parsed from `segment.segmentKey`, e.g. "ATP-Hard") rather than a one-off boolean so a future
+ * tour showing the same pattern can be added here without new plumbing.
+ */
+export const TOUR_RELIABILITY_DISCOUNT: Partial<Record<string, number>> = {
+  ATP: 0.63,
+};
+
+/**
+ * Additional post-calibration shrink toward 50%, applied in `predictionEngine/index.ts` ONLY when
+ * no segment specialist actually voted (see `TOUR_RELIABILITY_DISCOUNT` above for why) AND this
+ * match's surface sample depth is "Low" (`computeSurfaceSampleDepth`, below
+ * `SURFACE_SAMPLE_LOW_THRESHOLD` prior matches for the thinner-sampled player).
+ *
+ * Task #151: the same 2026-07-13 ablation report found Surface Elo, Fatigue, and Availability
+ * each show their single largest per-surface leave-one-out swing on Grass (-1.3, -1.9, -1.9pts
+ * respectively, n=162) -- the thinnest-volume surface in the whole corpus. That is the signature
+ * of those modules' own reliability estimates being noisiest exactly where real per-surface
+ * sample size is thinnest, not a Grass-specific effect as such -- so this discount is keyed to the
+ * general, already-computed sample-depth signal (not hardcoded to "Grass"), and also protects e.g.
+ * a clay specialist's grass tournament debut. 0.75 is a deliberately modest shrink (smaller than
+ * the ATP discount above): unlike the ATP finding, this isn't a validated accuracy gap on its own
+ * baseline, just added noise-sensitivity on top of already-thin data that
+ * `calibrateProbability`'s Data Quality curve only partly captures.
+ */
+export const LOW_SURFACE_SAMPLE_DISCOUNT = 0.75;
+
 export type SurfaceSampleLabel = "Low" | "Moderate" | "High";
 
 /** A player's surface sample is "Low" below this many prior matches on the relevant surface -- matches `surfaceElo.ts`'s own low-confidence warning threshold, so the two signals never disagree about what counts as thin. */

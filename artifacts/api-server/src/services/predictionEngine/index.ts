@@ -6,7 +6,7 @@ import { computeMatchLoadRecoveryModule } from "./matchLoadRecovery";
 import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
-import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, EXCLUDED_FROM_DATA_QUALITY, CONFIDENCE_SHRINK } from "./dataQuality";
+import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, EXCLUDED_FROM_DATA_QUALITY, CONFIDENCE_SHRINK, TOUR_RELIABILITY_DISCOUNT, LOW_SURFACE_SAMPLE_DISCOUNT } from "./dataQuality";
 import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
 import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
@@ -370,9 +370,26 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     specialistWeight = segment.weight!;
   }
 
-  const preSimulatorProbability = specialistApplied && specialistProbability !== null
+  const blendedProbability = specialistApplied && specialistProbability !== null
     ? Math.round((specialistWeight * specialistProbability + (1 - specialistWeight) * generalProbability) * 10) / 10
     : generalProbability;
+
+  // Task #151: neither discount below applies once a real segment specialist has actually voted
+  // (`specialistApplied`) -- that's already a genuine, data-fit correction for this exact
+  // tour/surface, so a coarse fallback discount on top of it would double-correct. Only kicks in
+  // for the segments the 2026-07-13 ablation report flagged as genuinely underperforming their
+  // stated confidence with no specialist available to fix it directly yet -- see
+  // `TOUR_RELIABILITY_DISCOUNT`/`LOW_SURFACE_SAMPLE_DISCOUNT` in `dataQuality.ts` for the exact
+  // evidence and sizing. Multiplicative when both apply (e.g. an ATP match that's also thin on
+  // this surface) rather than additive, so the combined shrink never overshoots past either
+  // factor alone.
+  const segmentTour = segment?.segmentKey.split("-")[0] ?? null;
+  const tourDiscount = !specialistApplied && segmentTour ? TOUR_RELIABILITY_DISCOUNT[segmentTour] ?? 1 : 1;
+  const surfaceSampleDiscount = !specialistApplied && surfaceSampleDepth.label === "Low" ? LOW_SURFACE_SAMPLE_DISCOUNT : 1;
+  const reliabilityDiscount = Math.round(tourDiscount * surfaceSampleDiscount * 1000) / 1000;
+  const preSimulatorProbability = reliabilityDiscount < 1
+    ? Math.round((50 + (blendedProbability - 50) * reliabilityDiscount) * 10) / 10
+    : blendedProbability;
 
   // Phase 7: only blend the simulator's own vote into the final probability once it has been
   // validated (against real historical/live outcomes) to actually earn one -- see
@@ -576,6 +593,17 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // lower tiers) -- real information worth disclosing, but not evidence this specific match is
   // riskier, so it's a plain disclosure rather than a risk (see `EngineBreakdown.disclosures`).
   disclosures.push(...headToHead.warnings);
+
+  // Task #151: never a silent adjustment -- disclose exactly which reliability discount(s) fired
+  // and why, mirroring how every other confidence-affecting stage in this file explains itself.
+  if (reliabilityDiscount < 1) {
+    const discountReasons: string[] = [];
+    if (tourDiscount < 1) discountReasons.push(`${segmentTour} tour predictions have shown a real, validated accuracy gap with no segment specialist yet available to correct for it directly`);
+    if (surfaceSampleDiscount < 1) discountReasons.push(`this matchup's surface sample depth is Low (fewer than 5 prior ${input.surface} matches for the thinner-sampled player)`);
+    disclosures.push(
+      `Confidence was shrunk an additional ${Math.round((1 - reliabilityDiscount) * 100)}% toward a coin flip because ${discountReasons.join(" and ")} (see the Data Quality methodology notes).`,
+    );
+  }
 
   if (disagreementNote) {
     risks.push(disagreementNote);

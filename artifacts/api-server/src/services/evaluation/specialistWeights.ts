@@ -1,7 +1,7 @@
 import { db, evaluationPredictionsTable, historicalMatchesTable, specialistModelsTable, type SpecialistModelRow } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { fitIsotonicCalibration, applyCalibration, logLoss, brierScore, type CalibrationPoint } from "./calibration";
+import { fitBestCalibration, splitForCalibrationHoldout, applyCalibration, logLoss, brierScore, type CalibrationPoint } from "./calibration";
 import { listCandidateSegments, resolveSegment, type SegmentDefinition } from "../predictionEngine/segments";
 import type { CalibrationKnot } from "./types";
 import type { SegmentSpecialistInput } from "../predictionEngine/types";
@@ -41,10 +41,12 @@ export interface SpecialistSegmentSummary extends SpecialistModelRow {}
  *    with `meetsThreshold=false` and `weight=0` -- the live engine falls back to the general model
  *    entirely for this segment, with a visible disclaimer, rather than fitting an under-trained
  *    curve silently.
- *  - Otherwise: fits a segment-only isotonic calibration from that segment's validation points,
- *    and compares its logLoss against the pooled/general mapping applied to the SAME points --
- *    the fair, apples-to-apples baseline. The specialist's blend weight is derived only from that
- *    measured improvement (or lack of it), never hand-picked.
+ *  - Otherwise: fits a segment-only calibration (isotonic or Platt, holdout-validated exactly like
+ *    the general model -- see `fitBestCalibration`) from that segment's validation points, and
+ *    compares its logLoss against the pooled/general mapping applied to the SAME held-out slice
+ *    (when the segment has enough points to hold one back) -- the fair, apples-to-apples,
+ *    non-overfit baseline. The specialist's blend weight is derived only from that measured
+ *    improvement (or lack of it), never hand-picked.
  */
 export async function computeAndStoreSpecialistSegments(generalMapping: CalibrationKnot[]): Promise<SpecialistSegmentSummary[]> {
   const segments = listCandidateSegments();
@@ -143,10 +145,31 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
     };
   }
 
-  const segmentMapping = fitIsotonicCalibration(points);
+  // Task #151: was `fitIsotonicCalibration(points)` fit AND scored on the exact same points --
+  // in-sample, unlike the pooled/general model (`fitBestCalibration`), which always fits on a
+  // held-out-aware split. The 2026-07-13 ablation report caught the consequence: the Active
+  // Segment Specialist looked well-calibrated at fit time (this in-sample scoring) but was
+  // measurably overconfident when replayed against fresh matches (60.1% predicted vs. 56.8%
+  // observed, n=2,036, 3.3pt gap). Switched to the same holdout-validated `fitBestCalibration`
+  // pipeline the general model uses (isotonic vs. Platt, picked by genuinely held-out log loss +
+  // ECE) so a segment gets exactly the same non-overfit treatment.
+  const fitResult = fitBestCalibration(points);
+  const segmentMapping = fitResult.knots;
 
-  const segmentPredictions = points.map((p) => ({ ...p, calibrated: applyCalibration(segmentMapping, p.rawProbability) }));
-  const generalPredictions = points.map((p) => ({ ...p, calibrated: applyCalibration(generalMapping, p.rawProbability) }));
+  // Score against the SAME held-out slice `fitBestCalibration` used to pick its method -- never
+  // the points the curve was fit on, so this reported accuracy/logLoss/brier (and the weight
+  // derived from them below) are a fair, non-overfit comparison against the general mapping.
+  // `splitForCalibrationHoldout` is deterministic (rank-based, no RNG), so calling it again here
+  // reproduces the exact same split `fitBestCalibration` used internally. Below ~125 validation
+  // points there isn't enough data to hold a meaningful slice back at all (the same floor
+  // `splitForCalibrationHoldout` itself applies) -- degrades to the prior in-sample scoring
+  // rather than fabricating a comparison on a slice too small to trust, matching
+  // `fitBestCalibration`'s own documented fallback.
+  const { holdoutPoints } = splitForCalibrationHoldout(points);
+  const scoringPoints = holdoutPoints.length > 0 ? holdoutPoints : points;
+
+  const segmentPredictions = scoringPoints.map((p) => ({ ...p, calibrated: applyCalibration(segmentMapping, p.rawProbability) }));
+  const generalPredictions = scoringPoints.map((p) => ({ ...p, calibrated: applyCalibration(generalMapping, p.rawProbability) }));
 
   const segmentAccuracy = accuracyOf(segmentPredictions);
   const generalAccuracy = accuracyOf(generalPredictions);

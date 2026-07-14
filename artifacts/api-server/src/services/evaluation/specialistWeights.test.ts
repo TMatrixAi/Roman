@@ -20,10 +20,14 @@ import {
 const PROVIDER = "specialist-weights-test";
 const RICH_TOUR = "ATP";
 const RICH_SURFACE = "Clay" as const;
-const THIN_TOUR = "WTA";
-const THIN_SURFACE = "Grass" as const;
+// The "thin" segment must actually stay below `MIN_HISTORICAL_MATCHES_FOR_SEGMENT` in the real
+// table. A hardcoded WTA/Grass choice broke once real backfilled data grew that segment past 150
+// matches (see `.agents/memory/test-isolation-against-live-tables.md`) -- picked dynamically
+// below instead, from whichever real candidate segment currently has the fewest matches.
+const CANDIDATE_TOURS = ["ATP", "WTA"] as const;
+const CANDIDATE_SURFACES = ["Hard", "Clay", "Grass", "IndoorHard"] as const;
 
-function makeHistoricalMatch(i: number, tour: string, surface: "Clay" | "Grass", player1: string, player2: string, winner: string) {
+function makeHistoricalMatch(i: number, tour: string, surface: "Hard" | "Clay" | "Grass" | "IndoorHard", player1: string, player2: string, winner: string) {
   const scheduledStartAt = new Date(Date.UTC(2019, 0, 1 + i, 12, 0, 0));
   const cutoffAt = new Date(scheduledStartAt.getTime() - 30 * 60_000);
   return {
@@ -62,10 +66,31 @@ test("Phase 6 specialist weighting: rich segment gets its own calibration, thin 
     .select({ count: sql<number>`count(*)::int` })
     .from(historicalMatchesTable)
     .where(and(eq(historicalMatchesTable.tour, RICH_TOUR), eq(historicalMatchesTable.surface, RICH_SURFACE)));
-  const [{ count: preexistingThin }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(historicalMatchesTable)
-    .where(and(eq(historicalMatchesTable.tour, THIN_TOUR), eq(historicalMatchesTable.surface, THIN_SURFACE)));
+  // Pick whichever real candidate tour/surface segment (excluding the rich one above, so the two
+  // never collide) currently has the fewest real historical matches, and use that as "thin" --
+  // never a hardcoded pair, since real backfilled data keeps growing every segment over time.
+  const candidateCounts = await Promise.all(
+    CANDIDATE_TOURS.flatMap((tour) =>
+      CANDIDATE_SURFACES.filter((surface) => !(tour === RICH_TOUR && surface === RICH_SURFACE)).map(async (surface) => {
+        const [{ count }] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(historicalMatchesTable)
+          .where(and(eq(historicalMatchesTable.tour, tour), eq(historicalMatchesTable.surface, surface)));
+        return { tour, surface, count };
+      }),
+    ),
+  );
+  const thinnest = candidateCounts.reduce((min, c) => (c.count < min.count ? c : min));
+  const THIN_TOUR = thinnest.tour;
+  const THIN_SURFACE = thinnest.surface;
+  const preexistingThin = thinnest.count;
+  const thinMatchCount = 5; // deliberately far under threshold, on top of whatever real data already exists
+  if (preexistingThin + thinMatchCount >= MIN_HISTORICAL_MATCHES_FOR_SEGMENT) {
+    t.skip(
+      `Every real candidate segment already has >= ${MIN_HISTORICAL_MATCHES_FOR_SEGMENT - thinMatchCount} historical matches (thinnest: ${THIN_TOUR}-${THIN_SURFACE} at ${preexistingThin}) -- no segment can genuinely stay "thin" for this test right now.`,
+    );
+    return;
+  }
 
   // Same real-data caveat applies to validation-segment `evaluation_predictions` rows (e.g. from a
   // real, already-run walk-forward evaluation) -- count what's already there for this exact
@@ -86,7 +111,6 @@ test("Phase 6 specialist weighting: rich segment gets its own calibration, thin 
 
   const richMatchCount = MIN_HISTORICAL_MATCHES_FOR_SEGMENT + 10;
   const richValidationCount = MIN_VALIDATION_SAMPLES_FOR_SEGMENT + 10;
-  const thinMatchCount = 5; // deliberately far under threshold, on top of whatever real data already exists
 
   const richMatches = Array.from({ length: richMatchCount }, (_, i) =>
     makeHistoricalMatch(i, RICH_TOUR, RICH_SURFACE, `rich-p1`, `rich-p2`, i % 2 === 0 ? "rich-p1" : "rich-p2"),

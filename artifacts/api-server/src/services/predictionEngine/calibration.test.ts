@@ -2,15 +2,25 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { calibrateProbability } from "./calibration";
 
-test("caps the confidence factor at 0.85 once data quality reaches 55, never claiming full raw trust (Task #75 re-validation)", () => {
-  // factor = min(0.85, (dq-20)/35), reaches its 0.85 cap at dq=55 and stays there for any higher dq.
+test("caps the confidence factor at 0.85 for the genuinely-supported 55-65 band, never claiming full raw trust (Task #75 re-validation)", () => {
   const at55 = calibrateProbability(65, 55);
   const at65 = calibrateProbability(65, 65);
-  const at90 = calibrateProbability(65, 90);
   assert.equal(at55, at65);
-  assert.equal(at65, at90);
   assert.ok(at55 < 65, `expected some residual shrinkage even at high data quality, got ${at55}`);
   assert.equal(at55, 62.8); // 50 + (65-50)*0.85 = 62.75, rounded to 1 decimal
+});
+
+test("decays trust back down past data quality 65, instead of holding a flat cap (Task #151 re-validation)", () => {
+  // The 2026-07-13 ablation report found real accuracy keeps getting WORSE past DQ 65 (56.0% for
+  // DQ>=65 vs 57.6% below it, n=13,066), so a flat cap across all of 55-100 still over-trusts the
+  // top of the range -- the curve should keep decaying, all the way back down to the same 0.4
+  // floor thin data gets, by DQ 100.
+  const at65 = calibrateProbability(65, 65);
+  const at85 = calibrateProbability(65, 85);
+  const at100 = calibrateProbability(65, 100);
+  assert.ok(at85 < at65, `expected less trust at DQ=85 than DQ=65, got ${at85} vs ${at65}`);
+  assert.ok(at100 < at85, `expected less trust at DQ=100 than DQ=85, got ${at100} vs ${at85}`);
+  assert.equal(at100, 56); // floor factor 0.4 -> 50 + (65-50)*0.4 = 56, same floor as thin data
 });
 
 test("shrinks moderately, not severely, at typical 'Acceptable' data quality (48-63)", () => {
