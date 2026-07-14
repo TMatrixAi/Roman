@@ -21,6 +21,17 @@ export interface ParsedMatchupLine {
 // and so multi-char separators aren't shadowed by a shorter one that happens to be a substring.
 const VS_SEPARATOR_PATTERN = /\s+(?:vs\.?|versus|v\.)\s+/i
 
+// Leading bullet/list markers from pasted rendered lists: "*", "-", "•", or a leading "1." / "1)"
+// numbering. These are stripped before splitting so the marker never leaks into `playerAName`
+// (e.g. "* Murphy Cassone vs. Tristan Schoolkate" must not parse playerAName as "* Murphy Cassone").
+// A leading "-" marker is only stripped when followed by whitespace, so a genuinely hyphenated
+// leading name segment is never mistaken for a marker.
+const LEADING_LIST_MARKER_PATTERN = /^(?:[*•]|-(?=\s)|\d+[.)])\s*/
+
+function stripLeadingListMarker(line: string): string {
+  return line.replace(LEADING_LIST_MARKER_PATTERN, "").trim()
+}
+
 // A bare " v " or " - " is ambiguous with hyphenated player names (e.g. "Bonzi-Aliassime" would
 // never appear, but "Auger-Aliassime vs Bonzi" must not be split on the surname's own hyphen), so
 // these looser separators are only tried once the primary VS_SEPARATOR_PATTERN fails to match.
@@ -73,7 +84,7 @@ export function parseMatchupLine(rawLine: string): ParsedMatchupLine {
     return { raw, playerAName: null, playerBName: null, tournamentName: null, parseError: "Empty line" }
   }
 
-  const { matchPart, tournamentName } = splitTournament(raw)
+  const { matchPart, tournamentName } = splitTournament(stripLeadingListMarker(raw))
   const players = splitPlayers(matchPart)
   if (!players) {
     return {
