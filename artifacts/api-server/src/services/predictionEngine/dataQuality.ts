@@ -99,10 +99,23 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
  * comparing dates against `Date.now()` instead of each row's real as-of date, so it silently
  * never fired during walk-forward scoring). Once fixed, Fatigue does fire, but a full walk-forward
  * re-run showed only 45.6-45.8% conditional accuracy (below a coin flip) while carrying ~16.5%
- * ensemble weight in the 48-59% calibration band -- i.e. once genuinely active, it is a confidently
- * wrong signal with real influence. Excluded here pending a separate investigation into Fatigue's
- * window/weighting logic; still fully computed and shown in `EngineBreakdown` for transparency.
- * Remove "fatigue" from this set only after that investigation lands a fix.
+ * ensemble weight in the 48-59% calibration band. A follow-up investigation (2026-07-14, see
+ * `docs/audit-fatigue-window-logic-investigation.md`) found the root cause: the module's 3/7/14-
+ * day recency-weighted MATCH-COUNT windows aren't measuring physical tiredness at all -- across
+ * 7,321 real decided matches, the MORE "fatigued" player actually won 54.9% of the time (not the
+ * less-fatigued one), and that inversion strengthens with a wider score gap (up to 61.7% at the
+ * widest gaps), which is the signature of a real confound, not noise. Cause: playing more matches
+ * in a short window overwhelmingly means recently WINNING and advancing (tournament survivorship),
+ * not accumulating fatigue -- confirmed by 61.5% directional agreement between "more fatigued" and
+ * the separately-computed, win-rate-based Recent Form module. A naive sign-flip was rejected as a
+ * fix: it would just re-emit Recent Form's own signal under Fatigue's name (the two already agree
+ * 61.5% of the time), double-counting one real effect as two independent ensemble votes instead of
+ * adding genuine incremental information. Excluded here PERMANENTLY pending a real redesign (e.g.
+ * a quick-turnaround/back-to-back-match indicator decorrelated from win/loss outcome) that
+ * measures tiredness instead of win momentum -- still fully computed and shown in
+ * `EngineBreakdown` for transparency. Only a future rework that clears its own independent
+ * walk-forward/ablation bar (the same bar Availability was held to above) should remove "fatigue"
+ * from this set.
  */
 export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue"]);
 
