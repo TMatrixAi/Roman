@@ -1,0 +1,27 @@
+Regression Safety Nets
+•	#15 — Adds automatic checks that catch prediction-engine bugs before they ever reach a real, visible prediction.
+•	#16 — Adds automatic checks that catch broken math in how the different models get blended together, before it ships.
+•	#60 — Adds a permanent guard so a display bug like the old “3930%” Elo win-probability glitch can never silently ship again.
+•	#61 — Makes sure the Monte Carlo simulator can’t overrule other models using information it isn’t actually allowed to see.
+Data/Coverage Gaps
+•	#14 — Adds more tournaments to the system so weather data shows up on more matches instead of being blank.
+•	#26 — Fixes matches saved with the wrong surface or tier label before an earlier fix went in.
+•	#27 — Expands travel-distance tracking to more than the current ~18 venues.
+•	#73 — Fixes wrong match start times stored in the historical match database.
+•	#74 — Teaches the system to recognize more tournament cities so match times stop showing “Time TBD.”
+•	#84 — Stops the tour filter from accidentally hiding matches just because their tournament level isn’t recognized.
+•	#31 — Shows real country flags for players who were only found through old match records, instead of a blank/wrong flag.
+Model Quality / Calibration
+•	#17 — Fixes old predictions made before a recent model update so they display the correct model-vote data instead of stale info.
+•	#24 — Automatically re-checks how accurate the simulator is as real match results come in.
+•	#25 — Shows the simulator’s accuracy/validation status right on the dashboard.
+•	#65 — Lets the “Elite” confidence tier prove itself using past backtest data, not just a handful of rare live trades.
+•	#66 — Fixes predictions that are overconfident right at the edge of qualifying for Elite tier.
+•	#71 — Re-checks whether a player is labeled “improving” or “declining” as more real results come in.
+•	#75 — Re-checks the confidence/Elite cutoffs now that the Data Quality score generally reads higher than before.
+•	#72 — Shows a track record of how often models disagree and how often upsets happen, right on the dashboard.
+UI/Display
+•	#30 — Shows whether a prediction was based on a live, current ranking or an older past-match record.
+•	#57 — Lets you see more than just the top 50 upcoming matches on busy days.
+•	#58 — Speeds up the upcoming-matches list during slow, off-season stretches.
+•	#59 — Makes every timestamp on screen show Eastern time, not just the match schedule.
