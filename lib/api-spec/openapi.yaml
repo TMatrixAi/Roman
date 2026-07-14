@@ -771,6 +771,55 @@ paths:
                 items:
                   $ref: "#/components/schemas/JobRun"
 
+  /evaluation/historical-backfill/run-cycle:
+    post:
+      operationId: runHistoricalBackfillCycle
+      tags: [evaluation]
+      summary: Advance the canonical historical_matches record from wherever it last left off, through yesterday
+      responses:
+        "200":
+          description: Cycle result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricalBackfillCycleResult"
+
+  /evaluation/historical-backfill/job-runs:
+    get:
+      operationId: listHistoricalBackfillJobRuns
+      tags: [evaluation]
+      summary: Recent invocations of the standalone historical-backfill scheduled job, for monitoring gaps or failures
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Most recent job runs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JobRun"
+
+  /evaluation/historical-backfill/freshness:
+    get:
+      operationId: getHistoricalDataFreshness
+      tags: [evaluation]
+      summary: How far the canonical historical_matches record currently reaches, so staleness is visible rather than silent
+      responses:
+        "200":
+          description: Freshness status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricalDataFreshness"
+
 components:
   schemas:
     HealthStatus:
@@ -2467,6 +2516,91 @@ components:
           type: array
           items:
             type: string
+
+    HistoricalBackfillCycleSummary:
+      type: object
+      required:
+        - dateStart
+        - dateStop
+        - cutoff
+        - cutoffMinutes
+        - fixturesFetched
+        - matchesInserted
+        - matchesRecomputed
+        - matchesSkippedDuplicate
+        - matchesSkippedNoTerminalResult
+        - featureRowsInserted
+        - byTour
+        - bySurface
+        - earliestImportedMatchDate
+        - latestImportedMatchDate
+        - durationMs
+      properties:
+        dateStart:
+          type: string
+        dateStop:
+          type: string
+        cutoff:
+          type: string
+        cutoffMinutes:
+          type: integer
+        fixturesFetched:
+          type: integer
+        matchesInserted:
+          type: integer
+        matchesRecomputed:
+          type: integer
+        matchesSkippedDuplicate:
+          type: integer
+        matchesSkippedNoTerminalResult:
+          type: integer
+        featureRowsInserted:
+          type: integer
+        byTour:
+          type: object
+          additionalProperties:
+            type: integer
+        bySurface:
+          type: object
+          additionalProperties:
+            type: integer
+        earliestImportedMatchDate:
+          type: string
+          nullable: true
+        latestImportedMatchDate:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+
+    HistoricalBackfillCycleResult:
+      type: object
+      required: [skipped]
+      properties:
+        skipped:
+          type: boolean
+        skippedReason:
+          type: string
+        summary:
+          allOf:
+            - $ref: "#/components/schemas/HistoricalBackfillCycleSummary"
+          nullable: true
+
+    HistoricalDataFreshness:
+      type: object
+      required: [latestCoveredDate, daysBehind, asOf]
+      properties:
+        latestCoveredDate:
+          type: string
+          nullable: true
+          description: Most recent scheduledStartAt date already stored in historical_matches (YYYY-MM-DD), or null if the table is empty.
+        daysBehind:
+          type: integer
+          nullable: true
+          description: Whole days between latestCoveredDate and today (UTC). Null when latestCoveredDate is null.
+        asOf:
+          type: string
+          format: date-time
 
     RunAblationAnalysisRequest:
       type: object

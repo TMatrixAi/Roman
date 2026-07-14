@@ -1454,3 +1454,64 @@ export const ListCalibrationRefitJobRunsResponseItem = zod.object({
 export const ListCalibrationRefitJobRunsResponse = zod.array(ListCalibrationRefitJobRunsResponseItem)
 
 
+/**
+ * @summary Advance the canonical historical_matches record from wherever it last left off, through yesterday
+ */
+export const RunHistoricalBackfillCycleResponse = zod.object({
+  "skipped": zod.boolean(),
+  "skippedReason": zod.string().optional(),
+  "summary": zod.object({
+  "dateStart": zod.string(),
+  "dateStop": zod.string(),
+  "cutoff": zod.string(),
+  "cutoffMinutes": zod.number(),
+  "fixturesFetched": zod.number(),
+  "matchesInserted": zod.number(),
+  "matchesRecomputed": zod.number(),
+  "matchesSkippedDuplicate": zod.number(),
+  "matchesSkippedNoTerminalResult": zod.number(),
+  "featureRowsInserted": zod.number(),
+  "byTour": zod.record(zod.string(), zod.number()),
+  "bySurface": zod.record(zod.string(), zod.number()),
+  "earliestImportedMatchDate": zod.string().nullable(),
+  "latestImportedMatchDate": zod.string().nullable(),
+  "durationMs": zod.number()
+}).nullish()
+})
+
+
+/**
+ * @summary Recent invocations of the standalone historical-backfill scheduled job, for monitoring gaps or failures
+ */
+export const listHistoricalBackfillJobRunsQueryLimitDefault = 20;
+export const listHistoricalBackfillJobRunsQueryLimitMax = 100;
+
+
+
+export const ListHistoricalBackfillJobRunsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listHistoricalBackfillJobRunsQueryLimitMax).default(listHistoricalBackfillJobRunsQueryLimitDefault)
+})
+
+export const ListHistoricalBackfillJobRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "jobName": zod.string(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date(),
+  "status": zod.enum(['success', 'failed']),
+  "attempts": zod.number(),
+  "summary": zod.unknown().nullish(),
+  "errorMessage": zod.string().nullish()
+})
+export const ListHistoricalBackfillJobRunsResponse = zod.array(ListHistoricalBackfillJobRunsResponseItem)
+
+
+/**
+ * @summary How far the canonical historical_matches record currently reaches, so staleness is visible rather than silent
+ */
+export const GetHistoricalDataFreshnessResponse = zod.object({
+  "latestCoveredDate": zod.string().nullable().describe('Most recent scheduledStartAt date already stored in historical_matches (YYYY-MM-DD), or null if the table is empty.'),
+  "daysBehind": zod.number().nullable().describe('Whole days between latestCoveredDate and today (UTC). Null when latestCoveredDate is null.'),
+  "asOf": zod.coerce.date()
+})
+
+

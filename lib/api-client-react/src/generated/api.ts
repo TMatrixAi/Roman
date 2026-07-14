@@ -33,11 +33,14 @@ import type {
   GetUpcomingFixturesParams,
   HeadToHeadRecord,
   HealthStatus,
+  HistoricalBackfillCycleResult,
+  HistoricalDataFreshness,
   JobRun,
   LedgerGradingSummary,
   LedgerPlayerSummary,
   ListCalibrationRefitJobRunsParams,
   ListEvaluationPredictionsParams,
+  ListHistoricalBackfillJobRunsParams,
   ListPaperTradingJobRunsParams,
   ListPredictionsParams,
   MatchRecord,
@@ -2682,6 +2685,238 @@ export function useListCalibrationRefitJobRuns<TData = Awaited<ReturnType<typeof
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCalibrationRefitJobRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRunHistoricalBackfillCycleUrl = () => {
+
+
+
+
+  return `/api/evaluation/historical-backfill/run-cycle`
+}
+
+/**
+ * @summary Advance the canonical historical_matches record from wherever it last left off, through yesterday
+ */
+export const runHistoricalBackfillCycle = async ( options?: RequestInit): Promise<HistoricalBackfillCycleResult> => {
+
+  return customFetch<HistoricalBackfillCycleResult>(getRunHistoricalBackfillCycleUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunHistoricalBackfillCycleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runHistoricalBackfillCycle>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runHistoricalBackfillCycle>>, TError,void, TContext> => {
+
+const mutationKey = ['runHistoricalBackfillCycle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runHistoricalBackfillCycle>>, void> = () => {
+
+
+          return  runHistoricalBackfillCycle(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunHistoricalBackfillCycleMutationResult = NonNullable<Awaited<ReturnType<typeof runHistoricalBackfillCycle>>>
+
+    export type RunHistoricalBackfillCycleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Advance the canonical historical_matches record from wherever it last left off, through yesterday
+ */
+export const useRunHistoricalBackfillCycle = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runHistoricalBackfillCycle>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runHistoricalBackfillCycle>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunHistoricalBackfillCycleMutationOptions(options));
+    }
+
+export const getListHistoricalBackfillJobRunsUrl = (params?: ListHistoricalBackfillJobRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/evaluation/historical-backfill/job-runs?${stringifiedParams}` : `/api/evaluation/historical-backfill/job-runs`
+}
+
+/**
+ * @summary Recent invocations of the standalone historical-backfill scheduled job, for monitoring gaps or failures
+ */
+export const listHistoricalBackfillJobRuns = async (params?: ListHistoricalBackfillJobRunsParams, options?: RequestInit): Promise<JobRun[]> => {
+
+  return customFetch<JobRun[]>(getListHistoricalBackfillJobRunsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListHistoricalBackfillJobRunsQueryKey = (params?: ListHistoricalBackfillJobRunsParams,) => {
+    return [
+    `/api/evaluation/historical-backfill/job-runs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListHistoricalBackfillJobRunsQueryOptions = <TData = Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>, TError = ErrorType<unknown>>(params?: ListHistoricalBackfillJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListHistoricalBackfillJobRunsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>> = ({ signal }) => listHistoricalBackfillJobRuns(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListHistoricalBackfillJobRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>>
+export type ListHistoricalBackfillJobRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Recent invocations of the standalone historical-backfill scheduled job, for monitoring gaps or failures
+ */
+
+export function useListHistoricalBackfillJobRuns<TData = Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>, TError = ErrorType<unknown>>(
+ params?: ListHistoricalBackfillJobRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHistoricalBackfillJobRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListHistoricalBackfillJobRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetHistoricalDataFreshnessUrl = () => {
+
+
+
+
+  return `/api/evaluation/historical-backfill/freshness`
+}
+
+/**
+ * @summary How far the canonical historical_matches record currently reaches, so staleness is visible rather than silent
+ */
+export const getHistoricalDataFreshness = async ( options?: RequestInit): Promise<HistoricalDataFreshness> => {
+
+  return customFetch<HistoricalDataFreshness>(getGetHistoricalDataFreshnessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHistoricalDataFreshnessQueryKey = () => {
+    return [
+    `/api/evaluation/historical-backfill/freshness`
+    ] as const;
+    }
+
+
+export const getGetHistoricalDataFreshnessQueryOptions = <TData = Awaited<ReturnType<typeof getHistoricalDataFreshness>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHistoricalDataFreshness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHistoricalDataFreshnessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistoricalDataFreshness>>> = ({ signal }) => getHistoricalDataFreshness({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHistoricalDataFreshness>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetHistoricalDataFreshnessQueryResult = NonNullable<Awaited<ReturnType<typeof getHistoricalDataFreshness>>>
+export type GetHistoricalDataFreshnessQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary How far the canonical historical_matches record currently reaches, so staleness is visible rather than silent
+ */
+
+export function useGetHistoricalDataFreshness<TData = Awaited<ReturnType<typeof getHistoricalDataFreshness>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHistoricalDataFreshness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetHistoricalDataFreshnessQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

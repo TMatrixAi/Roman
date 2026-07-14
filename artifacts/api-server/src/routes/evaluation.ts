@@ -42,6 +42,15 @@ import { validateAndStoreSimulator } from "../services/evaluation/simulatorValid
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
+import { runIncrementalHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
+import { getTennisDataProvider } from "../services/tennisData";
+import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
+import {
+  RunHistoricalBackfillCycleResponse,
+  ListHistoricalBackfillJobRunsQueryParams,
+  ListHistoricalBackfillJobRunsResponse,
+  GetHistoricalDataFreshnessResponse,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -292,6 +301,41 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
     .limit(parsed.data.limit);
 
   res.json(ListCalibrationRefitJobRunsResponse.parse(rows));
+});
+
+router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Promise<void> => {
+  const provider = getTennisDataProvider();
+  const result = await runIncrementalHistoricalBackfill(provider);
+  res.json(RunHistoricalBackfillCycleResponse.parse(result));
+});
+
+router.get("/evaluation/historical-backfill/job-runs", async (req, res): Promise<void> => {
+  const parsed = ListHistoricalBackfillJobRunsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, HISTORICAL_BACKFILL_JOB_NAME))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(parsed.data.limit);
+
+  res.json(ListHistoricalBackfillJobRunsResponse.parse(rows));
+});
+
+router.get("/evaluation/historical-backfill/freshness", async (_req, res): Promise<void> => {
+  const latestCoveredDate = await getLatestCoveredMatchDate();
+  const asOf = new Date();
+  let daysBehind: number | null = null;
+  if (latestCoveredDate) {
+    const todayUtc = asOf.toISOString().slice(0, 10);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    daysBehind = Math.round((Date.parse(`${todayUtc}T00:00:00.000Z`) - Date.parse(`${latestCoveredDate}T00:00:00.000Z`)) / msPerDay);
+  }
+  res.json(GetHistoricalDataFreshnessResponse.parse({ latestCoveredDate, daysBehind, asOf: asOf.toISOString() }));
 });
 
 router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {

@@ -19,6 +19,7 @@ async function buildAll() {
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/jobs/runPaperTradingJob.ts"),
       path.resolve(artifactDir, "src/jobs/runCalibrationRefitJob.ts"),
+      path.resolve(artifactDir, "src/jobs/runHistoricalBackfillJob.ts"),
     ],
     platform: "node",
     bundle: true,

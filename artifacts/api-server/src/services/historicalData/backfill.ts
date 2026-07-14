@@ -1,5 +1,5 @@
 import { db, historicalMatchesTable, matchFeatureSnapshotsTable, evaluationPredictionsTable } from "@workspace/db";
-import { and, asc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import type { Surface, TennisDataProvider, HistoricalFixture } from "../tennisData/types";
 import { combineDateTimeUtc } from "../tennisData/apiTennisProvider";
@@ -408,4 +408,82 @@ export async function runHistoricalBackfill(
   summary.durationMs = Date.now() - startedAt;
   logger.info({ summary }, "Historical backfill complete");
   return summary;
+}
+
+/** YYYY-MM-DD for `date`, in UTC. */
+function toDateStr(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * The most recent `scheduledStartAt` date already stored in `historical_matches`, as YYYY-MM-DD,
+ * or null if the table is empty (a fresh environment that has never had an initial backfill run).
+ * This is the single source of truth for "how far the canonical historical record reaches" --
+ * used both to pick up an incremental run where the last one left off, and to surface staleness
+ * to a person (Task #144) rather than requiring them to notice a stale record silently.
+ */
+export async function getLatestCoveredMatchDate(): Promise<string | null> {
+  const [row] = await db
+    .select({ scheduledStartAt: historicalMatchesTable.scheduledStartAt })
+    .from(historicalMatchesTable)
+    .orderBy(desc(historicalMatchesTable.scheduledStartAt))
+    .limit(1);
+  return row ? toDateStr(row.scheduledStartAt) : null;
+}
+
+export interface IncrementalBackfillResult {
+  /** True when there was nothing new to fetch (already caught up through yesterday). `summary` is null in that case. */
+  skipped: boolean;
+  /** Why the run was skipped, only set when `skipped` is true. */
+  skippedReason?: string;
+  summary: BackfillSummary | null;
+}
+
+/**
+ * Self-advancing wrapper around `runHistoricalBackfill` (Task #144): instead of a person having
+ * to remember to re-run the CLI with new `--start`/`--stop` dates, this picks up the day right
+ * after whatever `historical_matches` currently covers and extends forward through yesterday
+ * (UTC) -- "yesterday" rather than "today" because a match scheduled today may not have a
+ * terminal result yet, and the pipeline already skips/no-ops non-terminal fixtures anyway, so
+ * stopping at yesterday avoids repeatedly re-fetching today's still-in-progress date until it's
+ * actually finished. Chunking above the provider's known window limit is already handled inside
+ * `runHistoricalBackfill` (`chunkDays`), so an arbitrarily long gap (e.g. after this job hasn't
+ * run in a while) is still fetched safely in bounded windows.
+ *
+ * Requires `historical_matches` to already have at least one row -- this is an incremental
+ * *advance*, not a substitute for the initial one-off backfill (out of scope per Task #144: "no
+ * backfilling further into the past than what's already covered"). On a genuinely empty table,
+ * this throws rather than guessing an arbitrary start date.
+ */
+export async function runIncrementalHistoricalBackfill(
+  provider: TennisDataProvider,
+  options?: { cutoff?: CutoffOption; chunkDays?: number },
+): Promise<IncrementalBackfillResult> {
+  const latestCovered = await getLatestCoveredMatchDate();
+  if (!latestCovered) {
+    throw new Error(
+      "historical_matches is empty -- run the initial one-off backfill manually first " +
+        "(pnpm --filter @workspace/api-server run backfill -- --start YYYY-MM-DD --stop YYYY-MM-DD) " +
+        "before relying on the incremental job to advance it.",
+    );
+  }
+
+  const dateStart = addDays(latestCovered, 1);
+  const dateStop = toDateStr(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+  if (dateStart > dateStop) {
+    return {
+      skipped: true,
+      skippedReason: `Already caught up through ${latestCovered}; nothing new before ${dateStop} to fetch yet.`,
+      summary: null,
+    };
+  }
+
+  const summary = await runHistoricalBackfill(provider, {
+    dateStart,
+    dateStop,
+    cutoff: options?.cutoff,
+    chunkDays: options?.chunkDays,
+  });
+  return { skipped: false, summary };
 }

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runPaperTradingJob } from "./jobs/runPaperTradingJob";
+import { runHistoricalBackfillJob } from "./jobs/runHistoricalBackfillJob";
 
 const rawPort = process.env["PORT"];
 
@@ -83,4 +84,39 @@ app.listen(port, (err) => {
   // See GET /evaluation/calibration-refit/job-runs for the durable run history. That job is out
   // of scope for Task #121 (it does not block paper trading from recording/grading -- it only
   // controls whether calibration is refreshed) and is left as documented follow-up work.
+
+  // Task #144: `historical_matches` -- the canonical record backtesting, calibration, and
+  // canonical player-identity lookup all depend on -- used to only advance when someone manually
+  // re-ran the CLI backfill with new dates, and silently stopped doing that over a year ago.
+  // `runHistoricalBackfillJob` is self-advancing (always picks up from wherever the table already
+  // reaches) and has its own standalone entry (`src/jobs/runHistoricalBackfillJob.ts`, intended
+  // for a once-daily Replit Scheduled Deployment running `job:historical-backfill`, same cadence
+  // as calibration-refit). Mirroring the paper-trading job's in-process fallback (see its comment
+  // above for the full rationale): firing it here too means the record keeps advancing today even
+  // before that Scheduled Deployment is configured, at the cost of pausing across a server
+  // restart -- an acceptable tradeoff given the alternative is silently going stale again.
+  const HISTORICAL_BACKFILL_INTERVAL_MS = 24 * 60 * 60_000;
+  let historicalBackfillInFlight = false;
+
+  function triggerHistoricalBackfillCycle(): void {
+    if (historicalBackfillInFlight) {
+      logger.warn("Skipping historical-backfill cycle tick: previous cycle is still running");
+      return;
+    }
+    historicalBackfillInFlight = true;
+    runHistoricalBackfillJob()
+      .catch((err) => {
+        // runHistoricalBackfillJob already records failures to job_runs; this catch only guards
+        // against a truly unexpected throw escaping that, so it can never crash the server process.
+        logger.error({ err }, "Historical-backfill cycle threw unexpectedly outside its own error handling");
+      })
+      .finally(() => {
+        historicalBackfillInFlight = false;
+      });
+  }
+
+  setInterval(triggerHistoricalBackfillCycle, HISTORICAL_BACKFILL_INTERVAL_MS);
+  // Fire once shortly after startup too, offset from the paper-trading/calibration startup
+  // triggers so they don't all hit the provider at once.
+  setTimeout(triggerHistoricalBackfillCycle, 20_000);
 });

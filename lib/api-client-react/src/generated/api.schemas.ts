@@ -1218,6 +1218,42 @@ export interface PaperTradingCycleSummary {
   errors: string[];
 }
 
+export type HistoricalBackfillCycleSummaryByTour = {[key: string]: number};
+
+export type HistoricalBackfillCycleSummaryBySurface = {[key: string]: number};
+
+export interface HistoricalBackfillCycleSummary {
+  dateStart: string;
+  dateStop: string;
+  cutoff: string;
+  cutoffMinutes: number;
+  fixturesFetched: number;
+  matchesInserted: number;
+  matchesRecomputed: number;
+  matchesSkippedDuplicate: number;
+  matchesSkippedNoTerminalResult: number;
+  featureRowsInserted: number;
+  byTour: HistoricalBackfillCycleSummaryByTour;
+  bySurface: HistoricalBackfillCycleSummaryBySurface;
+  earliestImportedMatchDate: string | null;
+  latestImportedMatchDate: string | null;
+  durationMs: number;
+}
+
+export interface HistoricalBackfillCycleResult {
+  skipped: boolean;
+  skippedReason?: string;
+  summary?: HistoricalBackfillCycleSummary | null;
+}
+
+export interface HistoricalDataFreshness {
+  /** Most recent scheduledStartAt date already stored in historical_matches (YYYY-MM-DD), or null if the table is empty. */
+  latestCoveredDate: string | null;
+  /** Whole days between latestCoveredDate and today (UTC). Null when latestCoveredDate is null. */
+  daysBehind: number | null;
+  asOf: string;
+}
+
 export interface RunAblationAnalysisRequest {
   /** When set, scores a proportional stratified sample of roughly this many matches (by surface and calendar year) instead of the full historical corpus -- sized to complete in one sitting. Omit for a full-corpus run. */
   sampleSize?: number | null;
@@ -1336,6 +1372,14 @@ limit?: number;
 };
 
 export type ListCalibrationRefitJobRunsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListHistoricalBackfillJobRunsParams = {
 /**
  * @minimum 1
  * @maximum 100
