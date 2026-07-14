@@ -1,4 +1,5 @@
 import type { MatchRecord } from "../tennisData/types";
+import { realSetGameMargins } from "./setMargins";
 
 export interface FatigueResult {
   player1FatigueScore: number;
@@ -26,7 +27,10 @@ function matchesInWindow(matches: MatchRecord[], days: number, asOf: number): Ma
 }
 
 function estimatedGames(matches: MatchRecord[]): number {
-  return matches.reduce((sum, m) => sum + m.setGameMargins.reduce((s, set) => s + set.playerGames + set.opponentGames, 0), 0);
+  // Padded {0,0} trailing entries contribute 0 games either way, so this sum is unaffected by
+  // the padded-array quirk -- but route through the shared helper anyway for consistency and so
+  // this doesn't silently regress if the padding value ever changes.
+  return matches.reduce((sum, m) => sum + realSetGameMargins(m).reduce((s, set) => s + set.playerGames + set.opponentGames, 0), 0);
 }
 
 function fatigueScore(last3: number, last7: number, last14: number, games14: number, hasGameData: boolean): number {
@@ -59,8 +63,8 @@ export function computeFatigueModule(player1Matches: MatchRecord[], player2Match
 
   const p1Games14 = estimatedGames(p1Last14);
   const p2Games14 = estimatedGames(p2Last14);
-  const p1HasGameData = p1Last14.some((m) => m.setGameMargins.length > 0);
-  const p2HasGameData = p2Last14.some((m) => m.setGameMargins.length > 0);
+  const p1HasGameData = p1Last14.some((m) => realSetGameMargins(m).length > 0);
+  const p2HasGameData = p2Last14.some((m) => realSetGameMargins(m).length > 0);
 
   const warnings: string[] = [];
   if (!p1HasGameData || !p2HasGameData) {

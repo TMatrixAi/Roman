@@ -1,5 +1,6 @@
 import type { MatchRecord } from "../tennisData/types";
 import type { OpponentEloLookup } from "./opponentStrength";
+import { realSetGameMargins } from "./setMargins";
 
 /**
  * Point-level serve/return breakdown, computed directly from real provider match-level stats
@@ -157,17 +158,23 @@ function ratingsFromMargins(
   matches: MatchRecord[],
   opponentElo: OpponentEloLookup,
 ): { serve: number; ret: number; sample: number; coverage: number } {
-  const withMargins = matches.filter((m) => m.setGameMargins.length > 0);
+  // `setGameMargins` is a fixed-length (5-slot) array padded with {0,0} trailing entries for
+  // unplayed sets -- `.length` is always 5 regardless of real set count, so filtering (and later
+  // iterating) must go through `realSetGameMargins` instead, or matches with zero real set data
+  // get counted in, and every match's weighted-margin sum gets diluted by the padded zero sets.
+  const withMargins = matches
+    .map((m) => ({ match: m, realMargins: realSetGameMargins(m) }))
+    .filter((entry) => entry.realMargins.length > 0);
   if (withMargins.length === 0) return { serve: 50, ret: 50, sample: 0, coverage: 0 };
 
   let weightedMarginSum = 0;
   let weightTotal = 0;
   let coveredMatches = 0;
-  for (const m of withMargins) {
+  for (const { match: m, realMargins } of withMargins) {
     const elo = opponentElo.get(m.id);
     const strengthFactor = elo !== undefined ? Math.max(0.6, Math.min(1.6, elo / BASELINE_ELO)) : 1;
     if (elo !== undefined) coveredMatches += 1;
-    for (const set of m.setGameMargins) {
+    for (const set of realMargins) {
       weightedMarginSum += (set.playerGames - set.opponentGames) * strengthFactor;
       weightTotal += strengthFactor;
     }

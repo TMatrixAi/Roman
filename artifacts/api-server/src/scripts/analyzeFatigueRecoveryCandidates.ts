@@ -18,6 +18,7 @@ import { db, historicalMatchesTable, pool } from "@workspace/db";
 import { asc } from "drizzle-orm";
 import { buildMatchHistoryIndex, reconstructPlayerMatchHistory } from "../services/historicalData/matchRecordReconstruction";
 import { computeRecentFormModule } from "../services/predictionEngine/recentForm";
+import { realSetGameMargins } from "../services/predictionEngine/setMargins";
 import type { MatchRecord, Surface } from "../services/tennisData/types";
 
 const MIN_SEGMENT_N = 200;
@@ -42,7 +43,7 @@ function restDaysOf(matches: MatchRecord[], asOf: number): number | null {
 // unplayed sets -- `.length` alone is always 5 and cannot be used to count real sets played (see
 // the same fix/comment in `matchLoadRecovery.ts`, found via this script's own debugging).
 function realSetsPlayed(m: MatchRecord): number {
-  return m.setGameMargins.filter((s) => s.playerGames > 0 || s.opponentGames > 0).length;
+  return realSetGameMargins(m).length;
 }
 
 function wentDistance(matches: MatchRecord[]): boolean | null {

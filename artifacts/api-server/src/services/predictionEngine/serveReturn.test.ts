@@ -115,6 +115,55 @@ test("point-level breakdown is still computed (all null) on the margin-proxy fal
   assert.equal(result.player1PointLevel.sampleSize, 0);
 });
 
+test("real data quirk: padded {0,0} trailing setGameMargins entries must not dilute the weighted margin sum or inflate coverage/sample counts", () => {
+  // `historical_matches.game_margins_player1` is a fixed-length 5-slot array; unplayed trailing
+  // sets are padded with {playerGames:0, opponentGames:0} rather than trimmed. A real straight-
+  // sets (2-set) win stored this way must be scored identically to the same match with the
+  // padding stripped -- the padded zero slots must not count toward the weighted-margin
+  // denominator (which would silently shrink the real per-set margin toward 0).
+  const paddedMatch = baseMatch({
+    id: "padded1",
+    setGameMargins: [
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+    ],
+  });
+  const trimmedMatch = baseMatch({
+    id: "trimmed1",
+    setGameMargins: [
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 6, opponentGames: 4 },
+    ],
+  });
+  const matches3 = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `filler${i}` }));
+  const paddedResult = computeServeReturnModule([paddedMatch, ...matches3], [paddedMatch, ...matches3]);
+  const trimmedResult = computeServeReturnModule([trimmedMatch, ...matches3], [trimmedMatch, ...matches3]);
+  assert.equal(paddedResult.player1ServeRating, trimmedResult.player1ServeRating);
+  assert.equal(paddedResult.player1ReturnRating, trimmedResult.player1ReturnRating);
+});
+
+test("a match with only padded {0,0} entries (no real set data at all) is excluded from sample/coverage, not counted as a zero-margin match", () => {
+  const noRealDataMatch = baseMatch({
+    id: "nodata1",
+    setGameMargins: [
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+    ],
+  });
+  const realMatches = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `real${i}` }));
+  const withNoDataMatch = computeServeReturnModule([noRealDataMatch, ...realMatches], [noRealDataMatch, ...realMatches]);
+  const withoutNoDataMatch = computeServeReturnModule(realMatches, realMatches);
+  // The no-real-data match must be excluded entirely, so ratings match the 3-real-match-only run.
+  assert.equal(withNoDataMatch.player1ServeRating, withoutNoDataMatch.player1ServeRating);
+  assert.equal(withNoDataMatch.player1ReturnRating, withoutNoDataMatch.player1ReturnRating);
+});
+
 test("does not regress a proxy-only prediction: identical inputs and outputs to the pre-existing margin logic", () => {
   const matches: MatchRecord[] = Array.from({ length: 3 }, (_, i) => baseMatch({ id: `m${i}` }));
   const result = computeServeReturnModule(matches, matches, new Map(), new Map());

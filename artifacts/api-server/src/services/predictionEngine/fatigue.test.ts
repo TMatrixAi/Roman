@@ -85,3 +85,47 @@ test("computeFatigueModule: a match dated 2 days before a historical asOfDate fa
   assert.equal(result.player1MatchesLast14Days, 1);
   assert.ok(result.player1FatigueScore > 0);
 });
+
+test("real data quirk: padded {0,0} trailing setGameMargins entries must not count as real set data or inflate estimated games", () => {
+  const historicalAsOfDate = new Date("2026-06-15T12:00:00.000Z");
+  const paddedMatch: MatchRecord = {
+    ...match("2026-06-14"),
+    setGameMargins: [
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+    ],
+  };
+  const trimmedMatch: MatchRecord = {
+    ...match("2026-06-14"),
+    setGameMargins: [
+      { playerGames: 6, opponentGames: 4 },
+      { playerGames: 6, opponentGames: 4 },
+    ],
+  };
+  const paddedResult = computeFatigueModule([paddedMatch], [], historicalAsOfDate);
+  const trimmedResult = computeFatigueModule([trimmedMatch], [], historicalAsOfDate);
+  // Estimated games (6+4+6+4=20) must be identical whether or not the array is padded -- the
+  // padded zero slots must not be summed in as extra games played.
+  assert.equal(paddedResult.player1EstimatedGamesLast14Days, 20);
+  assert.equal(paddedResult.player1EstimatedGamesLast14Days, trimmedResult.player1EstimatedGamesLast14Days);
+  assert.equal(paddedResult.player1FatigueScore, trimmedResult.player1FatigueScore);
+
+  // A match with ONLY padded {0,0} entries (no real set data at all) must not be treated as
+  // "has game data" -- the has-game-data warning should still fire for that player.
+  const noRealDataMatch: MatchRecord = {
+    ...match("2026-06-14"),
+    setGameMargins: [
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+      { playerGames: 0, opponentGames: 0 },
+    ],
+  };
+  const noDataResult = computeFatigueModule([noRealDataMatch], [trimmedMatch], historicalAsOfDate);
+  assert.equal(noDataResult.player1EstimatedGamesLast14Days, 0);
+  assert.ok(noDataResult.warnings.some((w) => /Set-score data is missing/.test(w)));
+});

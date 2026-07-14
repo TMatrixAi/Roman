@@ -1,4 +1,5 @@
 import type { MatchRecord } from "../tennisData/types";
+import { realSetGameMargins } from "./setMargins";
 
 /**
  * EXPERIMENTAL -- not wired into the live ensemble, `EngineOutput`, or `EngineBreakdown`.
@@ -51,18 +52,8 @@ const NOTE_NO_PRIOR_MATCH = "No prior match on record for at least one player --
 /** The validated risk contribution when the player's most recent match went the distance -- the ONLY input to `player1RecoveryRiskScore`/`player2RecoveryRiskScore`. */
 const WENT_DISTANCE_RISK = 20;
 
-/**
- * `MatchRecord.setGameMargins` is stored/reconstructed from a fixed-length (5-slot) array in the
- * historical store -- unplayed trailing sets are padded with `{playerGames: 0, opponentGames: 0}`
- * rather than the array being trimmed to the real set count. `.length` alone is therefore always
- * 5 and cannot be used to count real sets played; a real set has at least one game won by someone.
- */
-function realSetsPlayed(match: MatchRecord): number {
-  return match.setGameMargins.filter((s) => s.playerGames > 0 || s.opponentGames > 0).length;
-}
-
 function wentTheDistance(match: MatchRecord): boolean | null {
-  const sets = realSetsPlayed(match);
+  const sets = realSetGameMargins(match).length;
   if (sets === 0) return null; // no set-score data for this match
   if (match.matchFormat === "BestOf5") return sets >= 4;
   if (match.matchFormat === "BestOf3") return sets >= 3;
