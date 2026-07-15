@@ -1,0 +1,402 @@
+Build a continuous outcome-learning and model-recalibration system
+
+Review the current prediction, backtesting, paper-trading, grading, calibration, and model-weighting systems before making changes.
+
+Do not repeat or replace work that is already fully implemented and verified. Briefly document any existing functionality that already satisfies part of this task, then continue with only the missing or incomplete portions.
+
+Primary goal
+
+Create a reliable system that:
+
+1. Fixes and verifies the confirmed tie-break cascade bug.
+2. Continues collecting and grading real predictions.
+3. Separates correct and incorrect predictions for analysis.
+4. Identifies the features and conditions shared by wins and losses.
+5. Uses those real outcomes to recommend and, where safely validated, update:
+    * Model weights
+    * Module influence
+    * Decision thresholds
+    * Confidence thresholds
+    * Recommendation thresholds
+    * Elite Prediction thresholds
+    * Upset-risk thresholds
+    * Model-agreement thresholds
+6. Prevents overfitting, data leakage, and silent performance regressions.
+
+This should be an evidence-based learning system, not a process that simply raises the weights of modules that happened to win recently.
+
+⸻
+
+Part 1 — Complete and verify the tie-break cascade fix
+
+The confirmed bug is that when the raw ensemble probability is within three percentage points of 50/50, the seven-step tie-break cascade forces a directional lean.
+
+The audit found that the cascade does not provide reliable accuracy in this close-match regime and can produce misleading explanations such as “Serve & Return gives a modest lean.”
+
+Complete the current cascade task and verify the result.
+
+Required behavior
+
+For predictions with a raw probability between 47% and 53%:
+
+* Do not force a winner using the old cascade unless a rebuilt rule has demonstrated statistically reliable out-of-sample performance specifically within this close-match range.
+* Prefer an honest classification such as:
+    * “Too close to call”
+    * “No reliable directional edge”
+    * “Near-even prediction”
+* The app may still display the slightly higher probability side when a predicted winner is required, but it must clearly state that the edge is not statistically meaningful.
+* Do not display a named tie-break justification unless that rule has been validated in this exact close-match regime.
+* Do not change the ensemble behavior for non-close matches.
+
+Verification required
+
+Report:
+
+* The root cause.
+* The exact code and logic changed.
+* The previous cascade-decided accuracy.
+* The new behavior and resulting accuracy on the same validation cohort.
+* The number of affected predictions.
+* Confirmation that non-close predictions remain unchanged.
+* Automated regression-test results.
+
+Add a regression guard asserting that the close-match decision rule cannot be promoted or used as a confident directional signal when its out-of-sample performance is statistically worse than an appropriate baseline.
+
+⸻
+
+Part 2 — Continue collecting immutable graded predictions
+
+Ensure every real pre-match prediction is stored before the match begins with:
+
+* Stable prediction ID
+* Stable player IDs
+* Player names
+* Tournament
+* Tour level
+* Surface
+* Match format
+* Prediction timestamp
+* Scheduled match time
+* Predicted winner
+* Raw probability
+* Calibrated probability
+* Final displayed probability
+* Individual module probabilities
+* Individual module directions
+* Module weights used
+* Model-agreement rating
+* Upset-risk rating
+* Confidence rating
+* Data-quality rating
+* Recommendation
+* Elite Prediction status
+* Strong Recommendation status
+* Relevant feature values
+* Model/version identifier
+* Configuration/version identifier
+* Any override or fallback used
+
+Once saved, the original prediction must be immutable.
+
+Do not overwrite historical prediction values after the match. Any later recalculation must be stored separately with a timestamp and clearly labeled as a recalculation.
+
+Automatically grade predictions after an official result is available.
+
+Store:
+
+* Actual winner
+* Correct or incorrect
+* Retirement, walkover, cancellation, or incomplete status
+* Grade timestamp
+* Result source
+* Whether the prediction is eligible for accuracy evaluation
+
+Do not count cancelled matches, pre-match walkovers, missing outcomes, or otherwise invalid records as wins or losses.
+
+Retirements must be tracked separately so performance can be measured both including and excluding retirement-affected matches.
+
+⸻
+
+Part 3 — Analyze correct versus incorrect predictions
+
+Create a recurring analysis job that compares correctly and incorrectly graded predictions.
+
+Do not merely list individual losses. Search for repeatable, statistically supported patterns.
+
+Analyze performance by:
+
+* ATP, WTA, Challenger, and ITF
+* Tournament level
+* Surface
+* Best-of-three versus best-of-five
+* Favorite and underdog status, without using market odds as a model input
+* Probability band
+* Confidence tier
+* Data-quality tier
+* Upset-risk tier
+* Model-agreement tier
+* Strong Recommendation status
+* Elite Prediction status
+* Close-match versus non-close prediction
+* Player sample depth
+* Surface sample depth
+* Ranking gap
+* Elo gap
+* Serve-and-return gap
+* Recent-form gap
+* Availability and fatigue conditions
+* Fallback-data usage
+* Missing-data patterns
+* Individual model agreement and disagreement combinations
+
+For every major segment, calculate at minimum:
+
+* Number of graded predictions
+* Accuracy
+* Balanced accuracy where appropriate
+* Log loss
+* Brier score
+* Expected calibration error
+* Average predicted probability
+* Actual win rate
+* Calibration gap
+* Confidence interval
+* Statistical significance
+* Performance versus the current production baseline
+
+Identify patterns such as:
+
+* Conditions where Surface Elo helps or hurts.
+* Conditions where Serve & Return helps or hurts.
+* Conditions where Recent Form helps or hurts.
+* Whether module value changes by surface or tournament level.
+* Whether the module is useful only when its edge exceeds a certain size.
+* Whether agreement between specific modules is genuinely predictive.
+* Whether missing or fallback data creates inflated probabilities.
+* Whether losses are concentrated in particular probability, confidence, or data-quality bands.
+* Whether the same underlying evidence is being counted multiple times through correlated modules.
+
+Do not conclude that a pattern is useful based on a very small sample.
+
+Set and document minimum sample requirements.
+
+⸻
+
+Part 4 — Learn model weights from historical outcomes
+
+Add an explicit model-training and weight-optimization process.
+
+A normal backtest must remain evaluation-only and must not silently change production weights.
+
+Create separate modes:
+
+Evaluation mode
+
+* Runs the frozen current model.
+* Does not modify weights or thresholds.
+* Reports performance.
+
+Training and optimization mode
+
+* Uses historical graded predictions to estimate improved module weights and thresholds.
+* Produces a candidate configuration.
+* Does not immediately deploy the candidate to production.
+
+The optimization process must:
+
+* Use time-based walk-forward validation.
+* Train only on matches that occurred before the validation period.
+* Never allow future match outcomes or post-match data into prediction features.
+* Keep a final untouched holdout period.
+* Compare candidate settings against the current production settings on the exact same matches.
+* Penalize unnecessary complexity and unstable weights.
+* Account for correlations between Surface Elo, Recent Form, Serve & Return, and other modules.
+* Prevent multiple modules from receiving excessive combined weight when they are based on overlapping match history.
+* Test global weights and segmented weights, but only use segmented weights where sample size and out-of-sample improvement justify them.
+* Avoid optimizing raw accuracy alone.
+
+Optimize for a combined objective that prioritizes:
+
+* Log loss
+* Brier score
+* Calibration
+* Accuracy
+* Stability across time periods
+* Stability across surfaces and tour levels
+
+Do not reward extreme probabilities merely because the predicted winner was correct.
+
+⸻
+
+Part 5 — Recalibrate thresholds using real outcomes
+
+Evaluate and recommend changes to:
+
+* Strong Recommendation thresholds
+* Elite Prediction thresholds
+* Confidence bands
+* Upset-risk bands
+* Model-agreement and disagreement bands
+* Data-quality minimums
+* Close-match thresholds
+* Minimum probability edge required for a directional recommendation
+
+For every proposed threshold change, report:
+
+* Current threshold
+* Proposed threshold
+* Sample size
+* Current performance
+* Candidate performance
+* Calibration impact
+* Number and percentage of predictions affected
+* Whether improvement persists out of sample
+* Whether the difference is statistically meaningful
+
+Do not make thresholds more permissive just to generate more Strong or Elite predictions.
+
+A higher tier should only exist when it demonstrates better historical reliability than the tier below it.
+
+⸻
+
+Part 6 — Safe promotion process
+
+Do not automatically deploy a newly optimized configuration solely because it performs better on its training data.
+
+Create a challenger-versus-production process:
+
+1. Freeze the current production configuration.
+2. Generate a candidate configuration.
+3. Evaluate both using the same walk-forward and holdout cohorts.
+4. Require the candidate to improve or remain non-inferior on log loss, calibration, and accuracy.
+5. Require adequate sample size.
+6. Check that improvement is not isolated to one short time period or one tournament group.
+7. Run the candidate in shadow mode on new live predictions.
+8. Grade both production and challenger predictions.
+9. Promote only after documented acceptance criteria are met.
+
+Any deployment must record:
+
+* Old configuration
+* New configuration
+* Reason for the change
+* Validation period
+* Metrics before and after
+* Approval or automatic promotion rule
+* Deployment timestamp
+* Rollback configuration
+
+Add an immediate rollback option.
+
+⸻
+
+Part 7 — Regular reporting
+
+Create an automated report that runs after a meaningful number of newly graded predictions has accumulated.
+
+Use both:
+
+* A scheduled interval, such as weekly.
+* A minimum-new-sample requirement, so the report does not overreact to a handful of matches.
+
+The report should show:
+
+Overall performance
+
+* Total eligible graded predictions
+* Accuracy
+* Log loss
+* Brier score
+* Calibration
+* Performance trend over time
+
+Correct-versus-incorrect analysis
+
+* Most common traits among correct predictions
+* Most common traits among incorrect predictions
+* Features associated with improved performance
+* Features associated with reduced performance
+* Important interactions between modules
+
+Module performance
+
+For every module:
+
+* Standalone directional accuracy
+* Incremental value when added to the ensemble
+* Performance when it agrees with the final pick
+* Performance when it disagrees with the final pick
+* Performance by tour, surface, probability band, and sample depth
+* Calibration
+* Recommended weight change, if supported
+
+Threshold performance
+
+* Strong Recommendation
+* Elite Prediction
+* Confidence tiers
+* Upset-risk tiers
+* Agreement tiers
+* Data-quality tiers
+
+Change recommendations
+
+Classify every recommendation as:
+
+* Deploy
+* Continue shadow testing
+* Needs more data
+* Reject
+* Investigate possible bug
+
+Every recommendation must include supporting sample size and out-of-sample results.
+
+⸻
+
+Part 8 — Regression and integrity tests
+
+Add automated tests covering:
+
+* Historical predictions cannot be altered after grading.
+* Future data cannot enter past predictions.
+* Evaluation-only backtests cannot change production weights.
+* Training and validation periods do not overlap improperly.
+* Holdout data remains untouched during optimization.
+* Invalid outcomes are excluded from accuracy metrics.
+* Retirements are reported separately.
+* Player 1 and Player 2 ordering cannot reverse prediction meaning.
+* Probabilities remain attached to stable player IDs.
+* Weight totals are valid.
+* No module can silently receive an unintended weight.
+* Production settings cannot change without a versioned configuration record.
+* The close-match cascade cannot silently reappear.
+* Reports use the exact same eligible cohort when comparing configurations.
+* Candidate improvements must be reproduced out of sample.
+
+⸻
+
+Final deliverable
+
+After implementation, provide a clear completion report containing:
+
+1. What already existed before this task.
+2. What was newly implemented.
+3. What remains incomplete.
+4. Confirmation and measured results of the cascade fix.
+5. Current number of valid graded predictions.
+6. Exact training, validation, and holdout date ranges.
+7. Current production weights.
+8. Newly proposed candidate weights.
+9. Before-and-after metrics on identical cohorts.
+10. Correct-versus-incorrect patterns discovered.
+11. Threshold changes recommended.
+12. Which changes were deployed, shadow-tested, rejected, or left awaiting more data.
+13. All tests added and their results.
+14. Files and database tables changed.
+15. Any data leakage, overfitting, sample-size, or data-quality concerns found.
+
+Do not claim that prediction accuracy improved unless the improvement is demonstrated on genuinely unseen, chronologically later data.
+
+Do not use market odds or betting-market sentiment as prediction inputs.
+
+The objective is not to make historical backtests look better. The objective is to create a system that learns safely from real outcomes and improves future out-of-sample predictions.

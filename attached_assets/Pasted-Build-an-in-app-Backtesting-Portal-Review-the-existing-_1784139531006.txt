@@ -1,0 +1,908 @@
+Build an in-app Backtesting Portal
+
+Review the existing tennis prediction app, Shadow Paper Trading portal, prediction engine, graded-prediction ledger, validation tools, accuracy dashboard, and mobile layout before making changes.
+
+Do not rebuild functionality that already exists. Reuse the existing prediction engine, stored historical datasets, grading logic, model-version system, and visual design wherever possible.
+
+Create a dedicated Backtesting Portal inside the app that works similarly to the existing Shadow Paper Trading system, but is specifically designed for running, reviewing, comparing, and saving historical backtests.
+
+The page must be fully usable on a phone screen.
+
+⸻
+
+Primary goal
+
+Add an in-app page where I can:
+
+* Run historical backtests.
+* Select the date range and match groups being tested.
+* Choose evaluation-only or training/optimization mode.
+* Track active and completed backtest runs.
+* Review overall and segmented results.
+* Compare the current production model against candidate configurations.
+* Inspect correct and incorrect predictions.
+* See module-level performance.
+* Save, export, rerun, or delete backtests.
+* View progress without leaving the app.
+* Confirm that a backtest does not silently change the live production model.
+
+The Backtesting Portal must be separate from the Shadow Paper Trading page, but should follow a similar workflow and visual structure.
+
+⸻
+
+1. Navigation and page access
+
+Add a new navigation button labeled:
+
+BACKTESTING PORTAL
+
+Place it near the existing buttons for:
+
+* Shadow Paper Trading
+* View Ledger
+* Model Analysis
+* Accuracy Dashboard
+
+Do not remove or rename existing pages.
+
+The Backtesting Portal must include a clear Back button at the top.
+
+The page should preserve the user’s position and filters when navigating into an individual backtest and returning to the portal.
+
+⸻
+
+2. Mobile-first page design
+
+This page must fit correctly on a mobile phone without horizontal scrolling.
+
+Design for a narrow phone viewport first.
+
+Requirements:
+
+* Use a single-column layout on mobile.
+* No table should extend past the screen width.
+* Convert wide tables into stacked cards on mobile.
+* Keep buttons large enough to tap.
+* Use compact spacing without making the page crowded.
+* Keep text readable without requiring zoom.
+* Wrap long tournament names and configuration names.
+* Use dropdowns or expandable sections for advanced options.
+* Keep the main action buttons visible near the top.
+* Use sticky controls only if they do not block content.
+* Do not place multiple full-width action buttons side by side when they become too narrow.
+* Avoid fixed-width containers.
+* Use responsive widths based on the available viewport.
+* Test at common phone widths, including approximately 320, 375, 390, and 430 pixels.
+* Ensure modals, charts, selectors, cards, and progress panels remain inside the viewport.
+* Do not allow charts to overflow the page.
+* Charts must resize automatically to the phone width.
+* Tooltips and legends must remain readable on mobile.
+
+The mobile design should resemble the Shadow Paper Trading page, but it must be optimized for backtest controls and results.
+
+⸻
+
+3. Backtesting Portal home screen
+
+At the top of the portal, display a summary card containing:
+
+* Current production model version
+* Current configuration version
+* Total historical matches available
+* Total eligible graded matches
+* Date range covered by the historical dataset
+* Most recent completed backtest
+* Most recent model-training run
+* Whether a candidate model is currently in shadow testing
+* Any active backtest run
+
+Add primary actions:
+
+* RUN NEW BACKTEST
+* VIEW COMPLETED RUNS
+* COMPARE MODELS
+* VIEW SAVED CONFIGURATIONS
+
+If a backtest is active, show:
+
+* Run name
+* Mode
+* Start time
+* Current stage
+* Matches processed
+* Total matches
+* Percentage complete
+* Estimated remaining workload, if this can be calculated honestly
+* Pause or cancel controls, if the current job system supports them
+* Refresh Status button
+
+Do not display a fake progress percentage. Progress must come from actual processed records or actual job stages.
+
+⸻
+
+4. Run New Backtest form
+
+Create a mobile-friendly form for starting a new backtest.
+
+Basic settings
+
+Include:
+
+* Backtest name
+* Description or notes
+* Start date
+* End date
+* Model version
+* Configuration version
+* Dataset version
+* Evaluation mode
+* Random seed, where applicable
+
+Available modes:
+
+Evaluation Only
+
+* Runs the selected frozen model and configuration.
+* Does not modify weights.
+* Does not modify thresholds.
+* Does not deploy anything.
+* Reports historical performance only.
+
+Training and Optimization
+
+* Uses the selected training period to generate candidate weights or thresholds.
+* Must use separate validation and holdout periods.
+* Creates a candidate configuration.
+* Does not automatically replace the production model.
+
+Make the difference between these modes very clear in the interface.
+
+Display a warning before starting Training and Optimization mode:
+
+This process may generate a candidate configuration, but it will not automatically change the live production model.
+
+⸻
+
+5. Dataset and match filters
+
+Allow the user to filter the backtest by:
+
+* ATP
+* WTA
+* Challenger
+* ITF
+* Tournament level
+* Surface
+* Best-of-three
+* Best-of-five
+* Indoor or outdoor, if available
+* Tournament
+* Country
+* Date range
+* Ranking range
+* Data-quality range
+* Surface sample-depth range
+* Player sample-depth range
+* Completed matches only
+* Exclude retirements
+* Include retirements as a separate category
+* Exclude walkovers
+* Exclude cancelled matches
+* Exclude records with missing outcomes
+* Exclude records with critical missing features
+* Prediction probability band
+* Confidence tier
+* Upset-risk tier
+* Model-agreement tier
+* Strong Recommendation status
+* Elite Prediction status
+* Close-match predictions
+* Non-close predictions
+* Fallback-data usage
+* Model version
+* Configuration version
+
+Provide:
+
+* Select All
+* Clear Filters
+* Restore Recommended Defaults
+
+Place advanced filters inside expandable mobile sections so the page does not become excessively long.
+
+Before starting the run, display:
+
+* Number of matching historical rows
+* Number of eligible rows
+* Number excluded
+* Exclusion reasons
+* Earliest and latest eligible match date
+
+⸻
+
+6. Time-based validation setup
+
+For Training and Optimization mode, add a required validation setup.
+
+Support:
+
+* Walk-forward validation
+* Expanding training window
+* Rolling training window, if supported
+* Fixed validation window
+* Final untouched holdout period
+
+Display the exact date ranges for:
+
+* Training
+* Validation
+* Holdout
+
+Do not allow overlapping date ranges that create leakage.
+
+Add automatic validation checks that block the run when:
+
+* Training contains matches after validation begins.
+* Holdout records were used during optimization.
+* Future match information is present in earlier predictions.
+* Prediction timestamps occur after match start.
+* The same prediction appears in multiple folds improperly.
+* The selected date range has too few eligible matches.
+
+Show a clear error message explaining the problem.
+
+⸻
+
+7. Backtest configuration options
+
+Allow selection of which systems are being evaluated:
+
+* Full production ensemble
+* Surface Elo
+* Serve & Return
+* Recent Form
+* Fatigue
+* Availability
+* Head-to-Head
+* General Ensemble
+* Segment Specialist
+* Monte Carlo
+* Recommendation engine
+* Upset-risk logic
+* Model-agreement logic
+* Strong Recommendation logic
+* Elite Prediction logic
+* Tie-break or close-match logic
+
+Allow the user to choose:
+
+* Current production weights
+* A saved historical configuration
+* A candidate configuration
+* Custom comparison configuration
+
+Any custom weight editor must:
+
+* Show every module.
+* Show current weight.
+* Prevent invalid values.
+* Show the total weight.
+* Warn if weights do not sum correctly.
+* Require a configuration name before saving.
+* Never silently modify production weights.
+
+Advanced configuration controls should be collapsed by default on mobile.
+
+⸻
+
+8. Backtest execution and job tracking
+
+Backtests must run through the app’s job or task system rather than requiring the page to remain open.
+
+Leaving the Backtesting Portal must not cancel the run unless the user explicitly cancels it.
+
+Store each run with:
+
+* Stable backtest ID
+* Name
+* Created time
+* Started time
+* Completed time
+* Status
+* Mode
+* User-selected filters
+* Dataset version
+* Model version
+* Configuration version
+* Training dates
+* Validation dates
+* Holdout dates
+* Total rows
+* Eligible rows
+* Excluded rows
+* Processed rows
+* Errors
+* Final metrics
+* Generated candidate configuration, if any
+
+Supported statuses:
+
+* Queued
+* Validating
+* Preparing dataset
+* Running
+* Training
+* Validating candidate
+* Holdout testing
+* Generating report
+* Completed
+* Completed with warnings
+* Failed
+* Cancelled
+
+If a run fails, preserve the failure reason and completed progress instead of deleting the run.
+
+Add:
+
+* Retry failed run
+* Duplicate settings
+* Rerun
+* Cancel active run
+* Delete completed run
+
+Require confirmation before deleting a run.
+
+⸻
+
+9. Completed Backtests list
+
+Create a mobile-friendly completed-runs page.
+
+Each run should appear as a stacked card showing:
+
+* Backtest name
+* Status
+* Mode
+* Date range
+* Tour and surface filters
+* Model version
+* Configuration version
+* Number of eligible predictions
+* Accuracy
+* Log loss
+* Brier score
+* Calibration result
+* Completion date
+
+Card actions:
+
+* View Results
+* Compare
+* Rerun
+* Duplicate Settings
+* Export
+* Delete
+
+Add filters for:
+
+* Completed
+* Failed
+* Cancelled
+* Evaluation-only
+* Training runs
+* Production configuration
+* Candidate configuration
+* Date created
+
+Add sorting by:
+
+* Most recent
+* Oldest
+* Highest accuracy
+* Lowest log loss
+* Lowest Brier score
+* Largest sample size
+
+Do not use a desktop-style wide table on mobile.
+
+⸻
+
+10. Backtest Results page
+
+Each completed backtest must have a detailed results page.
+
+At the top, show:
+
+* Backtest name
+* Mode
+* Status
+* Dataset version
+* Model version
+* Configuration version
+* Date range
+* Filters used
+* Eligible sample size
+* Excluded sample size
+* Run duration
+* Warnings
+* Whether the run used unseen holdout data
+
+Add a clear label:
+
+* Evaluation only — no production changes made
+* or
+* Candidate configuration generated — not deployed
+
+⸻
+
+11. Main performance summary
+
+Display the following metrics:
+
+* Total eligible predictions
+* Correct predictions
+* Incorrect predictions
+* Accuracy
+* Balanced accuracy, where appropriate
+* Log loss
+* Brier score
+* Expected calibration error
+* Average predicted probability
+* Actual win rate
+* Calibration gap
+* Coverage
+* Confidence interval
+* Retirement-adjusted accuracy
+* Close-match accuracy
+* Non-close-match accuracy
+
+For training runs, separately show:
+
+* Training performance
+* Validation performance
+* Holdout performance
+
+Never combine these into one result without labeling them.
+
+Highlight holdout performance as the most important final measurement.
+
+⸻
+
+12. Correct versus incorrect analysis
+
+Add a dedicated section labeled:
+
+CORRECT VS. INCORRECT PREDICTIONS
+
+Allow switching between:
+
+* Correct predictions
+* Incorrect predictions
+* Side-by-side comparison
+
+Analyze differences in:
+
+* Surface Elo edge
+* Serve & Return edge
+* Recent Form edge
+* Ranking gap
+* Elo gap
+* Surface sample depth
+* Player sample depth
+* Data quality
+* Model agreement
+* Upset risk
+* Confidence
+* Tournament level
+* Surface
+* Fallback usage
+* Missing features
+* Module disagreement combinations
+* Probability bands
+* Recommendation tier
+* Strong Recommendation status
+* Elite Prediction status
+
+Show:
+
+* Pattern
+* Correct group value
+* Incorrect group value
+* Difference
+* Sample size
+* Statistical significance
+* Interpretation
+
+Do not present correlations as proven causes.
+
+Flag results as:
+
+* Strong evidence
+* Moderate evidence
+* Weak evidence
+* Insufficient sample
+
+⸻
+
+13. Individual prediction explorer
+
+Add a searchable prediction list for every eligible backtest row.
+
+Each mobile card should show:
+
+* Match
+* Tournament
+* Surface
+* Match date
+* Predicted winner
+* Actual winner
+* Correct or incorrect
+* Raw probability
+* Calibrated probability
+* Confidence
+* Data quality
+* Upset risk
+* Model agreement
+* Recommendation
+* Elite status
+* Strong Recommendation status
+
+Add filters:
+
+* Correct
+* Incorrect
+* Retirements
+* Probability band
+* Surface
+* Tour
+* Tournament level
+* Confidence
+* Upset risk
+* Agreement
+* Elite
+* Strong Recommendation
+* Close match
+* Fallback used
+
+When a card is opened, show:
+
+* Every module probability
+* Every module direction
+* Weights used
+* Feature values
+* Monte Carlo result
+* Stored explanation
+* Override or fallback used
+* Model and configuration version
+* Prediction timestamp
+* Actual outcome
+* Grading status
+
+Keep probabilities attached to stable player IDs, not Player 1 or Player 2 display position.
+
+⸻
+
+14. Module performance section
+
+Create a card for every model module.
+
+For each module, show:
+
+* Weight used
+* Standalone accuracy
+* Directional accuracy
+* Log loss
+* Brier score
+* Calibration
+* Number of eligible predictions
+* Accuracy when agreeing with the ensemble
+* Accuracy when disagreeing with the ensemble
+* Incremental value when added to the ensemble
+* Performance by surface
+* Performance by tour level
+* Performance by probability band
+* Performance by data-quality tier
+* Performance by sample depth
+
+Include a clear status:
+
+* Helpful
+* Neutral
+* Harmful
+* Uncertain
+* Needs more data
+
+Do not label a module Helpful based only on training-set accuracy.
+
+⸻
+
+15. Threshold analysis section
+
+Evaluate:
+
+* Confidence thresholds
+* Strong Recommendation thresholds
+* Elite Prediction thresholds
+* Upset-risk thresholds
+* Agreement and disagreement thresholds
+* Data-quality thresholds
+* Close-match threshold
+* Minimum directional-edge threshold
+
+For each threshold, show:
+
+* Current value
+* Tested candidate value
+* Predictions affected
+* Current accuracy
+* Candidate accuracy
+* Current log loss
+* Candidate log loss
+* Calibration change
+* Sample size
+* Out-of-sample result
+* Recommendation
+
+Add a small explanation stating that creating more Strong or Elite labels is not automatically an improvement.
+
+⸻
+
+16. Calibration charts and probability bands
+
+Add mobile-responsive charts for:
+
+* Predicted probability versus actual win rate
+* Accuracy by probability band
+* Log loss by probability band
+* Brier score by probability band
+* Prediction volume by probability band
+* Calibration over time
+
+Use expandable chart cards on mobile.
+
+Charts must:
+
+* Resize to screen width.
+* Avoid tiny labels.
+* Allow a simplified mobile view.
+* Display exact values when tapped.
+* Not require horizontal scrolling.
+
+Also include a text or card-based version of the important values so results are still understandable if the chart is difficult to read on a small screen.
+
+⸻
+
+17. Segment analysis
+
+Allow results to be grouped by:
+
+* ATP
+* WTA
+* Challenger
+* ITF
+* Surface
+* Tournament level
+* Best-of-three or best-of-five
+* Probability band
+* Confidence tier
+* Data-quality tier
+* Upset-risk tier
+* Agreement tier
+* Strong Recommendation
+* Elite Prediction
+* Close-match status
+* Fallback usage
+
+For each segment, show:
+
+* Sample size
+* Accuracy
+* Log loss
+* Brier score
+* Calibration
+* Average predicted probability
+* Actual win rate
+* Confidence interval
+
+Clearly mark segments with insufficient samples.
+
+⸻
+
+18. Production versus candidate comparison
+
+Create a dedicated comparison view.
+
+Allow comparison of:
+
+* Current production model versus candidate model
+* Two saved configurations
+* Two completed backtests
+* Current model versus a historical model version
+
+The comparison must use the exact same eligible matches.
+
+Display:
+
+* Sample-size equality check
+* Accuracy difference
+* Log-loss difference
+* Brier-score difference
+* Calibration difference
+* Correct predictions gained
+* Correct predictions lost
+* Matches where the predicted winner changed
+* Probability changes
+* Segment-level improvements and regressions
+* Strong and Elite tier changes
+* Close-match performance changes
+
+Clearly state whether the candidate:
+
+* Improved
+* Was non-inferior
+* Was mixed
+* Regressed
+* Needs more data
+
+Do not call a candidate better based only on raw accuracy.
+
+⸻
+
+19. Candidate configuration management
+
+When a training run produces a candidate configuration, allow:
+
+* Save candidate
+* Rename candidate
+* Add notes
+* Compare against production
+* Send to shadow testing
+* Reject candidate
+* Delete candidate
+* Roll back to a previous candidate
+* View weight and threshold differences
+
+Do not provide a one-tap direct production deployment without a validation warning and required acceptance checks.
+
+Before promotion, verify:
+
+* Holdout results
+* Minimum sample size
+* Log-loss performance
+* Brier-score performance
+* Calibration
+* Accuracy
+* Segment stability
+* No major regression in ATP, WTA, Challenger, ITF, or major surfaces
+* No data leakage
+* Shadow-test performance, when required
+
+Record every promotion and rollback.
+
+⸻
+
+20. Saved reports and export
+
+Allow backtest results to be exported as:
+
+* CSV
+* JSON
+* Printable report
+* Markdown report, if supported
+
+Allow export of:
+
+* Overall results
+* Individual predictions
+* Correct predictions
+* Incorrect predictions
+* Module performance
+* Segment performance
+* Calibration results
+* Configuration comparison
+* Candidate weights and thresholds
+
+The exported report must include:
+
+* Backtest ID
+* Run date
+* Dataset version
+* Model version
+* Configuration version
+* Filters
+* Date ranges
+* Exclusion rules
+* Sample sizes
+* Warnings
+
+⸻
+
+21. Data integrity and safety requirements
+
+Add protections ensuring:
+
+* A backtest cannot alter stored historical predictions.
+* A backtest cannot alter graded outcomes.
+* Evaluation mode cannot change weights.
+* Training mode creates a separate candidate configuration.
+* Production configuration cannot change silently.
+* Model versions are stored with every result.
+* Future data cannot leak into earlier predictions.
+* Post-match data cannot be used as a pre-match feature.
+* Cancelled matches and walkovers are excluded appropriately.
+* Retirements are reported separately.
+* Duplicate predictions are detected.
+* The same cohort is used when comparing models.
+* Player order cannot reverse the meaning of probabilities.
+* Saved probabilities stay attached to stable player IDs.
+* Re-running the same deterministic configuration produces the same result.
+* Randomized processes record the random seed.
+* Deleted backtest runs do not delete original historical prediction records.
+
+⸻
+
+22. Tests required
+
+Add automated tests for:
+
+* Mobile viewport overflow
+* Responsive card layout
+* Backtest creation
+* Filter application
+* Date-range validation
+* Leakage prevention
+* Evaluation-only protection
+* Candidate configuration creation
+* Progress tracking
+* Failed-job recovery
+* Result grading
+* Retirement exclusions
+* Duplicate prediction handling
+* Stable player IDs
+* Configuration comparison using identical cohorts
+* Export accuracy
+* Backtest deletion safety
+* Navigation state restoration
+* Production model immutability
+
+Test the page at approximately:
+
+* 320px width
+* 375px width
+* 390px width
+* 430px width
+* Tablet width
+* Desktop width
+
+Confirm that no important content or control extends outside the phone screen.
+
+⸻
+
+23. Final completion report
+
+After implementation, provide:
+
+1. What existing systems were reused.
+2. What new pages and components were added.
+3. The exact navigation path to the Backtesting Portal.
+4. Screens or sections included.
+5. Mobile viewport test results.
+6. Confirmation that there is no horizontal scrolling.
+7. Database tables or fields added.
+8. Background-job logic added.
+9. Backtest modes supported.
+10. Filters supported.
+11. Metrics calculated.
+12. Comparison tools added.
+13. Candidate-configuration workflow.
+14. Export formats supported.
+15. Safety protections.
+16. Automated tests and results.
+17. Files changed.
+18. Anything incomplete or limited.
+19. A short explanation of how I should use the portal to run:
+    * A normal evaluation backtest
+    * A training and optimization backtest
+    * A production-versus-candidate comparison
+
+Do not mark this task complete until the Backtesting Portal is usable from a phone and the live production model remains protected from accidental changes.
