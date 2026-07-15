@@ -181,7 +181,7 @@ test("shadow-mode replay: append-only, distinctly-labeled batches, never touchin
   await assert.rejects(() => runShadowPaperTradingReplay({ startDate: "2021-03-10", endDate: "2021-03-01", batchLabel: `${batchB}-bad-range` }));
 });
 
-test("shadow-mode replay: applies the currently-active calibration mapping, not raw==calibrated", async (t) => {
+test("shadow-mode replay: applies the calibration mapping that was actually active as of each match's own cutoffAt (Task #160), not today's", async (t) => {
   const players = Array.from({ length: 2 }, (_, i) => `shadow-calib-player-${i}`);
   // scoreHistoricalMatch requires each player to have at least one PRIOR recorded match --
   // otherwise it returns null (insufficient data), same as it would for walk-forward's very
@@ -210,23 +210,52 @@ test("shadow-mode replay: applies the currently-active calibration mapping, not 
   ];
   await db.insert(matchFeatureSnapshotsTable).values([...featuresFor(row.player1Id, true), ...featuresFor(row.player2Id, false)]);
 
-  // Deactivate any pre-existing active calibration for the duration of this test, then install a
-  // deliberately extreme synthetic one (a mapping that always outputs 5% for player1) so the
-  // effect of applying it is unmistakable in the assertion below.
-  const previouslyActive = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true));
-  for (const c of previouslyActive) {
-    await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.id, c.id));
+  // Task #160: clear the ENTIRE calibration_models table for the duration of this test and
+  // replace it with two synthetic rows at explicit, deliberately-chosen `fittedAt` timestamps --
+  // one BEFORE the under-test match's cutoffAt, one AFTER it (and marked `active: true`, i.e.
+  // "today's" mapping). This is the only way to deterministically prove the replay picks the
+  // mapping that was genuinely in force on the match's OWN date, not whatever happens to be
+  // `active` right now -- a plain deactivate/reactivate of the real active row (as this test used
+  // to do) can no longer distinguish the two, since `active` is no longer what the lookup uses.
+  const preExistingCalibrationRows = await db.select().from(calibrationModelsTable);
+  if (preExistingCalibrationRows.length > 0) {
+    await db.delete(calibrationModelsTable).where(
+      inArray(
+        calibrationModelsTable.id,
+        preExistingCalibrationRows.map((c) => c.id),
+      ),
+    );
   }
-  const [synthetic] = await db
+  const beforeCutoffFittedAt = new Date(underTest.cutoffAt.getTime() - 14 * 24 * 60 * 60_000); // ~2 weeks before the match's own cutoff
+  const afterCutoffFittedAt = new Date(underTest.cutoffAt.getTime() + 30 * 24 * 60 * 60_000); // ~1 month after -- this is the one that's `active` today
+  const [historicallyActive] = await db
     .insert(calibrationModelsTable)
     .values({
       method: "isotonic",
+      // Deliberately extreme (always outputs 5% for player1) so applying it is unmistakable.
       mapping: [
         { x: 0, y: 0.05 },
         { x: 1, y: 0.05 },
       ],
       validationSampleSize: 999,
+      active: false,
+      fittedAt: beforeCutoffFittedAt,
+    })
+    .returning();
+  const [todaysActive] = await db
+    .insert(calibrationModelsTable)
+    .values({
+      method: "isotonic",
+      // A distinctly different mapping, fitted AFTER the under-test match's cutoff and left
+      // `active: true` -- if the replay wrongly applied "today's active mapping" uniformly, this
+      // is the one it would use instead of `historicallyActive`.
+      mapping: [
+        { x: 0, y: 0.95 },
+        { x: 1, y: 0.95 },
+      ],
+      validationSampleSize: 999,
       active: true,
+      fittedAt: afterCutoffFittedAt,
     })
     .returning();
 
@@ -240,9 +269,22 @@ test("shadow-mode replay: applies the currently-active calibration mapping, not 
         inserted.map((r) => r.id),
       ),
     );
-    await db.delete(calibrationModelsTable).where(eq(calibrationModelsTable.id, synthetic.id));
-    for (const c of previouslyActive) {
-      await db.update(calibrationModelsTable).set({ active: true }).where(eq(calibrationModelsTable.id, c.id));
+    await db.delete(calibrationModelsTable).where(inArray(calibrationModelsTable.id, [historicallyActive.id, todaysActive.id]));
+    if (preExistingCalibrationRows.length > 0) {
+      await db.insert(calibrationModelsTable).values(
+        preExistingCalibrationRows.map((c) => ({
+          method: c.method,
+          mapping: c.mapping,
+          validationSampleSize: c.validationSampleSize,
+          validationDateRangeStart: c.validationDateRangeStart,
+          validationDateRangeEnd: c.validationDateRangeEnd,
+          active: c.active,
+          isotonicHoldoutLogLoss: c.isotonicHoldoutLogLoss,
+          plattHoldoutLogLoss: c.plattHoldoutLogLoss,
+          holdoutSampleSize: c.holdoutSampleSize,
+          fittedAt: c.fittedAt,
+        })),
+      );
     }
   });
 
@@ -253,19 +295,21 @@ test("shadow-mode replay: applies the currently-active calibration mapping, not 
   assert.ok(shadowRow, "Expected the shadow row to be inserted");
   assert.ok(shadowRow.rawProbability !== null && shadowRow.calibratedProbability !== null);
   // Player1 is the constructed favorite (higher Elo/form), so raw should favor them (>50), but
-  // the extreme synthetic active calibration always maps to 5% -- proving calibratedProbability
-  // is NOT simply mirroring rawProbability the way it would with no override.
+  // the mapping that was genuinely active as of THIS match's own cutoffAt (`historicallyActive`,
+  // fitted before it) always maps to 5% -- proving calibratedProbability is NOT simply mirroring
+  // rawProbability, and NOT using `todaysActive`'s 95% mapping either.
   assert.ok(shadowRow.rawProbability! > 50, "Expected the reduced model's raw probability to favor the constructed favorite");
   // The engine still applies its own downstream reliability discount/simulator blend ON TOP of
   // whatever calibration source fed into it (see `predictionEngine/index.ts`'s `generalProbability`
   // -> `blendedProbability` -> `preSimulatorProbability` chain) -- that happens identically
   // whether the calibration came from this override or the default shrink heuristic, so the
   // extreme 5%-flat override does not survive to the final number unchanged. What it DOES prove
-  // (and is the actual thing this test needs to prove) is that the override measurably pulled the
-  // final probability far below what the raw, uncalibrated favorite-side probability says --
-  // nowhere near it just mirroring rawProbability the way a null override would.
+  // (and is the actual thing this test needs to prove) is that the historically-active mapping
+  // measurably pulled the final probability far below what the raw, uncalibrated favorite-side
+  // probability says -- nowhere near it just mirroring rawProbability OR the 95%-flat mapping
+  // that only became active after this match's cutoff.
   assert.ok(
     shadowRow.calibratedProbability! < shadowRow.rawProbability! - 30,
-    `Expected the active calibration override to pull calibratedProbability well below rawProbability, got raw=${shadowRow.rawProbability} calibrated=${shadowRow.calibratedProbability}`,
+    `Expected the historically-active calibration to pull calibratedProbability well below rawProbability, got raw=${shadowRow.rawProbability} calibrated=${shadowRow.calibratedProbability}`,
   );
 });

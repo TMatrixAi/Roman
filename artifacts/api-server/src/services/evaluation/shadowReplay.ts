@@ -1,5 +1,5 @@
 import { asc, and, eq, gte, lte, lt, inArray, or } from "drizzle-orm";
-import { db, evaluationPredictionsTable, calibrationModelsTable, historicalMatchesTable, type HistoricalMatchRow } from "@workspace/db";
+import { db, evaluationPredictionsTable, calibrationModelsTable, historicalMatchesTable, type HistoricalMatchRow, type CalibrationKnotJson } from "@workspace/db";
 import { logger } from "../../lib/logger";
 import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
@@ -28,20 +28,22 @@ import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "
  *     `batchLabel` is the only way to replace a batch's own rows, and it deletes ONLY rows with
  *     that exact `(runKind, shadowBatchLabel)` pair -- it can never touch another batch, and it
  *     can never touch `paper_trade`/`historical_test` rows (different `runKind` entirely).
- *  3. It grades using the CURRENTLY ACTIVE calibration mapping (whatever `paperTrading.ts` would
- *     use for a real fixture locked today), not a mapping fit from this same run's own data --
- *     see `historicalScoring.ts`'s doc on `activeCalibrationOverride`. This is what makes the
- *     result a genuine simulation of "what would live paper trading have produced", rather than
- *     an in-sample backtest number.
+ *  3. It grades using whichever calibration mapping was ACTUALLY ACTIVE as of each individual
+ *     match's own `cutoffAt` (Task #160) -- not a mapping fit from this same run's own data, and
+ *     not today's currently-active mapping applied uniformly across the whole range. See
+ *     `getCalibrationMappingAsOf` below and `historicalScoring.ts`'s doc on
+ *     `activeCalibrationOverride`. This is what makes the result a genuine simulation of "what
+ *     would live paper trading have produced on that date", rather than an in-sample backtest
+ *     number OR "what today's model would say about the past".
  *
  * HONEST CAVEAT (also surfaced in the dashboard copy, not just here): this is still not a full
  * substitute for genuinely-live validation. It replays historical matches through the SAME engine
- * version and the SAME currently-active calibration being evaluated, applied uniformly across the
- * whole replayed date range regardless of what was actually active on each historical date --
- * unlike real paper trading, it cannot tell you how the model would have behaved under conditions
- * that were truly unknown at decision time (calibration/segment-specialist fits available today
- * did not exist on those historical dates). Treat it as fast, leakage-safe, directional evidence
- * for confidence/tier claims -- never as equivalent to a genuinely-live-graded sample.
+ * version being evaluated today, and the calibration-mapping history it reconstructs is only as
+ * fine-grained as how often walk-forward has actually refit `calibration_models` -- unlike real
+ * paper trading, it cannot tell you how the model would have behaved under conditions that were
+ * truly unknown at decision time (e.g. segment-specialist fits available today did not exist on
+ * those historical dates). Treat it as fast, leakage-safe, directional evidence for
+ * confidence/tier claims -- never as equivalent to a genuinely-live-graded sample.
  */
 
 export interface ShadowReplayOptions {
@@ -93,9 +95,51 @@ function parseUtcDateBoundary(dateStr: string, endOfDay: boolean): Date {
   return d;
 }
 
-async function getActiveCalibrationMapping() {
-  const [active] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1);
-  return active?.mapping ?? null;
+interface CalibrationHistoryEntry {
+  fittedAt: Date;
+  mapping: CalibrationKnotJson[];
+}
+
+/**
+ * Task #160: the WHOLE fitted-calibration history, ordered oldest-first, loaded ONCE per replay
+ * run. `walkForward.ts` never deletes a superseded row -- it flips the old row's `active` to
+ * false and inserts a new `active: true` row with a fresh `fittedAt` -- so this table's own rows
+ * already ARE a durable timeline of "which mapping was live from its own fittedAt until the next
+ * row's fittedAt superseded it". This reconstructs that timeline directly from the rows
+ * themselves rather than trusting the CURRENT `active` flag (which only ever describes right
+ * now), so a replayed match gets the mapping that was genuinely in force on ITS OWN date.
+ */
+async function loadCalibrationHistory(): Promise<CalibrationHistoryEntry[]> {
+  const rows = await db
+    .select({ fittedAt: calibrationModelsTable.fittedAt, mapping: calibrationModelsTable.mapping })
+    .from(calibrationModelsTable)
+    .orderBy(asc(calibrationModelsTable.fittedAt));
+  return rows;
+}
+
+/**
+ * The mapping that was active as of `asOf` -- i.e. the LATEST history entry whose `fittedAt` is
+ * at or before `asOf`. Returns null when `asOf` predates the very first calibration fit (no
+ * mapping existed yet at that point in real history -- honestly absent, never backfilled with a
+ * later mapping that didn't exist yet). `history` must already be sorted ascending by `fittedAt`
+ * (see `loadCalibrationHistory`); binary search keeps this cheap even though it's called once per
+ * scored match.
+ */
+function getCalibrationMappingAsOf(history: CalibrationHistoryEntry[], asOf: Date): CalibrationKnotJson[] | null {
+  const asOfMs = asOf.getTime();
+  let lo = 0;
+  let hi = history.length - 1;
+  let result: CalibrationKnotJson[] | null = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (history[mid].fittedAt.getTime() <= asOfMs) {
+      result = history[mid].mapping;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return result;
 }
 
 export async function runShadowPaperTradingReplay(options: ShadowReplayOptions): Promise<ShadowReplaySummary> {
@@ -145,11 +189,11 @@ export async function runShadowPaperTradingReplay(options: ShadowReplayOptions):
   const identityIndex = await buildPlayerIdentityIndex();
   const previousSpecialistRows = await getActiveSpecialistSegments();
   const specialistRowsBySegmentKey = new Map(previousSpecialistRows.map((row) => [row.segmentKey, row]));
-  // The mapping currently governing real live paper-trade predictions -- fetched ONCE for this
-  // whole run, mirroring how a real live cycle re-reads the active row on each call but would see
-  // the same value across a short-lived batch. See this file's top doc for why this is honest to
-  // apply here but NOT circular.
-  const activeCalibrationMapping = await getActiveCalibrationMapping();
+  // Task #160: the full fitted-calibration timeline, loaded ONCE for this whole run -- each
+  // match below looks up the entry that was actually in force as of ITS OWN cutoffAt, rather
+  // than one mapping applied uniformly across the whole replayed range. See this file's top doc
+  // and `getCalibrationMappingAsOf`'s doc for why this is honest to do here but NOT circular.
+  const calibrationHistory = await loadCalibrationHistory();
   const retirementRule = settings.retirementRule as RetirementRule;
 
   for (let dayStart = new Date(rangeStart); dayStart.getTime() <= rangeEnd.getTime(); dayStart.setUTCDate(dayStart.getUTCDate() + 1)) {
@@ -226,7 +270,8 @@ export async function runShadowPaperTradingReplay(options: ShadowReplayOptions):
       const resultType = classifyResult(match);
       const isVoid = resultType === "walkover" || resultType === "cancelled";
 
-      const scored = scoreHistoricalMatch(match, scoringContext, activeCalibrationMapping);
+      const calibrationMapping = getCalibrationMappingAsOf(calibrationHistory, match.cutoffAt);
+      const scored = scoreHistoricalMatch(match, scoringContext, calibrationMapping);
       if (!scored) {
         summary.skippedInsufficientData += 1;
         continue;

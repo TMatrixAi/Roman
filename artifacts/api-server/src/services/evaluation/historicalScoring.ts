@@ -67,10 +67,12 @@ function minimalProfile(id: string, name: string): PlayerProfile {
  * `activeCalibrationOverride` is a second, narrower exception, used ONLY by the shadow-mode
  * replay (`shadowReplay.ts`), never by walk-forward: unlike walk-forward's fold-fit mapping
  * (which IS an output of that same run, so applying it here would be circular), the shadow replay
- * reuses the calibration that's ALREADY active in production -- a genuinely prior artifact, not
- * something this call is fitting -- so passing it through is not circular. Left undefined/null by
- * every other caller, which keeps their calibratedProbability equal to rawProbability, exactly as
- * before.
+ * reuses whichever calibration mapping was ALREADY genuinely active as of THIS match's own
+ * `cutoffAt` (Task #160) -- a real, already-fitted prior artifact, not something this call is
+ * fitting -- so passing it through is not circular. Callers resolve this per-match from their own
+ * fitted-calibration history (see `shadowReplay.ts`'s `getCalibrationMappingAsOf`), not a single
+ * value reused across every match in a run. Left undefined/null by every other caller, which
+ * keeps their calibratedProbability equal to rawProbability, exactly as before.
  *
  * Returns null when either player has zero prior recorded matches, or this match's own
  * surface/format weren't resolved at import time -- there is no honest probability to produce in

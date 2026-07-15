@@ -477,11 +477,13 @@ function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDa
         <p className="text-sm text-muted-foreground/80 leading-relaxed mt-4 max-w-4xl">
           A fast, leakage-safe replay of held-out historical dates through the same point-in-time scoring path as
           walk-forward, so you don't have to wait for real paper trading to slowly accumulate one graded fixture at a
-          time. It is graded using <span className="font-semibold text-foreground">today's currently-active calibration</span>{" "}
-          applied uniformly across the whole replayed range — not the calibration that was actually live on each
-          historical date. Treat this as directional, simulated evidence only. It is never merged into the segments,
-          Elite tier, upset-risk, disagreement, or market-edge numbers above, and it never touches real paper-trade or
-          walk-forward rows.
+          time. Each replayed match is graded using{" "}
+          <span className="font-semibold text-foreground">whichever calibration mapping was actually active on that match's own date</span>
+          , reconstructed from the calibration-refit history — not today's mapping applied uniformly across the whole
+          range. Treat this as directional, simulated evidence only: it still reruns today's engine version and can't
+          reconstruct segment-specialist fits that didn't exist yet on those dates. It is never merged into the
+          segments, Elite tier, upset-risk, disagreement, or market-edge numbers above, and it never touches real
+          paper-trade or walk-forward rows.
         </p>
       </CardHeader>
       <CardContent className="p-6 md:p-8 space-y-8">

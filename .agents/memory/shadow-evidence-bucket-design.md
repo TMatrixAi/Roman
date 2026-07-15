@@ -13,10 +13,13 @@ has real live and backtest evidence buckets:
   narrowly-scoped `overwrite` (matched on the exact batch/run label) may delete rows, and it must
   never be able to touch a different bucket's `runKind`.
 
-- If the bucket grades using a currently-active model/calibration artifact (rather than one fit
-  from its own held-out data), that is a real methodological compromise, not free correctness --
-  document it as an explicit caveat in both code and UI copy, applied uniformly and up front
-  once per run rather than re-fetched per row (which would just add noise, not honesty).
+- If the bucket grades using a model/calibration artifact that wasn't fit from its own held-out
+  data, that is a real methodological compromise, not free correctness -- document it as an
+  explicit caveat in both code and UI copy. If the underlying artifact has its own fitted-history
+  table where old rows are superseded (flagged inactive + new row inserted) rather than deleted,
+  that history IS a reconstructable timeline: resolve the artifact that was genuinely in force as
+  of each individual replayed row's own timestamp (e.g. its cutoff), not whichever one is active
+  "right now" applied uniformly across the whole run -- see calibration-history-reconstruction.md.
 
 **Why:** without a natural append-only constraint plus scoped overwrite, "just re-run it" silently
 duplicates or corrupts prior evidence; without a distinct runKind, simulated evidence quietly
