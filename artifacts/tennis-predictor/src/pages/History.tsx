@@ -153,16 +153,16 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
 
 function StatCard({ title, value, subtext, icon: Icon }: { title: string, value: string | number, subtext?: string, icon: any }) {
   return (
-    <Card className="bg-card">
+    <Card className="bg-card shadow-sm glass-panel hover-lift">
       <CardContent className="p-6">
         <div className="flex justify-between items-start">
-          <div className="space-y-2">
-            <p className="text-xs font-mono text-muted-foreground font-semibold">{title}</p>
-            <p className="text-3xl font-bold tracking-tighter">{value}</p>
-            {subtext && <p className="text-xs text-muted-foreground">{subtext}</p>}
+          <div className="space-y-3">
+            <p className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
+            <p className="text-4xl font-display font-bold tracking-tight text-primary tabular-nums">{value}</p>
+            {subtext && <p className="text-xs text-muted-foreground/80 font-medium">{subtext}</p>}
           </div>
-          <div className="p-2 bg-secondary rounded-md">
-            <Icon className="w-5 h-5 text-secondary-foreground" />
+          <div className="p-3 bg-secondary/50 rounded-xl border border-border/50">
+            <Icon className="w-5 h-5 text-primary" />
           </div>
         </div>
       </CardContent>
@@ -205,81 +205,81 @@ function PredictionRow({
   }
 
   return (
-    <div className="group flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-md bg-card hover:border-primary transition-colors gap-4">
+    <div className="group flex flex-col md:flex-row md:items-center justify-between p-4 sm:p-5 border border-border/50 rounded-xl bg-card/60 backdrop-blur-sm shadow-sm hover:border-primary/40 hover:bg-card hover:shadow-md transition-all duration-300 gap-4">
       <input
         type="checkbox"
         checked={selected}
         onChange={onToggleSelect}
-        className="w-4 h-4 shrink-0 accent-primary cursor-pointer"
+        className="w-4 h-4 shrink-0 accent-primary cursor-pointer rounded-sm border-border"
         aria-label={`Select prediction ${prediction.id}`}
       />
 
       <Link href={`/predictions/${prediction.id}`} className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
-        <div className="flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-muted-foreground">
+        <div className="flex-1 space-y-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
             <span>{formatDate(prediction.createdAt)}</span>
-            <span>•</span>
-            <span className="uppercase">{prediction.surface}</span>
+            <span className="text-border">•</span>
+            <span className="text-foreground/80 bg-secondary/50 px-2 py-0.5 rounded">{prediction.surface}</span>
             {prediction.tournamentName && (
               <>
-                <span>•</span>
+                <span className="text-border">•</span>
                 <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
               </>
             )}
             {prediction.usedHistoricalMatchFallback && <HistoricalMatchFallbackBadge />}
           </div>
-          <div className="flex items-center gap-3 text-lg font-bold">
-            <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary" : "text-muted-foreground"}>
+          <div className="flex items-center gap-3 text-lg sm:text-xl font-display font-bold tracking-tight">
+            <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary drop-shadow-sm" : "text-foreground/80"}>
               {prediction.player1Name}
             </span>
-            <span className="text-sm font-mono font-normal text-muted-foreground">vs</span>
-            <span className={prediction.predictedWinnerName === prediction.player2Name ? "text-primary" : "text-muted-foreground"}>
+            <span className="text-sm font-mono font-bold text-muted-foreground/60 italic lowercase px-1">vs</span>
+            <span className={prediction.predictedWinnerName === prediction.player2Name ? "text-primary drop-shadow-sm" : "text-foreground/80"}>
               {prediction.player2Name}
             </span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 md:gap-6 md:justify-end border-t md:border-t-0 pt-3 md:pt-0">
-          <div className="flex flex-col md:items-end gap-1">
-            <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
-            <div className="font-bold flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-4 md:gap-8 md:justify-end border-t border-border/50 md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
+          <div className="flex flex-col md:items-end gap-1.5">
+            <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">PREDICTED</div>
+            <div className="font-bold font-display flex items-center gap-2">
               {prediction.predictedWinnerName}
-              <Badge variant="outline" className="font-mono">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
+              <Badge variant="outline" className="font-mono tabular-nums bg-background shadow-sm">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
             </div>
           </div>
 
-          <div className="flex flex-col md:items-end gap-1">
-            <div className="text-xs font-mono text-muted-foreground">RECOMMENDATION</div>
+          <div className="flex flex-col md:items-end gap-1.5">
+            <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">RECOMMENDATION</div>
             {renderRecommendationBadge()}
           </div>
 
-          <div className="flex flex-col md:items-end gap-1 w-24">
-            <div className="text-xs font-mono text-muted-foreground">STATUS</div>
+          <div className="flex flex-col md:items-end gap-1.5 w-24">
+            <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">STATUS</div>
             {isResolved ? (
               isCorrect ? (
-                <span className="flex items-center gap-1 text-sm font-bold text-green-600 dark:text-green-500">
+                <span className="flex items-center gap-1.5 text-sm font-bold text-success drop-shadow-sm">
                   <CheckCircle2 className="w-4 h-4" /> WON
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-sm font-bold text-destructive">
+                <span className="flex items-center gap-1.5 text-sm font-bold text-destructive">
                   <XCircle className="w-4 h-4" /> LOST
                 </span>
               )
             ) : (
-              <span className="flex items-center gap-1 text-sm font-bold text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-muted-foreground">
                 <Clock className="w-4 h-4" /> PENDING
               </span>
             )}
           </div>
 
-          <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />
+          <ChevronRight className="w-5 h-5 text-muted-foreground/50 opacity-0 group-hover:opacity-100 group-hover:text-primary transition-all group-hover:translate-x-1 hidden md:block" />
         </div>
       </Link>
 
       <Button
         variant="ghost"
         size="icon"
-        className="shrink-0 text-muted-foreground hover:text-destructive"
+        className="shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
         disabled={isDeleting}
         onClick={(e) => { e.preventDefault(); onDelete() }}
         aria-label="Delete prediction"
@@ -299,11 +299,11 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
 
   const renderRecommendationBadge = () => {
     switch (prediction.recommendation) {
-      case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
-      case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
-      case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
-      case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
-      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">NO REC</Badge>
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success" className="shadow-sm" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
+      case 'MODERATE_LEAN': return <Badge variant="secondary" className="shadow-sm">LEAN</Badge>
+      case 'HIGH_RISK': return <Badge variant="warning" className="shadow-sm">RISK</Badge>
+      case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="shadow-sm bg-background">NO SIGNAL</Badge>
+      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive" className="shadow-sm">NO REC</Badge>
       default: return null
     }
   }
@@ -311,66 +311,66 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
   return (
     <Link
       href={`/predictions/${prediction.id}`}
-      className="flex flex-col md:flex-row md:items-center justify-between p-4 border-2 border-primary rounded-md bg-card ring-2 ring-primary/40 hover:border-primary transition-colors gap-4"
+      className="flex flex-col md:flex-row md:items-center justify-between p-5 border-2 border-primary rounded-xl bg-card shadow-md ring-4 ring-primary/20 hover:bg-card/80 transition-all duration-300 gap-4"
     >
-      <div className="flex-1 space-y-2">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-muted-foreground">
+      <div className="flex-1 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
           <span>{formatDate(prediction.createdAt)}</span>
-          <span>•</span>
-          <span className="uppercase">{prediction.surface}</span>
+          <span className="text-border">•</span>
+          <span className="text-foreground/80 bg-secondary/50 px-2 py-0.5 rounded">{prediction.surface}</span>
           {prediction.tournamentName && (
             <>
-              <span>•</span>
+              <span className="text-border">•</span>
               <span className="truncate max-w-[45vw] sm:max-w-[150px]">{prediction.tournamentName}</span>
             </>
           )}
           {prediction.usedHistoricalMatchFallback && <HistoricalMatchFallbackBadge />}
         </div>
-        <div className="flex items-center gap-3 text-lg font-bold">
-          <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary" : "text-muted-foreground"}>
+        <div className="flex items-center gap-3 text-lg sm:text-xl font-display font-bold tracking-tight">
+          <span className={prediction.predictedWinnerName === prediction.player1Name ? "text-primary drop-shadow-sm" : "text-foreground/80"}>
             {prediction.player1Name}
           </span>
-          <span className="text-sm font-mono font-normal text-muted-foreground">vs</span>
-          <span className={prediction.predictedWinnerName === prediction.player2Name ? "text-primary" : "text-muted-foreground"}>
+          <span className="text-sm font-mono font-bold text-muted-foreground/60 italic lowercase px-1">vs</span>
+          <span className={prediction.predictedWinnerName === prediction.player2Name ? "text-primary drop-shadow-sm" : "text-foreground/80"}>
             {prediction.player2Name}
           </span>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 md:gap-6 md:justify-end border-t md:border-t-0 pt-3 md:pt-0">
-        <div className="flex flex-col md:items-end gap-1">
-          <div className="text-xs font-mono text-muted-foreground">PREDICTED</div>
-          <div className="font-bold flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-4 md:gap-8 md:justify-end border-t border-border/50 md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
+        <div className="flex flex-col md:items-end gap-1.5">
+          <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">PREDICTED</div>
+          <div className="font-bold font-display flex items-center gap-2">
             {prediction.predictedWinnerName}
-            <Badge variant="outline" className="font-mono">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
+            <Badge variant="outline" className="font-mono tabular-nums bg-background shadow-sm">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
           </div>
         </div>
 
-        <div className="flex flex-col md:items-end gap-1">
-          <div className="text-xs font-mono text-muted-foreground">RECOMMENDATION</div>
+        <div className="flex flex-col md:items-end gap-1.5">
+          <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">RECOMMENDATION</div>
           {renderRecommendationBadge()}
         </div>
 
-        <div className="flex flex-col md:items-end gap-1 w-24">
-          <div className="text-xs font-mono text-muted-foreground">STATUS</div>
+        <div className="flex flex-col md:items-end gap-1.5 w-24">
+          <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">STATUS</div>
           {isResolved ? (
             isCorrect ? (
-              <span className="flex items-center gap-1 text-sm font-bold text-green-600 dark:text-green-500">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-success drop-shadow-sm">
                 <CheckCircle2 className="w-4 h-4" /> WON
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-sm font-bold text-destructive">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-destructive">
                 <XCircle className="w-4 h-4" /> LOST
               </span>
             )
           ) : (
-            <span className="flex items-center gap-1 text-sm font-bold text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-sm font-bold text-muted-foreground">
               <Clock className="w-4 h-4" /> PENDING
             </span>
           )}
         </div>
 
-        <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />
+        <ChevronRight className="w-5 h-5 text-primary opacity-50 group-hover:opacity-100 transition-all group-hover:translate-x-1 hidden md:block" />
       </div>
     </Link>
   )
@@ -528,17 +528,17 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/50 pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tighter">LEDGER</h1>
-          <p className="text-muted-foreground mt-1">Historical prediction performance and raw results.</p>
+          <h1 className="text-4xl font-display font-bold tracking-tight">Ledger</h1>
+          <p className="text-muted-foreground mt-2 text-lg">Historical prediction performance and raw results.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             size="sm"
-            className="font-mono self-start md:self-auto"
+            className="font-mono self-start md:self-auto h-10 shadow-sm"
             disabled={gradePending.isPending}
             onClick={() => gradePending.mutate()}
           >

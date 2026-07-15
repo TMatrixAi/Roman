@@ -42,15 +42,23 @@ function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number,
   const p1Pct = total > 0 ? (p1Value / total) * 100 : 50;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between text-xs font-mono font-bold">
-        <span className="text-primary truncate max-w-[40%]">{p1Name} ({p1Value.toFixed(0)})</span>
-        <span className="text-muted-foreground">{label}</span>
-        <span className="text-foreground truncate max-w-[40%] text-right">{p2Name} ({p2Value.toFixed(0)})</span>
+    <div className="space-y-2">
+      <div className="flex justify-between text-[11px] font-mono font-bold tracking-widest uppercase">
+        <span className="text-primary truncate max-w-[40%] flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+          {p1Name} <span className="text-primary/70 tabular-nums ml-1">({p1Value.toFixed(0)})</span>
+        </span>
+        <span className="text-muted-foreground/60">{label}</span>
+        <span className="text-foreground truncate max-w-[40%] text-right flex items-center justify-end gap-1.5">
+          <span className="text-muted-foreground tabular-nums mr-1">({p2Value.toFixed(0)})</span> {p2Name}
+          <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block"></span>
+        </span>
       </div>
-      <div className="h-3 w-full bg-secondary rounded-full overflow-hidden flex">
-        <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${p1Pct}%` }} />
-        <div className="h-full bg-muted-foreground/30 transition-all duration-1000" style={{ width: `${100 - p1Pct}%` }} />
+      <div className="h-4 w-full bg-background border border-border shadow-inner rounded-full overflow-hidden flex">
+        <div className="h-full bg-primary transition-all duration-1000 ease-out relative" style={{ width: `${p1Pct}%` }}>
+          <div className="absolute inset-0 bg-white/10 w-full h-full"></div>
+        </div>
+        <div className="h-full bg-muted-foreground/20 transition-all duration-1000 ease-out" style={{ width: `${100 - p1Pct}%` }} />
       </div>
     </div>
   )
@@ -58,20 +66,22 @@ function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number,
 
 function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel = "REL" }: { title: string, reliability: Percentage, children: React.ReactNode, icon: any, reliabilityLabel?: string }) {
   return (
-    <Card className="overflow-hidden flex flex-col h-full">
-      <div className="bg-secondary/50 p-3 border-b flex justify-between items-center">
-        <div className="flex items-center gap-2 font-bold text-sm">
-          <Icon className="w-4 h-4 text-muted-foreground" />
+    <Card className="overflow-hidden flex flex-col h-full hover-lift">
+      <div className="bg-secondary/40 p-4 border-b border-border/50 flex justify-between items-center">
+        <div className="flex items-center gap-2.5 font-bold font-display text-sm tracking-wide">
+          <div className="p-1.5 bg-background rounded-md shadow-sm border border-border/50">
+            <Icon className="w-4 h-4 text-primary" />
+          </div>
           {title}
         </div>
-        <div className="flex items-center gap-1.5 text-xs font-mono">
+        <div className="flex items-center gap-2 text-[10px] font-mono font-bold tracking-widest uppercase bg-background px-2.5 py-1 rounded-full border border-border/50 shadow-sm">
           <span className="text-muted-foreground">{reliabilityLabel}:</span>
           <span className={reliability < 50 ? "text-warning" : reliability >= 80 ? "text-success" : "text-foreground"}>
             {formatPercentage(reliability)}
           </span>
         </div>
       </div>
-      <CardContent className="p-4 flex-1 flex flex-col gap-4">
+      <CardContent className="p-5 sm:p-6 flex-1 flex flex-col gap-5">
         {children}
       </CardContent>
     </Card>
@@ -106,35 +116,36 @@ export default function PredictionResultPage() {
   const isCorrect = prediction.actualWinnerId === prediction.predictedWinnerId;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-6xl mx-auto">
+    <div className="space-y-12 animate-in fade-in duration-500 max-w-6xl mx-auto pb-24">
       {/* HEADER MATCHUP */}
-      <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-border/50 pb-6">
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
-          <Badge variant="secondary" className="uppercase">{prediction.surface}</Badge>
-          <span className="uppercase">{prediction.matchFormat}</span>
-          {prediction.tournamentLevel && <Badge variant="outline" className="uppercase">{prediction.tournamentLevel}</Badge>}
+          <Badge variant="secondary" className="uppercase bg-secondary/50 border shadow-sm">{prediction.surface}</Badge>
+          <span className="uppercase tracking-widest">{prediction.matchFormat}</span>
+          {prediction.tournamentLevel && <Badge variant="outline" className="uppercase bg-background shadow-sm">{prediction.tournamentLevel}</Badge>}
         </div>
         {isResolved && (
-          <Badge variant={isCorrect ? "success" : "destructive"} className="text-sm px-3 py-1">
-            {isCorrect ? <><CheckCircle2 className="w-4 h-4 mr-1" /> PREDICTION CORRECT</> : <><XCircle className="w-4 h-4 mr-1" /> PREDICTION INCORRECT</>}
+          <Badge variant={isCorrect ? "success" : "destructive"} className="text-sm px-4 py-1.5 shadow-md">
+            {isCorrect ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> PREDICTION CORRECT</> : <><XCircle className="w-4 h-4 mr-1.5" /> PREDICTION INCORRECT</>}
           </Badge>
         )}
       </div>
 
       {/* COMPACT SUMMARY HERO */}
-      <Card className="border-2 border-primary/20 overflow-hidden relative">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+      <Card className="border border-primary/20 overflow-hidden relative shadow-xl glass-panel">
+        <div className="absolute right-0 top-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
+        <div className="absolute left-0 bottom-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
         
-        <CardContent className="p-8 md:p-12">
+        <CardContent className="p-8 md:p-12 relative z-10">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
               <div>
-                <p className="text-sm font-mono text-muted-foreground mb-2">PREDICTED WINNER</p>
-                <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-primary break-words leading-tight">
+                <p className="text-xs font-mono font-bold text-muted-foreground mb-3 tracking-widest uppercase">PREDICTED WINNER</p>
+                <h2 className="text-5xl md:text-7xl font-display font-bold tracking-tight text-primary break-words leading-[1.05]">
                   {prediction.predictedWinnerName}
                 </h2>
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-6 flex flex-wrap gap-3">
                   <Badge
                     variant={
                       prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
@@ -142,7 +153,7 @@ export default function PredictionResultPage() {
                       prediction.recommendation === 'HIGH_RISK' ? 'warning' :
                       prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
                     }
-                    className="text-sm"
+                    className="text-sm px-3 py-1.5 font-bold shadow-md"
                     title={
                       prediction.recommendation === 'STRONG_RECOMMENDATION'
                         ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
@@ -154,25 +165,25 @@ export default function PredictionResultPage() {
                   {engine.isEliteTier && (
                     <Badge
                       variant="success"
-                      className="text-sm gap-1"
+                      className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30"
                       title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
                     >
-                      <Crown className="w-3.5 h-3.5" /> ELITE (HIGHEST-CONFIDENCE)
+                      <Crown className="w-4 h-4" /> ELITE TIER
                     </Badge>
                   )}
-                  <Badge variant="outline" className="text-sm">
+                  <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
                     SET SCORE: {prediction.predictedSetScore}
                   </Badge>
                 </div>
                 {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
-                  <p className="text-xs text-muted-foreground mt-2 max-w-md">
+                  <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                     "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
                     validation on real outcomes is still limited (n=189 in the latest backtest), and this tier hasn't
                     yet been shown to beat other tiers. Treat it as one input, not a proven edge.
                   </p>
                 )}
                 {engine.isEliteTier && (
-                  <p className="text-xs text-muted-foreground mt-2 max-w-md">
+                  <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                     {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
                     Elite is an early, small-sample tier (n=468 in the latest backtest) -- directionally promising but not
                     yet statistically proven to outperform non-Elite predictions.
@@ -180,54 +191,55 @@ export default function PredictionResultPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between font-mono text-sm">
-                  <span>WIN PROBABILITY</span>
-                  <span className="font-bold">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</span>
+              <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
+                <div className="flex justify-between font-mono text-sm items-center">
+                  <span className="font-bold text-muted-foreground tracking-widest">WIN PROBABILITY</span>
+                  <span className="font-bold text-xl tabular-nums">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</span>
                 </div>
-                <Progress value={prediction.predictedWinnerProbability} className="h-3" />
+                <div className="h-4 w-full bg-background rounded-full overflow-hidden flex border border-border shadow-inner">
+                  <div className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-1000 ease-out" style={{ width: `${prediction.predictedWinnerProbability}%` }} />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-6 md:pl-8 md:border-l border-border/50">
+            <div className="space-y-6 md:pl-10 md:border-l border-border/50">
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-secondary/50 rounded-lg">
-                  <p className="text-xs font-mono text-muted-foreground mb-1">DATA QUALITY</p>
-                  <p className="text-xl font-bold">{prediction.dataQuality}%</p>
-                  <p className="text-xs mt-1 text-muted-foreground">{prediction.dataQualityLabel}</p>
+                <div className="p-5 bg-background rounded-2xl border border-border shadow-sm">
+                  <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2 tracking-widest uppercase">DATA QUALITY</p>
+                  <p className="text-3xl font-display font-bold text-primary tabular-nums">{prediction.dataQuality}%</p>
+                  <p className="text-xs mt-2 text-muted-foreground/80 leading-snug">{prediction.dataQualityLabel}</p>
                 </div>
-                <div className="p-4 bg-secondary/50 rounded-lg">
-                  <p className="text-xs font-mono text-muted-foreground mb-1">UPSET RISK</p>
-                  <p className="text-xl font-bold">{prediction.upsetRisk}</p>
-                  <p className="text-xs mt-1 text-muted-foreground">
+                <div className="p-5 bg-background rounded-2xl border border-border shadow-sm">
+                  <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2 tracking-widest uppercase">UPSET RISK</p>
+                  <p className="text-3xl font-display font-bold text-accent tabular-nums">{prediction.upsetRisk}</p>
+                  <p className="text-xs mt-2 text-muted-foreground/80 leading-snug">
                     {engine.upsetRiskBreakdown?.note ?? "Not available for predictions made before this breakdown existed."}
                   </p>
                 </div>
               </div>
 
               {(engine.risks?.length || engine.reasons?.length) ? (
-                <div className="space-y-3">
+                <div className="space-y-3 bg-secondary/30 p-4 rounded-xl border border-border/50">
                   {engine.reasons?.slice(0, 2).map((r, i) => (
-                    <div key={i} className="flex gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" /> <span>{r}</span>
+                    <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                      <CheckCircle2 className="w-5 h-5 text-success shrink-0" /> <span className="leading-snug">{r}</span>
                     </div>
                   ))}
                   {engine.risks?.slice(0, 1).map((r, i) => (
-                    <div key={i} className="flex gap-2 text-sm text-muted-foreground">
-                      <ShieldAlert className="w-4 h-4 text-warning shrink-0 mt-0.5" /> <span>{r}</span>
+                    <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                      <ShieldAlert className="w-5 h-5 text-warning shrink-0" /> <span className="leading-snug">{r}</span>
                     </div>
                   ))}
                 </div>
               ) : null}
 
               {!isResolved && (
-                <div className="pt-4 border-t border-border/50">
-                  <p className="text-xs font-mono text-muted-foreground mb-3">RECORD OUTCOME</p>
-                  <div className="flex gap-2">
+                <div className="pt-6 border-t border-border/50">
+                  <p className="text-[10px] font-mono font-bold text-muted-foreground mb-3 tracking-widest uppercase">RECORD OUTCOME</p>
+                  <div className="flex gap-3">
                     <Button 
                       variant="outline" 
-                      size="sm" 
-                      className="flex-1 font-mono text-xs"
+                      className="flex-1 font-mono text-xs h-12 shadow-sm hover:border-primary hover:text-primary transition-colors"
                       disabled={recordOutcome.isPending}
                       onClick={() => recordOutcome.mutate({ predictionId: id, data: { actualWinnerId: prediction.player1Id } })}
                     >
@@ -235,8 +247,7 @@ export default function PredictionResultPage() {
                     </Button>
                     <Button 
                       variant="outline" 
-                      size="sm" 
-                      className="flex-1 font-mono text-xs"
+                      className="flex-1 font-mono text-xs h-12 shadow-sm hover:border-primary hover:text-primary transition-colors"
                       disabled={recordOutcome.isPending}
                       onClick={() => recordOutcome.mutate({ predictionId: id, data: { actualWinnerId: prediction.player2Id } })}
                     >
@@ -252,17 +263,20 @@ export default function PredictionResultPage() {
       </Card>
 
       {/* MODEL VOTES & SEGMENT SPECIALIST (Phase 6) */}
-      <div>
-        <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
-          <Vote className="w-5 h-5" /> MODEL VOTES
+      <div className="pt-8">
+        <h3 className="text-2xl font-display font-bold flex items-center gap-3 mb-6">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Vote className="w-5 h-5 text-primary" />
+          </div>
+          Model Votes
         </h3>
 
-        <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
-          <Info className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
-          <div className="space-y-1">
-            <div>{engine.segmentNote ?? "This prediction predates Phase 6 segment specialists -- no segment data was recorded for it."}</div>
+        <div className="mb-6 p-5 border border-border/60 bg-secondary/40 rounded-2xl flex gap-4 text-sm shadow-sm backdrop-blur-sm">
+          <Info className="w-5 h-5 shrink-0 mt-0.5 text-primary" />
+          <div className="space-y-2">
+            <div className="text-foreground/80 leading-relaxed">{engine.segmentNote ?? "This prediction predates Phase 6 segment specialists -- no segment data was recorded for it."}</div>
             {engine.segmentLabel && (
-              <Badge variant={engine.specialistApplied ? "success" : "outline"} className="font-mono text-[10px]">
+              <Badge variant={engine.specialistApplied ? "success" : "outline"} className="font-mono text-[10px] bg-background shadow-sm border-border/60">
                 {engine.segmentLabel} {engine.specialistApplied ? "SPECIALIST APPLIED" : "SPECIALIST NOT AVAILABLE"}
               </Badge>
             )}
@@ -270,56 +284,67 @@ export default function PredictionResultPage() {
         </div>
 
         {engine.modelConflict && (
-          <div className="mb-4 p-4 border border-warning/50 bg-warning/10 rounded-lg flex gap-3 text-sm">
-            <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-warning" />
-            <div className="space-y-1">
-              <div className="font-bold font-mono text-xs text-warning">MODEL CONFLICT</div>
-              <div>{engine.modelConflictNote}</div>
+          <div className="mb-6 p-5 border-2 border-warning/50 bg-warning/10 rounded-2xl flex gap-4 text-sm shadow-sm">
+            <ShieldAlert className="w-6 h-6 shrink-0 text-warning" />
+            <div className="space-y-1.5">
+              <div className="font-bold font-mono text-[11px] text-warning tracking-widest uppercase">MODEL CONFLICT</div>
+              <div className="text-foreground/80 leading-relaxed">{engine.modelConflictNote}</div>
             </div>
           </div>
         )}
 
         {engine.tieBreakerApplied && (
-          <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
-            <Scale className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
-            <div className="space-y-1">
-              <div className="font-bold font-mono text-xs text-foreground">TIE-BREAK CASCADE APPLIED{engine.tieBreakerDecidingStep ? ` -- DECIDED BY ${engine.tieBreakerDecidingStep.toUpperCase()}` : ""}</div>
-              <div>{engine.tieBreakerNote}</div>
+          <div className="mb-6 p-5 border border-border/60 bg-secondary/40 rounded-2xl flex gap-4 text-sm shadow-sm">
+            <Scale className="w-6 h-6 shrink-0 text-primary" />
+            <div className="space-y-1.5">
+              <div className="font-bold font-mono text-[11px] tracking-widest uppercase">TIE-BREAK CASCADE APPLIED{engine.tieBreakerDecidingStep ? ` -- DECIDED BY ${engine.tieBreakerDecidingStep.toUpperCase()}` : ""}</div>
+              <div className="text-foreground/80 leading-relaxed">{engine.tieBreakerNote}</div>
             </div>
           </div>
         )}
 
-        <Card className="mb-6">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-muted-foreground">MODEL AGREEMENT</span>
-              <span className={`text-sm font-bold font-mono ${(engine.modelAgreement && AGREEMENT_STYLES[engine.modelAgreement]) ?? "text-foreground"}`}>
-                {engine.modelAgreement ? engine.modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "—"}
-              </span>
-            </div>
-            {engine.matchupCloseness && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-muted-foreground">MATCHUP CLOSENESS</span>
-                <span className="text-sm font-bold font-mono text-foreground">
-                  {CLOSENESS_LABELS[engine.matchupCloseness] ?? engine.matchupCloseness}
+        <Card className="mb-10 shadow-md">
+          <CardContent className="p-6 md:p-8 space-y-6">
+            <div className="grid sm:grid-cols-2 gap-6 bg-background rounded-xl p-5 border border-border/50 shadow-sm">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">MODEL AGREEMENT</span>
+                <span className={`text-lg font-bold font-display ${(engine.modelAgreement && AGREEMENT_STYLES[engine.modelAgreement]) ?? "text-foreground"}`}>
+                  {engine.modelAgreement ? engine.modelAgreement.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "—"}
                 </span>
               </div>
-            )}
+              {engine.matchupCloseness && (
+                <div className="flex flex-col gap-1.5 sm:border-l border-border/50 sm:pl-6">
+                  <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">MATCHUP CLOSENESS</span>
+                  <span className="text-lg font-bold font-display text-foreground">
+                    {CLOSENESS_LABELS[engine.matchupCloseness] ?? engine.matchupCloseness}
+                  </span>
+                </div>
+              )}
+            </div>
+            
             {engine.disagreementNote && (
-              <div className="p-3 bg-secondary/40 rounded-lg text-xs text-muted-foreground">
+              <div className="p-4 bg-secondary/50 rounded-xl text-sm text-foreground/80 border border-border/50 border-l-4 border-l-warning">
                 {engine.disagreementNote}
               </div>
             )}
-            <div className="space-y-2">
+            
+            <div className="space-y-3 pt-2">
+              <div className="flex text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase px-4 pb-2 border-b border-border/50">
+                <span className="flex-1">MODEL</span>
+                <span className="w-16 text-right">PROB</span>
+                <span className="w-32 text-center">WEIGHT</span>
+                <span className="w-14 text-right">W_VAL</span>
+                <span className="w-14 text-right">REL</span>
+              </div>
               {engine.models.map((vote, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm">
-                  <span className="flex-1 truncate">{vote.modelName}</span>
-                  <span className="w-16 text-right font-mono text-muted-foreground">{vote.player1Probability.toFixed(1)}%</span>
-                  <div className="w-24 h-2 bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${vote.weightUsed * 100}%` }} />
+                <div key={i} className="flex items-center gap-3 text-sm p-3 rounded-lg hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/50">
+                  <span className="flex-1 truncate font-medium">{vote.modelName}</span>
+                  <span className="w-16 text-right font-mono font-bold text-primary tabular-nums">{vote.player1Probability.toFixed(1)}%</span>
+                  <div className="w-24 mx-auto h-2 bg-background border border-border shadow-inner rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-muted-foreground to-foreground transition-all duration-1000" style={{ width: `${vote.weightUsed * 100}%` }} />
                   </div>
-                  <span className="w-14 text-right font-mono text-xs text-muted-foreground">w={vote.weightUsed.toFixed(2)}</span>
-                  <span className="w-14 text-right font-mono text-xs text-muted-foreground">rel={vote.reliability.toFixed(0)}</span>
+                  <span className="w-14 text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.weightUsed.toFixed(2)}</span>
+                  <span className="w-14 text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.reliability.toFixed(0)}</span>
                 </div>
               ))}
             </div>
@@ -343,146 +368,153 @@ export default function PredictionResultPage() {
         });
 
         return (
-        <div>
-          <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
-            <Dices className="w-5 h-5" /> MONTE CARLO SIMULATION
-          </h3>
+          <div className="pt-8">
+            <h3 className="text-2xl font-display font-bold flex items-center gap-3 mb-6">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Dices className="w-5 h-5 text-primary" />
+              </div>
+              Monte Carlo Simulation
+            </h3>
 
-          <div className="mb-4 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm">
-            <Info className="w-5 h-5 shrink-0 mt-0.5 text-muted-foreground" />
-            <div className="space-y-1">
-              <div>{engine.simulatorNote}</div>
-              <Badge variant={engine.simulatorApplied ? "success" : "outline"} className="font-mono text-[10px]">
-                {engine.simulatorApplied ? "VOTING IN FINAL PROBABILITY" : "DISPLAY-ONLY, NOT YET VOTING"}
-              </Badge>
+            <div className="mb-6 p-5 border border-border/60 bg-secondary/40 rounded-2xl flex gap-4 text-sm shadow-sm backdrop-blur-sm">
+              <Info className="w-5 h-5 shrink-0 mt-0.5 text-primary" />
+              <div className="space-y-2">
+                <div className="text-foreground/80 leading-relaxed">{engine.simulatorNote}</div>
+                <Badge variant={engine.simulatorApplied ? "success" : "outline"} className="font-mono text-[10px] bg-background shadow-sm border-border/60">
+                  {engine.simulatorApplied ? "VOTING IN FINAL PROBABILITY" : "DISPLAY-ONLY, NOT YET VOTING"}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              <Card className="shadow-md">
+                <CardContent className="p-6 sm:p-8 space-y-8">
+                  <div>
+                    <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2 tracking-widest uppercase">SIMULATED WIN PROBABILITY ({headlineWinnerName})</p>
+                    <p className="text-5xl font-display font-bold tracking-tight text-primary tabular-nums">
+                      {headlineWinProbability.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2 font-mono tabular-nums bg-secondary/50 inline-block px-3 py-1 rounded-md border border-border/50">
+                      range {headlineRangeLow.toFixed(0)}–{headlineRangeHigh.toFixed(0)}%
+                    </p>
+                    <div className="relative h-4 w-full bg-background border border-border shadow-inner rounded-full overflow-hidden mt-6">
+                      <div
+                        className="absolute h-full bg-primary/20 backdrop-blur-sm"
+                        style={{ left: `${headlineRangeLow}%`, width: `${Math.max(0, headlineRangeHigh - headlineRangeLow)}%` }}
+                      />
+                      <div className="absolute top-0 h-full w-1 bg-primary shadow-[0_0_8px_rgba(var(--primary),0.5)]" style={{ left: `${headlineWinProbability}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 shadow-sm text-center">
+                      <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1 tracking-widest uppercase">STRAIGHT SETS</p>
+                      <p className="font-mono font-bold text-foreground mt-1 truncate px-2">{prediction.player1Name}</p>
+                      <p className="text-2xl font-display font-bold mt-2 tabular-nums">{engine.simulation.straightSetsProbabilityPlayer1.toFixed(1)}%</p>
+                    </div>
+                    <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 shadow-sm text-center">
+                      <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1 tracking-widest uppercase">STRAIGHT SETS</p>
+                      <p className="font-mono font-bold text-foreground mt-1 truncate px-2">{prediction.player2Name}</p>
+                      <p className="text-2xl font-display font-bold mt-2 tabular-nums">{engine.simulation.straightSetsProbabilityPlayer2.toFixed(1)}%</p>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-muted-foreground space-y-2.5 font-mono border-t border-border/50 pt-6">
+                    <div className="flex justify-between items-center bg-background/50 px-3 py-2 rounded-md">
+                      <span>Expected games ({prediction.player1Name}):</span>
+                      <span className="text-foreground font-bold tabular-nums">{engine.simulation.expectedGamesPlayer1.toFixed(1)}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-background/50 px-3 py-2 rounded-md">
+                      <span>Expected games ({prediction.player2Name}):</span>
+                      <span className="text-foreground font-bold tabular-nums">{engine.simulation.expectedGamesPlayer2.toFixed(1)}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-background/50 px-3 py-2 rounded-md">
+                      <span>Simulations run:</span>
+                      <span className="text-foreground font-bold tabular-nums">{engine.simulation.simulationsRun.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-background/50 px-3 py-2 rounded-md">
+                      <span>Input completeness:</span>
+                      <span className="text-foreground font-bold tabular-nums">{engine.simulation.inputReliability}%</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground/80 italic leading-relaxed">{engine.simulation.note}</p>
+                </CardContent>
+              </Card>
+
+              <ModuleCard title="SET SCORE DISTRIBUTION" reliability={asPercentage(engine.simulation.inputReliability)} icon={Dices} reliabilityLabel="COMP">
+                <div className="h-72 -ml-4 mt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={engine.simulation.setScoreDistribution.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
+                      <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="score" tick={{ fontSize: 11, fill: "hsl(var(--foreground))", fontWeight: "bold", fontFamily: "var(--font-mono)" }} width={45} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        formatter={(value: number, _name: any, item: any) => [`${value.toFixed(1)}%`, item.payload.favors === "player1" ? prediction.player1Name : prediction.player2Name]}
+                        contentStyle={{ fontSize: 12, borderRadius: '8px', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))', color: 'hsl(var(--foreground))', fontFamily: 'var(--font-mono)' }}
+                        cursor={{ fill: 'hsl(var(--secondary)/0.5)' }}
+                      />
+                      <Bar dataKey="probability" radius={[0, 6, 6, 0]} barSize={24}>
+                        {engine.simulation.setScoreDistribution.slice(0, 8).map((entry, i) => (
+                          <Cell key={i} fill={entry.favors === "player1" ? "hsl(var(--primary))" : "hsl(var(--muted-foreground)/0.5)"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase flex items-center justify-center gap-6 mt-2 pt-4 border-t border-border/50">
+                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full bg-primary shadow-sm" /> {prediction.player1Name}</span>
+                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full bg-muted-foreground/50 shadow-sm" /> {prediction.player2Name}</span>
+                </div>
+              </ModuleCard>
             </div>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card>
-              <CardContent className="p-6 space-y-6">
-                <div>
-                  <p className="text-xs font-mono text-muted-foreground mb-1">SIMULATED WIN PROBABILITY ({headlineWinnerName})</p>
-                  <p className="text-4xl font-black tracking-tighter">
-                    {headlineWinProbability.toFixed(1)}%
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1 font-mono">
-                    range {headlineRangeLow.toFixed(0)}–{headlineRangeHigh.toFixed(0)}%
-                  </p>
-                  <div className="relative h-3 w-full bg-secondary rounded-full overflow-hidden mt-3">
-                    <div
-                      className="absolute h-full bg-primary/30"
-                      style={{ left: `${headlineRangeLow}%`, width: `${Math.max(0, headlineRangeHigh - headlineRangeLow)}%` }}
-                    />
-                    <div className="absolute top-0 h-full w-0.5 bg-primary" style={{ left: `${headlineWinProbability}%` }} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="p-3 bg-background rounded-lg border">
-                    <p className="text-xs font-mono text-muted-foreground">STRAIGHT SETS</p>
-                    <p className="font-mono font-bold text-foreground mt-1 truncate">{prediction.player1Name}</p>
-                    <p className="text-lg font-bold">{engine.simulation.straightSetsProbabilityPlayer1.toFixed(1)}%</p>
-                  </div>
-                  <div className="p-3 bg-background rounded-lg border">
-                    <p className="text-xs font-mono text-muted-foreground">STRAIGHT SETS</p>
-                    <p className="font-mono font-bold text-foreground mt-1 truncate">{prediction.player2Name}</p>
-                    <p className="text-lg font-bold">{engine.simulation.straightSetsProbabilityPlayer2.toFixed(1)}%</p>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground space-y-1 font-mono border-t pt-3">
-                  <div className="flex justify-between">
-                    <span>Expected games ({prediction.player1Name}):</span>
-                    <span className="text-foreground font-bold">{engine.simulation.expectedGamesPlayer1.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Expected games ({prediction.player2Name}):</span>
-                    <span className="text-foreground font-bold">{engine.simulation.expectedGamesPlayer2.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Simulations run:</span>
-                    <span className="text-foreground font-bold">{engine.simulation.simulationsRun.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Input completeness:</span>
-                    <span className="text-foreground font-bold">{engine.simulation.inputReliability}%</span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground italic">{engine.simulation.note}</p>
-              </CardContent>
-            </Card>
-
-            <ModuleCard title="SET SCORE DISTRIBUTION" reliability={asPercentage(engine.simulation.inputReliability)} icon={Dices} reliabilityLabel="COMP">
-              <div className="h-64 -ml-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={engine.simulation.setScoreDistribution.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border" />
-                    <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="score" tick={{ fontSize: 11 }} width={40} />
-                    <Tooltip
-                      formatter={(value: number, _name, item) => [`${value.toFixed(1)}%`, item.payload.favors === "player1" ? prediction.player1Name : prediction.player2Name]}
-                      contentStyle={{ fontSize: 12 }}
-                    />
-                    <Bar dataKey="probability" radius={[0, 4, 4, 0]}>
-                      {engine.simulation.setScoreDistribution.slice(0, 8).map((entry, i) => (
-                        <Cell key={i} fill={entry.favors === "player1" ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-xs text-muted-foreground text-center">
-                <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1" /> {prediction.player1Name}
-                <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground ml-3 mr-1" /> {prediction.player2Name}
-              </p>
-            </ModuleCard>
-          </div>
-        </div>
         );
       })()}
 
       {/* FULL ENGINE BREAKDOWN */}
-      <div>
-        <h3 className="text-xl font-bold flex items-center gap-2 mb-6">
-          <Database className="w-5 h-5" /> FULL ENGINE BREAKDOWN
+      <div className="pt-8">
+        <h3 className="text-2xl font-display font-bold flex items-center gap-3 mb-6">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Database className="w-5 h-5 text-primary" />
+          </div>
+          Full Engine Breakdown
         </h3>
 
         {engine.availabilityNote && (
-          <div className="mb-3 p-4 border border-warning/30 bg-warning/5 text-warning-foreground rounded-lg flex gap-3 text-sm">
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-warning" />
-            <div>{engine.availabilityNote}</div>
+          <div className="mb-4 p-5 border-2 border-warning/30 bg-warning/10 text-warning-foreground rounded-2xl flex gap-4 text-sm shadow-sm">
+            <AlertTriangle className="w-6 h-6 shrink-0 text-warning" />
+            <div className="leading-relaxed">{engine.availabilityNote}</div>
           </div>
         )}
 
         {engine.conditionsNote && (
-          <div className="mb-3 p-4 border border-border bg-secondary/30 rounded-lg flex gap-3 text-sm text-muted-foreground">
-            <Activity className="w-5 h-5 shrink-0 mt-0.5" />
-            <div>{engine.conditionsNote}</div>
+          <div className="mb-4 p-5 border border-border/60 bg-secondary/40 rounded-2xl flex gap-4 text-sm text-foreground/80 shadow-sm backdrop-blur-sm">
+            <Activity className="w-6 h-6 shrink-0 text-primary" />
+            <div className="leading-relaxed">{engine.conditionsNote}</div>
           </div>
         )}
 
         {!!engine.warnings?.length && (
-          <div className="mb-6 p-4 border border-warning/30 bg-warning/5 rounded-lg space-y-2">
+          <div className="mb-6 p-5 border-2 border-warning/30 bg-warning/5 rounded-2xl space-y-3 shadow-sm">
             {engine.warnings.map((w, i) => (
-              <div key={i} className="flex gap-2 text-xs text-muted-foreground">
-                <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" /> <span>{w}</span>
+              <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                <AlertTriangle className="w-5 h-5 text-warning shrink-0" /> <span className="leading-snug">{w}</span>
               </div>
             ))}
           </div>
         )}
 
         {!!engine.disclosures?.length && (
-          <div className="mb-6 p-4 border border-border bg-secondary/30 rounded-lg space-y-2">
+          <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
             {engine.disclosures.map((d, i) => (
-              <div key={i} className="flex gap-2 text-xs text-muted-foreground">
-                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>{d}</span>
+              <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                <Info className="w-5 h-5 text-primary shrink-0" /> <span className="leading-snug">{d}</span>
               </div>
             ))}
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
           
           <ModuleCard title="SURFACE ELO" reliability={asPercentage(engine.surfaceElo.reliability)} icon={ActivitySquare}>
             <EdgeBar 
