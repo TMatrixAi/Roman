@@ -29,10 +29,11 @@ const CLOSENESS_LABELS: Record<string, string> = {
 // "STRONG_RECOMMENDATION" is displayed as "HIGH CONFIDENCE" rather than a literal
 // underscore-replace of its name: a fresh walk-forward audit (docs/audit-task116-full-statistical-audit.md,
 // section 4) found this tier currently has the worst log loss of any recommendation tier on
-// held-out data (n=189) -- "strong recommendation" reads as an endorsement the evidence doesn't
-// yet back. "HIGH CONFIDENCE" describes what the tier actually is (the engine's highest-margin
-// threshold) without implying a proven track record. Keep this label consistent everywhere the
-// tier is shown (Ledger list rows, Ledger stats, this page).
+// held-out data -- "strong recommendation" reads as an endorsement the evidence doesn't yet back.
+// "HIGH CONFIDENCE" describes what the tier actually is (the engine's highest-margin threshold)
+// without implying a proven track record. Keep this label consistent everywhere the tier is shown
+// (Ledger list rows, Ledger stats, this page). Current backtest n is shown live on the Accuracy
+// Dashboard -- do NOT hardcode a snapshot count here, it drifts silently as more rows are graded.
 const RECOMMENDATION_LABELS: Record<string, string> = {
   STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
 }
@@ -178,15 +179,16 @@ export default function PredictionResultPage() {
                 {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
                   <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                     "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
-                    validation on real outcomes is still limited (n=189 in the latest backtest), and this tier hasn't
-                    yet been shown to beat other tiers. Treat it as one input, not a proven edge.
+                    validation on real outcomes is still early-stage, and this tier hasn't yet been shown to beat
+                    other tiers. See the Accuracy Dashboard for current backtest sample counts.
+                    Treat it as one input, not a proven edge.
                   </p>
                 )}
                 {engine.isEliteTier && (
                   <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                     {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
-                    Elite is an early, small-sample tier (n=468 in the latest backtest) -- directionally promising but not
-                    yet statistically proven to outperform non-Elite predictions.
+                    Elite is an early, small-sample tier -- directionally promising but not yet statistically proven
+                    to outperform non-Elite predictions. See the Accuracy Dashboard for current sample counts.
                   </p>
                 )}
               </div>
