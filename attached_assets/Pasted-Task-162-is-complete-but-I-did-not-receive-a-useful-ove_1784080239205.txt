@@ -1,0 +1,526 @@
+Task 162 is complete, but I did not receive a useful overview of what the audit actually found.
+
+Do not rerun the entire task unless necessary. Review the artifacts, reports, logs, test results, database queries, code changes, and analysis already produced by Task 162, then give me a detailed plain-English summary of the findings.
+
+I need to understand what the audit actually saw, what is working correctly, what may still be wrong, and what should be fixed next.
+
+Do not give me a generic description of what the system is supposed to do. Report the actual findings from the completed audit.
+
+Organize the response exactly as follows:
+
+1. Executive overview
+
+Give me a clear summary of the current health of the prediction system.
+
+State:
+
+* Whether the final predicted winner logic appears trustworthy
+* Whether probabilities appear properly calibrated
+* Whether risk ratings are meaningful
+* Whether model-agreement labels are meaningful
+* Whether Strong Recommendation is trustworthy
+* Whether Elite Prediction is trustworthy
+* Whether data-quality and confidence ratings are trustworthy
+* Whether Shadow Replay matches the production prediction path
+* Whether any serious bugs or inconsistencies were found
+
+Use direct language such as:
+
+* Working correctly
+* Partially verified
+* Misleading
+* Poorly calibrated
+* Confirmed bug
+* Suspected issue
+* Insufficient evidence
+
+2. What Task 162 actually inspected
+
+List the exact files, services, database tables, reports, historical batches, date ranges, prediction counts, and tests that were inspected.
+
+Include:
+
+* Number of predictions reviewed
+* Number of Shadow Replay predictions reviewed
+* Number of walk-forward predictions reviewed
+* Number of real paper-trading predictions reviewed
+* Date ranges used
+* Tours and surfaces covered
+* Whether the audit used fresh runs or previously stored results
+* Whether the audit inspected individual prediction records or only aggregate metrics
+
+If Task 162 did not inspect something important, say so clearly.
+
+3. Final winner-selection findings
+
+Explain exactly how the app currently selects the predicted winner.
+
+Show the full decision path in plain English:
+
+* Raw model outputs
+* Model weights
+* Combined probability
+* Calibration
+* Tie-break rules
+* Any recommendation or rule-based overrides
+* Final stored winner
+* Final displayed winner
+
+Answer these questions directly:
+
+* Can calibration ever change which player is selected?
+* Can a recommendation rule override the predicted winner?
+* Can Monte Carlo override the ensemble?
+* Can a weak module overturn the core models?
+* Can the tie-break cascade change the winner?
+* Are there any paths where the displayed winner can differ from the stored winner?
+* Are there any Player 1 and Player 2 orientation risks?
+
+Provide examples from actual predictions if any were found.
+
+4. Model-by-model findings
+
+For every active model or signal, provide a table or structured summary showing:
+
+* Current weight
+* Standalone accuracy
+* Log loss
+* Calibration error
+* Removal impact
+* Addition impact
+* Dissent accuracy
+* Sample size
+* Whether it adds independent value
+* Whether it appears correlated with another model
+* Current recommendation: keep, reduce, disable, recalibrate, or investigate
+
+Include at minimum:
+
+* Surface Elo
+* Serve/Return
+* Recent Form
+* Surface-specific form
+* Opponent-quality-adjusted form
+* Ranking and competition level
+* Court-speed fit
+* Style matchup
+* Fatigue
+* Travel and rest
+* Availability
+* Head-to-head
+* Monte Carlo
+* Tournament-level specialist
+* Segment specialist
+* Any other active module found in the engine
+
+Do not leave a field blank without explaining why the measurement was unavailable.
+
+5. Correlated-evidence findings
+
+Explain whether the audit found that multiple models are counting the same evidence more than once.
+
+Specifically inspect overlap among:
+
+* Surface Elo
+* Serve/Return
+* Recent Form
+* Surface-specific history
+* Ranking
+* Opponent-quality features
+
+Report:
+
+* Which modules are most correlated
+* Whether correlated agreement is currently being treated as independent agreement
+* Whether a recent hot streak can influence several modules at once
+* Whether this inflates confidence
+* Whether it inflates model agreement
+* Whether it increases Elite or Strong Recommendation assignments
+* The recommended fix, if one is needed
+
+Do not just say the models are correlated. Explain the practical effect on predictions.
+
+6. Close-match and tie-break findings
+
+Report what Task 162 found about matches where the core models were close or split.
+
+Include:
+
+* Number of close matches examined
+* Definition of a close match
+* Accuracy of each possible tie-break signal
+* Accuracy when Surface Elo breaks the tie
+* Accuracy when Serve/Return breaks the tie
+* Accuracy when Recent Form breaks the tie
+* Accuracy when ranking breaks the tie
+* Accuracy when Monte Carlo breaks the tie
+* Accuracy when fatigue or travel breaks the tie
+* Whether the current tie-break order is supported by evidence
+
+State whether close matches are being:
+
+* Correctly kept near 50/50
+* Pushed too aggressively toward one player
+* Flattened too much toward 50/50
+* Decided by weak or unreliable signals
+
+7. Upset-risk findings
+
+Explain exactly how Low, Moderate, High, and Extreme upset risk are currently calculated.
+
+Then report the actual historical upset rate for each tier.
+
+For every tier, include:
+
+* Prediction count
+* Favorite win rate
+* Upset rate
+* Average calibrated probability
+* Average data quality
+* Most common reason the tier was assigned
+* Performance by ATP, WTA, Challenger, and ITF
+* Performance by surface
+
+State clearly whether the tiers are properly ordered.
+
+The expected relationship is:
+
+Extreme upset rate > High upset rate > Moderate upset rate > Low upset rate
+
+If that ordering does not hold, identify which thresholds or inputs caused the problem.
+
+Also identify any cases where:
+
+* One weak module triggered Extreme risk
+* Low risk was assigned to a highly uncertain match
+* Extreme risk was assigned despite strong core-model agreement
+* Risk labels conflicted with the displayed probability margin
+
+8. Moderate, High, and Extreme rating improvement findings
+
+Tell me which features Task 162 found to be genuinely useful for predicting upset risk.
+
+Separate features into:
+
+* Proven useful
+* Possibly useful
+* Not useful
+* Harmful
+* Not tested
+
+Include:
+
+* Probability margin
+* Core-model disagreement
+* Underdog recent form
+* Favorite surface vulnerability
+* Ranking mismatch
+* Tour-level mismatch
+* Surface sample size
+* Injury or inactivity return
+* Travel and rest
+* Qualifying or lower-tier variance
+* Serve dependence
+* Tiebreak dependence
+* Historical player volatility
+
+State whether the risk model should remain part of the winner model or become a separate validated model.
+
+9. Elite Prediction findings
+
+Give a complete audit of Elite Prediction.
+
+Report:
+
+* Current qualification rules
+* Number of Elite predictions
+* Win rate
+* Log loss
+* Calibration error
+* Average probability
+* Average data quality
+* Performance by tour
+* Performance by surface
+* Performance by probability band
+* Performance by model-agreement level
+* Performance by upset-risk level
+* Number of Elite losses
+* Most common causes of Elite losses
+
+Identify whether Elite is:
+
+* Truly better than ordinary predictions
+* Too common
+* Too rare
+* Poorly calibrated
+* Being assigned because of duplicated evidence
+* Being assigned with weak data
+* Being assigned during High Disagreement or Extreme risk
+* Mostly a presentation label without proven predictive value
+
+List actual examples of incorrect Elite predictions and explain why each received the badge.
+
+10. Strong Recommendation findings
+
+Audit Strong Recommendation separately.
+
+Report:
+
+* Current qualification rules
+* Number of Strong Recommendations
+* Win rate
+* Log loss
+* Calibration error
+* Average probability
+* Average data quality
+* Performance by tour and surface
+* Comparison against ordinary predictions
+* Comparison against Elite predictions
+
+Explain why the earlier statistical audit found Strong Recommendation to be poorly calibrated or weak, and state whether Task 162 confirmed that this issue still exists.
+
+Identify the exact rule or combination of rules responsible.
+
+11. Calibration findings
+
+Explain what Task 162 found about calibration.
+
+Include:
+
+* Raw probability versus calibrated probability
+* Calibration mapping currently active
+* Whether Shadow Replay uses the calibration active on each historical date
+* Whether Task 160 is fully implemented and verified
+* Whether older Shadow batches still use the previous behavior
+* Calibration error by probability band
+* Calibration error by tour
+* Calibration error by surface
+* Calibration error by competition level
+* Calibration error by data-quality tier
+* Calibration error by recommendation tier
+* Calibration error by risk tier
+
+State whether one global calibration mapping is adequate or whether certain large segments need separate calibration.
+
+Do not recommend segment-specific calibration unless sample sizes support it.
+
+12. Shadow Replay versus walk-forward versus real paper trading
+
+Compare the three evidence sources in a clear table:
+
+* Walk-forward backtest
+* Shadow Paper Trading
+* Real paper trading
+
+For each one, report:
+
+* Prediction count
+* Accuracy
+* Log loss
+* Calibration error
+* Date range
+* Eligible-match rules
+* Data source
+* Feature path
+* Calibration behavior
+* Known limitations
+
+Explain any meaningful performance gaps.
+
+Investigate whether differences come from:
+
+* Different match populations
+* Missing live data
+* Historical leakage
+* Calibration versions
+* Production-only code
+* Player identity mapping
+* Surface mapping
+* Tournament mapping
+* Result matching
+* Scheduled cutoff errors
+* Insufficient-data skips
+
+If there are still too few graded real paper trades to compare honestly, state that clearly.
+
+13. Skipped-match findings
+
+Audit Shadow Replay skips.
+
+Report:
+
+* Total skipped
+* Already claimed
+* Insufficient data
+* Missing player identity
+* Missing match history
+* Missing surface
+* Missing tournament level
+* Missing ranking
+* Missing provider result
+* Failed cutoff reconstruction
+* Other reasons
+
+Determine whether any matches labeled “insufficient data” were actually skipped because of a bug.
+
+Provide examples.
+
+14. Most confident wrong predictions
+
+List at least the 15 most confident incorrect predictions found by Task 162.
+
+For each one, include:
+
+* Match
+* Date
+* Tour and tournament level
+* Surface
+* Predicted winner
+* Actual winner
+* Raw probability
+* Calibrated probability
+* Model outputs
+* Model weights
+* Data quality
+* Agreement level
+* Upset-risk rating
+* Recommendation
+* Elite status
+* Rankings
+* Historical sample sizes
+* Fallback values used
+* Exact root cause or likely root cause
+
+Group them by recurring cause, such as:
+
+* Inflated Elo
+* Weak-opponent recent form
+* Missing competition-level adjustment
+* Surface mismatch
+* Correlated models
+* Bad fallback values
+* Incorrect identity mapping
+* Overconfidence
+* Recommendation override
+* Risk-label issue
+* Unexplained variance
+
+15. Surprising correct underdog predictions
+
+List the strongest correct underdog predictions and explain what the system saw correctly.
+
+This is important because I want to know which signals are genuinely useful, not only what failed.
+
+For each one, include the same core details as the incorrect-prediction section.
+
+16. Confirmed bugs
+
+List every confirmed bug found by Task 162.
+
+For each bug, include:
+
+* Bug description
+* Severity
+* Affected files or services
+* Number of affected predictions
+* Example prediction
+* Whether it changes the winner
+* Whether it changes probability
+* Whether it changes risk, agreement, Strong Recommendation, or Elite status
+* Whether it is already fixed
+* How the fix was verified
+
+Do not mix suspected issues into this section.
+
+17. Suspected issues
+
+List issues that look wrong but do not yet have enough evidence to be called confirmed bugs.
+
+For each one, explain:
+
+* Why it is suspicious
+* What evidence supports it
+* What evidence is missing
+* What test would confirm or reject it
+
+18. What is already working correctly
+
+List the parts of the system that Task 162 actually verified as correct.
+
+Include evidence, not assumptions.
+
+Possible examples:
+
+* Leakage-safe historical cutoff
+* Immutable saved predictions
+* Correct Player 1 and Player 2 mapping
+* Monte Carlo orientation
+* Correct surface mapping
+* Correct calibration lookup
+* Duplicate prevention
+* Shadow batch isolation
+* Stable replay memory usage
+* Accurate result matching
+* Correct recommendation guardrails
+
+Only include items that were genuinely tested.
+
+19. What Task 162 did not prove
+
+Be explicit about limitations.
+
+State what remains unverified because of:
+
+* Small sample size
+* No real graded paper trades
+* Missing provider data
+* Missing historical calibration versions
+* Incomplete tournament coverage
+* No segment-specific testing
+* No before-and-after comparison
+* Tests that were not run
+* Metrics that were not calculated
+
+Do not present absence of a detected bug as proof that no bug exists.
+
+20. Strict priority order
+
+Give me the top priorities in order.
+
+For each priority, include:
+
+* What is wrong
+* Whether it is a confirmed bug or model weakness
+* Evidence
+* Expected impact
+* Exact files or system area involved
+* Recommended change
+* Required validation test
+* Acceptance metric
+* Risk of making the change
+
+End with these exact conclusions:
+
+1. The single best next move
+2. The second priority
+3. The third priority
+4. What should not be changed yet
+5. Whether the winner model should remain as-is
+6. Whether the risk model should become separate
+7. Whether Strong Recommendation should become separate
+8. Whether Elite Prediction should become separate
+9. Which completed features are trustworthy now
+10. Which feature or label is currently the least trustworthy
+
+Important instructions:
+
+* Do not hide behind phrases like “more testing is needed” without explaining exactly what test is needed.
+* Do not give me another implementation plan without first reporting the audit findings.
+* Do not claim something was verified unless Task 162 actually tested it.
+* Use the existing Task 162 outputs wherever possible.
+* If Task 162 failed to calculate an important metric, say that directly.
+* Distinguish confirmed bugs, statistical weaknesses, design limitations, and missing evidence.
+* Use plain English and explain why each issue matters to the final prediction.
+* Do not make code changes during this response.
+* Do not start another large backtest unless a missing result cannot be answered from the completed Task 162 artifacts.
+* Save this overview as a permanent report in the project documentation and tell me the file path.
