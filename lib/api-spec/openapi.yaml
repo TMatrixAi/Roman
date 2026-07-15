@@ -216,6 +216,15 @@ paths:
           schema:
             type: integer
             minimum: 0
+        - name: force
+          in: query
+          required: false
+          description: >-
+            When true, bypasses the provider's short in-memory fixtures cache for this call, so a
+            user-initiated refresh can actually pull fresh data instead of silently re-serving the
+            same cached response. Defaults to false (normal cached reads).
+          schema:
+            type: boolean
       responses:
         "200":
           description: Upcoming fixtures
@@ -1114,7 +1123,7 @@ components:
 
     Fixture:
       type: object
-      required: [id, date, timeConfirmed, player1Id, player1Name, player2Id, player2Name, surface]
+      required: [id, date, timeConfirmed, isLive, player1Id, player1Name, player2Id, player2Name, surface]
       properties:
         id:
           type: string
@@ -1138,6 +1147,13 @@ components:
         timeConfirmed:
           type: boolean
           description: True only when scheduledStart reflects a real provider-supplied time for this exact fixture.
+        isLive:
+          type: boolean
+          description: >-
+            True when this fixture's confirmed scheduledStart is already in the past and the
+            provider has not yet reported a winner -- i.e. the match is currently in progress.
+            False for a genuinely upcoming (not yet started) fixture, and also false for an
+            unconfirmed ("Time TBD") fixture, since we have no real evidence it has started.
         tournamentName:
           type: ["string", "null"]
         tournamentLevel:

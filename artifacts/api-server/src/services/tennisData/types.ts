@@ -94,6 +94,13 @@ export interface Fixture {
   scheduledStart: string | null;
   /** True only when `scheduledStart` reflects a real provider-supplied time for this exact fixture. */
   timeConfirmed: boolean;
+  /**
+   * True when `scheduledStart` is confirmed and already in the past but the provider has not yet
+   * reported a winner for this fixture -- i.e. it's currently in progress. False for a genuinely
+   * upcoming (not yet started) fixture, and also false when `scheduledStart` is null ("Time TBD")
+   * since there's no real evidence the match has started.
+   */
+  isLive: boolean;
   tournamentName: string | null;
   tournamentLevel: TournamentLevel | null;
   round: string | null;
@@ -181,7 +188,7 @@ export interface TennisDataProvider {
    * result cap during a sparse (e.g. off-season) stretch. `dateStart`/`dateStop` are inclusive,
    * `YYYY-MM-DD`.
    */
-  getUpcomingFixturesRange(dateStart: string, dateStop: string): Promise<Fixture[]>;
+  getUpcomingFixturesRange(dateStart: string, dateStop: string, opts?: { bypassCache?: boolean }): Promise<Fixture[]>;
   getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord>;
   /**
    * Bulk, player-agnostic pull of every definitively-terminated match in a date range (finished,

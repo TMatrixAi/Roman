@@ -16,14 +16,18 @@ router.get("/fixtures/upcoming", async (req, res): Promise<void> => {
 
   const limit = parsed.data.limit ?? DEFAULT_LIMIT;
   const offset = parsed.data.offset ?? 0;
+  const bypassCache = parsed.data.force === true;
   const provider = getTennisDataProvider();
 
   try {
-    const window = await collectUpcomingWindow((dateStart, dateStop) => provider.getUpcomingFixturesRange(dateStart, dateStop), {
-      limit,
-      offset,
-      nowMs: Date.now(),
-    });
+    const window = await collectUpcomingWindow(
+      (dateStart, dateStop) => provider.getUpcomingFixturesRange(dateStart, dateStop, { bypassCache }),
+      {
+        limit,
+        offset,
+        nowMs: Date.now(),
+      },
+    );
     res.json(GetUpcomingFixturesResponse.parse(window));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {

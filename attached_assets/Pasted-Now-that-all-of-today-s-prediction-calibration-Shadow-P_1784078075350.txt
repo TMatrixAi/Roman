@@ -1,0 +1,329 @@
+Now that all of today’s prediction, calibration, Shadow Paper Trading, replay, validation, and accuracy-dashboard tasks are implemented, review the current system and tell me what my next move should be to improve prediction accuracy and decision quality.
+
+Do not give me another general list of features. Audit the system as it exists now and identify the highest-priority changes that would most improve:
+
+* Which player the app ultimately leans toward
+* The final predicted winner
+* The final win probability
+* Moderate, High, and Extreme upset-risk ratings
+* Model-agreement and disagreement ratings
+* Strong Recommendation decisions
+* Elite Prediction decisions
+* Confidence and data-quality ratings
+
+I want you to determine whether the next improvement should come from better input data, better feature construction, better model weighting, better calibration, better decision thresholds, better recommendation logic, or fixing remaining bugs and inconsistencies.
+
+First, review all recently completed work and do not repeat tasks that are already fully implemented and verified. If something has already been completed, briefly document that and move on.
+
+Then perform the following audit:
+
+1. Final winner selection
+
+Determine exactly how the system currently decides which player to lean toward.
+
+Check whether the final winner is being selected by:
+
+* Highest calibrated probability
+* Weighted model vote
+* Tie-break cascade
+* Recommendation override
+* Monte Carlo
+* Surface Elo
+* Serve/Return
+* Recent Form
+* Ranking or competition level
+* Another rule
+
+Identify any situations where the final winner can conflict with the strongest underlying evidence.
+
+Verify that weaker modules cannot overturn the main prediction unless historical testing proves that they improve accuracy.
+
+2. Core prediction signals
+
+Measure the true predictive value of every active model and feature using leakage-safe Shadow Replay and walk-forward testing.
+
+Include:
+
+* Surface Elo
+* Serve/Return
+* Recent Form
+* Surface-specific form
+* Opponent-quality-adjusted form
+* Ranking and competition level
+* Court-speed fit
+* Player-style matchup
+* Fatigue
+* Travel and rest
+* Availability
+* Head-to-head
+* Monte Carlo
+* Any tournament-level or segment specialist
+
+For each model, report:
+
+* Standalone accuracy
+* Log loss
+* Calibration error
+* Value when added to the core engine
+* Value when removed
+* How often its dissenting vote is correct
+* Whether it adds genuinely new information or duplicates another model
+
+Do not increase a model’s weight just because it sounds important. Only increase its influence if out-of-sample testing shows it improves prediction quality.
+
+3. Correlated evidence
+
+Check whether Surface Elo, Serve/Return, Recent Form, and other modules are repeatedly counting the same recent matches as if they were independent evidence.
+
+Identify where one hot streak, weak schedule, injury period, or competition-level change influences several models at the same time.
+
+Recommend a way to reduce duplicated evidence without throwing away useful information.
+
+4. Lean and tie-break logic
+
+Audit matches where the main models are close.
+
+Determine the best evidence-based tie-break order instead of relying on assumptions.
+
+Test possible tie-break signals such as:
+
+* Serve/Return advantage
+* Surface Elo
+* Opponent-quality-adjusted Recent Form
+* Surface-specific sample
+* Ranking and competition level
+* Court-speed fit
+* Fatigue and travel
+* Monte Carlo stability
+
+Measure which tie-breaker actually wins most often when the primary models are split.
+
+The app should not force every close match toward 50/50, but it also should not manufacture confidence without evidence.
+
+5. Upset-risk ratings
+
+Audit how Low, Moderate, High, and Extreme upset risk are currently assigned.
+
+Determine whether upset risk is based on:
+
+* Probability margin
+* Model disagreement
+* Favorite weakness
+* Underdog strength
+* Data quality
+* Competition level
+* Surface mismatch
+* Recent form
+* Fatigue
+* Availability
+* Volatility
+* A combination of these
+
+Measure the actual upset rate for every risk tier.
+
+A valid risk system should produce clearly separated historical outcomes. For example, Extreme Risk should have a materially higher upset rate than High Risk, High should be higher than Moderate, and Moderate should be higher than Low.
+
+If the tiers overlap heavily, redesign the scoring logic and thresholds.
+
+Do not let one weak or unreliable module create an Extreme rating by itself.
+
+6. Better Moderate, High, and Extreme ratings
+
+Determine which features are most useful specifically for predicting upset risk, even if they are not useful for predicting the outright winner.
+
+Consider whether the risk model should be separate from the winner model.
+
+Test whether risk ratings improve when using:
+
+* Favorite probability margin
+* Core-model disagreement
+* Underdog recent-form trend
+* Favorite vulnerability on the surface
+* Ranking and tour-level mismatch
+* Small surface sample
+* Returning from injury or inactivity
+* Travel and rest
+* Best-of-three volatility
+* Qualifying or lower-tier variance
+* Serve dependence
+* Tiebreak dependence
+* Historical volatility of each player
+
+Recommend the simplest validated risk model that produces meaningfully different real upset rates across the tiers.
+
+7. Elite Prediction logic
+
+Audit every current requirement for Elite Prediction.
+
+An Elite Prediction should only be assigned when historical evidence shows that the group performs materially better than ordinary predictions.
+
+Test possible requirements such as:
+
+* High data quality
+* Large calibrated probability advantage
+* Agreement among the validated core models
+* Strong surface sample
+* Stable Monte Carlo result
+* No major identity or availability uncertainty
+* No High Disagreement
+* No Extreme upset risk
+* Proven accuracy for that tour, surface, and probability band
+
+Report:
+
+* Number of Elite predictions
+* Win rate
+* Log loss
+* Calibration
+* Performance by ATP, WTA, Challenger, and ITF
+* Performance by surface
+* Performance by probability band
+* Performance by data-quality band
+
+Do not loosen Elite thresholds just to create more Elite predictions.
+
+If Elite is currently too rare, identify which missing data or weak features prevent otherwise strong matches from qualifying.
+
+8. Strong Recommendation logic
+
+Audit Strong Recommendation separately from Elite Prediction.
+
+Determine whether it is supposed to represent:
+
+* High probability
+* Strong model agreement
+* Low upset risk
+* Reliable data
+* Positive expected value
+* Or a combination
+
+Make sure the label is not being assigned to a historically weak or overconfident group.
+
+If Strong Recommendation performs worse than ordinary predictions, identify the exact rules causing the problem and redesign them.
+
+9. Calibration
+
+Use the calibration mapping that was actually active for each historical date where appropriate.
+
+Measure calibration by:
+
+* Tour
+* Surface
+* Tournament level
+* Probability band
+* Data-quality tier
+* Recommendation tier
+* Risk tier
+
+Check whether one global calibration curve is hiding important differences between ATP, WTA, Challenger, and ITF.
+
+Do not create many tiny calibration groups unless the sample sizes are large enough to be trustworthy.
+
+10. Shadow Replay versus live paper trading
+
+Compare:
+
+* Walk-forward backtest
+* Shadow Paper Trading
+* Real paper trading
+
+Keep all three evidence sources separate.
+
+Investigate any meaningful performance gap between them.
+
+Identify whether the gap comes from:
+
+* Data availability
+* Feature timing
+* Calibration version
+* Player identity mapping
+* Tournament mapping
+* Surface mapping
+* Result matching
+* Production-only code paths
+* Missing live data
+* Historical leakage
+* Different eligible match populations
+
+11. Error analysis
+
+Inspect the most confident incorrect predictions and the most surprising correct underdog predictions.
+
+For each example, show:
+
+* Final prediction
+* Raw and calibrated probability
+* Model contributions
+* Data quality
+* Agreement level
+* Upset-risk level
+* Recommendation
+* Elite status
+* Surface
+* Tour level
+* Player rankings
+* Historical sample sizes
+* Any fallback values
+* The exact reason the system leaned toward that player
+
+Group the errors by root cause instead of treating every missed match as a separate issue.
+
+12. Hidden bugs and misleading outputs
+
+Search for remaining issues that could cause predictions or labels to be incorrect, misleading, overvalued, or undervalued, including:
+
+* Player 1 and Player 2 reversals
+* Winner and probability mismatches
+* Monte Carlo attached to the wrong player
+* Elo display errors
+* Duplicate predictions
+* Reversed-player duplicates
+* Stale saved predictions
+* Incorrect surface
+* Incorrect tournament level
+* Incorrect match format
+* Wrong scheduled cutoff
+* Current data leaking into historical replay
+* Missing historical data
+* Inflated fallback ratings
+* Low-tier players being overrated
+* Recommendation rules conflicting with prediction metrics
+* Risk labels conflicting with probability margins
+* Elite labels appearing with weak evidence
+* Skipped matches that should have been scoreable
+
+13. Prioritized next move
+
+At the end, give me a strict priority order.
+
+For each recommendation, include:
+
+* What is wrong now
+* Evidence that it is hurting accuracy or decision quality
+* Estimated impact
+* Exact part of the system to change
+* How to validate the change
+* What metric must improve before the change is accepted
+
+Separate recommendations into:
+
+* Confirmed bugs to fix immediately
+* Data improvements
+* Model improvements
+* Calibration improvements
+* Risk-rating improvements
+* Recommendation and Elite logic improvements
+* UI wording or display corrections
+
+Do not make changes only because they sound reasonable.
+
+Prioritize only changes supported by leakage-safe out-of-sample evidence.
+
+The final answer should clearly state:
+
+1. The single best next move
+2. The second and third priorities
+3. What should not be changed yet
+4. Which completed features are already working correctly
+5. Whether the winner model, risk model, recommendation model, and Elite logic should remain combined or become separate validated systems
+6. The exact tests that should be run before declaring the new system more accurate

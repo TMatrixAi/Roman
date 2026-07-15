@@ -425,7 +425,7 @@ function MarketEdgeCard({ marketEdge }: { marketEdge: MarketEdgeSummary }) {
         </p>
       </CardHeader>
       <CardContent className="p-6 md:p-8">
-        <div className="grid md:grid-cols-2 gap-8 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
           <MetricStat label={`AVERAGE EDGE (n=${marketEdge.n})`} value={hasData ? `${marketEdge.averageEdge! > 0 ? "+" : ""}${marketEdge.averageEdge}pp` : "—"} />
           <div className="space-y-2 p-5 bg-background rounded-xl border border-border/50 shadow-sm">
             <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">READING</div>

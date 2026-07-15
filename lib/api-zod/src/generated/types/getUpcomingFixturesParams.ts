@@ -18,4 +18,8 @@ limit?: number;
  * @minimum 0
  */
 offset?: number;
+/**
+ * When true, bypasses the provider's short in-memory fixtures cache for this call, so a user-initiated refresh can actually pull fresh data instead of silently re-serving the same cached response. Defaults to false (normal cached reads).
+ */
+force?: boolean;
 };

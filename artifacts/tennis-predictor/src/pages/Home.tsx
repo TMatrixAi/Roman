@@ -43,7 +43,7 @@ export default function Home() {
           <ActivitySquare className="w-[400px] h-[400px]" />
         </div>
         <div className="relative z-10 max-w-3xl space-y-6">
-          <h1 className="text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05]">
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05] break-words">
             PROBABILITY <br /> <span className="text-primary-foreground/70">NOT SENTIMENT.</span>
           </h1>
           <p className="text-primary-foreground/90 text-lg md:text-xl font-medium max-w-2xl leading-relaxed">
@@ -105,7 +105,7 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="grid lg:grid-cols-[2fr_1fr] gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8">
         <section className="space-y-6">
           <div className="flex items-center justify-between border-b border-border/50 pb-4">
             <div className="flex items-center gap-3">

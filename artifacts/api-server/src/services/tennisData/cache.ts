@@ -23,9 +23,17 @@ export class TtlCache {
     this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
   }
 
-  async getOrFetch<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
-    const cached = this.get<T>(key);
-    if (cached !== undefined) return cached;
+  /**
+   * `bypass: true` skips the cache read entirely (used by a user-initiated "refresh" action that
+   * must actually pull fresh data instead of silently re-serving whatever is still within TTL),
+   * but the freshly-fetched value is still written back to the cache under the same key/TTL so
+   * subsequent normal (non-bypass) reads get the benefit of it.
+   */
+  async getOrFetch<T>(key: string, ttlMs: number, fetcher: () => Promise<T>, opts?: { bypass?: boolean }): Promise<T> {
+    if (!opts?.bypass) {
+      const cached = this.get<T>(key);
+      if (cached !== undefined) return cached;
+    }
     const value = await fetcher();
     this.set(key, value, ttlMs);
     return value;

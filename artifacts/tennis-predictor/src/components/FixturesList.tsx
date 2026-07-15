@@ -59,15 +59,25 @@ function timeSortKey(fixture: Fixture): number {
 }
 
 /**
+ * Live (already-started, no winner yet) fixtures sort as a group ahead of every not-yet-started
+ * fixture, mirroring the server's own `liveFirstSortKey` -- a live match is the most actionable
+ * thing to show first, regardless of how its own start time compares to an upcoming match's.
+ */
+function liveFirstCompare(a: Fixture, b: Fixture): number {
+  const aGroup = a.isLive ? 0 : 1
+  const bGroup = b.isLive ? 0 : 1
+  return aGroup !== bGroup ? aGroup - bGroup : timeSortKey(a) - timeSortKey(b)
+}
+
+/**
  * Fixtures NOT matching the applied tour filter are hidden entirely -- this is a real filter, not
- * a reordering. The remaining (matching) fixtures keep the existing time-based order. When
- * tourFilter is "all", every fixture matches, so nothing is hidden and this collapses back to a
- * plain chronological sort.
+ * a reordering. The remaining (matching) fixtures keep the existing live-first, then time-based
+ * order. When tourFilter is "all", every fixture matches, so nothing is hidden.
  */
 function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter, tournamentFilter: string | null): Fixture[] {
   return fixtures
     .filter((fixture) => matchesFilter(fixture, tourFilter) && matchesTournament(fixture, tournamentFilter))
-    .sort((a, b) => timeSortKey(a) - timeSortKey(b))
+    .sort(liveFirstCompare)
 }
 
 /**
@@ -102,7 +112,12 @@ export const FixturesList = forwardRef<
 >(
   function FixturesList({ tourFilter = "all", tournamentFilter = null, onTournamentsChange }, ref) {
   const [limit, setLimit] = useState(INITIAL_PAGE_SIZE)
-  const { data, isLoading, isError, refetch, isFetching } = useGetUpcomingFixtures({ limit })
+  // Task: "Refresh Fixtures" must actually pull fresh data, not silently re-serve the provider's
+  // 5-minute in-memory cache. `force` flips true only for the single request the button
+  // triggers (a distinct query key, so it's a real new network call, never a no-op cache hit),
+  // then resets so normal/automatic loads go back through the cache as usual.
+  const [force, setForce] = useState(false)
+  const { data, isLoading, isError, isFetching } = useGetUpcomingFixtures({ limit, force: force || undefined })
   const fixtures = data?.fixtures
   const hasMore = data?.hasMore ?? false
   const [, setLocation] = useLocation()
@@ -110,9 +125,20 @@ export const FixturesList = forwardRef<
   const [predictNowFixtureId, setPredictNowFixtureId] = useState<string | null>(null)
   const [predictNowError, setPredictNowError] = useState<string | null>(null)
 
+  const handleRefresh = () => {
+    setForce(true)
+  }
+
+  useEffect(() => {
+    if (!force || isFetching) return
+    // The forced request has resolved (or failed) -- drop back to normal cached behavior for
+    // whatever triggers the next fetch (pagination, filters, automatic refetches).
+    setForce(false)
+  }, [force, isFetching])
+
   useImperativeHandle(ref, () => ({
-    refetch: () => { setLimit(INITIAL_PAGE_SIZE); refetch() },
-  }), [refetch])
+    refetch: () => { setLimit(INITIAL_PAGE_SIZE); handleRefresh() },
+  }), [])
 
   // Task #110: real distinct tournament names among the currently loaded fixtures (independent
   // of tourFilter, so switching the level dropdown doesn't make event options disappear/reappear
@@ -178,7 +204,7 @@ export const FixturesList = forwardRef<
           size="sm"
           className="font-mono text-xs text-muted-foreground"
           disabled={isFetching}
-          onClick={() => refetch()}
+          onClick={handleRefresh}
         >
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
           REFRESH FIXTURES
@@ -202,7 +228,17 @@ export const FixturesList = forwardRef<
                 <span>•</span>
                 <span>{fixture.surface} {fixture.indoor ? '(Indoor)' : ''}</span>
                 <span>•</span>
-                <span className={!fixture.scheduledStart ? "text-muted-foreground/70 italic" : undefined}>{formatFixtureTime(fixture)}</span>
+                {fixture.isLive ? (
+                  <span className="inline-flex items-center gap-1.5 font-bold text-destructive">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive" />
+                    </span>
+                    LIVE
+                  </span>
+                ) : (
+                  <span className={!fixture.scheduledStart ? "text-muted-foreground/70 italic" : undefined}>{formatFixtureTime(fixture)}</span>
+                )}
               </div>
               
               <div className="flex flex-col gap-1.5 font-bold text-lg">

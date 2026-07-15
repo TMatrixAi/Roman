@@ -137,7 +137,7 @@ export default function PredictionResultPage() {
         <div className="absolute left-0 bottom-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
         
         <CardContent className="p-8 md:p-12 relative z-10">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
               <div>
@@ -305,7 +305,7 @@ export default function PredictionResultPage() {
 
         <Card className="mb-10 shadow-md">
           <CardContent className="p-6 md:p-8 space-y-6">
-            <div className="grid sm:grid-cols-2 gap-6 bg-background rounded-xl p-5 border border-border/50 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-background rounded-xl p-5 border border-border/50 shadow-sm">
               <div className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">MODEL AGREEMENT</span>
                 <span className={`text-lg font-bold font-display ${(engine.modelAgreement && AGREEMENT_STYLES[engine.modelAgreement]) ?? "text-foreground"}`}>
@@ -386,7 +386,7 @@ export default function PredictionResultPage() {
               </div>
             </div>
 
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card className="shadow-md">
                 <CardContent className="p-6 sm:p-8 space-y-8">
                   <div>
@@ -514,7 +514,7 @@ export default function PredictionResultPage() {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
           
           <ModuleCard title="SURFACE ELO" reliability={asPercentage(engine.surfaceElo.reliability)} icon={ActivitySquare}>
             <EdgeBar 

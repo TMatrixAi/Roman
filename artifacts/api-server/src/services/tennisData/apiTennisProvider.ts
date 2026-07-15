@@ -584,11 +584,15 @@ export class ApiTennisProvider implements TennisDataProvider {
     });
     const timezone = resolveTournamentTimezone(m.tournament_name);
     const scheduledStart = combineDateTimeUtc(m.event_date, m.event_time, timezone);
+    // `m.event_winner === null` is already guaranteed by the caller's filter -- this fixture
+    // hasn't finished. If its confirmed start time is in the past, it's in progress right now.
+    const isLive = scheduledStart !== null && new Date(scheduledStart).getTime() < Date.now();
     return {
       id: str(m.event_key),
       date: m.event_date,
       scheduledStart,
       timeConfirmed: scheduledStart !== null,
+      isLive,
       tournamentName: m.tournament_name ?? null,
       tournamentLevel: level,
       round: m.tournament_round ?? null,
@@ -615,10 +619,13 @@ export class ApiTennisProvider implements TennisDataProvider {
    * Cached by the exact `dateStart:dateStop` key -- callers should request the same aligned
    * batches repeatedly (rather than arbitrary ad hoc ranges) to get real cache reuse.
    */
-  async getUpcomingFixturesRange(dateStart: string, dateStop: string): Promise<Fixture[]> {
+  async getUpcomingFixturesRange(dateStart: string, dateStop: string, opts?: { bypassCache?: boolean }): Promise<Fixture[]> {
     const [raw, surfaceByTournamentKey] = await Promise.all([
-      this.cache.getOrFetch(`fixtures:${dateStart}:${dateStop}`, FIXTURES_TTL_MS, () =>
-        this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop }),
+      this.cache.getOrFetch(
+        `fixtures:${dateStart}:${dateStop}`,
+        FIXTURES_TTL_MS,
+        () => this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop }),
+        { bypass: opts?.bypassCache },
       ),
       this.getTournamentSurfaceMap(),
     ]);

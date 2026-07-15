@@ -62,6 +62,7 @@ function makeFixture(id: string, startOffsetMs: number): Fixture {
     date: scheduledStart.slice(0, 10),
     scheduledStart,
     timeConfirmed: true,
+    isLive: false,
     tournamentName: "Paper Trade Test Series",
     tournamentLevel: "ATP250",
     round: null,

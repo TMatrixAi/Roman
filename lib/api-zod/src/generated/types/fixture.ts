@@ -17,6 +17,8 @@ export interface Fixture {
   scheduledStart?: null | Date;
   /** True only when scheduledStart reflects a real provider-supplied time for this exact fixture. */
   timeConfirmed: boolean;
+  /** True when this fixture's confirmed scheduledStart is already in the past and the provider has not yet reported a winner -- i.e. the match is currently in progress. False for a genuinely upcoming (not yet started) fixture, and also false for an unconfirmed ("Time TBD") fixture, since we have no real evidence it has started. */
+  isLive: boolean;
   /** @nullable */
   tournamentName?: string | null;
   tournamentLevel?: TournamentLevel | null;

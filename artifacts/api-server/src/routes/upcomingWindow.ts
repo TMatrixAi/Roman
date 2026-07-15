@@ -16,6 +16,21 @@ export function sortKey(f: Fixture): number {
   return f.scheduledStart ? new Date(f.scheduledStart).getTime() : new Date(`${f.date}T23:59:59.999Z`).getTime();
 }
 
+/**
+ * Live fixtures (already started, no winner yet) sort as a group ahead of every not-yet-started
+ * fixture -- a live match is the most actionable thing to show first, regardless of how its own
+ * start time compares to an upcoming match's. Within each group, soonest/earliest-started first.
+ */
+export function liveFirstSortKey(f: Fixture): [number, number] {
+  return [f.isLive ? 0 : 1, sortKey(f)];
+}
+
+function compareLiveFirst(a: Fixture, b: Fixture): number {
+  const [aGroup, aTime] = liveFirstSortKey(a);
+  const [bGroup, bTime] = liveFirstSortKey(b);
+  return aGroup !== bGroup ? aGroup - bGroup : aTime - bTime;
+}
+
 export interface UpcomingWindowResult {
   fixtures: Fixture[];
   /** True when at least one more fixture exists beyond `offset + limit` within the lookahead window (i.e. paging further would return more). */
@@ -36,10 +51,13 @@ export interface UpcomingWindowResult {
  * for different pages on the same day request the exact same range keys and get real cache reuse
  * from the provider.
  *
- * "Upcoming" means not yet started: a fixture with a confirmed `scheduledStart` in the past
- * (relative to `nowMs`) is already live/in-progress and is excluded. A fixture with no confirmed
- * time ("Time TBD") is kept regardless -- we genuinely can't tell whether it has started, and
- * this codebase never hides real data over uncertainty (see combineDateTimeUtc's contract).
+ * This window is not strictly "not yet started": a fixture with a confirmed `scheduledStart` in
+ * the past (relative to `nowMs`) that the provider hasn't reported a winner for yet is currently
+ * live/in-progress -- it's kept, flagged `isLive`, and sorted ahead of every not-yet-started
+ * fixture (see `liveFirstSortKey`), since a live match is the most actionable thing to surface
+ * first. A fixture with no confirmed time ("Time TBD") is kept regardless -- we genuinely can't
+ * tell whether it has started, and this codebase never hides real data over uncertainty (see
+ * combineDateTimeUtc's contract).
  *
  * `offset` lets a caller page past an earlier page's results (e.g. a busy Challenger/ITF day with
  * 50+ matches before noon) instead of being permanently capped at the first `limit` fixtures.
@@ -61,7 +79,6 @@ export async function collectUpcomingWindow(
 
     for (const fixture of fixtures) {
       if (seenIds.has(fixture.id)) continue;
-      if (fixture.scheduledStart && new Date(fixture.scheduledStart).getTime() < nowMs) continue;
       seenIds.add(fixture.id);
       collected.push(fixture);
     }
@@ -71,7 +88,7 @@ export async function collectUpcomingWindow(
     if (collected.length > target) break;
   }
 
-  const sorted = collected.sort((a, b) => sortKey(a) - sortKey(b));
+  const sorted = collected.sort(compareLiveFirst);
   return {
     fixtures: sorted.slice(offset, target),
     hasMore: sorted.length > target,

@@ -162,7 +162,7 @@ export default function PredictBuilderPage() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <PlayerCard 
           title="PLAYER 1" 
           playerId={player1Id} 
@@ -181,7 +181,7 @@ export default function PredictBuilderPage() {
           predict, check this" tools -- one uploads a batch to grade, the other checks whether a
           matchup's already been predicted -- so they're grouped side by side rather than one
           being buried under History. */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <BulkMatchupPredictor />
         <SavedPredictionsLookup />
       </div>
@@ -236,7 +236,7 @@ export default function PredictBuilderPage() {
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
               <div className="space-y-3">
                 <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
                   Surface

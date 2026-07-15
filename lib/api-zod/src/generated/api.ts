@@ -161,7 +161,8 @@ export const getUpcomingFixturesQueryOffsetMin = 0;
 
 export const GetUpcomingFixturesQueryParams = zod.object({
   "limit": zod.coerce.number().min(1).max(getUpcomingFixturesQueryLimitMax).optional().describe('Maximum number of fixtures to return. Defaults to 50.'),
-  "offset": zod.coerce.number().min(getUpcomingFixturesQueryOffsetMin).optional().describe('Number of soonest-first fixtures to skip before returning `limit` more. Defaults to 0.')
+  "offset": zod.coerce.number().min(getUpcomingFixturesQueryOffsetMin).optional().describe('Number of soonest-first fixtures to skip before returning `limit` more. Defaults to 0.'),
+  "force": zod.coerce.boolean().optional().describe('When true, bypasses the provider\'s short in-memory fixtures cache for this call, so a user-initiated refresh can actually pull fresh data instead of silently re-serving the same cached response. Defaults to false (normal cached reads).')
 })
 
 export const GetUpcomingFixturesResponse = zod.object({
@@ -170,6 +171,7 @@ export const GetUpcomingFixturesResponse = zod.object({
   "date": zod.coerce.date().describe('Calendar date the match is scheduled for (YYYY-MM-DD). Always present.'),
   "scheduledStart": zod.union([zod.null(),zod.coerce.date()]).optional().describe('Full real start instant (UTC) for this exact fixture, combining the provider\'s per-match date and time. Null when the provider did not supply a verified time for this fixture -- never fabricated or shared with another match. Clients must show \"Time TBD\" when null. IMPORTANT -- null must be listed first in this oneOf union. The generated zod.coerce.date() silently accepts a null input as epoch 1970 instead of failing, so if the date branch were checked first a real null would be miscoerced into a fake timestamp.'),
   "timeConfirmed": zod.boolean().describe('True only when scheduledStart reflects a real provider-supplied time for this exact fixture.'),
+  "isLive": zod.boolean().describe('True when this fixture\'s confirmed scheduledStart is already in the past and the provider has not yet reported a winner -- i.e. the match is currently in progress. False for a genuinely upcoming (not yet started) fixture, and also false for an unconfirmed (\"Time TBD\") fixture, since we have no real evidence it has started.'),
   "tournamentName": zod.string().nullish(),
   "tournamentLevel": zod.union([zod.enum(['GrandSlam', 'Masters1000', 'ATP500', 'ATP250', 'WTA1000', 'WTA500', 'WTA250', 'Challenger', 'ITF', 'Other']),zod.null()]).optional(),
   "round": zod.string().nullish(),

@@ -11,6 +11,7 @@ function fixture(overrides: Partial<Fixture>): Fixture {
     date: "2026-07-13",
     scheduledStart: "2026-07-13T13:00:00Z",
     timeConfirmed: true,
+    isLive: false,
     tournamentName: "Test Open",
     tournamentLevel: null,
     round: null,
@@ -54,17 +55,19 @@ test("collectUpcomingWindow gathers matches across multiple calendar days, sorte
   assert.equal(result.hasMore, false);
 });
 
-test("collectUpcomingWindow excludes a fixture whose confirmed start time has already passed (in-progress)", async () => {
+test("collectUpcomingWindow keeps a fixture whose confirmed start time has already passed, flagged live and sorted first", async () => {
   const byDate: Record<string, Fixture[]> = {
     "2026-07-13": [
-      fixture({ id: "already-started", scheduledStart: "2026-07-13T08:00:00Z" }), // before NOW_MS
+      fixture({ id: "already-started", scheduledStart: "2026-07-13T08:00:00Z", isLive: true }), // before NOW_MS
       fixture({ id: "not-started-yet", scheduledStart: "2026-07-13T13:00:00Z" }), // after NOW_MS
     ],
   };
 
   const result = await collectUpcomingWindow(makeFetchRange(byDate), { limit: 50, nowMs: NOW_MS });
 
-  assert.deepEqual(result.fixtures.map((f) => f.id), ["not-started-yet"]);
+  // Live sorts ahead of upcoming even though its own start time is earlier in the day.
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["already-started", "not-started-yet"]);
+  assert.equal(result.fixtures[0].isLive, true);
 });
 
 test("collectUpcomingWindow keeps an unconfirmed (Time TBD) fixture rather than guessing whether it has started", async () => {

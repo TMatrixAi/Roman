@@ -198,6 +198,8 @@ export interface Fixture {
   scheduledStart?: null | string;
   /** True only when scheduledStart reflects a real provider-supplied time for this exact fixture. */
   timeConfirmed: boolean;
+  /** True when this fixture's confirmed scheduledStart is already in the past and the provider has not yet reported a winner -- i.e. the match is currently in progress. False for a genuinely upcoming (not yet started) fixture, and also false for an unconfirmed ("Time TBD") fixture, since we have no real evidence it has started. */
+  isLive: boolean;
   /** @nullable */
   tournamentName?: string | null;
   tournamentLevel?: TournamentLevel | null;
@@ -1389,6 +1391,10 @@ limit?: number;
  * @minimum 0
  */
 offset?: number;
+/**
+ * When true, bypasses the provider's short in-memory fixtures cache for this call, so a user-initiated refresh can actually pull fresh data instead of silently re-serving the same cached response. Defaults to false (normal cached reads).
+ */
+force?: boolean;
 };
 
 export type GetUpcomingFixtures200 = {
