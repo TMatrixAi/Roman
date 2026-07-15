@@ -45,3 +45,6 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
+
+[userenv.development]
+NODE_OPTIONS = "--max-old-space-size=6144"

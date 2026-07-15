@@ -22,6 +22,15 @@
  * 20 showed no evidence either way in this data, and it remains genuine, deliberate shrinkage for
  * thin data as a safety margin, not something to relax.
  *
+ * Task #157 re-check (2026-07-15, `docs/audit-task157-confidence-discount-revalidation.md`): a
+ * fresh ablation replay against the (since 7x-grown) historical corpus shows the specific harm
+ * this curve targeted -- high-DQ accuracy trailing low-DQ accuracy -- is gone (DQ>=65 now 62.5%
+ * vs. DQ<65's 60.1%, the correct direction). Left the curve unchanged rather than loosening it:
+ * the corpus grew substantially in the same window (a real confound), and
+ * `data-richness-vs-matchup-difficulty` (project memory) already warns that a single accuracy
+ * snapshot can't distinguish "well-logged" from "genuinely easy to call." Re-tuning this curve
+ * should wait for a real walk-forward re-fit, not another ablation snapshot.
+ *
  * Task #151 re-validation: the flat 0.85 cap above was meant to stop granting MORE trust past
  * Data Quality 55, but a fresh full-corpus ablation report (2026-07-13,
  * `reports/model-ablation-analysis.json`, n=13,066) shows the underlying problem is worse than a

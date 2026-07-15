@@ -153,6 +153,15 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
   // observed, n=2,036, 3.3pt gap). Switched to the same holdout-validated `fitBestCalibration`
   // pipeline the general model uses (isotonic vs. Platt, picked by genuinely held-out log loss +
   // ECE) so a segment gets exactly the same non-overfit treatment.
+  //
+  // Task #157 re-check (2026-07-15, docs/audit-task157-confidence-discount-revalidation.md): this
+  // fix is currently UNVERIFIABLE against live/backtest data -- `specialist_models` has zero rows
+  // in the current environment (no walk-forward run has called `computeAndStoreSpecialistSegments`
+  // since this fix landed), confirmed by a fresh ablation replay where the Active Segment
+  // Specialist voted on zero matches. Populating it requires a real walk-forward run, which was
+  // deliberately NOT triggered here: `runWalkForwardEvaluation` wipes all prior evaluation history
+  // on every call (Task #135, still open), so running it just to satisfy this check would trade a
+  // small verification gap for a much bigger, unrelated one. See the audit doc for the follow-up.
   const fitResult = fitBestCalibration(points);
   const segmentMapping = fitResult.knots;
 

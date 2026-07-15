@@ -212,6 +212,14 @@ export const TOUR_RELIABILITY_DISCOUNT: Partial<Record<string, number>> = {
  * the ATP discount above): unlike the ATP finding, this isn't a validated accuracy gap on its own
  * baseline, just added noise-sensitivity on top of already-thin data that
  * `calibrateProbability`'s Data Quality curve only partly captures.
+ *
+ * Task #157 re-check (2026-07-15, `docs/audit-task157-confidence-discount-revalidation.md`): a
+ * fresh ablation replay shows the ATP gap this file's discounts target still persists at a
+ * similar relative size (ratio 0.69 vs. the 0.63 `TOUR_RELIABILITY_DISCOUNT.ATP` was sized from),
+ * and the Grass leave-one-out volatility this constant targets looked improved (deltas moved to
+ * 0 from -1.3/-1.9/-1.9) -- but both readings came from samples far thinner (n=231, n=119) than
+ * the ones the constants were originally sized from (n=1,242, n=162), so neither constant was
+ * re-tuned off this evidence alone.
  */
 export const LOW_SURFACE_SAMPLE_DISCOUNT = 0.75;
 
