@@ -47,3 +47,26 @@ in one ~295s shell call, and every re-invocation re-triggers the destructive del
 at the top -- so a partial/interrupted run leaves only the folds that finished, not a resumable
 checkpoint. Budget a session with real multi-call headroom (or get workflow stability fixed first)
 before attempting a full re-run; don't expect to finish one opportunistically alongside other work.
+
+**Full-corpus preload now reliably OOMs outright at current data scale, and raising the Node heap
+does not help:** by 2026-07 the corpus reached ~133K `historical_matches` / ~229K per-feature
+`match_feature_snapshots` rows, and a single full preload (`buildMatchHistoryIndex` +
+`buildEloHistoryIndex` + `buildPlayerIdentityIndex`) now crashes with "JavaScript heap out of
+memory" consistently around 30-40s in -- confirmed identically via the pre-existing walk-forward
+endpoint AND a brand-new feature (shadow-mode replay) that reuses the same preload helpers, so this
+is a shared, environment-scale ceiling, not a bug in whichever feature happens to trigger it.
+Passing `NODE_OPTIONS=--max-old-space-size=<bigger>` does NOT fix this in this sandbox -- the crash
+recurs at the same ~2040MB heap size regardless of the flag, and `free -h` shows only ~2.7-3.3GB
+actually available system-wide (7.8GB total RAM, 2 CPUs, shared with other running dev workflows +
+several `tsserver` processes) -- consistent with a container-level memory ceiling below what the
+requested V8 heap size would need, not a V8-side self-imposed limit. Don't waste a session trying
+larger heap flags once you've confirmed the crash point doesn't move; that's the signal it's a
+system RAM ceiling, not a V8 configuration issue.
+
+**How to apply:** any new feature that reuses these same full-corpus preload helpers (not just
+walk-forward) will hit this identical ceiling in this sandbox at current data scale -- treat it as
+a known, pre-existing environmental limitation to note/caveat, not something to chase fixing as
+part of an unrelated feature's scope. Fixing it for real needs a different approach entirely
+(streaming/paginated index construction, a background worker with its own memory budget, or
+narrower per-player history queries) -- see the dedicated follow-up task for this if one exists
+before starting from scratch.

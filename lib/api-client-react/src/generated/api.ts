@@ -59,11 +59,14 @@ import type {
   ProviderStatus,
   RemoveDuplicatePredictionsResult,
   RunAblationAnalysisRequest,
+  RunShadowReplayRequest,
   RunWalkForwardRequest,
   ScreenshotMatchupInput,
   ScreenshotMatchupResult,
   SearchLedgerPlayersParams,
   SearchPlayersParams,
+  ShadowReplayDashboard,
+  ShadowReplaySummary,
   SimulatorValidation,
   UpdatePredictionSettingsRequest,
   WalkForwardSummary
@@ -2756,6 +2759,154 @@ export const useRunAblationAnalysis = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunAblationAnalysisMutationOptions(options));
     }
+
+export const getRunShadowReplayUrl = () => {
+
+
+
+
+  return `/api/evaluation/shadow-replay/run`
+}
+
+/**
+ * @summary Replay a historical date range day-by-day through the same leak-proof scoring path as walk-forward, graded with today's active calibration, and store it as distinctly-labeled simulated ('paper_trade_shadow') evidence -- append-only, never overwriting real paper-trading or the historical_test backtest bucket
+ */
+export const runShadowReplay = async (runShadowReplayRequest: RunShadowReplayRequest, options?: RequestInit): Promise<ShadowReplaySummary> => {
+
+  return customFetch<ShadowReplaySummary>(getRunShadowReplayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runShadowReplayRequest)
+  }
+);}
+
+
+
+
+
+export const getRunShadowReplayMutationOptions = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runShadowReplay>>, TError,{data: BodyType<RunShadowReplayRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runShadowReplay>>, TError,{data: BodyType<RunShadowReplayRequest>}, TContext> => {
+
+const mutationKey = ['runShadowReplay'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runShadowReplay>>, {data: BodyType<RunShadowReplayRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  runShadowReplay(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunShadowReplayMutationResult = NonNullable<Awaited<ReturnType<typeof runShadowReplay>>>
+    export type RunShadowReplayMutationBody = BodyType<RunShadowReplayRequest>
+    export type RunShadowReplayMutationError = ErrorType<ProviderError>
+
+    /**
+ * @summary Replay a historical date range day-by-day through the same leak-proof scoring path as walk-forward, graded with today's active calibration, and store it as distinctly-labeled simulated ('paper_trade_shadow') evidence -- append-only, never overwriting real paper-trading or the historical_test backtest bucket
+ */
+export const useRunShadowReplay = <TError = ErrorType<ProviderError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runShadowReplay>>, TError,{data: BodyType<RunShadowReplayRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runShadowReplay>>,
+        TError,
+        {data: BodyType<RunShadowReplayRequest>},
+        TContext
+      > => {
+      return useMutation(getRunShadowReplayMutationOptions(options));
+    }
+
+export const getGetShadowReplayDashboardUrl = () => {
+
+
+
+
+  return `/api/evaluation/shadow-replay/dashboard`
+}
+
+/**
+ * @summary Aggregate shadow-replay (simulated) evidence and the list of replay batches on record -- always shown separately from genuinely-live evidence
+ */
+export const getShadowReplayDashboard = async ( options?: RequestInit): Promise<ShadowReplayDashboard> => {
+
+  return customFetch<ShadowReplayDashboard>(getGetShadowReplayDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShadowReplayDashboardQueryKey = () => {
+    return [
+    `/api/evaluation/shadow-replay/dashboard`
+    ] as const;
+    }
+
+
+export const getGetShadowReplayDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getShadowReplayDashboard>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShadowReplayDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShadowReplayDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShadowReplayDashboard>>> = ({ signal }) => getShadowReplayDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShadowReplayDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShadowReplayDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getShadowReplayDashboard>>>
+export type GetShadowReplayDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Aggregate shadow-replay (simulated) evidence and the list of replay batches on record -- always shown separately from genuinely-live evidence
+ */
+
+export function useGetShadowReplayDashboard<TData = Awaited<ReturnType<typeof getShadowReplayDashboard>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShadowReplayDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShadowReplayDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetAblationStatusUrl = () => {
 

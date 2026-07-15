@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   useGetEvaluationDashboard,
   useListEvaluationRuns,
@@ -5,6 +6,8 @@ import {
   useRunPaperTradingCycle,
   useGetEvaluationSettings,
   useUpdateEvaluationSettings,
+  useRunShadowReplay,
+  useGetShadowReplayDashboard,
   type EvaluationDashboardSegment,
   type SpecialistSegmentSummary,
   type EliteTierBacktest,
@@ -12,16 +15,20 @@ import {
   type MarketEdgeSummary,
   type UpsetRiskTierMetrics,
   type DisagreementTierMetrics,
+  type ShadowReplayDashboard,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
-import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords } from "lucide-react"
+import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey, getGetShadowReplayDashboardQueryKey } from "@workspace/api-client-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical } from "lucide-react"
 
 /** Below this many graded rows, a tier's own numbers are too noisy to trust at face value --
  * mirrors the n<30 minimum-sample convention this dashboard already uses for the Elite tier
@@ -438,11 +445,156 @@ function MarketEdgeCard({ marketEdge }: { marketEdge: MarketEdgeSummary }) {
   )
 }
 
+function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDashboard | undefined }) {
+  const queryClient = useQueryClient()
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [batchLabel, setBatchLabel] = useState("")
+  const [overwrite, setOverwrite] = useState(false)
+
+  const runShadowReplay = useRunShadowReplay({
+    mutation: {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetShadowReplayDashboardQueryKey() }),
+    },
+  })
+
+  const canSubmit = startDate.trim() !== "" && endDate.trim() !== "" && batchLabel.trim() !== "" && !runShadowReplay.isPending
+
+  const m = shadowDashboard?.overall
+
+  return (
+    <Card className="glass-panel border-accent/40">
+      <CardHeader className="border-b border-border/50 bg-secondary/20 p-6 md:p-8">
+        <CardTitle className="text-xl font-display flex items-center gap-3">
+          <div className="p-2 bg-accent/10 rounded-lg">
+            <FlaskConical className="w-5 h-5 text-accent" />
+          </div>
+          Shadow / Simulated Replay
+          <Badge variant="outline" className="font-mono text-[10px] tracking-widest uppercase border-accent/50 text-accent">
+            SIMULATED — NOT LIVE EVIDENCE
+          </Badge>
+        </CardTitle>
+        <p className="text-sm text-muted-foreground/80 leading-relaxed mt-4 max-w-4xl">
+          A fast, leakage-safe replay of held-out historical dates through the same point-in-time scoring path as
+          walk-forward, so you don't have to wait for real paper trading to slowly accumulate one graded fixture at a
+          time. It is graded using <span className="font-semibold text-foreground">today's currently-active calibration</span>{" "}
+          applied uniformly across the whole replayed range — not the calibration that was actually live on each
+          historical date. Treat this as directional, simulated evidence only. It is never merged into the segments,
+          Elite tier, upset-risk, disagreement, or market-edge numbers above, and it never touches real paper-trade or
+          walk-forward rows.
+        </p>
+      </CardHeader>
+      <CardContent className="p-6 md:p-8 space-y-8">
+        <form
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end bg-background p-5 rounded-xl border border-border/50 shadow-sm"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!canSubmit) return
+            runShadowReplay.mutate({ data: { startDate, endDate, batchLabel, overwrite } })
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Start Date</Label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">End Date</Label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Batch Label</Label>
+            <Input type="text" placeholder="e.g. shadow-2024-q1" value={batchLabel} onChange={(e) => setBatchLabel(e.target.value)} required />
+          </div>
+          <div className="flex items-center gap-2 pb-2.5">
+            <Checkbox id="shadow-overwrite" checked={overwrite} onCheckedChange={(c) => setOverwrite(c === true)} />
+            <Label htmlFor="shadow-overwrite" className="text-xs font-mono text-muted-foreground leading-tight cursor-pointer">
+              Overwrite this exact batch label if it already exists
+            </Label>
+          </div>
+          <div className="md:col-span-5">
+            <Button type="submit" variant="accent" disabled={!canSubmit} className="gap-2 shadow-md font-mono h-10">
+              {runShadowReplay.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+              RUN SHADOW REPLAY
+            </Button>
+          </div>
+        </form>
+
+        {runShadowReplay.data && (
+          <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-secondary/20 p-4 rounded-xl border border-border/50">
+            <span>INSERTED: <span className="text-foreground">{runShadowReplay.data.inserted}</span></span>
+            <span className="text-border">•</span>
+            <span>ALREADY CLAIMED: <span className="text-foreground">{runShadowReplay.data.skippedAlreadyClaimed}</span></span>
+            <span className="text-border">•</span>
+            <span>INSUFFICIENT DATA: <span className="text-foreground">{runShadowReplay.data.skippedInsufficientData}</span></span>
+            <span className="text-border">•</span>
+            <span>DAYS SIMULATED: <span className="text-foreground">{runShadowReplay.data.daysSimulated}</span></span>
+            {runShadowReplay.data.overwrite && (
+              <>
+                <span className="text-border">•</span>
+                <span>DELETED (OVERWRITE): <span className="text-foreground">{runShadowReplay.data.deletedExistingBatchRows}</span></span>
+              </>
+            )}
+          </div>
+        )}
+
+        {runShadowReplay.isError && (
+          <div className="text-sm font-medium text-destructive bg-destructive/5 border border-destructive rounded-xl p-4">
+            {runShadowReplay.error instanceof Error ? runShadowReplay.error.message : "Shadow replay failed."}
+          </div>
+        )}
+
+        {m && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <MetricStat label={`ACCURACY (n=${m.n})`} value={m.accuracy !== null ? `${m.accuracy}%` : "—"} />
+            <MetricStat label="LOG LOSS" value={m.logLoss !== null ? m.logLoss.toFixed(3) : "—"} />
+            <MetricStat label="BRIER SCORE" value={m.brier !== null ? m.brier.toFixed(3) : "—"} />
+            <ECEStat label="ECE (CALIBRATED)" ece={m.eceCalibrated} />
+          </div>
+        )}
+
+        {shadowDashboard && shadowDashboard.batches.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-border/50">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/10">
+                <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
+                  <th className="py-3 px-5 font-bold whitespace-nowrap">Batch</th>
+                  <th className="py-3 px-5 font-bold whitespace-nowrap text-right">N</th>
+                  <th className="py-3 px-5 font-bold whitespace-nowrap">Date Range</th>
+                  <th className="py-3 px-5 font-bold whitespace-nowrap">Last Run</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {shadowDashboard.batches.map((b) => (
+                  <tr key={b.batchLabel} className="hover:bg-secondary/30 transition-colors">
+                    <td className="py-3 px-5 font-mono font-bold text-foreground whitespace-nowrap">{b.batchLabel}</td>
+                    <td className="py-3 px-5 font-mono tabular-nums text-right">{b.n}</td>
+                    <td className="py-3 px-5 font-mono text-muted-foreground whitespace-nowrap">
+                      {b.dateRangeStart && b.dateRangeEnd ? `${formatDate(b.dateRangeStart)} – ${formatDate(b.dateRangeEnd)}` : "—"}
+                    </td>
+                    <td className="py-3 px-5 font-mono text-muted-foreground whitespace-nowrap">{b.latestLockedAt ? formatDate(b.latestLockedAt) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {shadowDashboard && shadowDashboard.batches.length === 0 && (
+          <p className="text-xs text-muted-foreground font-mono bg-secondary/30 p-3 rounded-lg border border-border/50 text-center">
+            No shadow-replay batches have been run yet.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
   const { data: runs } = useListEvaluationRuns()
   const { data: settings } = useGetEvaluationSettings()
+  const { data: shadowDashboard } = useGetShadowReplayDashboard()
 
   const runWalkForward = useRunWalkForward({
     mutation: {
@@ -540,6 +692,8 @@ export default function AccuracyDashboardPage() {
           {dashboard.specialistSegments.length > 0 && <SpecialistSegmentTable segments={dashboard.specialistSegments} />}
         </div>
       ) : null}
+
+      <ShadowReplayCard shadowDashboard={shadowDashboard} />
 
       {runs && runs.length > 0 && (
         <section className="space-y-6 pt-8 border-t border-border/50">

@@ -831,7 +831,7 @@ export interface PredictionStats {
 }
 
 /**
- * historical_test replays the leak-proof historical store; paper_trade/live lock predictions for real fixtures ahead of time
+ * historical_test replays the leak-proof historical store for backtesting; paper_trade/live lock predictions for real fixtures ahead of time; paper_trade_shadow is a faster day-by-day historical replay of the SAME leak-proof scoring path, graded with today's active calibration to simulate what live paper trading would have produced -- always disclosed as simulated evidence, never merged with genuinely-live paper_trade/live rows.
  */
 export type RunKind = typeof RunKind[keyof typeof RunKind];
 
@@ -840,6 +840,7 @@ export const RunKind = {
   historical_test: 'historical_test',
   paper_trade: 'paper_trade',
   live: 'live',
+  paper_trade_shadow: 'paper_trade_shadow',
 } as const;
 
 export type Segment = typeof Segment[keyof typeof Segment];
@@ -1188,6 +1189,61 @@ export interface EvaluationDashboard {
   upsetRiskTierMetrics: UpsetRiskTierMetrics[];
   disagreementTierMetrics: DisagreementTierMetrics[];
   marketEdge: MarketEdgeSummary;
+}
+
+export interface RunShadowReplayRequest {
+  /** Inclusive UTC calendar date (YYYY-MM-DD) to start replaying from. Deliberately typed as a plain string, not format:date -- this codebase's zod codegen coerces any format:date/date-time REQUEST body field straight to a JS Date, which would silently mangle a bare "2026-06-01" into a full timestamp before the service layer's own explicit YYYY-MM-DD parsing/validation ever sees it. */
+  startDate: string;
+  /** Inclusive UTC calendar date (YYYY-MM-DD) to replay through. See startDate's note on why this isn't format:date. */
+  endDate: string;
+  /**
+     * Identifies this replay invocation/group; distinct batches never collide or overwrite each other
+     * @minLength 1
+     */
+  batchLabel: string;
+  /** When true, first deletes ONLY this exact batch's own existing paper_trade_shadow rows, then replays the range fresh under the same label. Never touches any other batch, and never touches paper_trade/historical_test rows regardless of this flag. */
+  overwrite?: boolean;
+}
+
+export interface ShadowReplaySummary {
+  batchLabel: string;
+  startDate: string;
+  endDate: string;
+  overwrite: boolean;
+  /** Rows deleted because overwrite=true and this exact batch already had rows; 0 otherwise */
+  deletedExistingBatchRows: number;
+  /** Real, non-cancelled historical matches whose scheduledStartAt fell within the requested range */
+  matchesInRange: number;
+  /** Newly written this run */
+  inserted: number;
+  /** Matches in range already claimed by this or another shadow batch -- append-only skip, never a duplicate or a rescoring */
+  skippedAlreadyClaimed: number;
+  /** scoreHistoricalMatch returned null (insufficient prior history) -- never inserted, never a fabricated guess */
+  skippedInsufficientData: number;
+  /** Distinct UTC calendar days actually walked while pacing this replay */
+  daysSimulated: number;
+}
+
+export interface ShadowReplayBatchSummary {
+  batchLabel: string;
+  n: number;
+  /** @nullable */
+  dateRangeStart: string | null;
+  /** @nullable */
+  dateRangeEnd: string | null;
+  /** @nullable */
+  earliestLockedAt: string | null;
+  /** @nullable */
+  latestLockedAt: string | null;
+}
+
+/**
+ * Simulated evidence only -- see RunKind's paper_trade_shadow description. Always rendered as its own clearly-labeled section, never combined with GetEvaluationDashboardResponse's genuinely-live/backtest segments.
+ */
+export interface ShadowReplayDashboard {
+  overall: SegmentMetrics;
+  calibrationBuckets: CalibrationBucket[];
+  batches: ShadowReplayBatchSummary[];
 }
 
 export type PredictionSettingsRetirementRule = typeof PredictionSettingsRetirementRule[keyof typeof PredictionSettingsRetirementRule];

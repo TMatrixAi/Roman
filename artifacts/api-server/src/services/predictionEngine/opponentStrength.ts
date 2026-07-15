@@ -82,8 +82,13 @@ export function resolveOpponentStrengthFromIndex(matches: MatchRecord[], index: 
  * every one of those fragments' history points merged into ONE continuous, correctly-sorted
  * timeline under their canonical id -- computed once here and reused for the rest of the run,
  * never re-replayed per opponent lookup.
+ *
+ * `playerIds`, when supplied, scopes the query to only those players' rows instead of the whole
+ * corpus (Task #159's shadow-replay path only ever needs a bounded batch's own players plus their
+ * direct past opponents, never the whole system's Elo history). Walk-forward omits it and keeps
+ * loading everyone, since it genuinely scores the full corpus every run.
  */
-export async function buildEloHistoryIndex(identity?: PlayerIdentityIndex): Promise<EloHistoryIndex> {
+export async function buildEloHistoryIndex(identity?: PlayerIdentityIndex, playerIds?: string[]): Promise<EloHistoryIndex> {
   const rows = await db
     .select({
       playerId: matchFeatureSnapshotsTable.playerId,
@@ -91,7 +96,7 @@ export async function buildEloHistoryIndex(identity?: PlayerIdentityIndex): Prom
       sourceTimestamp: matchFeatureSnapshotsTable.sourceTimestamp,
     })
     .from(matchFeatureSnapshotsTable)
-    .where(eq(matchFeatureSnapshotsTable.featureName, "eloOverall"));
+    .where(playerIds ? and(eq(matchFeatureSnapshotsTable.featureName, "eloOverall"), inArray(matchFeatureSnapshotsTable.playerId, playerIds)) : eq(matchFeatureSnapshotsTable.featureName, "eloOverall"));
 
   const index: EloHistoryIndex = new Map();
   for (const row of rows) {

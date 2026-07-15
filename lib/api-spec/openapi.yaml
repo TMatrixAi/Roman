@@ -788,6 +788,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/AblationRunResponse"
 
+  /evaluation/shadow-replay/run:
+    post:
+      operationId: runShadowReplay
+      tags: [evaluation]
+      summary: >-
+        Replay a historical date range day-by-day through the same leak-proof scoring path as
+        walk-forward, graded with today's active calibration, and store it as distinctly-labeled
+        simulated ('paper_trade_shadow') evidence -- append-only, never overwriting real
+        paper-trading or the historical_test backtest bucket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunShadowReplayRequest"
+      responses:
+        "200":
+          description: Shadow replay batch summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShadowReplaySummary"
+        "400":
+          description: Invalid date range/batch label
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
+  /evaluation/shadow-replay/dashboard:
+    get:
+      operationId: getShadowReplayDashboard
+      tags: [evaluation]
+      summary: Aggregate shadow-replay (simulated) evidence and the list of replay batches on record -- always shown separately from genuinely-live evidence
+      responses:
+        "200":
+          description: Shadow replay dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShadowReplayDashboard"
+
   /evaluation/ablation/status:
     get:
       operationId: getAblationStatus
@@ -2058,8 +2100,13 @@ components:
 
     RunKind:
       type: string
-      enum: [historical_test, paper_trade, live]
-      description: historical_test replays the leak-proof historical store; paper_trade/live lock predictions for real fixtures ahead of time
+      enum: [historical_test, paper_trade, live, paper_trade_shadow]
+      description: >-
+        historical_test replays the leak-proof historical store for backtesting; paper_trade/live
+        lock predictions for real fixtures ahead of time; paper_trade_shadow is a faster
+        day-by-day historical replay of the SAME leak-proof scoring path, graded with today's
+        active calibration to simulate what live paper trading would have produced -- always
+        disclosed as simulated evidence, never merged with genuinely-live paper_trade/live rows.
 
     Segment:
       type: string
@@ -2548,6 +2595,107 @@ components:
             $ref: "#/components/schemas/DisagreementTierMetrics"
         marketEdge:
           $ref: "#/components/schemas/MarketEdgeSummary"
+
+    RunShadowReplayRequest:
+      type: object
+      required: [startDate, endDate, batchLabel]
+      properties:
+        startDate:
+          type: string
+          description: >-
+            Inclusive UTC calendar date (YYYY-MM-DD) to start replaying from. Deliberately typed
+            as a plain string, not format:date -- this codebase's zod codegen coerces any
+            format:date/date-time REQUEST body field straight to a JS Date, which would silently
+            mangle a bare "2026-06-01" into a full timestamp before the service layer's own
+            explicit YYYY-MM-DD parsing/validation ever sees it.
+        endDate:
+          type: string
+          description: Inclusive UTC calendar date (YYYY-MM-DD) to replay through. See startDate's note on why this isn't format:date.
+        batchLabel:
+          type: string
+          minLength: 1
+          description: Identifies this replay invocation/group; distinct batches never collide or overwrite each other
+        overwrite:
+          type: boolean
+          default: false
+          description: >-
+            When true, first deletes ONLY this exact batch's own existing paper_trade_shadow rows,
+            then replays the range fresh under the same label. Never touches any other batch, and
+            never touches paper_trade/historical_test rows regardless of this flag.
+
+    ShadowReplaySummary:
+      type: object
+      required:
+        [batchLabel, startDate, endDate, overwrite, deletedExistingBatchRows, matchesInRange, inserted, skippedAlreadyClaimed, skippedInsufficientData, daysSimulated]
+      properties:
+        batchLabel:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        overwrite:
+          type: boolean
+        deletedExistingBatchRows:
+          type: integer
+          description: Rows deleted because overwrite=true and this exact batch already had rows; 0 otherwise
+        matchesInRange:
+          type: integer
+          description: Real, non-cancelled historical matches whose scheduledStartAt fell within the requested range
+        inserted:
+          type: integer
+          description: Newly written this run
+        skippedAlreadyClaimed:
+          type: integer
+          description: Matches in range already claimed by this or another shadow batch -- append-only skip, never a duplicate or a rescoring
+        skippedInsufficientData:
+          type: integer
+          description: scoreHistoricalMatch returned null (insufficient prior history) -- never inserted, never a fabricated guess
+        daysSimulated:
+          type: integer
+          description: Distinct UTC calendar days actually walked while pacing this replay
+
+    ShadowReplayBatchSummary:
+      type: object
+      required: [batchLabel, n, dateRangeStart, dateRangeEnd, earliestLockedAt, latestLockedAt]
+      properties:
+        batchLabel:
+          type: string
+        n:
+          type: integer
+        dateRangeStart:
+          type: ["string", "null"]
+          format: date-time
+        dateRangeEnd:
+          type: ["string", "null"]
+          format: date-time
+        earliestLockedAt:
+          type: ["string", "null"]
+          format: date-time
+        latestLockedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ShadowReplayDashboard:
+      type: object
+      description: >-
+        Simulated evidence only -- see RunKind's paper_trade_shadow description. Always rendered
+        as its own clearly-labeled section, never combined with GetEvaluationDashboardResponse's
+        genuinely-live/backtest segments.
+      required: [overall, calibrationBuckets, batches]
+      properties:
+        overall:
+          $ref: "#/components/schemas/SegmentMetrics"
+        calibrationBuckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalibrationBucket"
+        batches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShadowReplayBatchSummary"
 
     PredictionSettings:
       type: object

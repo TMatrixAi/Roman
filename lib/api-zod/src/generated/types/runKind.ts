@@ -7,7 +7,7 @@
  */
 
 /**
- * historical_test replays the leak-proof historical store; paper_trade/live lock predictions for real fixtures ahead of time
+ * historical_test replays the leak-proof historical store for backtesting; paper_trade/live lock predictions for real fixtures ahead of time; paper_trade_shadow is a faster day-by-day historical replay of the SAME leak-proof scoring path, graded with today's active calibration to simulate what live paper trading would have produced -- always disclosed as simulated evidence, never merged with genuinely-live paper_trade/live rows.
  */
 export type RunKind = typeof RunKind[keyof typeof RunKind];
 
@@ -16,4 +16,5 @@ export const RunKind = {
   historical_test: 'historical_test',
   paper_trade: 'paper_trade',
   live: 'live',
+  paper_trade_shadow: 'paper_trade_shadow',
 } as const;

@@ -1125,7 +1125,7 @@ export const listEvaluationPredictionsQueryLimitMax = 200;
 
 
 export const ListEvaluationPredictionsQueryParams = zod.object({
-  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).optional(),
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live', 'paper_trade_shadow']).optional(),
   "segment": zod.enum(['validation', 'test']).optional(),
   "status": zod.enum(['pending', 'graded', 'void', 'missed']).optional(),
   "limit": zod.coerce.number().min(1).max(listEvaluationPredictionsQueryLimitMax).default(listEvaluationPredictionsQueryLimitDefault)
@@ -1133,7 +1133,7 @@ export const ListEvaluationPredictionsQueryParams = zod.object({
 
 export const ListEvaluationPredictionsResponseItem = zod.object({
   "id": zod.number(),
-  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).describe('historical_test replays the leak-proof historical store; paper_trade\/live lock predictions for real fixtures ahead of time'),
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live', 'paper_trade_shadow']).describe('historical_test replays the leak-proof historical store for backtesting; paper_trade\/live lock predictions for real fixtures ahead of time; paper_trade_shadow is a faster day-by-day historical replay of the SAME leak-proof scoring path, graded with today\'s active calibration to simulate what live paper trading would have produced -- always disclosed as simulated evidence, never merged with genuinely-live paper_trade\/live rows.'),
   "foldId": zod.number().nullish(),
   "segment": zod.union([zod.enum(['validation', 'test']),zod.null()]).optional(),
   "historicalMatchId": zod.number().nullish(),
@@ -1182,7 +1182,7 @@ export const GetEvaluationPredictionParams = zod.object({
 
 export const GetEvaluationPredictionResponse = zod.object({
   "id": zod.number(),
-  "runKind": zod.enum(['historical_test', 'paper_trade', 'live']).describe('historical_test replays the leak-proof historical store; paper_trade\/live lock predictions for real fixtures ahead of time'),
+  "runKind": zod.enum(['historical_test', 'paper_trade', 'live', 'paper_trade_shadow']).describe('historical_test replays the leak-proof historical store for backtesting; paper_trade\/live lock predictions for real fixtures ahead of time; paper_trade_shadow is a faster day-by-day historical replay of the SAME leak-proof scoring path, graded with today\'s active calibration to simulate what live paper trading would have produced -- always disclosed as simulated evidence, never merged with genuinely-live paper_trade\/live rows.'),
   "foldId": zod.number().nullish(),
   "segment": zod.union([zod.enum(['validation', 'test']),zod.null()]).optional(),
   "historicalMatchId": zod.number().nullish(),
@@ -1442,6 +1442,70 @@ export const RunAblationAnalysisResponse = zod.object({
   "started": zod.boolean(),
   "reason": zod.string().nullish()
 })
+
+
+/**
+ * @summary Replay a historical date range day-by-day through the same leak-proof scoring path as walk-forward, graded with today's active calibration, and store it as distinctly-labeled simulated ('paper_trade_shadow') evidence -- append-only, never overwriting real paper-trading or the historical_test backtest bucket
+ */
+
+export const runShadowReplayBodyOverwriteDefault = false;
+
+export const RunShadowReplayBody = zod.object({
+  "startDate": zod.string().describe('Inclusive UTC calendar date (YYYY-MM-DD) to start replaying from. Deliberately typed as a plain string, not format:date -- this codebase\'s zod codegen coerces any format:date\/date-time REQUEST body field straight to a JS Date, which would silently mangle a bare \"2026-06-01\" into a full timestamp before the service layer\'s own explicit YYYY-MM-DD parsing\/validation ever sees it.'),
+  "endDate": zod.string().describe('Inclusive UTC calendar date (YYYY-MM-DD) to replay through. See startDate\'s note on why this isn\'t format:date.'),
+  "batchLabel": zod.string().min(1).describe('Identifies this replay invocation\/group; distinct batches never collide or overwrite each other'),
+  "overwrite": zod.boolean().default(runShadowReplayBodyOverwriteDefault).describe('When true, first deletes ONLY this exact batch\'s own existing paper_trade_shadow rows, then replays the range fresh under the same label. Never touches any other batch, and never touches paper_trade\/historical_test rows regardless of this flag.')
+})
+
+export const RunShadowReplayResponse = zod.object({
+  "batchLabel": zod.string(),
+  "startDate": zod.coerce.date(),
+  "endDate": zod.coerce.date(),
+  "overwrite": zod.boolean(),
+  "deletedExistingBatchRows": zod.number().describe('Rows deleted because overwrite=true and this exact batch already had rows; 0 otherwise'),
+  "matchesInRange": zod.number().describe('Real, non-cancelled historical matches whose scheduledStartAt fell within the requested range'),
+  "inserted": zod.number().describe('Newly written this run'),
+  "skippedAlreadyClaimed": zod.number().describe('Matches in range already claimed by this or another shadow batch -- append-only skip, never a duplicate or a rescoring'),
+  "skippedInsufficientData": zod.number().describe('scoreHistoricalMatch returned null (insufficient prior history) -- never inserted, never a fabricated guess'),
+  "daysSimulated": zod.number().describe('Distinct UTC calendar days actually walked while pacing this replay')
+})
+
+
+/**
+ * @summary Aggregate shadow-replay (simulated) evidence and the list of replay batches on record -- always shown separately from genuinely-live evidence
+ */
+export const GetShadowReplayDashboardResponse = zod.object({
+  "overall": zod.object({
+  "n": zod.number().describe('Sample size actually counted toward accuracy\/logLoss\/Brier'),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "retiredCount": zod.number(),
+  "retiredAccuracy": zod.number().nullable().describe('Accuracy on retirements alone, reported separately from the standard metric'),
+  "voidCount": zod.number().describe('Walkovers and cancellations, always excluded from accuracy'),
+  "missedCount": zod.number(),
+  "eceRaw": zod.number().nullable().describe('Expected Calibration Error on raw (pre-calibration) probabilities, 0-1. Lower is better; null when n=0.'),
+  "eceCalibrated": zod.number().nullable().describe('Expected Calibration Error on calibrated probabilities, 0-1. Lower is better; null when n=0.')
+}),
+  "calibrationBuckets": zod.array(zod.object({
+  "label": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "n": zod.number(),
+  "avgPredicted": zod.number().nullable(),
+  "observedAccuracy": zod.number().nullable()
+})),
+  "batches": zod.array(zod.object({
+  "batchLabel": zod.string(),
+  "n": zod.number(),
+  "dateRangeStart": zod.coerce.date().nullable(),
+  "dateRangeEnd": zod.coerce.date().nullable(),
+  "earliestLockedAt": zod.coerce.date().nullable(),
+  "latestLockedAt": zod.coerce.date().nullable()
+}))
+}).describe('Simulated evidence only -- see RunKind\'s paper_trade_shadow description. Always rendered as its own clearly-labeled section, never combined with GetEvaluationDashboardResponse\'s genuinely-live\/backtest segments.')
 
 
 /**

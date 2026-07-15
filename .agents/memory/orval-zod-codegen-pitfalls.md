@@ -92,6 +92,20 @@ convention seen in `BulkDeletePredictionsResult`) fixes it with no behavior chan
 (not `Response`/`Body`) so they can never textually match the operationId-derived zod const
 name — the zod const alone is what routes import to `.parse(...)`.
 
+## `format: date`/`date-time` on a REQUEST body field auto-coerces to a JS `Date`
+
+Unlike response bodies (parsed by zod for validation only), orval's react-query hook
+generator coerces any REQUEST body field typed `format: date`/`date-time` straight into a
+real JS `Date` object before the caller's code ever sees the raw string. If the service
+layer expects a bare `"YYYY-MM-DD"` string and does its own parsing/validation on it, this
+silently mangles it (a `Date`'s implicit `toString()`/serialization is not `"YYYY-MM-DD"`).
+
+**How to apply:** for request-body date fields that need custom string parsing downstream
+(e.g. a plain calendar-date string, not a full timestamp), type them as plain
+`type: string` in the OpenAPI spec with a comment explaining why `format: date` was
+deliberately avoided — don't assume `format: date` is a safe default just because it's
+correct for response bodies.
+
 ## A nullable date field's `oneOf` order controls whether `null` survives parsing
 
 For `oneOf: [{type: string, format: date-time}, {type: "null"}]`, orval generates

@@ -3,7 +3,7 @@ import { runPredictionEngine } from "../predictionEngine";
 import { resolveOpponentStrengthFromIndex, type EloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { reconstructHeadToHead, reconstructPlayerMatchHistory, type MatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
 import { resolveSegmentSpecialistInputSync } from "./specialistWeights";
-import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
+import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot, type CalibrationKnot } from "./types";
 import type { MatchFormat, PlayerProfile, Surface } from "../tennisData/types";
 import type { PlayerIdentityIndex } from "../tennisData/playerIdentity";
 
@@ -64,6 +64,14 @@ function minimalProfile(id: string, name: string): PlayerProfile {
  * the PREVIOUS run's persisted fit, not this run's own, so applying it here is not circular --
  * see the doc on `HistoricalScoringContext.specialistRowsBySegmentKey`.
  *
+ * `activeCalibrationOverride` is a second, narrower exception, used ONLY by the shadow-mode
+ * replay (`shadowReplay.ts`), never by walk-forward: unlike walk-forward's fold-fit mapping
+ * (which IS an output of that same run, so applying it here would be circular), the shadow replay
+ * reuses the calibration that's ALREADY active in production -- a genuinely prior artifact, not
+ * something this call is fitting -- so passing it through is not circular. Left undefined/null by
+ * every other caller, which keeps their calibratedProbability equal to rawProbability, exactly as
+ * before.
+ *
  * Returns null when either player has zero prior recorded matches, or this match's own
  * surface/format weren't resolved at import time -- there is no honest probability to produce in
  * either case, so the caller must treat it as "insufficient data" rather than a fabricated guess.
@@ -71,7 +79,8 @@ function minimalProfile(id: string, name: string): PlayerProfile {
 export function scoreHistoricalMatch(
   match: HistoricalMatchRow,
   context: HistoricalScoringContext,
-): { rawProbability: number; snapshot: LiveFeatureSnapshot; modelAgreement: string; upsetRiskTier: string } | null {
+  activeCalibrationOverride?: CalibrationKnot[] | null,
+): { rawProbability: number; calibratedProbability: number; snapshot: LiveFeatureSnapshot; modelAgreement: string; upsetRiskTier: string } | null {
   if (!match.surface || !match.matchFormat) return null;
   const surface = match.surface as Surface;
   const matchFormat = match.matchFormat as MatchFormat;
@@ -101,7 +110,7 @@ export function scoreHistoricalMatch(
     weather: null,
     segment,
     simulatorAdoption: null,
-    activeCalibration: null,
+    activeCalibration: activeCalibrationOverride ?? null,
     // Task #77: this is the walk-forward evaluation's own run-scoped scoring path -- the caller
     // (`walkForward.ts`) resets the fallback tracker once at the start of each run, so it's safe
     // to attribute events here. Live/paper-trading/ablation callers must NOT set this (see
@@ -122,6 +131,9 @@ export function scoreHistoricalMatch(
 
   return {
     rawProbability: output.rawEnsembleProbability / 100,
+    // Equal to rawProbability for every existing caller (no override passed): unchanged
+    // behavior. Only differs when `activeCalibrationOverride` is supplied (shadow replay).
+    calibratedProbability: output.calibratedProbability / 100,
     snapshot,
     modelAgreement: output.engine.modelAgreement,
     upsetRiskTier: output.upsetRisk,

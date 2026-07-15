@@ -22,6 +22,9 @@ import {
   RunAblationAnalysisBody,
   RunAblationAnalysisResponse,
   GetAblationStatusResponse,
+  RunShadowReplayBody,
+  RunShadowReplayResponse,
+  GetShadowReplayDashboardResponse,
 } from "@workspace/api-zod";
 import { PAPER_TRADING_JOB_NAME } from "../jobs/paperTradingJobName";
 import { CALIBRATION_REFIT_JOB_NAME } from "../jobs/calibrationRefitJobName";
@@ -41,6 +44,7 @@ import { getActiveSpecialistSegments } from "../services/evaluation/specialistWe
 import { validateAndStoreSimulator } from "../services/evaluation/simulatorValidation";
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
+import { runShadowPaperTradingReplay, listShadowReplayBatches } from "../services/evaluation/shadowReplay";
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { runIncrementalHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
 import { getTennisDataProvider } from "../services/tennisData";
@@ -350,6 +354,37 @@ router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
 
 router.get("/evaluation/ablation/status", async (_req, res): Promise<void> => {
   res.json(GetAblationStatusResponse.parse(getAblationJobStatus()));
+});
+
+router.post("/evaluation/shadow-replay/run", async (req, res): Promise<void> => {
+  const parsed = RunShadowReplayBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  try {
+    const summary = await runShadowPaperTradingReplay(parsed.data);
+    res.json(RunShadowReplayResponse.parse(summary));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Shadow replay failed" });
+  }
+});
+
+router.get("/evaluation/shadow-replay/dashboard", async (_req, res): Promise<void> => {
+  // Deliberately its own endpoint, never folded into GET /evaluation/dashboard: shadow-replay
+  // evidence must never be mixed into the "genuinely unseen" segments/Elite-tier/upset-risk/
+  // disagreement/market-edge aggregates that endpoint computes from historical_test/paper_trade
+  // rows only (see shadowReplay.ts's top doc for why this evidence is simulated, not live).
+  const shadowRows = await db.select().from(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "paper_trade_shadow"));
+  const batches = await listShadowReplayBatches();
+
+  res.json(
+    GetShadowReplayDashboardResponse.parse({
+      overall: computeSegmentMetrics(shadowRows),
+      calibrationBuckets: computeCalibrationBuckets(shadowRows),
+      batches,
+    }),
+  );
 });
 
 export default router;
