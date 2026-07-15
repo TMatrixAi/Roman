@@ -176,6 +176,21 @@ export const CONFIDENCE_SHRINK = {
  * above was: (observedAccuracy - 50) / (poolAccuracy - 50) = 4.6 / 7.3 ~= 0.63. Keyed by tour
  * (parsed from `segment.segmentKey`, e.g. "ATP-Hard") rather than a one-off boolean so a future
  * tour showing the same pattern can be added here without new plumbing.
+ *
+ * Task #158: re-checked whether WTA (the only other real candidate tour -- see `CANDIDATE_TOURS`
+ * in `segments.ts`) belongs here too. The SAME 2026-07-13 report already shows a WTA baseline of
+ * 55.2% (n=1,155) against the same 57.3% pool -- a real but visibly smaller gap than ATP's
+ * ((55.2-50)/(57.3-50) ~= 0.71 vs. ATP's 0.63), and, unlike ATP, WTA is one of only two tours
+ * `specialistWeights.ts` ever fits a segment specialist for at all, so part of that pooled 55.2%
+ * may already be corrected by a specialist on some WTA surfaces (this discount only fires when
+ * `!specialistApplied`) -- the pooled tour-level number isn't a clean read of the uncorrected
+ * subset the way ATP's is. No newer ablation run or accumulated `specialist_models`/
+ * `evaluation_predictions` data has superseded that 2026-07-13 report as of 2026-07-14 (checked:
+ * `specialist_models` has no rows in the current environment). Left out for now -- add a `WTA`
+ * (or other tour) entry here, sized by the exact same formula, only once a report specifically
+ * measures that tour's accuracy gap on the matches where NO specialist actually voted (not the
+ * tour's pooled accuracy across corrected and uncorrected matches together), and cite that
+ * report/data inline the way this ATP entry does.
  */
 export const TOUR_RELIABILITY_DISCOUNT: Partial<Record<string, number>> = {
   ATP: 0.63,
