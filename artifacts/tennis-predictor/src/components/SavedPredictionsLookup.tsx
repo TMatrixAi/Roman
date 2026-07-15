@@ -1,22 +1,15 @@
 import { useLocation } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
-import { LedgerMatchupSearch } from "@/components/LedgerMatchupSearch"
-import { storePasteSearchHandoff } from "@/lib/pasteSearchHandoff"
-import { UserSearch, ClipboardPaste } from "lucide-react"
-import type { LedgerPlayerSummary, PredictionSummary } from "@workspace/api-client-react"
+import { UserSearch } from "lucide-react"
+import type { LedgerPlayerSummary } from "@workspace/api-client-react"
 
 /**
- * Looks up saved Ledger predictions -- browse a player's recorded history, or paste a list of
- * matchups to find the ones already saved -- for someone deciding "have I already predicted
- * this?" before running a new one. Distinct from PlayerSearch.tsx elsewhere on this page, which
- * searches the live provider to start a brand-new prediction, not find an existing one.
- *
- * A selection here doesn't render its result on this page: the focus/step-through UI for a
- * player's history or a resolved paste match only exists on the Ledger page, so a match hands off
- * (via URL for a single player, via `pasteSearchHandoff` sessionStorage for a paste-search result
- * set, since it can't fit cleanly in a URL) and navigates there.
+ * Bottom-of-page finder: look up a player name to browse their saved prediction history in the
+ * Ledger. Distinct from the "Player Search" tab above (which searches the live provider to add
+ * players to a new prediction) and from the "Paste Search" tab above (which finds multiple
+ * existing predictions from a pasted list). This box is only for navigating to a specific
+ * player's recorded history — it does not start a new prediction.
  */
 export function SavedPredictionsLookup() {
   const [, navigate] = useLocation()
@@ -25,41 +18,20 @@ export function SavedPredictionsLookup() {
     navigate(`/history?playerId=${encodeURIComponent(player.id)}&playerName=${encodeURIComponent(player.name)}`)
   }
 
-  const goToPasteMatches = (predictions: PredictionSummary[], startIndex: number) => {
-    storePasteSearchHandoff(predictions, startIndex)
-    navigate("/history?pasteSearch=1")
-  }
-
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <UserSearch className="w-5 h-5" />
-          FIND A SAVED PREDICTION
+          FIND A PLAYER'S SAVED MATCHES
         </CardTitle>
-        <CardDescription>Already ran this matchup? Look it up in the Ledger instead of predicting it again.</CardDescription>
+        <CardDescription>
+          Search by player name to open their full recorded prediction history in the Ledger.
+          To find multiple specific matchups, use the Paste Search tab in the Player Search box above.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="search">
-          <TabsList>
-            <TabsTrigger value="search" className="font-mono">
-              <UserSearch className="w-4 h-4 mr-2" />
-              SEARCH PLAYERS
-            </TabsTrigger>
-            <TabsTrigger value="pasteSearch" className="font-mono">
-              <ClipboardPaste className="w-4 h-4 mr-2" />
-              PASTE SEARCH
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="search">
-            <LedgerPlayerSearch onSelect={goToPlayer} />
-          </TabsContent>
-
-          <TabsContent value="pasteSearch">
-            <LedgerMatchupSearch onView={goToPasteMatches} />
-          </TabsContent>
-        </Tabs>
+        <LedgerPlayerSearch onSelect={goToPlayer} />
       </CardContent>
     </Card>
   )

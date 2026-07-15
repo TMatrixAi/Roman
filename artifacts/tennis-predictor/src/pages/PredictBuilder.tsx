@@ -1,15 +1,19 @@
 import { useState } from "react"
 import { useLocation, useSearch } from "wouter"
 import { useGetPlayer, getGetPlayerQueryKey, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import type { PredictionSummary } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
+import { LedgerMatchupSearch } from "@/components/LedgerMatchupSearch"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
-import { Activity, Search, Swords, Settings2, RefreshCw } from "lucide-react"
+import { storePasteSearchHandoff } from "@/lib/pasteSearchHandoff"
+import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste } from "lucide-react"
 
 function PlayerCard({ 
   playerId, 
@@ -33,7 +37,7 @@ function PlayerCard({
           </div>
           <div>
             <h3 className="font-display font-bold text-xl">{title}</h3>
-            <p className="text-sm text-muted-foreground font-mono mt-1">Select player from search above</p>
+            <p className="text-sm text-muted-foreground font-mono mt-1">Select player from search below</p>
           </div>
         </CardContent>
       </Card>
@@ -148,8 +152,13 @@ export default function PredictBuilderPage() {
     })
   }
 
+  const goToPasteMatches = (predictions: PredictionSummary[], startIndex: number) => {
+    storePasteSearchHandoff(predictions, startIndex)
+    setLocation("/history?pasteSearch=1")
+  }
+
   return (
-    <div className="space-y-10 animate-in fade-in duration-500 max-w-5xl mx-auto">
+    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border/50 pb-6">
         <div>
           <h1 className="text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Build Matchup"}</h1>
@@ -161,26 +170,7 @@ export default function PredictBuilderPage() {
         </div>
       </div>
 
-      {/* Player search — always visible at top so you can pick or change players without scrolling */}
-      <Card className="border-border shadow-md glass-panel">
-        <CardHeader className="bg-secondary/30 border-b border-border/50 py-4 px-6">
-          <CardTitle className="text-base font-display flex items-center gap-2.5">
-            <div className="p-1.5 bg-primary/10 rounded-lg">
-              <Search className="w-4 h-4 text-primary" />
-            </div>
-            Player Search
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <PlayerSearch 
-            onSelect={(player) => {
-              if (!player1Id) setPlayer1Id(player.id)
-              else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
-            }} 
-          />
-        </CardContent>
-      </Card>
-
+      {/* Box 1 + Box 2 — Player One and Player Two slots */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <PlayerCard 
           title="PLAYER 1" 
@@ -194,9 +184,58 @@ export default function PredictBuilderPage() {
         />
       </div>
 
-      {/* Bulk upload — screenshot batch prediction */}
+      {/* Box 3 — Player Search: search live provider to fill slots above, or paste multiple matchups to find existing ones */}
+      <Card className="border-border shadow-md glass-panel">
+        <CardHeader className="bg-secondary/30 border-b border-border/50 py-4 px-6">
+          <CardTitle className="text-base font-display flex items-center gap-2.5">
+            <div className="p-1.5 bg-primary/10 rounded-lg">
+              <Search className="w-4 h-4 text-primary" />
+            </div>
+            Player Search
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Search a player to add them to a slot above, or paste multiple matchups to look up saved predictions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-6">
+          <Tabs defaultValue="search">
+            <TabsList className="mb-4">
+              <TabsTrigger value="search" className="font-mono gap-2">
+                <Search className="w-4 h-4" />
+                PLAYER SEARCH
+              </TabsTrigger>
+              <TabsTrigger value="paste" className="font-mono gap-2">
+                <ClipboardPaste className="w-4 h-4" />
+                PASTE SEARCH
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="search">
+              <p className="text-xs text-muted-foreground font-mono mb-4">
+                Search the player database. The first result you tap fills Player 1; the second fills Player 2.
+              </p>
+              <PlayerSearch 
+                onSelect={(player) => {
+                  if (!player1Id) setPlayer1Id(player.id)
+                  else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
+                }} 
+              />
+            </TabsContent>
+
+            <TabsContent value="paste">
+              <p className="text-xs text-muted-foreground font-mono mb-4">
+                Paste a list of matchups (one per line) to find saved predictions in the Ledger. Results open in the Ledger with step-through navigation.
+              </p>
+              <LedgerMatchupSearch onView={goToPasteMatches} />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Box 4 — Bulk Uploads: predict multiple matchups from screenshots */}
       <BulkMatchupPredictor />
 
+      {/* Match Conditions — only visible once both players are selected */}
       {player1Id && player2Id && (
         <Card className="border-primary/30 shadow-xl overflow-hidden glass-panel relative">
           <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -mr-48 -mt-48 pointer-events-none" />
@@ -296,7 +335,7 @@ export default function PredictBuilderPage() {
         </Card>
       )}
 
-      {/* Saved predictions lookup at the bottom — for quickly checking if a matchup's already been predicted */}
+      {/* Bottom box — Find a saved prediction by player name */}
       <SavedPredictionsLookup />
     </div>
   )

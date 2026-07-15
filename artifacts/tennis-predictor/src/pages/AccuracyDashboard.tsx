@@ -618,23 +618,60 @@ export default function AccuracyDashboardPage() {
   })
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/50 pb-6">
-        <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">Accuracy Dashboard</h1>
-          <p className="text-muted-foreground mt-2 text-lg">
+    <div className="space-y-10 animate-in fade-in duration-500 w-full max-w-6xl mx-auto pb-12 overflow-x-hidden">
+      <div className="flex flex-col gap-4 border-b border-border/50 pb-6">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">Accuracy Dashboard</h1>
+          <p className="text-muted-foreground mt-2 text-sm sm:text-base">
             Segmented, honestly-labeled results. Validation numbers were used to fit calibration — only test and paper-trade numbers are genuinely unseen.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" onClick={() => runPaperTrading.mutate()} disabled={runPaperTrading.isPending} className="gap-2 shadow-sm font-mono h-10">
-            {runPaperTrading.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
-            RUN PAPER-TRADE
-          </Button>
-          <Button variant="accent" onClick={() => runWalkForward.mutate({ data: {} })} disabled={runWalkForward.isPending} className="gap-2 shadow-md font-mono h-10">
-            {runWalkForward.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-            RUN WALK-FORWARD
-          </Button>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 border border-border/50 rounded-xl p-4 bg-secondary/20 space-y-3">
+            <div>
+              <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-1">PAPER-TRADE CYCLE</div>
+              <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                Locks predictions for upcoming fixtures within the lead window, then grades any pending matches that have finished. Run this regularly to keep your paper-trading record current.
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => runPaperTrading.mutate()} disabled={runPaperTrading.isPending} className="gap-2 shadow-sm font-mono h-10 w-full sm:w-auto">
+              {runPaperTrading.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+              RUN PAPER-TRADE
+            </Button>
+            {runPaperTrading.data && (
+              <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
+                <span>LOCKED: <span className="text-foreground">{runPaperTrading.data.locked}</span></span>
+                <span className="text-border">•</span>
+                <span>GRADED: <span className="text-success">{runPaperTrading.data.graded}</span></span>
+                <span className="text-border">•</span>
+                <span>MISSED: <span className="text-muted-foreground">{runPaperTrading.data.missed}</span></span>
+                {runPaperTrading.data.errors?.length > 0 && (
+                  <>
+                    <span className="text-border">•</span>
+                    <span className="text-destructive">ERRORS: {runPaperTrading.data.errors.length}</span>
+                  </>
+                )}
+              </div>
+            )}
+            {runPaperTrading.isError && (
+              <p className="text-xs text-destructive font-mono">
+                {runPaperTrading.error instanceof Error ? runPaperTrading.error.message : "Paper-trade cycle failed. Check the API server is running."}
+              </p>
+            )}
+          </div>
+
+          <div className="flex-1 border border-border/50 rounded-xl p-4 bg-secondary/20 space-y-3">
+            <div>
+              <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-1">WALK-FORWARD BACKTEST</div>
+              <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                Reruns the prediction engine over all historical match data to compute accuracy, log loss, calibration curves, and specialist segment weights. Takes 8–12 min and resets historical test rows.
+              </p>
+            </div>
+            <Button variant="accent" onClick={() => runWalkForward.mutate({ data: {} })} disabled={runWalkForward.isPending} className="gap-2 shadow-md font-mono h-10 w-full sm:w-auto">
+              {runWalkForward.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+              RUN WALK-FORWARD
+            </Button>
+          </div>
         </div>
       </div>
 
