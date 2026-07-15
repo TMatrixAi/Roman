@@ -2,6 +2,7 @@ import { useGetProviderStatus, useGetHistoricalDataFreshness } from "@workspace/
 import { Badge } from "@/components/ui/badge"
 import { Activity, AlertCircle, CheckCircle2, Clock, Database } from "lucide-react"
 import { formatEasternClock } from "@/lib/timezone"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Task #144: `historical_matches` used to silently stop advancing for over a year with no visible
@@ -19,28 +20,28 @@ function HistoricalDataFreshnessIndicator() {
   const isStale = freshness.daysBehind === null || freshness.daysBehind > 2
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-muted-foreground">HISTORY:</span>
-      {freshness.latestCoveredDate ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
         <Badge
           variant="outline"
-          className={
+          className={`h-5 px-1.5 text-[10px] cursor-default hidden xl:flex ${
             isStale
-              ? "h-5 px-1.5 text-[10px] border-amber-500/30 text-amber-700 bg-amber-500/10"
-              : "h-5 px-1.5 text-[10px] border-green-500/30 text-green-700 bg-green-500/10"
-          }
+              ? "border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10"
+              : "border-green-500/30 text-green-700 dark:text-green-400 bg-green-500/10"
+          }`}
         >
-          <Database className="w-3 h-3 mr-1" />
-          THROUGH {freshness.latestCoveredDate}
-          {freshness.daysBehind !== null && freshness.daysBehind > 1 ? ` (${freshness.daysBehind}d behind)` : ""}
+          <Database className="w-2.5 h-2.5 mr-1" />
+          {freshness.latestCoveredDate ?? "NO DATA"}
+          {freshness.daysBehind !== null && freshness.daysBehind > 1 ? ` (${freshness.daysBehind}d)` : ""}
         </Badge>
-      ) : (
-        <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-destructive/30 text-destructive bg-destructive/10">
-          <AlertCircle className="w-3 h-3 mr-1" />
-          NO DATA
-        </Badge>
-      )}
-    </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="font-mono text-xs">
+        Historical data through {freshness.latestCoveredDate ?? "unknown"}
+        {freshness.daysBehind !== null && freshness.daysBehind > 1
+          ? ` — ${freshness.daysBehind} days behind`
+          : " — up to date"}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -49,49 +50,56 @@ export function ProviderStatusIndicator() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground animate-pulse">
+      <div className="flex items-center gap-1.5 text-[0.6875rem] font-mono text-muted-foreground animate-pulse">
         <Activity className="w-3 h-3" />
-        <span>CONNECTING...</span>
+        <span className="hidden sm:inline">CONNECTING...</span>
       </div>
     )
   }
 
   if (isError || !status) {
     return (
-      <div className="flex items-center gap-2 text-xs font-mono text-destructive">
+      <div className="flex items-center gap-1.5 text-[0.6875rem] font-mono text-destructive">
         <AlertCircle className="w-3 h-3" />
-        <span>SYS.OFFLINE</span>
+        <span className="hidden sm:inline">OFFLINE</span>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-4 text-xs font-mono">
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted-foreground">PROVIDER:</span>
-        <span className="font-bold tracking-tight">{status.provider.toUpperCase()}</span>
-      </div>
-      
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted-foreground">STATUS:</span>
-        {status.connected ? (
-          <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-green-500/30 text-green-700 bg-green-500/10">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            ONLINE
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-destructive/30 text-destructive bg-destructive/10">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            OFFLINE
-          </Badge>
-        )}
-      </div>
+    <div className="flex items-center gap-2 text-[0.6875rem] font-mono">
+      {/* Provider name — only on wide screens */}
+      <span className="hidden lg:inline text-muted-foreground font-bold tracking-tight">
+        {status.provider.toUpperCase()}
+      </span>
 
+      {/* Status badge — always visible */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {status.connected ? (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-green-500/30 text-green-700 dark:text-green-400 bg-green-500/10 cursor-default gap-1">
+              <CheckCircle2 className="w-2.5 h-2.5" />
+              <span className="hidden sm:inline">ONLINE</span>
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-destructive/30 text-destructive bg-destructive/10 cursor-default gap-1">
+              <AlertCircle className="w-2.5 h-2.5" />
+              <span className="hidden sm:inline">OFFLINE</span>
+            </Badge>
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="font-mono text-xs">
+          {status.provider.toUpperCase()} — {status.connected ? "connected" : "disconnected"}
+          {status.lastSuccessfulCallAt && ` · last sync ${formatEasternClock(status.lastSuccessfulCallAt)}`}
+        </TooltipContent>
+      </Tooltip>
+
+      {/* Last sync — only on large screens */}
       {status.lastSuccessfulCallAt && (
-        <div className="flex items-center gap-1.5 hidden sm:flex text-muted-foreground">
-          <Clock className="w-3 h-3" />
-          <span>LAST SYNC: {formatEasternClock(status.lastSuccessfulCallAt)}</span>
-        </div>
+        <span className="hidden xl:flex items-center gap-1 text-muted-foreground/70">
+          <Clock className="w-2.5 h-2.5" />
+          {formatEasternClock(status.lastSuccessfulCallAt)}
+        </span>
       )}
 
       <HistoricalDataFreshnessIndicator />

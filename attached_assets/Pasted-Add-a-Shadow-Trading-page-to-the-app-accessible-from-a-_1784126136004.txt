@@ -1,0 +1,48 @@
+Add a Shadow Trading page to the app, accessible from a new button on the main page.
+
+**Navigation**
+- Add a "Shadow Trading" button on the main page, placed to the right of the existing "View Ledger" and "Build Match" buttons, aligned with both in the same row.
+- Do not move, resize, restyle, or reposition the existing "View Ledger" or "Build Match" buttons — leave them exactly where they are now.
+- The new button must match the same size, style, spacing, and alignment as the two existing buttons.
+- Clicking it opens a dedicated full page (not a modal), following the app's existing routing pattern.
+
+**Page purpose**
+This page displays Shadow Replay evidence only — the fast, leakage-safe simulated results from replaying held-out historical dates through the live prediction engine. It must never blend with or be mistaken for real live paper-trading results.
+
+**Required sections on the page**
+
+1. **Header disclosure banner** — Always visible at the top: "Shadow Replay: Simulated evidence from historical replay, not live-graded results. See Ledger for real live paper-trading performance." Clear text, not obnoxious — subtle background tint, small icon.
+
+2. **Summary KPI row** — Total shadow-replayed predictions (sample size), overall accuracy, Brier score/calibration score, date range covered, last updated timestamp.
+
+3. **Batch selector** — If multiple shadow-replay batches exist, let the user pick one or view all combined. Show batch ID, date range, and run date per batch.
+
+4. **Calibration breakdown** — Accuracy by probability band (50-60%, 60-70%, etc.).
+
+5. **Tier performance breakdown** — Win rate and sample size per recommendation tier (Strong Recommendation, Elite, Moderate Lean, No Strong Signal, etc.), within shadow-replay data only.
+
+6. **Match-level results table** — Paginated: date, players, tour, predicted winner, predicted probability, tier, actual result, correct/incorrect. Sortable and filterable by tour, tier, date range, correct/incorrect.
+
+7. **Comparison strip** — Shadow Replay accuracy vs. real Live Paper Trading accuracy vs. Backtest/historical_test accuracy, each clearly labeled. Link out to the Ledger page for live paper-trading detail.
+
+**Design requirements — make this page A1 sharp, smooth, flawless**
+- Use the app's existing design system/tokens (spacing, color, typography, badge styling) — no new visual style.
+- Tabular/monospaced number styling on all percentages, sample sizes, Brier scores.
+- Clear KPI card hierarchy — headline stat large and bold, context smaller beneath.
+- Tier badges reuse the exact same pill styling/colors as elsewhere in the app.
+- Loading skeleton states for every section — no blank screens or raw spinners.
+- Empty state with clear messaging if no shadow-replay batches exist yet.
+- Smooth transitions when switching batches or filtering — no jarring reflows.
+- Fully responsive: desktop and mobile, table becomes scrollable/card view on small screens.
+- Dark mode and light mode both fully supported, matching the rest of the app.
+- Visible hover and focus states on all interactive elements.
+
+**Hard constraints**
+- Do not build this page's data layer assuming the Shadow Replay job (Task #159) already exists if it doesn't — if the underlying data model isn't there yet, build the page against the intended structure and show an honest empty state pending that job.
+- Do not touch prediction logic, real paper-trading logic, or the Ledger page's existing behavior.
+- Do not write to, delete, or modify any paper_trade or historical_test rows.
+- Do not move, reorder, or restyle any existing button, section, or page outside of adding this one new button and new page.
+
+**Report back with:** screenshots of the finished page in light and dark mode at desktop and mobile widths, confirmation of the new button's exact placement relative to View Ledger and Build Match, list of files changed, and confirmation nothing existing was altered outside of adding the new button and page.
+
+Sources
