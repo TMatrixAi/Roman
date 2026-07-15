@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
 import {
   useGetUpcomingFixtures,
   useCreatePrediction,
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyDataState } from "./DataWarning"
-import { Calendar, Swords, Zap, RefreshCw, Wifi } from "lucide-react"
+import { Calendar, Clock, Swords, Trash2, Zap, RefreshCw, Wifi, XCircle } from "lucide-react"
 import { formatEasternDateTime } from "@/lib/timezone"
 
 // Specific TournamentLevel strings + the legacy aggregate shorthands ("atp", "wta", "itf").
@@ -99,6 +99,17 @@ function filterFixtures(fixtures: Fixture[], tourFilter: TourFilter, tournamentF
     .sort(liveFirstCompare)
 }
 
+/**
+ * A fixture is considered "stale/cancelled" when:
+ * - It has a confirmed scheduled start time that is in the past
+ * - It is NOT flagged as live (meaning the provider never reported it as in-progress)
+ * The provider sometimes leaves these in the upcoming window after postponements or cancellations.
+ */
+function isStaleFixture(fixture: Fixture): boolean {
+  if (!fixture.scheduledStart || fixture.isLive) return false
+  return new Date(fixture.scheduledStart).getTime() < Date.now()
+}
+
 function formatFixtureTime(fixture: Fixture): string {
   return formatEasternDateTime(fixture.scheduledStart)
 }
@@ -147,6 +158,137 @@ function formatSetScores(score: LiveScore): string {
   return score.sets.map((s) => `${s.player1Games}-${s.player2Games}`).join("  ")
 }
 
+// ─── Dismissed fixture IDs (persisted to sessionStorage across soft-navigations) ─────────────
+const DISMISSED_KEY = "dismissedFixtureIds.v1"
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(DISMISSED_KEY)
+    return raw ? new Set(JSON.parse(raw)) : new Set()
+  } catch { return new Set() }
+}
+
+function persistDismissed(ids: Set<string>) {
+  try { sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids])) } catch {}
+}
+
+// ─── Swipeable card ───────────────────────────────────────────────────────────────────────────
+/**
+ * Wraps a fixture card with swipe-left-to-reveal-delete UX.
+ * - Touch start: record finger X
+ * - Touch move: translate card left proportionally, revealing the red delete panel underneath
+ * - Touch end: snap open if dragged > 40% of panel width, otherwise snap shut
+ * - Tap DELETE once → changes label to CONFIRM; tap again → calls onDismiss
+ * The card snaps back if swiped right while open.
+ */
+const SNAP_WIDTH = 80 // px width of the revealed delete panel
+
+function SwipeableCard({
+  id,
+  onDismiss,
+  children,
+}: {
+  id: string
+  onDismiss: () => void
+  children: React.ReactNode
+}) {
+  const [offset, setOffset] = useState(0)
+  const [snapped, setSnapped] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+  const startXRef = useRef<number | null>(null)
+  const currentOffsetRef = useRef(0)
+
+  // Keep ref in sync so touchmove can read latest value without stale closure
+  useEffect(() => { currentOffsetRef.current = offset }, [offset])
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startXRef.current = e.touches[0].clientX
+    setConfirm(false)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startXRef.current === null) return
+    const delta = e.touches[0].clientX - startXRef.current
+    if (snapped) {
+      // Already open — allow swiping right to close, don't allow going further left
+      const newOffset = Math.min(0, Math.max(-SNAP_WIDTH, -SNAP_WIDTH + delta))
+      setOffset(newOffset)
+    } else {
+      // Closed — only track leftward swipes
+      if (delta < 0) setOffset(Math.max(delta, -SNAP_WIDTH))
+    }
+  }
+
+  const handleTouchEnd = () => {
+    const shouldSnap = offset < -(SNAP_WIDTH * 0.4)
+    const shouldClose = snapped && offset > -(SNAP_WIDTH * 0.6)
+    if (shouldClose) {
+      setSnapped(false)
+      setOffset(0)
+    } else if (shouldSnap || snapped) {
+      setSnapped(true)
+      setOffset(-SNAP_WIDTH)
+    } else {
+      setOffset(0)
+    }
+    startXRef.current = null
+  }
+
+  const handleDeleteTap = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm) {
+      setConfirm(true)
+    } else {
+      onDismiss()
+    }
+  }
+
+  // Tap on card body while open → snap shut
+  const handleCardTap = () => {
+    if (snapped) {
+      setSnapped(false)
+      setOffset(0)
+      setConfirm(false)
+    }
+  }
+
+  const isTracking = startXRef.current !== null
+
+  return (
+    <div className="relative overflow-hidden rounded-xl">
+      {/* Delete panel — always rendered, revealed by translating the card */}
+      <div
+        className="absolute right-0 top-0 bottom-0 flex items-center justify-center bg-destructive rounded-r-xl"
+        style={{ width: SNAP_WIDTH }}
+        onClick={handleDeleteTap}
+      >
+        <div className="flex flex-col items-center gap-1 text-white select-none cursor-pointer">
+          <Trash2 className="w-4 h-4" />
+          <span className="text-[0.6rem] font-mono font-bold tracking-widest">
+            {confirm ? "CONFIRM?" : "REMOVE"}
+          </span>
+        </div>
+      </div>
+
+      {/* Swipeable card layer */}
+      <div
+        style={{
+          transform: `translateX(${offset}px)`,
+          transition: isTracking ? "none" : "transform 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={handleCardTap}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ─── FixturesList ──────────────────────────────────────────────────────────────────────────────
+
 export type FixturesListHandle = {
   /** Refetches fixtures from the server. Used by the Home page's "Go" button. */
   refetch: () => void
@@ -184,8 +326,37 @@ export const FixturesList = forwardRef<
   const [predictNowFixtureId, setPredictNowFixtureId] = useState<string | null>(null)
   const [predictNowError, setPredictNowError] = useState<string | null>(null)
 
+  // Dismissed fixture IDs — user-dismissed via swipe-delete or "Remove Cancelled" button
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(loadDismissed)
+
+  const dismissFixture = (id: string) => {
+    setDismissedIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      persistDismissed(next)
+      return next
+    })
+  }
+
+  // Count of stale/cancelled fixtures that haven't been dismissed yet
+  const staleCount = useMemo(() => {
+    return (fixtures ?? []).filter(f => !dismissedIds.has(f.id) && isStaleFixture(f)).length
+  }, [fixtures, dismissedIds])
+
+  const handleRemoveCancelled = () => {
+    const toRemove = (fixtures ?? []).filter(isStaleFixture).map(f => f.id)
+    setDismissedIds(prev => {
+      const next = new Set([...prev, ...toRemove])
+      persistDismissed(next)
+      return next
+    })
+  }
+
   const handleRefresh = () => {
     setForce(true)
+    // Also clear dismissals on explicit refresh so freshly re-loaded data starts clean
+    setDismissedIds(new Set())
+    persistDismissed(new Set())
   }
 
   useEffect(() => {
@@ -209,7 +380,8 @@ export const FixturesList = forwardRef<
   const visibleFixtures = useMemo(() => {
     if (!fixtures) return []
     return filterFixtures(fixtures, tourFilter, tournamentFilter)
-  }, [fixtures, tourFilter, tournamentFilter])
+      .filter(f => !dismissedIds.has(f.id))
+  }, [fixtures, tourFilter, tournamentFilter, dismissedIds])
 
   // Live score polling — only fires when there are live fixtures, every 6 seconds.
   const liveFixtureIds = useMemo(
@@ -275,7 +447,21 @@ export const FixturesList = forwardRef<
 
   return (
     <div className="space-y-2.5">
-      <div className="flex justify-end">
+      {/* Toolbar: cancelled removal + refresh */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        {staleCount > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5 h-8"
+            onClick={handleRemoveCancelled}
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            REMOVE {staleCount} CANCELLED
+          </Button>
+        ) : (
+          <div /> /* spacer */
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -296,100 +482,111 @@ export const FixturesList = forwardRef<
         visibleFixtures.map((fixture) => {
           const liveScore = liveScores?.[fixture.id]
           return (
-            <div
-              key={fixture.id}
-              className="group flex rounded-xl border border-border/60 bg-card overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all duration-200"
-            >
-              {/* Surface accent bar */}
-              <div className={`w-[3px] shrink-0 self-stretch ${surfaceBarClass(fixture.surface)}`} />
+            <SwipeableCard key={fixture.id} id={fixture.id} onDismiss={() => dismissFixture(fixture.id)}>
+              <div
+                className="group flex rounded-xl border border-border/60 bg-card overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all duration-200"
+              >
+                {/* Surface accent bar */}
+                <div className={`w-[3px] shrink-0 self-stretch ${surfaceBarClass(fixture.surface)}`} />
 
-              {/* Main content */}
-              <div className="flex-1 flex flex-col sm:flex-row min-w-0">
-                <div className="flex-1 p-4 flex flex-col justify-between gap-3 min-w-0">
-                  {/* Meta row */}
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
-                    <Badge
-                      variant={levelVariant(fixture.tournamentLevel)}
-                      className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none"
-                    >
-                      {fixture.tournamentLevel || 'TOURNAMENT'}
-                    </Badge>
-                    {fixture.tournamentName && (
-                      <span className="truncate max-w-[42vw] sm:max-w-[180px] text-muted-foreground/80">
-                        {fixture.tournamentName}
-                      </span>
-                    )}
-                    <span className="text-border/60">·</span>
-                    <span className={`font-semibold ${surfaceTextClass(fixture.surface)}`}>
-                      {fixture.surface}{fixture.indoor ? ' (Indoor)' : ''}
-                    </span>
-                    <span className="text-border/60">·</span>
-                    {fixture.isLive ? (
-                      <span className="inline-flex items-center gap-1.5 font-bold text-destructive">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-destructive" />
+                {/* Main content */}
+                <div className="flex-1 flex flex-col sm:flex-row min-w-0">
+                  <div className="flex-1 p-4 flex flex-col justify-between gap-2.5 min-w-0">
+                    {/* Meta row: level + tournament + surface */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
+                      <Badge
+                        variant={levelVariant(fixture.tournamentLevel)}
+                        className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none"
+                      >
+                        {fixture.tournamentLevel || 'TOURNAMENT'}
+                      </Badge>
+                      {fixture.tournamentName && (
+                        <span className="truncate max-w-[42vw] sm:max-w-[180px] text-muted-foreground/80">
+                          {fixture.tournamentName}
                         </span>
-                        LIVE
+                      )}
+                      <span className="text-border/60">·</span>
+                      <span className={`font-semibold ${surfaceTextClass(fixture.surface)}`}>
+                        {fixture.surface}{fixture.indoor ? ' (Indoor)' : ''}
                       </span>
-                    ) : (
-                      <span className={!fixture.scheduledStart ? "text-muted-foreground/50 italic" : undefined}>
-                        {formatFixtureTime(fixture)}
-                      </span>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Players + live score */}
-                  <div className="space-y-1">
-                    <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player1Name}</div>
-                    <div className="text-[0.6875rem] font-mono text-muted-foreground/50 uppercase tracking-widest font-bold">vs</div>
-                    <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player2Name}</div>
-                  </div>
-
-                  {/* Live set scores */}
-                  {fixture.isLive && liveScore && liveScore.sets.length > 0 && (
-                    <div className="flex items-center gap-3 text-[0.6875rem] font-mono">
-                      <span className="font-bold text-destructive tabular-nums tracking-wide">
-                        {formatSetScores(liveScore)}
-                      </span>
-                      {liveScore.statusText && (
-                        <span className="text-muted-foreground/70">{liveScore.statusText}</span>
+                    {/* Time row — dedicated, always visible, larger than meta text */}
+                    <div className="flex items-center gap-1.5">
+                      {fixture.isLive ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-destructive text-[0.75rem] font-mono">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-destructive" />
+                          </span>
+                          LIVE NOW
+                        </span>
+                      ) : (
+                        <>
+                          <Clock className={`w-3.5 h-3.5 shrink-0 ${fixture.scheduledStart ? "text-primary/70" : "text-muted-foreground/40"}`} />
+                          <span className={`text-[0.75rem] font-mono font-semibold ${
+                            fixture.scheduledStart
+                              ? "text-foreground/80"
+                              : "text-muted-foreground/50 italic"
+                          }`}>
+                            {formatFixtureTime(fixture)}
+                          </span>
+                        </>
                       )}
                     </div>
-                  )}
 
-                  {predictNowError === fixture.id && (
-                    <p className="text-[0.6875rem] text-destructive font-mono">Predict Now failed — provider may be unavailable.</p>
-                  )}
-                </div>
+                    {/* Players */}
+                    <div className="space-y-1">
+                      <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player1Name}</div>
+                      <div className="text-[0.6875rem] font-mono text-muted-foreground/50 uppercase tracking-widest font-bold">vs</div>
+                      <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player2Name}</div>
+                    </div>
 
-                {/* Actions */}
-                <div className="flex sm:flex-col items-center justify-end gap-2 px-4 py-3 sm:px-3 sm:py-4 bg-secondary/30 border-t sm:border-t-0 sm:border-l border-border/40 sm:min-w-[7.5rem]">
-                  <Button
-                    size="sm"
-                    className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-1.5"
-                    disabled={predictNowFixtureId === fixture.id}
-                    onClick={() => handlePredictNow(fixture)}
-                  >
-                    {predictNowFixtureId === fixture.id ? (
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Zap className="w-3 h-3" />
+                    {/* Live set scores */}
+                    {fixture.isLive && liveScore && liveScore.sets.length > 0 && (
+                      <div className="flex items-center gap-3 text-[0.6875rem] font-mono">
+                        <span className="font-bold text-destructive tabular-nums tracking-wide">
+                          {formatSetScores(liveScore)}
+                        </span>
+                        {liveScore.statusText && (
+                          <span className="text-muted-foreground/70">{liveScore.statusText}</span>
+                        )}
+                      </div>
                     )}
-                    PREDICT
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
-                    onClick={() => setLocation(buildCustomMatchUrl(fixture))}
-                  >
-                    <Swords className="w-3 h-3" />
-                    CUSTOM
-                  </Button>
+
+                    {predictNowError === fixture.id && (
+                      <p className="text-[0.6875rem] text-destructive font-mono">Predict Now failed — provider may be unavailable.</p>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex sm:flex-col items-center justify-end gap-2 px-4 py-3 sm:px-3 sm:py-4 bg-secondary/30 border-t sm:border-t-0 sm:border-l border-border/40 sm:min-w-[7.5rem]">
+                    <Button
+                      size="sm"
+                      className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-1.5"
+                      disabled={predictNowFixtureId === fixture.id}
+                      onClick={(e) => { e.stopPropagation(); handlePredictNow(fixture) }}
+                    >
+                      {predictNowFixtureId === fixture.id ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Zap className="w-3 h-3" />
+                      )}
+                      PREDICT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
+                      onClick={(e) => { e.stopPropagation(); setLocation(buildCustomMatchUrl(fixture)) }}
+                    >
+                      <Swords className="w-3 h-3" />
+                      CUSTOM
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
+            </SwipeableCard>
           )
         })
       )}
