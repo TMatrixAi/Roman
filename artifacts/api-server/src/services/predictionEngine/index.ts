@@ -76,11 +76,18 @@ export interface EngineBreakdown {
   modelConflict: boolean;
   /** Concise, always-non-null-when-modelConflict-is-true explanation of which metrics favored the other side and which stage of the pipeline (general calibration, segment specialist, or simulator) flipped the final pick. Null when there's no conflict. */
   modelConflictNote: string | null;
-  /** True only when this match's raw core signals were genuinely close (within `TIE_BAND` of a coin flip) and the tie-break cascade (see `tieBreakers.ts`) picked a direction instead of leaving an uninformative ~50/50 average. Not present on predictions made before this field existed. */
+  /**
+   * True when the raw ensemble landed within `TIE_BAND` of a coin flip — signals a genuinely
+   * close matchup. The old directional cascade (Serve & Return → Surface Elo → …) was removed
+   * after validation showed every step performed at or below a coin flip in the tight-signal
+   * regime (Task #5, 2026-07-15). When true, the raw ensemble probability flows through UNCHANGED
+   * (no nudge), and `tieBreakerNote` carries an honest "close matchup" disclosure.
+   * Not present on predictions made before this field existed.
+   */
   tieBreakerApplied: boolean;
-  /** Which cascade step (Serve & Return, Surface Elo, Recent Form, surface history, ranking, Fatigue, Head-to-Head) decided the direction, or null when no tie-break was needed/possible. */
+  /** Always null after Task #5's cascade removal. Kept for backward compatibility with stored predictions made before the fix. */
   tieBreakerDecidingStep: string | null;
-  /** Always present when `tieBreakerApplied` is true -- explains why the raw signals were tied and which step broke it. Null otherwise. */
+  /** Always present when `tieBreakerApplied` is true -- explains that the match is genuinely close and no directional nudge was applied. Null otherwise. */
   tieBreakerNote: string | null;
   /** True only when this prediction clears the Elite Prediction bar -- see `eliteTier.ts`. Not present on predictions made before this field existed. */
   isEliteTier: boolean;

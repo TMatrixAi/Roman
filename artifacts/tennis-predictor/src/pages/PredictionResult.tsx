@@ -299,7 +299,7 @@ export default function PredictionResultPage() {
           <div className="mb-6 p-5 border border-border/60 bg-secondary/40 rounded-2xl flex gap-4 text-sm shadow-sm">
             <Scale className="w-6 h-6 shrink-0 text-primary" />
             <div className="space-y-1.5">
-              <div className="font-bold font-mono text-[11px] tracking-widest uppercase">TIE-BREAK CASCADE APPLIED{engine.tieBreakerDecidingStep ? ` -- DECIDED BY ${engine.tieBreakerDecidingStep.toUpperCase()}` : ""}</div>
+              <div className="font-bold font-mono text-[11px] tracking-widest uppercase">GENUINELY CLOSE MATCH — SIGNALS WITHIN 3% OF EVEN</div>
               <div className="text-foreground/80 leading-relaxed">{engine.tieBreakerNote}</div>
             </div>
           </div>
