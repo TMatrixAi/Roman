@@ -30,3 +30,5 @@
 - [Shadow/simulated evidence bucket design](shadow-evidence-bucket-design.md) — distinct runKind + natural-key append-only constraint + label-scoped overwrite; never merge simulated evidence into real live/backtest aggregates.
 - [Tailwind grid mobile overflow](tailwind-grid-mobile-overflow.md) — bare `grid md:grid-cols-2` (no base grid-cols-1) lets unwrapped flex rows/long words blow past the viewport, invisibly clipped.
 - [TTL cache silent refresh & live-fixtures filter](ttl-cache-silent-refresh-and-live-fixtures-filter.md) — TtlCache needs explicit bypass for "refresh" actions; live matches were deliberately (wrongly) filtered from upcoming window.
+- [Tie-break cascade underperforms baseline](tiebreak-cascade-underperformance.md) — when the tie-break cascade actually decides a pick, real graded accuracy is at/below a coin flip — worse than the honest 50/50 it replaces.
+- [Full-audit-before-new-task workflow](full-audit-workflow-pattern.md) — a broad "audit everything" ask needs a scoped, report-only project task that opens by citing prior audit docs so it doesn't re-litigate settled findings.
