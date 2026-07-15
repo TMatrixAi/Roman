@@ -45,6 +45,7 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
+AI_INTEGRATIONS_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 [userenv.development]
 NODE_OPTIONS = "--max-old-space-size=6144"
