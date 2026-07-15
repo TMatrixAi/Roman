@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useLocation } from "wouter"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -6,28 +6,53 @@ import { FixturesList, type FixturesListHandle, type TourFilter } from "@/compon
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { Select } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { ActivitySquare, ArrowRight, PlaySquare, Swords } from "lucide-react"
+import { ActivitySquare, ArrowRight, BarChart2, PlaySquare, Swords } from "lucide-react"
 
-const TOUR_FILTER_OPTIONS: { value: TourFilter; label: string }[] = [
-  { value: "all", label: "All Matches" },
-  { value: "itf", label: "ITF" },
-  { value: "atp", label: "ATP Tournaments" },
-  { value: "wta", label: "WTA Tournaments" },
-]
+const WTA_LEVELS = new Set(["WTA1000", "WTA500", "WTA250"])
+const ATP_LEVELS = new Set(["Masters1000", "ATP500", "ATP250"])
+const ITF_LEVELS = new Set(["Challenger", "ITF"])
 
 const ALL_TOURNAMENTS = "all"
+
+// The specific TournamentLevel values that also appear as TourFilter options (for EVENT narrowing)
+const SPECIFIC_LEVEL_FILTERS = new Set([
+  "GrandSlam", "Masters1000", "WTA1000", "ATP500", "WTA500",
+  "ATP250", "WTA250", "Challenger", "ITF",
+])
 
 export default function Home() {
   const [, setLocation] = useLocation()
   const [tourFilter, setTourFilter] = useState<TourFilter>("all")
   const [appliedTourFilter, setAppliedTourFilter] = useState<TourFilter>("all")
-  // Task #110: event/tournament filter, applied together with the tour/level filter via the same
-  // "Go" button. Options are populated from real tournamentName values FixturesList reports among
-  // the fixtures it currently has loaded -- never a fabricated or hardcoded list.
-  const [tournamentOptions, setTournamentOptions] = useState<string[]>([])
+  // All {name, level} pairs reported by FixturesList from its loaded fixtures. Used to derive
+  // the filtered EVENT dropdown options based on the currently-selected LEVEL.
+  const [allTournamentEntries, setAllTournamentEntries] = useState<{ name: string; level: string | null | undefined }[]>([])
   const [tournamentFilter, setTournamentFilter] = useState<string>(ALL_TOURNAMENTS)
   const [appliedTournamentFilter, setAppliedTournamentFilter] = useState<string>(ALL_TOURNAMENTS)
   const fixturesRef = useRef<FixturesListHandle>(null)
+
+  // Narrows EVENT options based on the currently-selected LEVEL (not yet applied).
+  // Deduplicates by name and sorts alphabetically.
+  const filteredTournamentOptions = useMemo(() => {
+    let filtered = allTournamentEntries
+    if (tourFilter === "atp") {
+      filtered = allTournamentEntries.filter((e) => !e.level || ATP_LEVELS.has(e.level) || e.level === "GrandSlam")
+    } else if (tourFilter === "wta") {
+      filtered = allTournamentEntries.filter((e) => !e.level || WTA_LEVELS.has(e.level) || e.level === "GrandSlam")
+    } else if (tourFilter === "itf") {
+      filtered = allTournamentEntries.filter((e) => !e.level || ITF_LEVELS.has(e.level))
+    } else if (SPECIFIC_LEVEL_FILTERS.has(tourFilter)) {
+      filtered = allTournamentEntries.filter((e) => !e.level || e.level === tourFilter)
+    }
+    return Array.from(new Set(filtered.map((e) => e.name))).sort()
+  }, [allTournamentEntries, tourFilter])
+
+  // Changing LEVEL resets the EVENT selection so a stale tournament name from a different tier
+  // doesn't persist invisibly in the dropdown after the options list changes.
+  const handleTourFilterChange = (newFilter: TourFilter) => {
+    setTourFilter(newFilter)
+    setTournamentFilter(ALL_TOURNAMENTS)
+  }
 
   const handleGo = () => {
     setAppliedTourFilter(tourFilter)
@@ -63,19 +88,44 @@ export default function Home() {
               <PlaySquare className="w-4 h-4" />
               BUILD MATCHUP
             </button>
+            <button
+              onClick={() => setLocation("/shadow-replay")}
+              className="bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground hover:bg-primary-foreground/20 border border-primary-foreground/10 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all flex items-center gap-2 hover:-translate-y-1"
+            >
+              <BarChart2 className="w-4 h-4" />
+              SHADOW TRADING
+            </button>
           </div>
           <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-primary-foreground/10 mt-8">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-mono font-bold text-primary-foreground/60 tracking-widest uppercase">LEVEL</label>
               <Select
                 value={tourFilter}
-                onChange={(e) => setTourFilter(e.target.value as TourFilter)}
+                onChange={(e) => handleTourFilterChange(e.target.value as TourFilter)}
                 className="w-auto bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground border-primary-foreground/20 font-mono text-sm rounded-lg"
-                aria-label="Filter upcoming fixtures by tour"
+                aria-label="Filter upcoming fixtures by level"
               >
-                {TOUR_FILTER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} className="text-foreground">{opt.label}</option>
-                ))}
+                <option value="all" className="text-foreground">All Matches</option>
+                <optgroup label="Grand Slams">
+                  <option value="GrandSlam" className="text-foreground">Grand Slam</option>
+                </optgroup>
+                <optgroup label="ATP">
+                  <option value="Masters1000" className="text-foreground">Masters 1000</option>
+                  <option value="ATP500" className="text-foreground">ATP 500</option>
+                  <option value="ATP250" className="text-foreground">ATP 250</option>
+                  <option value="Challenger" className="text-foreground">Challenger</option>
+                  <option value="ITF" className="text-foreground">ITF</option>
+                  <option value="atp" className="text-foreground">All ATP</option>
+                </optgroup>
+                <optgroup label="WTA">
+                  <option value="WTA1000" className="text-foreground">WTA 1000</option>
+                  <option value="WTA500" className="text-foreground">WTA 500</option>
+                  <option value="WTA250" className="text-foreground">WTA 250</option>
+                  <option value="wta" className="text-foreground">All WTA</option>
+                </optgroup>
+                <optgroup label="Lower Tiers">
+                  <option value="itf" className="text-foreground">All Challenger/ITF</option>
+                </optgroup>
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -87,7 +137,7 @@ export default function Home() {
                 aria-label="Filter upcoming fixtures by tournament"
               >
                 <option value={ALL_TOURNAMENTS} className="text-foreground">All Tournaments</option>
-                {tournamentOptions.map((name) => (
+                {filteredTournamentOptions.map((name) => (
                   <option key={name} value={name} className="text-foreground">{name}</option>
                 ))}
               </Select>
@@ -120,7 +170,7 @@ export default function Home() {
             ref={fixturesRef}
             tourFilter={appliedTourFilter}
             tournamentFilter={appliedTournamentFilter}
-            onTournamentsChange={setTournamentOptions}
+            onTournamentsChange={setAllTournamentEntries}
           />
         </section>
 

@@ -9,8 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
-import { DataWarning } from "@/components/DataWarning"
-import { Activity, Swords, Settings2, RefreshCw } from "lucide-react"
+import { Activity, Search, Swords, Settings2, RefreshCw } from "lucide-react"
 
 function PlayerCard({ 
   playerId, 
@@ -34,7 +33,7 @@ function PlayerCard({
           </div>
           <div>
             <h3 className="font-display font-bold text-xl">{title}</h3>
-            <p className="text-sm text-muted-foreground font-mono mt-1">Select player from search</p>
+            <p className="text-sm text-muted-foreground font-mono mt-1">Select player from search above</p>
           </div>
         </CardContent>
       </Card>
@@ -156,11 +155,31 @@ export default function PredictBuilderPage() {
           <h1 className="text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Build Matchup"}</h1>
           <p className="text-muted-foreground mt-2 text-lg">
             {wasAutoDetected
-              ? "Terrain and tournament auto-detected from the fixture -- adjust anything below before running the engine."
-              : "Configure parameters and run the prediction engine."}
+              ? "Terrain and tournament auto-detected from the fixture — adjust anything below before running the engine."
+              : "Search players, configure parameters, and run the prediction engine."}
           </p>
         </div>
       </div>
+
+      {/* Player search — always visible at top so you can pick or change players without scrolling */}
+      <Card className="border-border shadow-md glass-panel">
+        <CardHeader className="bg-secondary/30 border-b border-border/50 py-4 px-6">
+          <CardTitle className="text-base font-display flex items-center gap-2.5">
+            <div className="p-1.5 bg-primary/10 rounded-lg">
+              <Search className="w-4 h-4 text-primary" />
+            </div>
+            Player Search
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <PlayerSearch 
+            onSelect={(player) => {
+              if (!player1Id) setPlayer1Id(player.id)
+              else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
+            }} 
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <PlayerCard 
@@ -175,37 +194,8 @@ export default function PredictBuilderPage() {
         />
       </div>
 
-      {/* Bulk upload is the only screenshot path now -- it handles a single screenshot just as
-          well as a full batch, so there's no separate single-upload button or toggle to show/hide
-          it; it's just always here. Saved-prediction lookup sits next to it: both are "before you
-          predict, check this" tools -- one uploads a batch to grade, the other checks whether a
-          matchup's already been predicted -- so they're grouped side by side rather than one
-          being buried under History. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <BulkMatchupPredictor />
-        <SavedPredictionsLookup />
-      </div>
-
-      {(!player1Id || !player2Id) && (
-        <Card className="border-border shadow-md glass-panel">
-          <CardHeader className="bg-secondary/30 border-b border-border/50">
-            <CardTitle className="text-xl font-display flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <SearchIcon className="w-5 h-5 text-primary" />
-              </div>
-              Search Players
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <PlayerSearch 
-              onSelect={(player) => {
-                if (!player1Id) setPlayer1Id(player.id)
-                else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
-              }} 
-            />
-          </CardContent>
-        </Card>
-      )}
+      {/* Bulk upload — screenshot batch prediction */}
+      <BulkMatchupPredictor />
 
       {player1Id && player2Id && (
         <Card className="border-primary/30 shadow-xl overflow-hidden glass-panel relative">
@@ -232,7 +222,7 @@ export default function PredictBuilderPage() {
                 className="h-12 text-base bg-background/50 border-border/60 focus:border-primary focus:ring-primary/20 transition-all"
               />
               <p className="text-xs text-muted-foreground/80 font-mono">
-                Used to look up real venue weather and travel distance. Separate from Level below -- enter the actual tournament name, not a category.
+                Used to look up real venue weather and travel distance. Separate from Level below — enter the actual tournament name, not a category.
               </p>
             </div>
 
@@ -257,12 +247,18 @@ export default function PredictBuilderPage() {
                 </Select>
               </div>
               <div className="space-y-3">
-                <label className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">Level</label>
+                <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
+                  Level
+                  {prefillLevel && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
+                </label>
                 <Select value={level} onChange={(e) => setLevel(e.target.value as TournamentLevel)} className="h-12 bg-background/50">
                   <option value="GrandSlam">Grand Slam</option>
                   <option value="Masters1000">Masters 1000</option>
-                  <option value="ATP500">ATP 500 / WTA 500</option>
-                  <option value="ATP250">ATP 250 / WTA 250</option>
+                  <option value="WTA1000">WTA 1000</option>
+                  <option value="ATP500">ATP 500</option>
+                  <option value="WTA500">WTA 500</option>
+                  <option value="ATP250">ATP 250</option>
+                  <option value="WTA250">WTA 250</option>
                   <option value="Challenger">Challenger</option>
                 </Select>
               </div>
@@ -299,10 +295,9 @@ export default function PredictBuilderPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Saved predictions lookup at the bottom — for quickly checking if a matchup's already been predicted */}
+      <SavedPredictionsLookup />
     </div>
   )
-}
-
-function SearchIcon(props: any) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
 }

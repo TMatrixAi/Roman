@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Suspense, lazy } from 'react';
+import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,6 +17,7 @@ import PredictionLogPage from '@/pages/PredictionLog';
 // library it never renders.
 const PredictionResultView = lazy(() => import('@/pages/PredictionResultView'));
 const AccuracyDashboardPage = lazy(() => import('@/pages/AccuracyDashboard'));
+const ShadowReplayPage = lazy(() => import('@/pages/ShadowReplay'));
 
 const queryClient = new QueryClient();
 
@@ -39,6 +41,7 @@ function Router() {
           <Route path="/history" component={HistoryPage} />
           <Route path="/evaluation/log" component={PredictionLogPage} />
           <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
+          <Route path="/shadow-replay" component={ShadowReplayPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
@@ -48,14 +51,16 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

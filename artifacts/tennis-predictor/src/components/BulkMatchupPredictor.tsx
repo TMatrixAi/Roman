@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { RecognizedChip } from "@/components/ScreenshotMatchupUpload"
-import { Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2 } from "lucide-react"
+import { Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2, X } from "lucide-react"
 
 const MAX_FILES = 20
 
@@ -191,6 +191,14 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const handleDiscardResumable = () => {
     clearStoredBatch()
     setResumableBatch(null)
+  }
+
+  const handleDeleteItem = (key: string) => {
+    setItems((prev) => {
+      const next = prev.filter((it) => it.key !== key)
+      if (next.length === 0) clearStoredBatch()
+      return next
+    })
   }
 
   useImperativeHandle(ref, () => ({
@@ -396,12 +404,23 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         )}
 
         {hasItems && (
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-2">
             {items.map((item) => (
               <div key={item.key} className="p-3 border rounded-md bg-secondary/20">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[220px]">{item.fileName}</span>
-                  <ItemStatusBadge item={item} />
+                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">{item.fileName}</span>
+                  <div className="flex items-center gap-2 ml-auto shrink-0">
+                    <ItemStatusBadge item={item} />
+                    {/* Per-row delete button */}
+                    <button
+                      onClick={() => handleDeleteItem(item.key)}
+                      disabled={item.status === "resolving" || item.predictStatus === "pending"}
+                      className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label={`Remove ${item.fileName}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {item.status === "resolving" && (

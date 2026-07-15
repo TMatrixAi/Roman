@@ -1,5 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react"
-import { useGetUpcomingFixtures, useCreatePrediction, type Fixture } from "@workspace/api-client-react"
+import {
+  useGetUpcomingFixtures,
+  useCreatePrediction,
+  useGetLiveFixtureScores,
+  getGetLiveFixtureScoresQueryKey,
+  type Fixture,
+  type LiveScore,
+} from "@workspace/api-client-react"
 import { useLocation } from "wouter"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,7 +15,23 @@ import { EmptyDataState } from "./DataWarning"
 import { Calendar, Swords, Zap, RefreshCw, Wifi } from "lucide-react"
 import { formatEasternDateTime } from "@/lib/timezone"
 
-export type TourFilter = "all" | "atp" | "wta" | "itf"
+// Specific TournamentLevel strings + the legacy aggregate shorthands ("atp", "wta", "itf").
+// Aggregate shorthands are kept for backward compatibility; specific values are passed through
+// directly to matchesFilter for an exact TournamentLevel comparison.
+export type TourFilter =
+  | "all"
+  | "atp"
+  | "wta"
+  | "itf"
+  | "GrandSlam"
+  | "Masters1000"
+  | "WTA1000"
+  | "ATP500"
+  | "WTA500"
+  | "ATP250"
+  | "WTA250"
+  | "Challenger"
+  | "ITF"
 
 const WTA_LEVELS = new Set(["WTA1000", "WTA500", "WTA250"])
 const ATP_LEVELS = new Set(["Masters1000", "ATP500", "ATP250"])
@@ -32,10 +55,12 @@ function matchesFilter(fixture: Fixture, filter: TourFilter): boolean {
   if (filter === "all") return true
   const level = fixture.tournamentLevel
   if (!level) return true
+  // Aggregate filters
   if (filter === "wta") return WTA_LEVELS.has(level) || level === "GrandSlam"
   if (filter === "atp") return ATP_LEVELS.has(level) || level === "GrandSlam"
   if (filter === "itf") return ITF_LEVELS.has(level)
-  return false
+  // Specific TournamentLevel filter — exact match
+  return filter === level
 }
 
 /**
@@ -117,6 +142,11 @@ function surfaceTextClass(surface: string | null | undefined): string {
   }
 }
 
+/** Formats a LiveScore's set array as "6-4, 3-2" style string (player1 score first). */
+function formatSetScores(score: LiveScore): string {
+  return score.sets.map((s) => `${s.player1Games}-${s.player2Games}`).join("  ")
+}
+
 export type FixturesListHandle = {
   /** Refetches fixtures from the server. Used by the Home page's "Go" button. */
   refetch: () => void
@@ -127,7 +157,17 @@ const PAGE_SIZE_INCREMENT = 50
 
 export const FixturesList = forwardRef<
   FixturesListHandle,
-  { tourFilter?: TourFilter; tournamentFilter?: string | null; onTournamentsChange?: (names: string[]) => void }
+  {
+    tourFilter?: TourFilter
+    tournamentFilter?: string | null
+    /**
+     * Reports all tournament name+level pairs from the loaded fixtures so callers
+     * can build filtered dropdowns. Includes duplicates (one entry per fixture) —
+     * callers should deduplicate. Changed from string[] to include level so the
+     * Home page can narrow EVENT options based on the selected LEVEL filter.
+     */
+    onTournamentsChange?: (entries: { name: string; level: string | null | undefined }[]) => void
+  }
 >(
   function FixturesList({ tourFilter = "all", tournamentFilter = null, onTournamentsChange }, ref) {
   const [limit, setLimit] = useState(INITIAL_PAGE_SIZE)
@@ -157,16 +197,37 @@ export const FixturesList = forwardRef<
     refetch: () => { setLimit(INITIAL_PAGE_SIZE); handleRefresh() },
   }), [])
 
+  // Report all tournament name+level pairs to the parent so it can build filtered EVENT options.
   useEffect(() => {
     if (!onTournamentsChange) return
-    const names = Array.from(new Set((fixtures ?? []).map((f) => f.tournamentName).filter((n): n is string => !!n))).sort()
-    onTournamentsChange(names)
+    const entries = (fixtures ?? [])
+      .filter((f): f is Fixture & { tournamentName: string } => !!f.tournamentName)
+      .map((f) => ({ name: f.tournamentName, level: f.tournamentLevel }))
+    onTournamentsChange(entries)
   }, [fixtures, onTournamentsChange])
 
   const visibleFixtures = useMemo(() => {
     if (!fixtures) return []
     return filterFixtures(fixtures, tourFilter, tournamentFilter)
   }, [fixtures, tourFilter, tournamentFilter])
+
+  // Live score polling — only fires when there are live fixtures, every 6 seconds.
+  const liveFixtureIds = useMemo(
+    () => (fixtures ?? []).filter((f) => f.isLive).map((f) => f.id),
+    [fixtures],
+  )
+  const liveScoresIds = liveFixtureIds.join(",")
+  const { data: liveScoresData } = useGetLiveFixtureScores(
+    { ids: liveScoresIds },
+    {
+      query: {
+        queryKey: getGetLiveFixtureScoresQueryKey({ ids: liveScoresIds }),
+        refetchInterval: 6000,
+        enabled: liveFixtureIds.length > 0,
+      },
+    },
+  )
+  const liveScores = liveScoresData?.scores
 
   const handlePredictNow = (fixture: Fixture) => {
     setPredictNowError(null)
@@ -232,90 +293,105 @@ export const FixturesList = forwardRef<
           No upcoming fixtures found
         </div>
       ) : (
-        visibleFixtures.map((fixture) => (
-          <div
-            key={fixture.id}
-            className="group flex rounded-xl border border-border/60 bg-card overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all duration-200"
-          >
-            {/* Surface accent bar */}
-            <div className={`w-[3px] shrink-0 self-stretch ${surfaceBarClass(fixture.surface)}`} />
+        visibleFixtures.map((fixture) => {
+          const liveScore = liveScores?.[fixture.id]
+          return (
+            <div
+              key={fixture.id}
+              className="group flex rounded-xl border border-border/60 bg-card overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all duration-200"
+            >
+              {/* Surface accent bar */}
+              <div className={`w-[3px] shrink-0 self-stretch ${surfaceBarClass(fixture.surface)}`} />
 
-            {/* Main content */}
-            <div className="flex-1 flex flex-col sm:flex-row min-w-0">
-              <div className="flex-1 p-4 flex flex-col justify-between gap-3 min-w-0">
-                {/* Meta row */}
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
-                  <Badge
-                    variant={levelVariant(fixture.tournamentLevel)}
-                    className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none"
-                  >
-                    {fixture.tournamentLevel || 'TOURNAMENT'}
-                  </Badge>
-                  {fixture.tournamentName && (
-                    <span className="truncate max-w-[42vw] sm:max-w-[180px] text-muted-foreground/80">
-                      {fixture.tournamentName}
-                    </span>
-                  )}
-                  <span className="text-border/60">·</span>
-                  <span className={`font-semibold ${surfaceTextClass(fixture.surface)}`}>
-                    {fixture.surface}{fixture.indoor ? ' (Indoor)' : ''}
-                  </span>
-                  <span className="text-border/60">·</span>
-                  {fixture.isLive ? (
-                    <span className="inline-flex items-center gap-1.5 font-bold text-destructive">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-destructive" />
+              {/* Main content */}
+              <div className="flex-1 flex flex-col sm:flex-row min-w-0">
+                <div className="flex-1 p-4 flex flex-col justify-between gap-3 min-w-0">
+                  {/* Meta row */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
+                    <Badge
+                      variant={levelVariant(fixture.tournamentLevel)}
+                      className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none"
+                    >
+                      {fixture.tournamentLevel || 'TOURNAMENT'}
+                    </Badge>
+                    {fixture.tournamentName && (
+                      <span className="truncate max-w-[42vw] sm:max-w-[180px] text-muted-foreground/80">
+                        {fixture.tournamentName}
                       </span>
-                      LIVE
+                    )}
+                    <span className="text-border/60">·</span>
+                    <span className={`font-semibold ${surfaceTextClass(fixture.surface)}`}>
+                      {fixture.surface}{fixture.indoor ? ' (Indoor)' : ''}
                     </span>
-                  ) : (
-                    <span className={!fixture.scheduledStart ? "text-muted-foreground/50 italic" : undefined}>
-                      {formatFixtureTime(fixture)}
-                    </span>
+                    <span className="text-border/60">·</span>
+                    {fixture.isLive ? (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-destructive">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-destructive" />
+                        </span>
+                        LIVE
+                      </span>
+                    ) : (
+                      <span className={!fixture.scheduledStart ? "text-muted-foreground/50 italic" : undefined}>
+                        {formatFixtureTime(fixture)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Players + live score */}
+                  <div className="space-y-1">
+                    <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player1Name}</div>
+                    <div className="text-[0.6875rem] font-mono text-muted-foreground/50 uppercase tracking-widest font-bold">vs</div>
+                    <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player2Name}</div>
+                  </div>
+
+                  {/* Live set scores */}
+                  {fixture.isLive && liveScore && liveScore.sets.length > 0 && (
+                    <div className="flex items-center gap-3 text-[0.6875rem] font-mono">
+                      <span className="font-bold text-destructive tabular-nums tracking-wide">
+                        {formatSetScores(liveScore)}
+                      </span>
+                      {liveScore.statusText && (
+                        <span className="text-muted-foreground/70">{liveScore.statusText}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {predictNowError === fixture.id && (
+                    <p className="text-[0.6875rem] text-destructive font-mono">Predict Now failed — provider may be unavailable.</p>
                   )}
                 </div>
 
-                {/* Players */}
-                <div className="space-y-1">
-                  <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player1Name}</div>
-                  <div className="text-[0.6875rem] font-mono text-muted-foreground/50 uppercase tracking-widest font-bold">vs</div>
-                  <div className="font-display font-bold text-[1.0625rem] leading-snug truncate">{fixture.player2Name}</div>
+                {/* Actions */}
+                <div className="flex sm:flex-col items-center justify-end gap-2 px-4 py-3 sm:px-3 sm:py-4 bg-secondary/30 border-t sm:border-t-0 sm:border-l border-border/40 sm:min-w-[7.5rem]">
+                  <Button
+                    size="sm"
+                    className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-1.5"
+                    disabled={predictNowFixtureId === fixture.id}
+                    onClick={() => handlePredictNow(fixture)}
+                  >
+                    {predictNowFixtureId === fixture.id ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Zap className="w-3 h-3" />
+                    )}
+                    PREDICT
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
+                    onClick={() => setLocation(buildCustomMatchUrl(fixture))}
+                  >
+                    <Swords className="w-3 h-3" />
+                    CUSTOM
+                  </Button>
                 </div>
-
-                {predictNowError === fixture.id && (
-                  <p className="text-[0.6875rem] text-destructive font-mono">Predict Now failed — provider may be unavailable.</p>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex sm:flex-col items-center justify-end gap-2 px-4 py-3 sm:px-3 sm:py-4 bg-secondary/30 border-t sm:border-t-0 sm:border-l border-border/40 sm:min-w-[7.5rem]">
-                <Button
-                  size="sm"
-                  className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-1.5"
-                  disabled={predictNowFixtureId === fixture.id}
-                  onClick={() => handlePredictNow(fixture)}
-                >
-                  {predictNowFixtureId === fixture.id ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Zap className="w-3 h-3" />
-                  )}
-                  PREDICT
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
-                  onClick={() => setLocation(buildCustomMatchUrl(fixture))}
-                >
-                  <Swords className="w-3 h-3" />
-                  CUSTOM
-                </Button>
               </div>
             </div>
-          </div>
-        ))
+          )
+        })
       )}
 
       {hasMore && (

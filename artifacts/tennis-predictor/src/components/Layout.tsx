@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { Link, useLocation } from "wouter"
+import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -16,6 +17,20 @@ function isActive(href: string, location: string, exact: boolean) {
   if (href === "/history") return location.startsWith("/history") || location.startsWith("/predictions")
   if (href === "/predict") return location.startsWith("/predict") && !location.startsWith("/predictions")
   return location.startsWith(href)
+}
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
+  return (
+    <button
+      className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+    </button>
+  )
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -57,8 +72,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Right side */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <ProviderStatusIndicator />
+            <ThemeToggle />
             {/* Mobile menu toggle */}
             <button
               className="md:hidden p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"

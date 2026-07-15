@@ -57,8 +57,21 @@ export default function PredictionResultView() {
 
   return (
     <div onTouchStart={showNav ? handleTouchStart : undefined} onTouchEnd={showNav ? handleTouchEnd : undefined}>
+      {/* Back button — always visible */}
+      <div className="mb-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="font-mono text-xs text-muted-foreground hover:text-foreground gap-1 -ml-2"
+          onClick={() => setLocation("/predict")}
+        >
+          <ChevronLeft className="w-4 h-4" />
+          BACK TO BUILD MATCH
+        </Button>
+      </div>
+
       {showNav && (
-        <div className="sticky top-0 z-10 mb-6 flex items-center justify-between gap-3 rounded-lg border bg-background/95 backdrop-blur p-3 shadow-sm">
+        <div className="sticky top-[3.75rem] z-10 mb-6 flex items-center justify-between gap-3 rounded-lg border bg-background/95 backdrop-blur p-3 shadow-sm">
           <Button
             variant="outline"
             size="sm"

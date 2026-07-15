@@ -67,13 +67,30 @@ function splitTournament(line: string): { matchPart: string; tournamentName: str
   return { matchPart: line.trim(), tournamentName: null }
 }
 
+/**
+ * Handles "Last, First" reversed names by flipping at the comma.
+ * e.g. "Djokovic, Novak" → "Novak Djokovic"
+ *      "del Potro, Juan Martin" → "Juan Martin del Potro"
+ * Only flips when there is exactly one comma -- multiple commas are left as-is (too ambiguous).
+ */
+function normalizePlayerName(name: string): string {
+  const commaIdx = name.indexOf(",")
+  if (commaIdx === -1) return name
+  // Multiple commas -- don't attempt to flip, too ambiguous
+  if (name.indexOf(",", commaIdx + 1) !== -1) return name
+  const lastName = name.slice(0, commaIdx).trim()
+  const firstName = name.slice(commaIdx + 1).trim()
+  if (!lastName || !firstName) return name
+  return `${firstName} ${lastName}`
+}
+
 function splitPlayers(matchPart: string): [string, string] | null {
   const primary = VS_SEPARATOR_PATTERN.exec(matchPart)
   const pattern = primary ?? LOOSE_VS_SEPARATOR_PATTERN.exec(matchPart)
   if (!pattern) return null
 
-  const playerAName = matchPart.slice(0, pattern.index).trim()
-  const playerBName = matchPart.slice(pattern.index + pattern[0].length).trim()
+  const playerAName = normalizePlayerName(matchPart.slice(0, pattern.index).trim())
+  const playerBName = normalizePlayerName(matchPart.slice(pattern.index + pattern[0].length).trim())
   if (!playerAName || !playerBName) return null
   return [playerAName, playerBName]
 }
