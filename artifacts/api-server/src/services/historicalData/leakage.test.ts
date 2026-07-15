@@ -243,6 +243,9 @@ test("an orphaned match (terminal result, missing feature snapshots for a player
       async getCompletedMatchesByDateRange() {
         return [fixture];
       },
+      async getLiveScores() {
+        return new Map();
+      },
       getStatus() {
         return { provider: "fixture-injection-test", connected: true, lastSuccessfulCallAt: null, lastError: null };
       },

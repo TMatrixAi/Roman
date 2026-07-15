@@ -113,6 +113,21 @@ export interface Fixture {
   player2Name: string;
 }
 
+export interface LiveScoreSet {
+  player1Games: number;
+  player2Games: number;
+}
+
+/**
+ * Real-time set/game score for a currently-live fixture. `sets` is always aligned to the same
+ * player1/player2 identity as the `Fixture` it belongs to -- never a generic "home/away" pairing
+ * that could be flipped relative to `Fixture.player1Id`/`player2Id`.
+ */
+export interface LiveScore {
+  sets: LiveScoreSet[];
+  statusText: string | null;
+}
+
 export interface HeadToHeadMeeting {
   date: string;
   tournamentName: string | null;
@@ -196,6 +211,14 @@ export interface TennisDataProvider {
    * live prediction requests. `dateStart`/`dateStop` are inclusive, `YYYY-MM-DD`.
    */
   getCompletedMatchesByDateRange(dateStart: string, dateStop: string): Promise<HistoricalFixture[]>;
+  /**
+   * Real-time set/game scores for a specific set of already-live fixture ids, on a short (5-10s)
+   * cache lane dedicated to live scores -- kept separate from the general fixtures cache so
+   * frequent polling for scores never forces a full fixtures re-fetch, and vice versa. Fixture
+   * ids the provider currently has no live score for (already finished, or unknown) are simply
+   * omitted from the returned map, never fabricated.
+   */
+  getLiveScores(fixtureIds: string[]): Promise<Map<string, LiveScore>>;
   getStatus(): ProviderStatusInfo;
   /**
    * Name-only fallback surface/level lookup for callers with no `tournament_key` (currently just

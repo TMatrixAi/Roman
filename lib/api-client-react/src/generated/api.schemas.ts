@@ -215,6 +215,23 @@ export interface Fixture {
   player2Name: string;
 }
 
+export interface LiveScoreSet {
+  /** Games won so far in this set by player1 (the same player1 identified on the Fixture). */
+  player1Games: number;
+  /** Games won so far in this set by player2 (the same player2 identified on the Fixture). */
+  player2Games: number;
+}
+
+export interface LiveScore {
+  /** One entry per set played so far, in order, always aligned to player1/player2 -- never a generic "home/away" or "first/second" pairing that could be flipped relative to the Fixture's own player1Id/player2Id. */
+  sets: LiveScoreSet[];
+  /**
+     * Provider's own free-text match status (e.g. "2nd Set"), shown as-is, never inferred.
+     * @nullable
+     */
+  statusText?: string | null;
+}
+
 export interface HeadToHeadMeeting {
   date: string;
   /** @nullable */
@@ -1401,6 +1418,23 @@ export type GetUpcomingFixtures200 = {
   fixtures: Fixture[];
   /** True when at least one more fixture exists beyond `offset + limit` within the lookahead window. */
   hasMore: boolean;
+};
+
+export type GetLiveFixtureScoresParams = {
+/**
+ * Comma-separated fixture ids to fetch live scores for.
+ */
+ids: string;
+};
+
+/**
+ * Map of fixture id -> LiveScore, only for ids the provider currently reports an in-progress score for.
+ */
+export type GetLiveFixtureScores200Scores = {[key: string]: LiveScore};
+
+export type GetLiveFixtureScores200 = {
+  /** Map of fixture id -> LiveScore, only for ids the provider currently reports an in-progress score for. */
+  scores: GetLiveFixtureScores200Scores;
 };
 
 export type GetHeadToHeadParams = {

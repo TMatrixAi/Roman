@@ -31,6 +31,8 @@ import type {
   EvaluationPrediction,
   EvaluationRun,
   GetHeadToHeadParams,
+  GetLiveFixtureScores200,
+  GetLiveFixtureScoresParams,
   GetUpcomingFixtures200,
   GetUpcomingFixturesParams,
   HeadToHeadRecord,
@@ -785,6 +787,91 @@ export function useGetUpcomingFixtures<TData = Awaited<ReturnType<typeof getUpco
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetUpcomingFixturesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLiveFixtureScoresUrl = (params: GetLiveFixtureScoresParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/fixtures/live-scores?${stringifiedParams}` : `/api/fixtures/live-scores`
+}
+
+/**
+ * Returns real, provider-reported set/game scores for a specific set of already-live fixture ids, refreshed on a short (5-10s) cache lane separate from the general upcoming-fixtures cache. Callers should poll this on a short interval ONLY while at least one shown fixture is isLive, and merge the result onto the matching fixture by id -- this endpoint never re-fetches or re-sorts the fixture list itself. Fixture ids that are no longer live (already finished) or that the provider has no current score for are simply omitted from the response, never fabricated.
+ * @summary Real-time set/game scores for currently-live fixtures
+ */
+export const getLiveFixtureScores = async (params: GetLiveFixtureScoresParams, options?: RequestInit): Promise<GetLiveFixtureScores200> => {
+
+  return customFetch<GetLiveFixtureScores200>(getGetLiveFixtureScoresUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLiveFixtureScoresQueryKey = (params?: GetLiveFixtureScoresParams,) => {
+    return [
+    `/api/fixtures/live-scores`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLiveFixtureScoresQueryOptions = <TData = Awaited<ReturnType<typeof getLiveFixtureScores>>, TError = ErrorType<ProviderError>>(params: GetLiveFixtureScoresParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLiveFixtureScores>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLiveFixtureScoresQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLiveFixtureScores>>> = ({ signal }) => getLiveFixtureScores(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLiveFixtureScores>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLiveFixtureScoresQueryResult = NonNullable<Awaited<ReturnType<typeof getLiveFixtureScores>>>
+export type GetLiveFixtureScoresQueryError = ErrorType<ProviderError>
+
+
+/**
+ * @summary Real-time set/game scores for currently-live fixtures
+ */
+
+export function useGetLiveFixtureScores<TData = Awaited<ReturnType<typeof getLiveFixtureScores>>, TError = ErrorType<ProviderError>>(
+ params: GetLiveFixtureScoresParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLiveFixtureScores>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLiveFixtureScoresQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

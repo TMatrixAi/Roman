@@ -248,6 +248,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProviderError"
 
+  /fixtures/live-scores:
+    get:
+      operationId: getLiveFixtureScores
+      tags: [matchups]
+      summary: Real-time set/game scores for currently-live fixtures
+      description: >-
+        Returns real, provider-reported set/game scores for a specific set of already-live
+        fixture ids, refreshed on a short (5-10s) cache lane separate from the general
+        upcoming-fixtures cache. Callers should poll this on a short interval ONLY while at
+        least one shown fixture is isLive, and merge the result onto the matching fixture by
+        id -- this endpoint never re-fetches or re-sorts the fixture list itself. Fixture ids
+        that are no longer live (already finished) or that the provider has no current score
+        for are simply omitted from the response, never fabricated.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated fixture ids to fetch live scores for.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Live scores keyed by fixture id
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scores]
+                properties:
+                  scores:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/LiveScore"
+                    description: Map of fixture id -> LiveScore, only for ids the provider currently reports an in-progress score for.
+        "400":
+          description: Missing or invalid ids parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+        "502":
+          description: Upstream data provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+
   /h2h:
     get:
       operationId: getHeadToHead
@@ -1178,6 +1225,33 @@ components:
           type: string
         player2Name:
           type: string
+
+    LiveScoreSet:
+      type: object
+      required: [player1Games, player2Games]
+      properties:
+        player1Games:
+          type: integer
+          description: Games won so far in this set by player1 (the same player1 identified on the Fixture).
+        player2Games:
+          type: integer
+          description: Games won so far in this set by player2 (the same player2 identified on the Fixture).
+
+    LiveScore:
+      type: object
+      required: [sets]
+      properties:
+        sets:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveScoreSet"
+          description: >-
+            One entry per set played so far, in order, always aligned to player1/player2 -- never
+            a generic "home/away" or "first/second" pairing that could be flipped relative to the
+            Fixture's own player1Id/player2Id.
+        statusText:
+          type: ["string", "null"]
+          description: Provider's own free-text match status (e.g. "2nd Set"), shown as-is, never inferred.
 
     HeadToHeadMeeting:
       type: object

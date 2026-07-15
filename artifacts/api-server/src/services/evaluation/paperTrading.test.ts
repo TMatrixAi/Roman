@@ -46,6 +46,9 @@ class FakeProvider implements TennisDataProvider {
   async getCompletedMatchesByDateRange(): Promise<never[]> {
     return [];
   }
+  async getLiveScores(): Promise<Map<string, never>> {
+    return new Map();
+  }
   getStatus(): ProviderStatusInfo {
     return { provider: this.name, connected: true, lastSuccessfulCallAt: null, lastError: null };
   }

@@ -34,6 +34,9 @@ class NotConfiguredProvider implements TennisDataProvider {
   async getCompletedMatchesByDateRange(): Promise<never> {
     throw new ProviderUnavailableError(NOT_CONFIGURED_MESSAGE);
   }
+  async getLiveScores(): Promise<never> {
+    throw new ProviderUnavailableError(NOT_CONFIGURED_MESSAGE);
+  }
 }
 
 let cachedProvider: TennisDataProvider | null = null;

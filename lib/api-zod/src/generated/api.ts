@@ -188,6 +188,25 @@ export const GetUpcomingFixturesResponse = zod.object({
 
 
 /**
+ * Returns real, provider-reported set/game scores for a specific set of already-live fixture ids, refreshed on a short (5-10s) cache lane separate from the general upcoming-fixtures cache. Callers should poll this on a short interval ONLY while at least one shown fixture is isLive, and merge the result onto the matching fixture by id -- this endpoint never re-fetches or re-sorts the fixture list itself. Fixture ids that are no longer live (already finished) or that the provider has no current score for are simply omitted from the response, never fabricated.
+ * @summary Real-time set/game scores for currently-live fixtures
+ */
+export const GetLiveFixtureScoresQueryParams = zod.object({
+  "ids": zod.string().describe('Comma-separated fixture ids to fetch live scores for.')
+})
+
+export const GetLiveFixtureScoresResponse = zod.object({
+  "scores": zod.record(zod.string(), zod.object({
+  "sets": zod.array(zod.object({
+  "player1Games": zod.number().describe('Games won so far in this set by player1 (the same player1 identified on the Fixture).'),
+  "player2Games": zod.number().describe('Games won so far in this set by player2 (the same player2 identified on the Fixture).')
+})).describe('One entry per set played so far, in order, always aligned to player1\/player2 -- never a generic \"home\/away\" or \"first\/second\" pairing that could be flipped relative to the Fixture\'s own player1Id\/player2Id.'),
+  "statusText": zod.string().nullish().describe('Provider\'s own free-text match status (e.g. \"2nd Set\"), shown as-is, never inferred.')
+})).describe('Map of fixture id -> LiveScore, only for ids the provider currently reports an in-progress score for.')
+})
+
+
+/**
  * @summary Head-to-head match list between two players
  */
 export const GetHeadToHeadQueryParams = zod.object({

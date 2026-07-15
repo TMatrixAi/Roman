@@ -8,6 +8,7 @@ import {
   type Fixture,
   type HeadToHeadRecord,
   type HistoricalFixture,
+  type LiveScore,
   type MatchFormat,
   type MatchRecord,
   type MatchStatLine,
@@ -30,6 +31,10 @@ function normalizeTournamentNameForSearch(name: string): string {
 const BASE_URL = "https://api.api-tennis.com/tennis/";
 const STANDINGS_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const FIXTURES_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Task #164: dedicated short-lived cache lane for live scores, kept separate from FIXTURES_TTL_MS
+// so a frontend polling for real-time scores every 5-10s never forces the whole (heavier,
+// 5-minute) fixtures list to re-fetch, and vice versa.
+const LIVE_SCORE_TTL_MS = 8 * 1000; // 8 seconds
 // Tournament surface/venue assignments change extremely rarely (a tournament switching surface
 // is a multi-year event, if it ever happens) -- a long TTL avoids re-pulling ~10k rows on every
 // prediction while still refreshing periodically rather than caching for the process lifetime.
@@ -286,6 +291,25 @@ function mapScoreString(raw: RawMatch): string | null {
       .join(" ");
   }
   return raw.event_final_result ?? null;
+}
+
+/**
+ * Real per-set game counts from `raw.scores`, aligned to player1/player2 the same way
+ * `mapUpcomingFixture` assigns `first_player_key` -> player1 and `second_player_key` -> player2 --
+ * `score_first`/`score_second` on each `RawScoreEntry` are already reported in that same
+ * first/second order, so no separate identity lookup is needed here. Same tiebreak-decimal
+ * truncation caveat as `mapScoreString` above (7.7 games -> 7, tiebreak point count discarded).
+ */
+function mapLiveScoreSets(raw: RawMatch): Array<{ player1Games: number; player2Games: number }> {
+  if (!raw.scores) return [];
+  return raw.scores.map((s) => {
+    const player1Games = Math.trunc(parseFloat(s.score_first));
+    const player2Games = Math.trunc(parseFloat(s.score_second));
+    return {
+      player1Games: Number.isNaN(player1Games) ? 0 : player1Games,
+      player2Games: Number.isNaN(player2Games) ? 0 : player2Games,
+    };
+  });
 }
 
 /** Normalizes API-Tennis's free-text `event_type_type` into a coarse, stable tour label. */
@@ -631,6 +655,36 @@ export class ApiTennisProvider implements TennisDataProvider {
     ]);
 
     return (raw ?? []).filter((m) => m.event_winner === null).map((m) => this.mapUpcomingFixture(m, surfaceByTournamentKey));
+  }
+
+  /**
+   * Real-time set/game scores for a specific set of already-live fixture ids (see
+   * `TennisDataProvider.getLiveScores`). API-Tennis has no "fetch by event_key list" call, so
+   * this re-uses `get_fixtures` over a generous yesterday-to-tomorrow window (any fixture that is
+   * genuinely still live per `Fixture.isLive`'s own definition -- confirmed-started, no winner
+   * yet -- must fall in this window, since matches don't span more than ~2 calendar days), then
+   * filters down to just the requested ids. Cached under its own short `LIVE_SCORE_TTL_MS` key so
+   * frequent polling here never touches (or is throttled by) the 5-minute general fixtures cache.
+   */
+  async getLiveScores(fixtureIds: string[]): Promise<Map<string, LiveScore>> {
+    const result = new Map<string, LiveScore>();
+    if (fixtureIds.length === 0) return result;
+
+    const wantedIds = new Set(fixtureIds);
+    const now = new Date();
+    const dateStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateStop = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const raw = await this.cache.getOrFetch(`live-scores:${dateStart}:${dateStop}`, LIVE_SCORE_TTL_MS, () =>
+      this.call<RawMatch[]>("get_fixtures", { date_start: dateStart, date_stop: dateStop }),
+    );
+
+    for (const m of raw ?? []) {
+      const id = str(m.event_key);
+      if (!wantedIds.has(id)) continue;
+      result.set(id, { sets: mapLiveScoreSets(m), statusText: m.event_status || null });
+    }
+    return result;
   }
 
   /**
