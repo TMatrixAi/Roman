@@ -1,0 +1,20 @@
+Expand the existing invariant/consistency guard system ( finalConsistencyCheck.ts , swept table-wide by  checkLivePredictionContradictions.ts ) to cover every completed task from Task #1 through today that is actually guardable.
+Step 1 — Determine what’s guardable, report only, no code changes yet.
+Review every completed task/fix to date. For each one, decide whether it is “guardable” using this definition: a fix is guardable if it corrected a specific, detectable data-integrity or logic-consistency bug that could silently regress or recur in the future (a wrong value, a mismatched label, a miscalibrated formula, a broken join, a stale row pattern, an excluded signal quietly getting re-included incorrectly, etc.).
+A fix is NOT guardable if it was purely visual/UI, documentation-only, a one-time provider/API research task, or something with no measurable “this is now wrong” condition.
+For every task you determine IS guardable, propose a specific rule: name, exact detectable condition, which task/fix it protects, and whether any existing rows should be an approved exception (e.g., already-backfilled rows).
+For every task you determine is NOT guardable, briefly say why.
+Step 2 — Report back the full list (guardable + not guardable) before writing any code or adding any rule. Do not implement anything yet.
+Step 3 — Wait for my explicit approval of the proposed rule list. Only after I approve, implement the approved rules exactly as detection-only checks (flag for review, never auto-correct, never change thresholds, never auto-backfill), run them against the full live table, and report violation counts for each — confirming zero false positives against rows already known to be clean or already correctly backfilled.
+Do not guess broadly or add generic catch-all rules. Every rule must be tied to a real, specific, already-fixed bug from this project’s history.
+
+Add a “Guard” tab next to View Ledger, Build Match, and run is Directly Parallel to the right matching the same button style and alignment. Do not move or restyle any existing button.
+This tab opens a dedicated page showing the current output of the invariant/consistency guard system ( finalConsistencyCheck.ts  /  checkLivePredictionContradictions.ts ).
+Requirements:
+1.	Violations list — show every currently flagged row across all active guard rules, grouped by rule name (e.g., Monte Carlo binding, stale-recommendation pattern, and any newly approved rules). For each violation show: rule name, match/row identifier, what condition was triggered, and when it was first detected.
+2.	Rule summary panel — list every active guard rule with its plain-English description, which past task/fix it protects, and current violation count.
+3.	Status tracking — allow marking a violation as “reviewed” or “resolved” without automatically changing any underlying data. This is a manual review log only, not an auto-fix action.
+4.	History view — show past detected violations and when they were resolved, so I can see the guard’s track record over time.
+5.	Design — use the same design system as the rest of the app (spacing, typography, badges, tabular numbers for counts). Include loading skeleton states and an empty state (“No violations detected”) when the table is clean.
+6.	Hard constraints — this tab is read-only against prediction/match data. It must never write to, delete, or auto-correct any row. It only displays guard output and lets me log manual review status.
+Report back with: screenshots in light and dark mode, confirmation of button placement, files changed, and confirmation no existing page or logic was altered outside of adding this tab.

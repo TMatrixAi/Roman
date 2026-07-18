@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -10,12 +10,14 @@ const NAV_LINKS = [
   { href: "/history", label: "Ledger", icon: History, exact: false },
   { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
+  { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
 ]
 
 function isActive(href: string, location: string, exact: boolean) {
   if (exact) return location === href
   if (href === "/history") return location.startsWith("/history") || location.startsWith("/predictions")
   if (href === "/predict") return location.startsWith("/predict") && !location.startsWith("/predictions")
+  if (href === "/backtesting") return location.startsWith("/backtesting")
   return location.startsWith(href)
 }
 

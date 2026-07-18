@@ -186,20 +186,9 @@ export default function PredictBuilderPage() {
 
       {/* Box 3 — Player Search: search live provider to fill slots above, or paste multiple matchups to find existing ones */}
       <Card className="border-border shadow-md glass-panel">
-        <CardHeader className="bg-secondary/30 border-b border-border/50 py-4 px-6">
-          <CardTitle className="text-base font-display flex items-center gap-2.5">
-            <div className="p-1.5 bg-primary/10 rounded-lg">
-              <Search className="w-4 h-4 text-primary" />
-            </div>
-            Player Search
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Search a player to add them to a slot above, or paste multiple matchups to look up saved predictions.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
-            <TabsList className="mb-4">
+            <TabsList className="mb-3">
               <TabsTrigger value="search" className="font-mono gap-2">
                 <Search className="w-4 h-4" />
                 PLAYER SEARCH
@@ -211,9 +200,6 @@ export default function PredictBuilderPage() {
             </TabsList>
 
             <TabsContent value="search">
-              <p className="text-xs text-muted-foreground font-mono mb-4">
-                Search the player database. The first result you tap fills Player 1; the second fills Player 2.
-              </p>
               <PlayerSearch 
                 onSelect={(player) => {
                   if (!player1Id) setPlayer1Id(player.id)

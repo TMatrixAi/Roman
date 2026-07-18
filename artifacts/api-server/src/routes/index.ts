@@ -8,6 +8,7 @@ import matchupsRouter from "./matchups";
 import predictionsRouter from "./predictions";
 import evaluationRouter from "./evaluation";
 import authRouter from "./auth";
+import backtestsRouter from "./backtests";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(h2hRouter);
 router.use(matchupsRouter);
 router.use(predictionsRouter);
 router.use(evaluationRouter);
+router.use(backtestsRouter);
 
 export default router;

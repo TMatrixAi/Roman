@@ -31,7 +31,7 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
         />
       </div>
 
-      <div className="min-h-[300px]">
+      <div className="min-h-[80px]">
         {debouncedQuery.length < 2 && !players && (
           <div className="h-full flex items-center justify-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
             ENTER 2+ CHARS TO SEARCH
