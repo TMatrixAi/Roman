@@ -35,14 +35,30 @@ export interface BatchOptions {
   onProgress?: (completed: number, total: number, item: unknown) => void;
 }
 
+/**
+ * Returns true for transient rate-limit errors that are worth retrying with backoff
+ * (e.g. requests-per-minute exceeded). Returns false for permanent quota exhaustion
+ * (`insufficient_quota` / billing limit) -- those should abort immediately, not retry.
+ */
 export function isRateLimitError(error: unknown): boolean {
+  if (isQuotaExhaustedError(error)) return false;
   const errorMsg = error instanceof Error ? error.message : String(error);
   return (
     errorMsg.includes("429") ||
     errorMsg.includes("RATELIMIT_EXCEEDED") ||
-    errorMsg.toLowerCase().includes("quota") ||
     errorMsg.toLowerCase().includes("rate limit")
   );
+}
+
+/**
+ * Returns true for permanent account-level quota exhaustion (insufficient_quota).
+ * These should NOT be retried -- they will never resolve without a billing change.
+ */
+export function isQuotaExhaustedError(error: unknown): boolean {
+  const code = (error as Record<string, unknown>)?.code;
+  if (code === "insufficient_quota") return true;
+  const errorMsg = error instanceof Error ? error.message : String(error);
+  return errorMsg.toLowerCase().includes("insufficient_quota");
 }
 
 export async function batchProcess<T, R>(
@@ -71,6 +87,12 @@ export async function batchProcess<T, R>(
             onProgress?.(completed, items.length, item);
             return result;
           } catch (error: unknown) {
+            // Quota exhaustion is permanent -- abort immediately, never retry.
+            if (isQuotaExhaustedError(error)) {
+              throw new AbortError(
+                error instanceof Error ? error : new Error(String(error))
+              );
+            }
             if (isRateLimitError(error)) {
               throw error;
             }
@@ -113,7 +135,7 @@ export async function batchProcessWithSSE<T, R>(
           maxTimeout,
           factor: 2,
           onFailedAttempt: (error) => {
-            if (!isRateLimitError(error)) {
+            if (isQuotaExhaustedError(error) || !isRateLimitError(error)) {
               throw new AbortError(
                 error instanceof Error ? error : new Error(String(error))
               );

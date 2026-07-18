@@ -298,11 +298,19 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
             ),
           )
         }
-      } catch {
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const isQuota = msg.toLowerCase().includes("quota") || msg.includes("502")
         setItems((prev) =>
           prev.map((it) =>
             it.key === key
-              ? { ...it, status: "read-error", errorMessage: "Couldn't read this screenshot. Try a clearer image." }
+              ? {
+                  ...it,
+                  status: "read-error",
+                  errorMessage: isQuota
+                    ? "Screenshot AI is unavailable right now — try again later."
+                    : "Couldn't read this screenshot. Try a clearer image.",
+                }
               : it,
           ),
         )

@@ -1,5 +1,5 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { batchProcess, isRateLimitError } from "@workspace/integrations-openai-ai-server/batch";
+import { batchProcess, isRateLimitError, isQuotaExhaustedError } from "@workspace/integrations-openai-ai-server/batch";
 import { logger } from "../../lib/logger";
 
 /**
@@ -118,7 +118,7 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
       [imageBase64],
       (image) =>
         openai.chat.completions.create({
-          model: "gpt-5.4",
+          model: "gpt-4o",
           max_completion_tokens: 800,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
@@ -135,8 +135,12 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
     );
   } catch (err) {
     const rateLimited = isRateLimitError(err);
-    logger.error({ err, rateLimited }, "Vision AI provider call failed for screenshot matchup recognition");
-    throw new ScreenshotRecognitionUnavailableError("Vision AI provider unavailable");
+    const quotaExhausted = isQuotaExhaustedError(err);
+    logger.error({ err, rateLimited, quotaExhausted }, "Vision AI provider call failed for screenshot matchup recognition");
+    const detail = quotaExhausted
+      ? "Vision AI quota exhausted — check OpenAI billing"
+      : "Vision AI provider unavailable";
+    throw new ScreenshotRecognitionUnavailableError(detail);
   }
 
   return parseRecognitionResponse(response.choices[0]?.message?.content);
