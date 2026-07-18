@@ -1,5 +1,5 @@
-import { openai } from "@workspace/integrations-openai-ai-server";
-import { batchProcess, isRateLimitError, isQuotaExhaustedError } from "@workspace/integrations-openai-ai-server/batch";
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../../lib/logger";
 
 /**
@@ -8,15 +8,13 @@ import { logger } from "../../lib/logger";
  * capable model. Supports long screenshots with multiple match cards, dark/light mode, partial
  * cards, and varying font sizes.
  *
- * This module ONLY does raw extraction from the image -- it never looks anything up against real
- * player/tournament data itself (see screenshotMatchupResolver.ts for that), so a misread name
- * surfaces as a wrong string here rather than a wrong resolved player there.
+ * Key selection order (first that resolves wins):
+ *   1. SCREENSHOT_AI_KEY (dedicated override — any provider, auto-detected by prefix)
+ *   2. ANTHROPIC_API_KEY (user-provided — auto-detected by prefix)
+ *   3. AI_INTEGRATIONS_OPENAI_API_KEY + AI_INTEGRATIONS_OPENAI_BASE_URL (Replit integration)
  *
  * "Absent, not faked": any field the model isn't confident about comes back null rather than a
- * guess -- the prompt explicitly tells the model to prefer null over guessing. A malformed or
- * unparseable model response is treated as "found nothing" rather than thrown as a hard error,
- * so an unrelated/unreadable image degrades gracefully into "fill this in manually" instead of a
- * confusing failure.
+ * guess. A malformed or unparseable model response degrades gracefully into "found nothing".
  */
 
 export interface RawMatchupEntry {
@@ -53,9 +51,65 @@ Rules:
 Respond with ONLY a strict JSON array, no markdown, no other text:
 [{"player1Name": string|null, "player2Name": string|null, "eventName": string|null}, ...]`;
 
-function toImageDataUrl(imageBase64: string): string {
-  return imageBase64.startsWith("data:") ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+// ---------------------------------------------------------------------------
+// Key / provider detection
+// ---------------------------------------------------------------------------
+
+type Provider = "openai" | "anthropic";
+
+function detectProvider(key: string): Provider {
+  return key.startsWith("sk-ant-") ? "anthropic" : "openai";
 }
+
+interface ResolvedKey {
+  key: string;
+  provider: Provider;
+  /** For OpenAI: override base URL (Replit proxy). Undefined = use api.openai.com directly. */
+  baseUrl?: string;
+}
+
+function resolveKey(): ResolvedKey | null {
+  // 1. Dedicated override key (any provider)
+  const dedicated = process.env.SCREENSHOT_AI_KEY;
+  if (dedicated) return { key: dedicated, provider: detectProvider(dedicated) };
+
+  // 2. User-provided key stored as ANTHROPIC_API_KEY (may actually be OpenAI sk-proj-)
+  const userKey = process.env.ANTHROPIC_API_KEY;
+  if (userKey) return { key: userKey, provider: detectProvider(userKey) };
+
+  // 3. Replit OpenAI integration proxy
+  const replitKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const replitBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (replitKey && replitBase) return { key: replitKey, provider: "openai", baseUrl: replitBase };
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Image helpers
+// ---------------------------------------------------------------------------
+
+function parseImageBase64(imageBase64: string): {
+  data: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  dataUrl: string;
+} {
+  if (imageBase64.startsWith("data:")) {
+    const semi = imageBase64.indexOf(";");
+    const comma = imageBase64.indexOf(",");
+    const mimeRaw = semi > 0 ? imageBase64.slice(5, semi) : "image/jpeg";
+    const mediaType = (["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mimeRaw)
+      ? mimeRaw
+      : "image/jpeg") as "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    return { data: imageBase64.slice(comma + 1), mediaType, dataUrl: imageBase64 };
+  }
+  const data = imageBase64;
+  return { data, mediaType: "image/jpeg", dataUrl: `data:image/jpeg;base64,${data}` };
+}
+
+// ---------------------------------------------------------------------------
+// Response parsing (shared)
+// ---------------------------------------------------------------------------
 
 function cleanEntry(obj: unknown): RawMatchupEntry | null {
   if (!obj || typeof obj !== "object") return null;
@@ -63,21 +117,15 @@ function cleanEntry(obj: unknown): RawMatchupEntry | null {
   const clean = (v: unknown): string | null => (typeof v === "string" && v.trim().length > 0 ? v.trim() : null);
   const player1Name = clean(o.player1Name);
   const player2Name = clean(o.player2Name);
-  // Skip entries where both player names are null — nothing useful to resolve.
   if (player1Name === null && player2Name === null) return null;
   return { player1Name, player2Name, eventName: clean(o.eventName) };
 }
 
 function parseRecognitionResponse(raw: string | null | undefined): RawScreenshotRecognition {
   if (!raw) return EMPTY_RECOGNITION;
-
-  // Models occasionally wrap JSON in a code fence despite instructions -- strip defensively.
   const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-
   try {
     const parsed = JSON.parse(cleaned);
-
-    // New format: array of matchup entries
     if (Array.isArray(parsed)) {
       const matchups: RawMatchupEntry[] = [];
       for (const item of parsed) {
@@ -86,8 +134,6 @@ function parseRecognitionResponse(raw: string | null | undefined): RawScreenshot
       }
       return { matchups };
     }
-
-    // Legacy / fallback: single object format (older model outputs). Treat as one-element array.
     if (parsed && typeof parsed === "object") {
       const entry = cleanEntry(parsed);
       return { matchups: entry ? [entry] : [] };
@@ -95,53 +141,97 @@ function parseRecognitionResponse(raw: string | null | undefined): RawScreenshot
   } catch (err) {
     logger.warn({ err, raw }, "Screenshot recognition model returned unparseable JSON -- treating as nothing recognized");
   }
-
   return EMPTY_RECOGNITION;
 }
 
+// ---------------------------------------------------------------------------
+// Provider calls
+// ---------------------------------------------------------------------------
+
+async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<string | null> {
+  const client = new OpenAI({ apiKey: resolved.key, ...(resolved.baseUrl ? { baseURL: resolved.baseUrl } : {}) });
+  const response = await client.chat.completions.create({
+    model: "gpt-4o",
+    max_completion_tokens: 800,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Extract all matchups from this screenshot." },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ],
+      },
+    ],
+  });
+  return response.choices[0]?.message?.content ?? null;
+}
+
+async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
+  const client = new Anthropic({ apiKey: resolved.key });
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 800,
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data } },
+          { type: "text", text: "Extract all matchups from this screenshot." },
+        ],
+      },
+    ],
+  });
+  const textBlock = message.content.find((b) => b.type === "text");
+  return textBlock?.type === "text" ? textBlock.text : null;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export class ScreenshotRecognitionUnavailableError extends Error {}
 
-/**
- * Calls the vision model on the uploaded image. Returns all matchups found. Throws
- * ScreenshotRecognitionUnavailableError only for genuine provider/network failures (worth a 502)
- * -- a low-confidence or empty read from a real response is NOT an error, it's a valid "found
- * nothing" result (empty matchups array).
- *
- * Task: a bulk upload (up to 20 screenshots) fires one of these per screenshot as a separate HTTP
- * request. `batchProcess` wraps the single call with retry+backoff for rate-limit errors, so a
- * 429 here is retried transparently instead of surfacing as a failure.
- */
+function isRetryable(err: unknown): boolean {
+  const e = err as { status?: number; code?: string };
+  // Quota exhaustion is a permanent billing error — never retry it.
+  if (e?.code === "insufficient_quota") return false;
+  const status = e?.status ?? 0;
+  return status === 429 || status >= 500;
+}
+
 export async function recognizeMatchupScreenshot(imageBase64: string): Promise<RawScreenshotRecognition> {
-  let response;
-  try {
-    [response] = await batchProcess(
-      [imageBase64],
-      (image) =>
-        openai.chat.completions.create({
-          model: "gpt-4o",
-          max_completion_tokens: 800,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Extract all matchups from this screenshot." },
-                { type: "image_url", image_url: { url: toImageDataUrl(image) } },
-              ],
-            },
-          ],
-        }),
-      { concurrency: 1, retries: 5 },
-    );
-  } catch (err) {
-    const rateLimited = isRateLimitError(err);
-    const quotaExhausted = isQuotaExhaustedError(err);
-    logger.error({ err, rateLimited, quotaExhausted }, "Vision AI provider call failed for screenshot matchup recognition");
-    const detail = quotaExhausted
-      ? "Vision AI quota exhausted — check OpenAI billing"
-      : "Vision AI provider unavailable";
-    throw new ScreenshotRecognitionUnavailableError(detail);
+  const resolved = resolveKey();
+  if (!resolved) {
+    throw new ScreenshotRecognitionUnavailableError("No vision AI key configured (set SCREENSHOT_AI_KEY, ANTHROPIC_API_KEY, or the Replit OpenAI integration)");
   }
 
-  return parseRecognitionResponse(response.choices[0]?.message?.content);
+  const { data, mediaType, dataUrl } = parseImageBase64(imageBase64);
+  const RETRIES = 3;
+  let lastErr: unknown;
+
+  logger.info({ provider: resolved.provider, hasBaseUrl: !!resolved.baseUrl }, "Screenshot recognition starting");
+
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      const rawText = resolved.provider === "anthropic"
+        ? await callAnthropic(resolved, data, mediaType)
+        : await callOpenAI(resolved, dataUrl);
+
+      logger.info({ attempt, provider: resolved.provider }, "Screenshot recognition succeeded");
+      return parseRecognitionResponse(rawText);
+    } catch (err: unknown) {
+      lastErr = err;
+      if (!isRetryable(err)) break; // auth, bad request, etc — bail immediately
+      if (attempt < RETRIES) {
+        const delayMs = Math.min(1000 * 2 ** attempt, 10000);
+        logger.warn({ err, attempt, delayMs, provider: resolved.provider }, "Screenshot recognition rate-limited, retrying");
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+
+  logger.error({ err: lastErr, provider: resolved.provider }, "Vision AI provider call failed for screenshot matchup recognition");
+  throw new ScreenshotRecognitionUnavailableError("Vision AI provider unavailable");
 }

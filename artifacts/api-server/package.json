@@ -25,6 +25,7 @@
     "job:historical-backfill:dev": "export HISTORICAL_BACKFILL_JOB_STANDALONE=1 && tsx src/jobs/runHistoricalBackfillJob.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
@@ -32,6 +33,7 @@
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
+    "openai": "^6.46.0",
     "pino": "^9.14.0",
     "pino-http": "^10.5.0"
   },

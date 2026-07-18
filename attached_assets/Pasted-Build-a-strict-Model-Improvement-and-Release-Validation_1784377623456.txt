@@ -1,0 +1,178 @@
+Build a strict Model Improvement and Release Validation system for my tennis prediction engine.
+
+The goal is to ensure that every model change is proven to improve out-of-sample prediction quality before it reaches production. Do not automatically deploy changes merely because training accuracy or one metric improves.
+
+CORE RULES
+
+1. Freeze the current production model as the Champion baseline.
+2. Treat every proposed model, weighting, calibration, feature, threshold, cascade, or recommendation change as a separate Challenger.
+3. Test one logical change at a time whenever possible.
+4. Never use future match information, final scores, closing odds, or post-match data in any pre-match feature.
+5. Never overwrite the production model until the Challenger passes all required validation gates.
+6. Keep every previous production version available for rollback.
+
+REQUIRED TESTING
+
+Use chronological walk-forward validation.
+
+For every test match:
+- All training data, calibration data, thresholds, and feature calculations must come only from matches occurring before that match.
+- Use the exact pre-match information that would have been available at prediction time.
+- Save the prediction before attaching the real outcome.
+- Compare Champion and Challenger on the exact same eligible matches.
+
+Evaluate:
+- Overall winner accuracy
+- Log loss
+- Brier score
+- Expected calibration error
+- Average absolute calibration gap
+- Accuracy and calibration by 5% probability bucket
+- Surface
+- Tour level
+- Match format
+- Data-quality level
+- Upset-risk level
+- Model-agreement level
+- Strong Recommendation status
+- Elite Prediction status
+- Favorite and underdog classifications
+- Close-match predictions near 50%
+- Missing-data cases
+
+SAMPLE-SIZE RULES
+
+- Do not declare a model improvement from a tiny sample.
+- Require at least 500 total out-of-sample test matches for a general model change when available.
+- Require at least 100 matches in any subgroup used to claim a subgroup improvement.
+- Results below the required sample size must be labeled INCONCLUSIVE.
+- Display confidence intervals for accuracy and calibration differences.
+- Do not promote a Challenger based solely on statistically noisy differences.
+
+RELEASE GATES
+
+A Challenger may be promoted only if all applicable gates pass:
+
+1. No detected data leakage.
+2. No feature uses information created after the scheduled prediction timestamp.
+3. Overall out-of-sample accuracy does not meaningfully decline.
+4. Log loss does not meaningfully worsen.
+5. Brier score does not meaningfully worsen.
+6. Calibration does not meaningfully worsen.
+7. No important surface or tour segment suffers a major regression.
+8. No probability bucket develops severe overconfidence or underconfidence.
+9. Strong Recommendation and Elite Prediction performance does not decline below their required standards.
+10. High and Extreme upset-risk labels remain correctly ordered by actual upset frequency.
+11. The improvement repeats across at least two chronological test windows.
+12. The Challenger passes live shadow validation before production promotion.
+
+Use configurable tolerances, but start with:
+- Overall accuracy regression allowed: no more than 0.3 percentage points
+- Log-loss regression allowed: no more than 0.005
+- Brier-score regression allowed: no more than 0.003
+- Calibration-gap regression allowed: no more than 1 percentage point
+- No major subgroup may decline by more than 3 percentage points when sample size is at least 100
+
+These are initial safety gates and should be editable from the developer dashboard.
+
+CHAMPION VS. CHALLENGER REPORT
+
+Create a mobile-friendly comparison report showing:
+- Champion version
+- Challenger version
+- Exact change tested
+- Dataset date range
+- Total eligible matches
+- Excluded matches and reasons
+- All before-and-after metrics
+- Segment improvements
+- Segment regressions
+- Confidence intervals
+- Release-gate results
+- Final status:
+  - PASS FOR SHADOW
+  - FAIL
+  - INCONCLUSIVE
+  - READY FOR PRODUCTION
+  - ROLLED BACK
+
+LIVE SHADOW TEST
+
+After offline walk-forward approval:
+- Run Champion and Challenger simultaneously on live upcoming matches.
+- Do not display the Challenger to normal users.
+- Save both frozen pre-match predictions and their component outputs.
+- Grade both after results are final.
+- Require a configurable minimum live sample before production promotion.
+- Start with at least 300 graded shadow matches.
+- Do not allow predictions to be recomputed after the match begins.
+
+EXPERIMENT LEDGER
+
+For every experiment, permanently save:
+- Experiment ID
+- Date created
+- Developer who initiated it
+- Champion version
+- Challenger version
+- Exact code commit or version hash
+- Exact configuration and feature flags
+- Description of the change
+- Reason for testing it
+- Training range
+- Validation range
+- Test range
+- Sample sizes
+- Before-and-after metrics
+- Subgroup results
+- Leakage checks
+- Gate results
+- Final decision
+- Promotion date or rejection reason
+- Rollback target
+
+MODEL CHANGE CONTROLS
+
+Do not allow a single automated task to silently change:
+- Feature weights
+- Calibration
+- Winner-selection rules
+- Tie-break rules
+- Upset-risk thresholds
+- Recommendation thresholds
+- Elite rules
+
+If several items must change together, label it as a bundled experiment and also run ablation tests to determine which parts caused the result.
+
+Add feature flags so each model change can be turned on or off independently.
+
+DATA INTEGRITY AUDIT
+
+Before every test:
+- Verify unique match IDs
+- Remove duplicate predictions
+- Confirm player identity resolution
+- Confirm tournament, surface, date, and match format
+- Verify prediction timestamp is before match start
+- Verify outcome was attached only after completion
+- Prevent withdrawn, canceled, walkover, and incomplete matches from being graded as normal completed matches
+- Record every exclusion reason
+
+ROLLBACK
+
+Add a one-click rollback control that restores:
+- Previous production model
+- Previous weights
+- Previous calibration
+- Previous decision thresholds
+- Previous feature flags
+
+Do not mark this task complete until:
+1. A Champion model is frozen.
+2. At least one Challenger can be created.
+3. Both can be run on the same chronological walk-forward dataset.
+4. The full comparison report is generated.
+5. Release gates automatically pass or fail.
+6. A Challenger can enter live shadow mode without affecting production.
+7. Every experiment is saved in the experiment ledger.
+8. Production promotion and rollback are both tested.
