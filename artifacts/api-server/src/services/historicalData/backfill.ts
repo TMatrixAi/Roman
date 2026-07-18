@@ -407,6 +407,20 @@ export async function runHistoricalBackfill(
 
   summary.durationMs = Date.now() - startedAt;
   logger.info({ summary }, "Historical backfill complete");
+
+  // Refresh the player stats cache for every player whose match history changed this run.
+  // Done after the full run (not per-chunk) so each player is processed exactly once even
+  // when they appear across multiple chunks. Non-blocking: failures are logged, not rethrown.
+  const affectedPlayerIds = Array.from(playerStates.keys());
+  if (affectedPlayerIds.length > 0) {
+    logger.info({ playerCount: affectedPlayerIds.length }, "Refreshing player stats cache after backfill");
+    // Imported lazily to avoid a circular-dependency risk with the backfill's own imports.
+    const { refreshPlayerStats } = await import("../playerStats/compute");
+    await refreshPlayerStats(affectedPlayerIds).catch((err) =>
+      logger.warn({ err }, "Player stats refresh after backfill failed — stats may be stale"),
+    );
+  }
+
   return summary;
 }
 

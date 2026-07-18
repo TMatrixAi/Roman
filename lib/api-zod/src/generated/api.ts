@@ -148,6 +148,33 @@ export const GetPlayerMatchesResponseItem = zod.object({
 })
 export const GetPlayerMatchesResponse = zod.array(GetPlayerMatchesResponseItem)
 
+/**
+ * Cached aggregate performance stats for one player, derived from `historical_matches` and
+ * `match_feature_snapshots`. Null fields indicate that data is genuinely absent (e.g. a player
+ * with no Hard-court matches has a null `eloHard`), never fabricated defaults.
+ * The endpoint returns HTTP 404 when no stats row exists yet for this player.
+ */
+export const GetPlayerStatsParams = zod.object({
+  "playerId": zod.string()
+})
+
+export const GetPlayerStatsResponse = zod.object({
+  "playerId": zod.string(),
+  "computedAt": zod.coerce.date(),
+  "overallElo": zod.number().nullable(),
+  "eloHard": zod.number().nullable(),
+  "eloClay": zod.number().nullable(),
+  "eloGrass": zod.number().nullable(),
+  "eloIndoorHard": zod.number().nullable(),
+  "matchesPlayed": zod.number().int(),
+  "winRateLast100": zod.number().nullable().describe('Win rate (0-1) over the most recent 100 matches. Null when no history is on record.'),
+  "gameShareLast100": zod.number().nullable().describe('Average share of games won (0-1) over the most recent 100 matches. Null when no game-margin data is stored.'),
+  "serveRatingProxy": zod.number().nullable().describe('Serve dominance proxy (0-100, 50 = tour average), derived from game score margins. Null when fewer than 5 sets of real score data exist.'),
+  "returnRatingProxy": zod.number().nullable().describe('Return dominance proxy (0-100). Same as serveRatingProxy until point-level data is available.'),
+  "surfaceStats": zod.record(zod.string(), zod.object({ "wins": zod.number().int(), "losses": zod.number().int() })).nullable().describe('Win/loss count by surface (Hard/Clay/Grass/IndoorHard). Null when no surface-tagged matches exist.'),
+  "opponentStrengthAvg": zod.number().nullable().describe('Average Elo of opponents over the most recent 50 matches, from pre-match snapshots. Null when no opponent Elo data is available in the historical store.')
+})
+
 
 /**
  * Returns a rolling now-forward window of matches with a start time at or after the current instant, sorted soonest-first, regardless of which calendar day (UTC) they fall on. The window auto-extends further out when the near-term days are sparse, so the result is capped by `limit` rather than by a fixed clock/day boundary. Use `offset` together with `hasMore` in the response to page further into the window on busy days (e.g. Challenger/ITF days with 50+ matches before noon).

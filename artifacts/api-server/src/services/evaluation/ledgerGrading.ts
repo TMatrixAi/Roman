@@ -45,6 +45,13 @@ export interface LedgerGradingSummary {
    * Logged at debug level to avoid noise; included here for job-level telemetry.
    */
   unresolvedIds: number[];
+  /**
+   * Player IDs whose stats cache should be refreshed after this grading run.
+   * Populated by `gradePendingLedgerPredictionsFromBatch` for every prediction that was
+   * actually settled; callers that want stats refreshed must call `refreshPlayerStats` on
+   * this set, or delegate that to `gradePendingLedgerPredictions`.
+   */
+  gradedPlayerIds: string[];
 }
 
 // ─── Batch-based grading (primary path) ───────────────────────────────────
@@ -61,7 +68,7 @@ export interface LedgerGradingSummary {
 export async function gradePendingLedgerPredictionsFromBatch(
   batch: MatchResultsBatch,
 ): Promise<LedgerGradingSummary> {
-  const summary: LedgerGradingSummary = { checked: 0, graded: 0, errors: [...batch.fetchErrors], unresolvedIds: [] };
+  const summary: LedgerGradingSummary = { checked: 0, graded: 0, errors: [...batch.fetchErrors], unresolvedIds: [], gradedPlayerIds: [] };
 
   const pending = await db.select().from(predictionsTable).where(isNull(predictionsTable.actualWinnerId));
 
@@ -105,6 +112,7 @@ export async function gradePendingLedgerPredictionsFromBatch(
 
       if (updated.length > 0) {
         summary.graded += 1;
+        summary.gradedPlayerIds.push(row.player1Id, row.player2Id);
         logger.info(
           { predictionId: row.id, winnerId, player1Id: row.player1Id, player2Id: row.player2Id },
           "Ledger prediction graded from tennis results batch",
@@ -155,7 +163,7 @@ export async function gradePendingLedgerPredictions(providerOverride?: TennisDat
   const playerIds = [...new Set(pending.flatMap((r) => [r.p1, r.p2]))];
 
   if (playerIds.length === 0) {
-    return { checked: 0, graded: 0, errors: [], unresolvedIds: [] };
+    return { checked: 0, graded: 0, errors: [], unresolvedIds: [], gradedPlayerIds: [] };
   }
 
   let batch: MatchResultsBatch;
@@ -168,8 +176,19 @@ export async function gradePendingLedgerPredictions(providerOverride?: TennisDat
       ? `Provider unavailable: ${err.message}`
       : `Unexpected error building results batch: ${err instanceof Error ? err.message : String(err)}`;
     logger.error({ err }, msg);
-    return { checked: 0, graded: 0, errors: [msg], unresolvedIds: [] };
+    return { checked: 0, graded: 0, errors: [msg], unresolvedIds: [], gradedPlayerIds: [] };
   }
 
-  return gradePendingLedgerPredictionsFromBatch(batch);
+  const summary = await gradePendingLedgerPredictionsFromBatch(batch);
+
+  // Refresh the player stats cache for every player whose prediction was settled this run.
+  // Non-blocking: a stats refresh failure must never cause the grading cycle to error out.
+  if (summary.gradedPlayerIds.length > 0) {
+    const { refreshPlayerStats } = await import("../playerStats/compute");
+    await refreshPlayerStats(summary.gradedPlayerIds).catch((err) =>
+      logger.warn({ err }, "Player stats refresh after ledger grading failed — stats may be stale"),
+    );
+  }
+
+  return summary;
 }

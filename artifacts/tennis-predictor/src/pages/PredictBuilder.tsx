@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useLocation, useSearch } from "wouter"
-import { useGetPlayer, getGetPlayerQueryKey, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import type { PredictionSummary } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,12 @@ function PlayerCard({
 }) {
   const { data: player, isLoading, isError } = useGetPlayer(playerId || "", {
     query: { queryKey: getGetPlayerQueryKey(playerId || ""), enabled: !!playerId }
+  })
+  const { data: stats } = useGetPlayerStats(playerId || "", {
+    enabled: !!playerId,
+    // Stats are cached — stale-while-revalidate for 5 minutes is fine.
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   })
 
   if (!playerId) {
@@ -75,7 +81,7 @@ function PlayerCard({
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-6 flex-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-6">
           <div className="bg-secondary/50 rounded-lg p-2 text-center border border-border/50">
             <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">RANK</p>
             <p className="font-bold font-mono text-base sm:text-lg tabular-nums">{player.currentRank || '--'}</p>
@@ -93,6 +99,46 @@ function PlayerCard({
             <p className="font-bold text-xs uppercase tracking-wide mt-1">{player.tour || '--'}</p>
           </div>
         </div>
+
+        {/* ── Cached performance stats (from player_stats table) ── */}
+        {stats && (
+          <div className="mt-2 sm:mt-3 space-y-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="bg-primary/5 rounded-lg p-2 text-center border border-primary/15">
+                <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">MATCHES</p>
+                <p className="font-bold font-mono text-sm sm:text-base tabular-nums">{stats.matchesPlayed}</p>
+              </div>
+              <div className="bg-primary/5 rounded-lg p-2 text-center border border-primary/15">
+                <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">WIN% L100</p>
+                <p className="font-bold font-mono text-sm sm:text-base tabular-nums">
+                  {stats.winRateLast100 != null ? `${Math.round(stats.winRateLast100 * 100)}%` : '--'}
+                </p>
+              </div>
+              <div className="bg-primary/5 rounded-lg p-2 text-center border border-primary/15">
+                <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">OVR ELO</p>
+                <p className="font-bold font-mono text-sm sm:text-base tabular-nums">{stats.overallElo ?? '--'}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloHard != null ? 'bg-sky-500/10 border-sky-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+                <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">H.ELO</p>
+                <p className="font-bold font-mono text-xs tabular-nums">{stats.eloHard ?? '--'}</p>
+              </div>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloClay != null ? 'bg-orange-500/10 border-orange-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+                <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">C.ELO</p>
+                <p className="font-bold font-mono text-xs tabular-nums">{stats.eloClay ?? '--'}</p>
+              </div>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloGrass != null ? 'bg-green-500/10 border-green-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+                <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">G.ELO</p>
+                <p className="font-bold font-mono text-xs tabular-nums">{stats.eloGrass ?? '--'}</p>
+              </div>
+              <div className={`rounded-md p-1.5 text-center border ${stats.serveRatingProxy != null ? 'bg-violet-500/10 border-violet-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+                <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">MARGIN</p>
+                <p className="font-bold font-mono text-xs tabular-nums">{stats.serveRatingProxy ?? '--'}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <Button variant="ghost" size="sm" onClick={onRemove} className="w-full mt-3 text-muted-foreground font-mono text-xs hover:text-destructive hover:bg-destructive/10 h-7">
           CHANGE PLAYER
