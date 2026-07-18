@@ -64,17 +64,82 @@ function normalizeName(name: string): string {
 }
 
 /**
- * A candidate is a confident match when every word in the recognized name appears somewhere in
- * the candidate's full name -- handles a screenshot showing only a surname ("Alcaraz" ->
- * "Carlos Alcaraz") without requiring the reverse (a search result can have more words than the
- * screenshot showed).
+ * Returns true when word `a` can be considered a match for word `b` using one of:
+ *   - exact equality
+ *   - `a` is a single-letter initial that is the first letter of `b`  (e.g. "p" matches "paula")
+ *   - `b` is a single-letter initial that is the first letter of `a`  (e.g. "paula" matches "p")
+ */
+function wordsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length === 1 && b.length > 1 && b[0] === a) return true; // a is initial of b
+  if (b.length === 1 && a.length > 1 && a[0] === b) return true; // b is initial of a
+  return false;
+}
+
+/**
+ * A candidate is a confident match in two complementary directions:
+ *
+ * Forward (recognized ⊆ candidate, with initial expansion):
+ *   Every word in the recognized name matches some word in the candidate. Handles a screenshot
+ *   showing only a surname ("Alcaraz" → "Carlos Alcaraz") and also handles the case where the
+ *   DB stores an abbreviated initial that the OCR read as a full first name ("paula" matches "p").
+ *
+ * Reverse (candidate ⊆ recognized, with initial expansion):
+ *   Every word in the candidate matches some word in the recognized name. Handles OCR reading the
+ *   player's full formal name while the DB stores an abbreviated version ("P. Badosa" ←
+ *   "Paula Badosa", "M. Sherif" ← "Maiar Sherif Ahmed Abdelaziz"). Only applied when the
+ *   recognized name is at least as long as the candidate, so we never loosen a shorter OCR read.
  */
 function isConfidentMatch(recognizedNorm: string, candidateNorm: string): boolean {
   if (!recognizedNorm) return false;
   if (recognizedNorm === candidateNorm) return true;
-  const recognizedWords = recognizedNorm.split(" ").filter(Boolean);
-  const candidateWords = new Set(candidateNorm.split(" ").filter(Boolean));
-  return recognizedWords.length > 0 && recognizedWords.every((w) => candidateWords.has(w));
+
+  const rWords = recognizedNorm.split(" ").filter(Boolean);
+  const cWords = candidateNorm.split(" ").filter(Boolean);
+  if (rWords.length === 0 || cWords.length === 0) return false;
+
+  // Forward: every recognized word matches some candidate word
+  if (rWords.every((rw) => cWords.some((cw) => wordsMatch(rw, cw)))) return true;
+
+  // Reverse: every candidate word matches some recognized word (recognized is longer or equal)
+  if (rWords.length >= cWords.length && cWords.every((cw) => rWords.some((rw) => wordsMatch(cw, rw)))) return true;
+
+  return false;
+}
+
+/**
+ * Search for players matching recognizedName.
+ *
+ * Primary: search by the full name (handles exact DB entries and live standings).
+ * Fallback: when the primary returns no confident matches, retry searching by each word of the
+ *   recognized name in reverse order (surname first). This handles abbreviated DB entries like
+ *   "P. Badosa" when the OCR read "Paula Badosa": searching "Badosa" finds "P. Badosa", then
+ *   isConfidentMatch verifies it via the reverse-initial path.
+ */
+async function gatherCandidates(provider: TennisDataProvider, recognizedName: string): Promise<PlayerSummary[]> {
+  const norm = normalizeName(recognizedName);
+
+  // Primary search
+  const primary = await searchKnownPlayers(provider, recognizedName);
+  const primaryConfident = primary.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
+  if (primaryConfident.length > 0) return primary; // primary found at least one confident match
+
+  // Word-by-word fallback (surname first — most distinctive, fewest false positives)
+  const words = recognizedName.trim().split(/\s+/).filter((w) => w.length >= 3).reverse();
+  const accumulated = new Map<string, PlayerSummary>();
+  for (const p of primary) accumulated.set(p.id, p); // keep primary results too
+
+  for (const word of words) {
+    const wordResults = await searchKnownPlayers(provider, word);
+    for (const c of wordResults) {
+      if (!accumulated.has(c.id)) accumulated.set(c.id, c);
+    }
+    // Stop as soon as we have at least one confident match in the accumulated set
+    const hasConfident = Array.from(accumulated.values()).some((c) => isConfidentMatch(norm, normalizeName(c.name)));
+    if (hasConfident) break;
+  }
+
+  return Array.from(accumulated.values());
 }
 
 async function resolvePlayerMatch(
@@ -88,8 +153,8 @@ async function resolvePlayerMatch(
     return { recognizedName: null, player: null };
   }
 
-  const candidates = await searchKnownPlayers(provider, recognizedName);
   const norm = normalizeName(recognizedName);
+  const candidates = await gatherCandidates(provider, recognizedName);
   const confident = candidates.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
 
   if (confident.length === 1) {
