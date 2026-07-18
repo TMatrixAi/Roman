@@ -69,10 +69,12 @@ Respond with ONLY a strict JSON array, no markdown, no other text:
 // Key / provider detection
 // ---------------------------------------------------------------------------
 
-type Provider = "openai" | "anthropic";
+type Provider = "openai" | "anthropic" | "gemini";
 
 function detectProvider(key: string): Provider {
-  return key.startsWith("sk-ant-") ? "anthropic" : "openai";
+  if (key.startsWith("sk-ant-")) return "anthropic";
+  if (key.startsWith("AIza")) return "gemini";
+  return "openai";
 }
 
 interface ResolvedKey {
@@ -113,6 +115,10 @@ function resolveAllKeys(): ResolvedKey[] {
   if (replitKey && replitBase) {
     add({ key: replitKey, provider: "openai", baseUrl: replitBase, label: "AI_INTEGRATIONS_OPENAI" });
   }
+
+  // 4. Google Gemini (free tier available at aistudio.google.com; keys start with "AIza")
+  const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  if (geminiKey) add({ key: geminiKey, provider: "gemini", label: "GEMINI_API_KEY" });
 
   return keys;
 }
@@ -197,6 +203,53 @@ async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<
     ],
   });
   return response.choices[0]?.message?.content ?? null;
+}
+
+/**
+ * Google Gemini vision call using direct REST (no SDK needed).
+ * Free tier: gemini-1.5-flash supports image input, 15 RPM, 1M tokens/day.
+ */
+async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
+  const model = "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${resolved.key}`;
+
+  const body = {
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{
+      role: "user",
+      parts: [
+        { inline_data: { mime_type: mediaType, data } },
+        { text: "Extract all matchups from this screenshot." },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: 800 },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    // Surface the status so isPermanentProviderError can classify it
+    const errBody = await res.json().catch(() => ({})) as { error?: { code?: number; status?: string; message?: string } };
+    const code = errBody.error?.status ?? "";
+    const status = res.status;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err: any = new Error(`Gemini API error ${status}: ${errBody.error?.message ?? res.statusText}`);
+    err.status = status;
+    // Map Gemini error codes to the same shape as OpenAI errors so isPermanentProviderError works
+    if (code === "RESOURCE_EXHAUSTED" || status === 429) err.code = "insufficient_quota";
+    if (code === "PERMISSION_DENIED" || status === 403) err.status = 403;
+    if (code === "UNAUTHENTICATED" || status === 401) err.status = 401;
+    throw err;
+  }
+
+  const json = await res.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  return json.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text ?? null;
 }
 
 async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
@@ -286,7 +339,9 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
         const rawText =
           resolved.provider === "anthropic"
             ? await callAnthropic(resolved, data, mediaType)
-            : await callOpenAI(resolved, dataUrl);
+            : resolved.provider === "gemini"
+              ? await callGemini(resolved, data, mediaType)
+              : await callOpenAI(resolved, dataUrl);
 
         const preview = rawText ? rawText.slice(0, 300).replace(/\n/g, "\\n") : "(null)";
         debugLog.push(`[RAW] attempt=${attempt} rawText="${preview}"`);
