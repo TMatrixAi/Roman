@@ -215,7 +215,11 @@ function PredictionRow({
         aria-label={`Select prediction ${prediction.id}`}
       />
 
-      <Link href={`/predictions/${prediction.id}?from=ledger`} className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
+      <Link
+        href={`/predictions/${prediction.id}?from=ledger`}
+        onClick={() => sessionStorage.setItem("ledger_scroll_y", String(window.scrollY))}
+        className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer"
+      >
         <div className="flex-1 space-y-2.5">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
             <span>{formatDate(prediction.createdAt)}</span>
@@ -381,6 +385,21 @@ export default function HistoryPage() {
   const queryClient = useQueryClient()
   const { data: stats, isLoading: statsLoading } = useGetPredictionStats()
   const { data: predictions, isLoading: predictionsLoading } = useListPredictions({ limit: 50 })
+
+  // Restore scroll position when returning from a prediction detail via "Back to Ledger".
+  // The position is saved in sessionStorage by PredictionRow's Link onClick; we restore it
+  // once after the prediction list first renders (dependency on `predictions`), then clear
+  // the key so a manual refresh or later visit starts at the top as normal.
+  useEffect(() => {
+    if (!predictions) return
+    const saved = sessionStorage.getItem("ledger_scroll_y")
+    if (!saved) return
+    sessionStorage.removeItem("ledger_scroll_y")
+    const y = parseFloat(saved)
+    if (!isNaN(y)) {
+      requestAnimationFrame(() => window.scrollTo({ top: y, behavior: "instant" }))
+    }
+  }, [predictions])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   // Player search + navigation: selecting a player loads that player's *entire* chronological

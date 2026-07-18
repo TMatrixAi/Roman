@@ -1,0 +1,354 @@
+Perform a complete audit and repair of the Accuracy Dashboard, calibration system, recommendation engine, and confidence logic. Do not make cosmetic changes only. Verify that every displayed metric is mathematically correct and driven by the latest prediction engine.
+
+=========================
+1. CALIBRATION AUDIT
+=========================
+
+Recalculate calibration using every graded historical prediction.
+
+For every probability bucket:
+
+50–55
+55–60
+60–65
+65–70
+70–75
+75–80
+80–85
+85–90
+90–95
+95–100
+
+Compute:
+
+- Prediction count
+- Predicted probability
+- Actual win rate
+- Calibration gap
+- Brier contribution
+- Log Loss
+- Confidence interval
+- Reliability score
+
+Automatically identify:
+
+- Overconfident buckets
+- Underconfident buckets
+- Buckets with insufficient sample sizes
+
+The current engine previously showed significant overconfidence in the 65–70% bucket. Verify whether that still exists using the newest graded data.
+
+If any bucket exceeds acceptable calibration thresholds, automatically recommend recalibration.
+
+=========================
+2. RECALIBRATION
+=========================
+
+If enough graded predictions exist:
+
+- Refit probability calibration.
+- Compare:
+  - Isotonic Regression
+  - Platt Scaling
+  - Temperature Scaling
+
+Choose whichever improves:
+
+- Brier Score
+- Log Loss
+- Expected Calibration Error (ECE)
+
+Do not deploy a worse calibration.
+
+=========================
+3. MODEL AGREEMENT AUDIT
+=========================
+
+Verify Model Agreement is calculated correctly.
+
+Agreement should primarily consider:
+
+- Serve & Return
+- Surface Elo
+- Recent Form
+- Monte Carlo
+- Ensemble output
+
+Do not allow agreement to be inflated by duplicated or highly correlated signals.
+
+Verify:
+
+High Agreement
+Moderate Agreement
+Mixed
+High Disagreement
+
+are assigned correctly.
+
+=========================
+4. RECOMMENDATION ENGINE
+=========================
+
+Centralize recommendation logic.
+
+Strong Recommendation
+
+must require:
+
+- Low Upset Risk
+- Good Data Quality
+- Good Model Agreement
+- Calibrated probability above threshold
+- No stale inputs
+
+Elite Prediction
+
+must require ALL Elite conditions.
+
+Elite must NEVER appear when:
+
+- High Disagreement
+- High Upset Risk
+- Extreme Upset Risk
+- Low Data Quality
+- Missing critical inputs
+- Stale data
+
+=========================
+5. TOO CLOSE TO CALL
+=========================
+
+Audit every prediction within the near-50/50 region.
+
+Verify:
+
+- No cascade bias exists.
+- No artificial nudging occurs.
+- Too Close to Call is shown correctly.
+- No hidden forced winner exists.
+
+If Force Signal is used:
+
+Track separately.
+
+Never include Force Signal accuracy in normal model accuracy.
+
+=========================
+6. CONFIDENCE AUDIT
+=========================
+
+Confidence should decrease when:
+
+- Missing data
+- Conflicting models
+- Sparse player history
+- New players
+- Stale data
+
+Confidence should not simply mirror probability.
+
+=========================
+7. DATA QUALITY AUDIT
+=========================
+
+Verify Data Quality reflects:
+
+Missing inputs
+
+Freshness
+
+Coverage
+
+Reliability
+
+Data Quality must affect:
+
+Confidence
+
+Recommendations
+
+Elite eligibility
+
+=========================
+8. CORRELATION AUDIT
+=========================
+
+Measure feature correlation.
+
+Prevent correlated modules from double-counting confidence.
+
+Especially audit:
+
+Serve & Return
+
+Surface Elo
+
+Recent Form
+
+Surface History
+
+Ranking
+
+=========================
+9. ACCURACY DASHBOARD
+=========================
+
+Add:
+
+Rolling 30-day accuracy
+
+Rolling 90-day accuracy
+
+By Surface
+
+By Tour
+
+By Tournament
+
+By Confidence
+
+By Recommendation Tier
+
+By Elite
+
+By Force Signal
+
+By Too Close to Call
+
+By Data Quality
+
+By Model Agreement
+
+=========================
+10. MISCALIBRATION WARNINGS
+=========================
+
+Automatically warn when:
+
+Calibration gap exceeds threshold.
+
+ECE rises.
+
+A bucket drifts.
+
+Log Loss worsens.
+
+Brier worsens.
+
+Display:
+
+Healthy
+
+Monitor
+
+Needs Recalibration
+
+=========================
+11. BACKTEST VALIDATION
+=========================
+
+Verify every backtest:
+
+Uses the newest prediction engine.
+
+Uses newest calibration.
+
+Uses newest weights.
+
+Uses newest thresholds.
+
+Is NOT reading cached predictions.
+
+Log:
+
+Engine Version
+
+Calibration Version
+
+Weights Version
+
+Feature Flags
+
+Prediction Count
+
+Cache Status
+
+=========================
+12. FORCE SIGNAL
+=========================
+
+Create an independent evaluation category.
+
+Track:
+
+Accuracy
+
+Win Rate
+
+By deciding factor
+
+By surface
+
+By tour
+
+By confidence
+
+Do NOT mix with standard prediction accuracy.
+
+=========================
+13. OUTPUT REPORT
+=========================
+
+Produce a report listing:
+
+Critical Issues
+
+High Priority
+
+Medium Priority
+
+Low Priority
+
+For each issue include:
+
+Problem
+
+Root Cause
+
+Fix Applied
+
+Files Changed
+
+Validation Performed
+
+Before vs After Metrics
+
+=========================
+14. RELEASE GATE
+=========================
+
+Do not deploy any recalibration unless ALL of the following improve or remain stable:
+
+Overall Accuracy
+
+Log Loss
+
+Brier Score
+
+ECE
+
+Calibration by bucket
+
+Recommendation accuracy
+
+Elite accuracy
+
+Strong Recommendation accuracy
+
+Model Agreement consistency
+
+Too Close to Call handling
+
+If any metric regresses, reject the calibration and keep the current production model.
+
+Do not mark this task complete until all audits pass and a full validation report has been generated.

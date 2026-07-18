@@ -1,0 +1,230 @@
+The bulk screenshot importer is now almost correct. Do not rebuild the entire feature. Fix the remaining player-name resolution problem and make the matcher robust against every realistic name format.
+
+Current examples:
+
+1. OCR reads:
+   "Goncalo Da Rosa Castro"
+
+   The system finds multiple possible players and skips the match.
+
+2. OCR reads:
+   "Maiar Sherif Ahmed Abdelaziz"
+
+   The known player may be stored as:
+   "Mayar Sherif"
+   "Sherif, Mayar"
+   "M. Sherif"
+   "Mayar Sherif Ahmed Abdelaziz"
+   or another official/alternate form.
+
+The importer must normalize and compare names in multiple possible arrangements before declaring the player unknown or ambiguous.
+
+Implement a dedicated player-name normalization and identity-resolution layer for bulk screenshot imports.
+
+It must support:
+
+- First name + last name
+- Last name + first name
+- "Last, First"
+- Full legal names
+- Common shortened competition names
+- Initial + surname
+- Multiple initials + surname
+- Surname + initials
+- Middle names
+- Multiple surnames
+- Compound surnames
+- Hyphenated names
+- Apostrophes
+- Periods
+- Commas
+- Accents and diacritics
+- Different capitalization
+- Extra or missing spaces
+- OCR-inserted spaces
+- OCR-removed spaces
+- Transliteration differences
+- Maiden names or alternate surnames
+- Patronymics
+- Prefixes such as de, da, del, della, van, von, bin, al, dos, do, le, and similar particles
+- Suffixes such as Jr., Sr., II, III, IV
+- Numbers that are genuinely part of the source text
+- Seed numbers, rankings, court numbers, match numbers, or odds that were accidentally attached to the player name
+
+Do not simply remove every number. Determine whether the number is metadata or legitimately part of the text. Preserve the original OCR value for debugging.
+
+For every OCR player name, create and compare normalized variants such as:
+
+- Original order
+- Reversed order
+- Comma-reversed order
+- Diacritics removed
+- Punctuation removed
+- Initial-expanded comparison
+- Middle names removed
+- Extra legal surnames removed
+- Name particles preserved
+- Name particles optionally ignored for comparison
+- Token-order-independent comparison
+- Common abbreviation comparison
+
+Examples that should resolve to the same player when the database supports them:
+
+- Mayar Sherif
+- Sherif, Mayar
+- M. Sherif
+- Mayar Sherif Ahmed Abdelaziz
+- Maiar Sherif Ahmed Abdelaziz
+
+Also handle cases such as:
+
+- Goncalo Da Rosa Castro
+- Gonçalo da Rosa Castro
+- G. da Rosa Castro
+- Da Rosa Castro, Goncalo
+- Goncalo Castro
+- Castro, Goncalo
+
+Do not automatically choose a player based only on loose fuzzy similarity.
+
+Use a confidence-based resolution process:
+
+1. Exact canonical-name match
+2. Exact alternate-name or alias match
+3. Exact normalized-token match
+4. Reversed-name match
+5. Initial + surname match
+6. Full legal name containing the known competition name
+7. Controlled fuzzy match
+8. Tournament, tour, gender, country, ranking, and active-player context as tie-breakers
+
+When multiple candidates remain, rank them using:
+
+- Same ATP/WTA/ITF tour context
+- Same gender
+- Active player status
+- Current or recent ranking
+- Tournament entry list, if available
+- Country or flag detected from the screenshot
+- Opponent and event context
+- Recent fixture participation
+- Exact surname-token coverage
+- First-name or initial agreement
+
+Do not skip the match immediately when multiple candidates are found.
+
+Instead, show a mobile-friendly candidate selector directly inside the imported match row with:
+
+- Candidate full name
+- Canonical competition name
+- Country
+- Ranking, when available
+- Tour
+- Player ID
+- Match confidence
+- Reason each candidate matched
+
+Let the user select the correct player and then continue the import without restarting the entire screenshot batch.
+
+Add:
+
+- "Remember this match" or "Save as alias"
+- Store the OCR name as an alias for the selected player
+- Reuse that alias automatically in future imports
+- A way to remove an incorrect saved alias
+- Separate aliases by source/provider when useful
+- Audit logging for automatic and manual resolutions
+
+Persist fields such as:
+
+- rawOcrName
+- normalizedOcrName
+- matchedPlayerId
+- matchedCanonicalName
+- matchMethod
+- matchConfidence
+- candidateCount
+- manuallyConfirmed
+- savedAlias
+- sourceImage
+- resolvedAt
+
+Create a Player Alias table if one does not already exist.
+
+Suggested structure:
+
+- id
+- playerId
+- alias
+- normalizedAlias
+- source
+- confidence
+- manuallyVerified
+- createdAt
+- updatedAt
+
+Important safeguards:
+
+- Never merge two player records automatically.
+- Never overwrite the player's canonical name with OCR text.
+- Do not let a weak fuzzy match silently select the wrong person.
+- Names shared by multiple players must require context or manual selection.
+- Store the original OCR text unchanged.
+- Keep all current working screenshot-import behavior intact.
+- Do not regress multi-match extraction, condition editing, or batch prediction.
+
+Add bulk-import settings for name matching:
+
+- Strict
+- Balanced
+- Flexible
+
+Strict:
+Only exact, alias, normalized, and high-confidence reversed-name matches.
+
+Balanced:
+Allows initials, legal-name containment, transliteration, and context-assisted matching.
+
+Flexible:
+Allows wider fuzzy matching but must still require manual confirmation below a safe threshold.
+
+Also add switches for:
+
+- Ignore accents
+- Allow reversed names
+- Allow initials
+- Allow shortened legal names
+- Remove attached rankings/seeds
+- Use tournament-entry context
+- Save manually confirmed aliases
+
+Use Balanced as the default.
+
+Test the matcher against a comprehensive fixture set containing at least:
+
+- Mayar Sherif / Maiar Sherif Ahmed Abdelaziz
+- Goncalo da Rosa Castro
+- Names with apostrophes
+- Names with hyphens
+- Names with accents
+- Asian surname-first names
+- Spanish and Portuguese multiple surnames
+- Arabic full legal names
+- Eastern European transliterations
+- Initial-only names
+- Comma-formatted names
+- Names containing Jr., II, or III
+- OCR text with ranking or seed numbers attached
+- Two active players with the same surname and first initial
+
+Do not mark this task complete until the two screenshots that currently fail can both be resolved into valid editable match rows without re-uploading the screenshots.
+
+At completion, report:
+
+- Root cause of each failed example
+- Matching methods added
+- Files and database tables changed
+- Automatic confidence thresholds
+- Manual-confirmation thresholds
+- Test cases passed
+- Whether an alias was saved for each example
