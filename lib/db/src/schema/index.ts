@@ -21,3 +21,4 @@ export * from "./predictions";
 export * from "./historicalMatches";
 export * from "./evaluation";
 export * from "./backtesting";
+export * from "./masterPlayers";

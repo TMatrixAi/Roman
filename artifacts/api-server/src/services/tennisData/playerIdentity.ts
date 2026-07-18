@@ -27,19 +27,141 @@ function isSinglesName(name: string): boolean {
 }
 
 /**
+ * Characters that do NOT decompose under Unicode NFD (no base + combining-diacritic split) but
+ * are common in tennis player names and need explicit transliteration before the diacritic-strip
+ * pass. Confirmed live: Đ (U+0110), đ (U+0111), Ł/ł (U+0141/42), Ø/ø (U+00D8/F8), ß (U+00DF)
+ * all survive NFD unchanged and must be mapped here or they remain as non-ASCII after stripping.
+ */
+const NON_NFD_TRANSLITERATIONS: [RegExp, string][] = [
+  [/[Đđ]/g, "d"],
+  [/[Łł]/g, "l"],
+  [/[Øø]/g, "o"],
+  [/[ß]/g, "ss"],
+  [/[Ææ]/g, "ae"],
+  [/[Œœ]/g, "oe"],
+];
+
+/**
  * Folds accents/diacritics, lowercases, strips punctuation, and collapses whitespace so the same
  * real person spelled two different ways by different provider feeds ("Krumich" vs "Krúmich",
  * "de Lange" vs "De Lange") compares equal. Used only as a real, structural identity signal (an
  * exact match after normalization) -- never a fuzzy/approximate match.
+ *
+ * Two-pass: explicit transliteration of characters that don't decompose under NFD (Đ→d, Ł→l,
+ * etc.) then the standard NFD + diacritic-strip pass that handles the majority of accented
+ * Latin characters (é, ó, ñ, etc.).
  */
 export function normalizePlayerName(name: string): string {
-  return name
+  let s = name;
+  for (const [pattern, replacement] of NON_NFD_TRANSLITERATIONS) {
+    s = s.replace(pattern, replacement);
+  }
+  return s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Returns true when the normalized name looks like an initial-first-name form, i.e. the first
+ * word is a single letter ("r nadal"). Used to gate initial-expansion matching so we don't
+ * run expansion on regular full names.
+ */
+export function isInitialNamePattern(normalizedName: string): boolean {
+  const words = normalizedName.split(" ");
+  return words.length >= 2 && words[0].length === 1;
+}
+
+/**
+ * Generates every normalized name variant that should be tried when resolving a player by name.
+ * Always includes the direct normalized form. Additionally:
+ *  - Reversed word order ("nadal rafael" alongside "rafael nadal"), so providers that report
+ *    last-name-first are matched correctly.
+ *  - For initial-pattern names ("r nadal"): expands to check both "r <surname>" AND
+ *    "<surname> r" orderings, so reversed-initial forms are caught too.
+ * Deduplicates variants so callers never check the same normalized string twice.
+ */
+export function generateNameVariants(name: string): string[] {
+  const direct = normalizePlayerName(name);
+  if (!direct) return [];
+
+  const seen = new Set<string>();
+  const variants: string[] = [];
+  const add = (v: string) => { if (v && !seen.has(v)) { seen.add(v); variants.push(v); } };
+
+  add(direct);
+
+  // Reversed word order
+  const words = direct.split(" ");
+  if (words.length >= 2) {
+    const reversed = [...words].reverse().join(" ");
+    add(reversed);
+  }
+
+  return variants;
+}
+
+/** Result when name resolution is confident (exactly one candidate). */
+export interface NameResolutionHit {
+  ambiguous: false;
+  id: string;
+  /** How the match was made — callers can use this for disclosure. */
+  confidence: "exact" | "reversed";
+}
+
+/** Result when the name matches multiple distinct players — caller must ask for disambiguation. */
+export interface NameResolutionAmbiguous {
+  ambiguous: true;
+  /** Normalized names of all candidates that matched. */
+  candidates: string[];
+}
+
+export type NameResolutionResult = NameResolutionHit | NameResolutionAmbiguous | null;
+
+/**
+ * Resolves a player name against the identity index, trying multiple normalized variants
+ * (direct form, reversed word order). Returns:
+ *  - `{ ambiguous: false, id, confidence }` when exactly one canonical ID is found.
+ *  - `{ ambiguous: true, candidates }` when multiple distinct IDs match across variants
+ *    (the caller must ask for clarification rather than guessing).
+ *  - `null` when no variant matches anything in the index.
+ *
+ * Never guesses between ambiguous candidates — the explicit ambiguous signal is always
+ * returned so callers can surface it to the user rather than silently picking the wrong player.
+ */
+export function resolvePlayerNameWithAmbiguity(
+  index: PlayerIdentityIndex,
+  name: string,
+): NameResolutionResult {
+  const variants = generateNameVariants(name);
+  if (variants.length === 0) return null;
+
+  const directNorm = variants[0];
+  const hits = new Map<string, "exact" | "reversed">(); // canonicalId -> confidence
+
+  for (let i = 0; i < variants.length; i++) {
+    const variant = variants[i];
+    const confidence: "exact" | "reversed" = i === 0 ? "exact" : "reversed";
+
+    // Try direct name lookup
+    const byName = index.canonicalIdByName.get(variant);
+    if (byName) {
+      if (!hits.has(byName) || confidence === "exact") {
+        hits.set(byName, confidence);
+      }
+    }
+  }
+
+  if (hits.size === 0) return null;
+  if (hits.size === 1) {
+    const [id, confidence] = [...hits.entries()][0];
+    return { ambiguous: false, id, confidence };
+  }
+  // Multiple distinct canonical IDs — genuinely ambiguous
+  return { ambiguous: true, candidates: [...hits.keys()] };
 }
 
 /**

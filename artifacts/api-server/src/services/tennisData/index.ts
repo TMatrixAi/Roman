@@ -1,4 +1,6 @@
 import { ApiTennisProvider } from "./apiTennisProvider";
+import { CompositeTennisProvider } from "./compositeProvider";
+import { MatchStatProvider } from "./matchStatProvider";
 import { ProviderUnavailableError, type ProviderStatusInfo, type TennisDataProvider } from "./types";
 
 export * from "./types";
@@ -42,14 +44,46 @@ class NotConfiguredProvider implements TennisDataProvider {
 let cachedProvider: TennisDataProvider | null = null;
 
 /**
- * Factory for the active tennis data provider. Swapping providers (e.g. to Sportradar) means
- * adding a new class that implements TennisDataProvider and returning it here -- nothing else
- * in the app depends on API-Tennis directly.
+ * Factory for the active tennis data provider.
+ *
+ * When both API_TENNIS_KEY and X_RAPIDAPI_KEY are configured, returns a composite provider
+ * that tries MatchStat (tennisapi1.p.rapidapi.com) first and falls back to API-Tennis on any
+ * error. This gives the app access to MatchStat's richer data (H2H, stats, rankings) while
+ * preserving the proven API-Tennis path for anything MatchStat can't serve.
+ *
+ * When only API_TENNIS_KEY is set, returns the ApiTennisProvider directly (no change from
+ * before this task). When neither key is set, returns NotConfiguredProvider so routes get a
+ * clean 502 rather than a crash.
  */
 export function getTennisDataProvider(): TennisDataProvider {
   if (cachedProvider) return cachedProvider;
 
-  const apiKey = process.env.API_TENNIS_KEY;
-  cachedProvider = apiKey ? new ApiTennisProvider(apiKey) : new NotConfiguredProvider();
+  const apiTennisKey = process.env.API_TENNIS_KEY;
+  const rapidApiKey = process.env.X_RAPIDAPI_KEY;
+
+  if (!apiTennisKey) {
+    cachedProvider = new NotConfiguredProvider();
+    return cachedProvider;
+  }
+
+  const apiTennisProvider = new ApiTennisProvider(apiTennisKey);
+
+  if (rapidApiKey) {
+    const matchStatProvider = new MatchStatProvider(rapidApiKey);
+    cachedProvider = new CompositeTennisProvider(matchStatProvider, apiTennisProvider);
+  } else {
+    cachedProvider = apiTennisProvider;
+  }
+
   return cachedProvider;
+}
+
+/**
+ * Returns the raw API-Tennis provider regardless of composite configuration.
+ * Used by the historical backfill pipeline, which requires API-Tennis's bulk
+ * date-range endpoint that MatchStat does not provide.
+ */
+export function getApiTennisProvider(): ApiTennisProvider | null {
+  const apiTennisKey = process.env.API_TENNIS_KEY;
+  return apiTennisKey ? new ApiTennisProvider(apiTennisKey) : null;
 }
