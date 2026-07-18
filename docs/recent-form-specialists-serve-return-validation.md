@@ -290,29 +290,105 @@ The S&R–Elo Pearson of 0.4472 is moderate, not high — it does not indicate d
 
 ---
 
-## 6. Stage 2 Candidates — Stub
+## 6. Stage 2 Candidates — Results
 
-*To be populated by Stage 2 task.*
+**Date completed:** 2026-07-18  
+**Implementation:** `artifacts/api-server/src/services/evaluation/sprintStage2Candidates.ts`  
+**Runner:** `artifacts/api-server/scripts/runSprintStage2.ts`
 
-Stage 2 will implement candidates B–G for Recent Form (defined in §2.5) and run walk-forward replay for each. No S&R or specialist pipeline candidates are required based on Stage 1 findings — both are functioning correctly and the specialist pipeline's inactive segments (ATP-Grass, WTA-Clay, WTA-Grass) require a broader walk-forward window, not a code change.
+### 6.1 Summary
+
+All 23 candidate_configs rows inserted. No production code modified. All rows have status `pending`. None promoted or activated.
+
+| Track | Count | Status |
+|---|---|---|
+| Recent Form B–G | 6 | Pending Stage 3 walk-forward evaluation |
+| Specialist segments (all 8) | 8 | 5 active (meetsThreshold=true), 3 Needs More Data |
+| Serve & Return A–I | 9 | All Needs More Data (Stage 1 found no evidence base) |
+| **Total** | **23** | **0 promoted / 0 active** |
+
+### 6.2 Recent Form Candidates (Track 1)
+
+Six parameter-variant candidates for the Recent Form module. Each is stored with the full production baseline snapshot (calibration model id=82, ENSEMBLE_WEIGHT_PRIOR, CONFIDENCE_SHRINK). Stage 3 walk-forward evaluation will produce variant metrics for comparison against Candidate A (§2.1).
+
+| ID | Candidate | Key Change | Hypothesis |
+|---|---|---|---|
+| 1 | RF-B — Plain win-rate | Remove opponent adjustment, S&R blend, tour shrink | Tests whether complexity adds net value vs. simple win/loss counting |
+| 2 | RF-C — Opponent-adjusted only | Remove S&R blend only | Tests whether the 25% S&R blend double-counts the separate S&R ensemble vote |
+| 4 | RF-D — No tour-credibility shrink | Remove TOUR_CREDIBILITY_FLOOR (+ no S&R blend) | Tests whether the shrink over-suppresses ITF-heavy corpus form scores |
+| 6 | RF-E — Surface-preference weighting | Add 1.3× bonus for same-surface wins | Tests whether stronger surface affinity improves Clay/Grass/IndoorHard segments |
+| 8 | RF-F — Reduced weight 1.3→0.65 | ENSEMBLE_WEIGHT_PRIOR.recentForm: 1.3→0.65 | Tests whether module is overweighted given 66.6% near-50 concentration |
+| 10 | RF-G — Removed from ensemble | ENSEMBLE_WEIGHT_PRIOR.recentForm: 1.3→0 | Full ablation baseline: confirms RF's net contribution to ensemble accuracy |
+
+### 6.3 Specialist Segment Candidates (Track 2)
+
+Eight candidate_configs rows — one per specialist_models row. `specialist_models` was already populated from a prior training-mode walk-forward run.
+
+**Active segments (5):**
+
+| ID | Segment | Val N | Accuracy | General Accuracy | Weight | Log Loss vs. General |
+|---|---|---|---|---|---|---|
+| 3 | ATP-Hard | 908 | 58.8% | 63.2% | 0.825 | 0.643 vs. 0.674 |
+| 5 | ATP-Clay | 136 | 53.0% | 62.0% | 0.809 | 0.665 vs. 0.692 |
+| 9 | ATP-IndoorHard | 290 | 68.0% | 68.0% | 0.764 | 0.574 vs. 0.590 |
+| 11 | WTA-Hard | 1174 | 57.9% | 57.4% | 0.818 | 0.661 vs. 0.690 |
+| 15 | WTA-IndoorHard | 46 | 71.7% | 69.6% | 0.619 | 0.553 vs. 0.588 |
+
+**Inactive segments — Needs More Data (3):**
+
+| ID | Segment | Reason | Fix |
+|---|---|---|---|
+| 7 | ATP-Grass | 0 validation samples (window=Aug 2025–Feb 2026, no Wimbledon) | Task #67: run 4-fold walk-forward through spring 2026 |
+| 12 | WTA-Clay | 0 validation samples (window misses Roland Garros) | Task #67: same |
+| 13 | WTA-Grass | 0 validation samples (window misses Wimbledon) | Task #67: same |
+
+### 6.4 Serve & Return Candidates (Track 3)
+
+All nine S&R variants stored as **Needs More Data**. Stage 1 audit (§5, §6) found no miscalibration requiring correction. Per Sprint Stage 2 rule: variants without a clear evidence-based hypothesis from Stage 1 are documented but not built.
+
+| ID | Candidate | Stage 1 Finding |
+|---|---|---|
+| 14 | SR-A — Recalibrated output | ECE well-behaved (0.018–0.023); CONFIDENCE_SHRINK=0.45 appropriate |
+| 16 | SR-B — Edge cap | No extreme-edge overconfidence found |
+| 17 | SR-C — Reduced ensemble weight | Weight justified by partial r=0.19; accuracy confound is tour-level not weight issue |
+| 18 | SR-D — Tour-level weight reduction | ATP/WTA real-stats accuracy (61%) actually BETTER than the 58.9% overall; confound inverted |
+| 19 | SR-E — Surface-specific calibration | Insufficient data from Stage 1; specialist pipeline already handles surface+tour corrections |
+| 20 | SR-F — Minimum sample-size gate | Raising gate pushes tour-level predictions to proxy which performs worse on ATP (48.84%) |
+| 21 | SR-G — Remove firstServeWinPct blend | Already handled gracefully; other fields (99.7%/100%) still apply |
+| 22 | SR-H — Increase POINT_LEVEL_BLEND_WEIGHT | No dedicated point-level ablation in Stage 1; insufficient evidence |
+| 23 | SR-I — Remove S&R entirely (ablation) | Partial r=0.19 confirms substantial independent signal; prior ablation already showed removal hurts |
+
+### 6.5 Production Leakage Verification
+
+- `artifacts/api-server/src/services/predictionEngine/index.ts` — **unchanged**
+- `artifacts/api-server/src/services/predictionEngine/dataQuality.ts` — **unchanged**
+- `artifacts/api-server/src/services/predictionEngine/recentForm.ts` — **unchanged**
+- `artifacts/api-server/src/services/predictionEngine/serveReturn.ts` — **unchanged**
+- Invariant test suite: **218/218 pass** (run 2026-07-18)
 
 ---
 
-## 7. Stage 2 Metrics Protocol — Stub
+## 7. Stage 2 Metrics Protocol
 
-*To be populated by Stage 2 task.*
+All candidate_configs rows store the full production config baseline snapshot at insertion time:
+- Calibration model: id=82, method=isotonic, n=23,023 validation samples, isotonicHoldoutLogLoss=0.63765
+- ENSEMBLE_WEIGHT_PRIOR as of 2026-07-18 (see `dataQuality.ts`)
+- CONFIDENCE_SHRINK as of 2026-07-18 (serveReturn=0.45, recentForm=0.35)
+- Stage 1 baseline metrics: RF standalone accuracy 60.32%, general model 64.5%, n=22,689
+
+Stage 3 will run the evaluation-only walk-forward for each Recent Form variant and produce the comparison table. S&R and inactive specialist segments remain pending until additional evidence accumulates.
 
 ---
 
 ## 8. Walk-Forward Results by Candidate — Stub
 
-*To be populated by Stage 2 task.*
+*To be populated by Stage 3 task.*
 
 ---
 
 ## 9. Candidate Selection — Stub
 
-*To be populated by Stage 2 task.*
+*To be populated by Stage 3 task.*
 
 ---
 
