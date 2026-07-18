@@ -21,10 +21,39 @@
  * Retries only guard against whole-cycle failures (e.g. a transient DB connection blip). A
  * per-fixture provider hiccup is already handled and recorded inside `runPaperTradingCycle`
  * itself (see its `summary.errors`) and is NOT a reason to retry the whole cycle.
+ *
+ * ### Grading pipeline (this cycle)
+ *
+ * 1. `runPaperTradingCycle()` — locks fresh predictions for fixtures whose cutoff has arrived,
+ *    marks missed windows, and grades pending paper-trade evaluation predictions using per-player
+ *    `getPlayerMatches()` calls (composite MatchStat-first / API-Tennis-fallback provider).
+ *
+ * 2. MatchStat results batch — collects every unique player ID from pending ledger predictions,
+ *    fetches their match histories in one deduplicated batch (one call per player rather than
+ *    one per prediction), then grades pending user-facing ledger predictions from that batch.
+ *    A failed fetch for any one player leaves that player's predictions pending; it does not
+ *    block grading for all other players.
+ *
+ * ### Downstream refresh
+ *
+ * All downstream statistics (Prediction History accuracy totals, paper-trading P&L, Shadow
+ * Replay win-rate) are computed on-demand directly from `predictionsTable` and
+ * `evaluationPredictionsTable` by their respective API routes and dashboard queries.  No
+ * explicit cache-flush or re-aggregation step is required after grading; the next read
+ * will automatically reflect newly-graded rows.
  */
 import { db, jobRunsTable } from "@workspace/db";
 import { runPaperTradingCycle, type PaperTradingCycleSummary } from "../services/evaluation/paperTrading";
-import { gradePendingLedgerPredictions, type LedgerGradingSummary } from "../services/evaluation/ledgerGrading";
+import {
+  gradePendingLedgerPredictionsFromBatch,
+  type LedgerGradingSummary,
+} from "../services/evaluation/ledgerGrading";
+import {
+  collectPendingPlayerIds,
+  fetchMatchResultsBatch,
+  type MatchResultsBatch,
+} from "../services/evaluation/matchStatResultsFetcher";
+import { getTennisDataProvider } from "../services/tennisData";
 import { logger } from "../lib/logger";
 import { PAPER_TRADING_JOB_NAME } from "./paperTradingJobName";
 
@@ -34,21 +63,79 @@ const MAX_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = [5_000, 30_000];
 
 interface CombinedCycleSummary extends PaperTradingCycleSummary {
-  /** Ledger (user-facing "Custom Match"/"Predict Now") predictions graded this same cycle -- piggybacks on this job's cadence rather than needing its own separate Scheduled Deployment. */
+  /** Ledger (user-facing "Custom Match"/"Predict Now") predictions graded this same cycle. */
   ledgerGrading: LedgerGradingSummary;
+  /**
+   * Stats from the shared MatchStat results batch used for ledger grading.
+   * Surfaces fetch failures so operators can spot persistent provider issues without
+   * trawling server logs.
+   */
+  batchFetch: {
+    uniquePlayersRequested: number;
+    succeeded: number;
+    failed: number;
+    errors: string[];
+  };
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runWithRetry(): Promise<{ attempts: number; summary: CombinedCycleSummary } | { attempts: number; error: unknown }> {
+async function runWithRetry(): Promise<
+  { attempts: number; summary: CombinedCycleSummary } | { attempts: number; error: unknown }
+> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const summary = await runPaperTradingCycle();
-      const ledgerGrading = await gradePendingLedgerPredictions();
-      return { attempts: attempt, summary: { ...summary, ledgerGrading } };
+      // Step 1: Lock new paper-trade predictions and grade pending ones.
+      // This uses per-player getPlayerMatches() calls internally (N+1, but cached
+      // via the MatchStat TtlCache at 15-min TTL, so repeated calls within a window
+      // are free). Safe to run while the API server is live.
+      const cycleResult = await runPaperTradingCycle();
+
+      // Step 2: Build a deduplicated MatchStat results batch for all pending ledger
+      // predictions. Collect player IDs AFTER the cycle so any fixtures that were
+      // just locked (and may have player overlap) are already committed.
+      const provider = getTennisDataProvider();
+      const playerIds = await collectPendingPlayerIds();
+
+      let batch: MatchResultsBatch;
+      if (playerIds.length === 0) {
+        batch = { matchesByPlayerId: new Map(), fetchErrors: [] };
+      } else {
+        batch = await fetchMatchResultsBatch(provider, playerIds);
+      }
+
+      // Step 3: Grade pending ledger predictions from the batch. Predictions whose
+      // player fetch failed stay pending — they'll be retried next cycle.
+      const ledgerGrading = await gradePendingLedgerPredictionsFromBatch(batch);
+
+      // Log any unresolved predictions so operators can monitor the pending backlog.
+      if (ledgerGrading.unresolvedIds.length > 0) {
+        logger.info(
+          { count: ledgerGrading.unresolvedIds.length, sample: ledgerGrading.unresolvedIds.slice(0, 5) },
+          "Ledger grading: predictions still awaiting a real match result (normal pending state, not errors)",
+        );
+      }
+      if (batch.fetchErrors.length > 0) {
+        logger.warn(
+          { count: batch.fetchErrors.length, errors: batch.fetchErrors },
+          "MatchStat results batch: some players could not be fetched — their predictions stay pending",
+        );
+      }
+
+      const batchFetch = {
+        uniquePlayersRequested: playerIds.length,
+        succeeded: playerIds.length - batch.fetchErrors.length,
+        failed: batch.fetchErrors.length,
+        errors: batch.fetchErrors,
+      };
+
+      return {
+        attempts: attempt,
+        summary: { ...cycleResult, ledgerGrading, batchFetch },
+      };
     } catch (err) {
       lastError = err;
       logger.error({ err, attempt, maxAttempts: MAX_ATTEMPTS }, "Paper-trading cycle attempt failed");
@@ -75,7 +162,16 @@ export async function runPaperTradingJob(): Promise<{ ok: boolean }> {
       summary: outcome.summary,
       errorMessage: null,
     });
-    logger.info({ ...outcome.summary, attempts: outcome.attempts }, "Paper-trading cycle completed");
+    logger.info(
+      {
+        ...outcome.summary,
+        attempts: outcome.attempts,
+        ledgerGraded: outcome.summary.ledgerGrading.graded,
+        ledgerErrors: outcome.summary.ledgerGrading.errors.length,
+        batchFetch: outcome.summary.batchFetch,
+      },
+      "Paper-trading + ledger-grading cycle completed",
+    );
     return { ok: true };
   }
 
