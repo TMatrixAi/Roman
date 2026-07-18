@@ -1,15 +1,11 @@
 import { useLocation } from "wouter"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { LedgerPlayerSearch } from "@/components/LedgerPlayerSearch"
 import { UserSearch } from "lucide-react"
 import type { LedgerPlayerSummary } from "@workspace/api-client-react"
 
 /**
- * Bottom-of-page finder: look up a player name to browse their saved prediction history in the
- * Ledger. Distinct from the "Player Search" tab above (which searches the live provider to add
- * players to a new prediction) and from the "Paste Search" tab above (which finds multiple
- * existing predictions from a pasted list). This box is only for navigating to a specific
- * player's recorded history — it does not start a new prediction.
+ * Slim player-history finder for the Ledger. Navigates to a player's recorded predictions.
+ * Distinct from the Build page's player-search (which queries the live provider for new predictions).
  */
 export function SavedPredictionsLookup() {
   const [, navigate] = useLocation()
@@ -19,20 +15,12 @@ export function SavedPredictionsLookup() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <UserSearch className="w-5 h-5" />
-          FIND A PLAYER'S SAVED MATCHES
-        </CardTitle>
-        <CardDescription>
-          Search by player name to open their full recorded prediction history in the Ledger.
-          To find multiple specific matchups, use the Paste Search tab in the Player Search box above.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <LedgerPlayerSearch onSelect={goToPlayer} />
-      </CardContent>
-    </Card>
+    <div className="rounded-xl border border-border/60 bg-card/50 px-4 py-3 space-y-2.5">
+      <div className="flex items-center gap-2 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+        <UserSearch className="w-3.5 h-3.5 shrink-0" />
+        Find a Player's Saved Matches
+      </div>
+      <LedgerPlayerSearch onSelect={goToPlayer} slim />
+    </div>
   )
 }

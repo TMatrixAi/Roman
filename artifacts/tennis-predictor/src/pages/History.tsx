@@ -22,6 +22,7 @@ import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
 import { readAndClearPasteSearchHandoff } from "@/lib/pasteSearchHandoff"
+import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -560,6 +561,7 @@ export default function HistoryPage() {
           {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
         </div>
       ) : stats ? (
+        <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard 
             title="TOTAL RUNS" 
@@ -584,6 +586,8 @@ export default function HistoryPage() {
             icon={AlertTriangle} 
           />
         </div>
+        <SavedPredictionsLookup />
+        </>
       ) : null}
 
       <div className="space-y-4">

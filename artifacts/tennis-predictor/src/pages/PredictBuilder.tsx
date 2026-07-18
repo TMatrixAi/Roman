@@ -11,7 +11,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
-import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
 import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
 
 function PlayerCard({ 
@@ -345,8 +344,6 @@ export default function PredictBuilderPage() {
         </Card>
       )}
 
-      {/* Bottom box — Find a saved prediction by player name */}
-      <SavedPredictionsLookup />
     </div>
   )
 }

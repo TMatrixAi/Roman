@@ -14,12 +14,15 @@ import { Badge } from "@/components/ui/badge"
 export function LedgerPlayerSearch({
   onSelect,
   onQueryChange,
+  slim = false,
 }: {
   onSelect: (player: LedgerPlayerSummary) => void
   /** Fired on every keystroke (not debounced) -- lets a parent clear an active player-navigation
    * context as soon as the user starts typing a new search, per the "starting a new search"
    * exit condition. */
   onQueryChange?: () => void
+  /** Compact mode: smaller empty-state, tighter spacing. */
+  slim?: boolean
 }) {
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -35,12 +38,12 @@ export function LedgerPlayerSearch({
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search players with recorded predictions..."
-          className="pl-9 font-mono bg-card"
+          className="pl-9 font-mono bg-card h-9 text-sm"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -49,9 +52,9 @@ export function LedgerPlayerSearch({
         />
       </div>
 
-      <div className="min-h-[120px]">
+      <div className={slim ? "" : "min-h-[120px]"}>
         {debouncedQuery.length < 2 && !players && (
-          <div className="flex items-center justify-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
+          <div className={`flex items-center justify-center text-xs font-mono text-muted-foreground border border-dashed rounded-lg ${slim ? "py-3" : "p-8"}`}>
             ENTER 2+ CHARS TO SEARCH THE LEDGER
           </div>
         )}
