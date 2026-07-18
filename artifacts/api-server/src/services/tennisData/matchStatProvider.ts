@@ -45,9 +45,11 @@ const BASE_URL = `https://${HOST}`;
 const UPCOMING_TTL_MS = 3 * 60 * 1000;   // 3 minutes
 const RANKINGS_TTL_MS = 60 * 60 * 1000;  // 1 hour
 
-// Retry config for 429 responses
-const MAX_429_RETRIES = 3;
-const BASE_BACKOFF_MS = 5_000;
+// 429 handling — fail immediately and let the composite provider fall back to
+// API-Tennis.  Retrying 429s in the primary provider delays requests by 35+
+// seconds and causes browser timeouts before the fallback is reached.
+const MAX_429_RETRIES = 0;
+const BASE_BACKOFF_MS = 5_000; // kept for the backoff formula; unused at MAX=0
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
