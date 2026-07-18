@@ -336,53 +336,66 @@ export class MatchStatProvider implements TennisDataProvider {
 
   async searchPlayers(query: string): Promise<PlayerSummary[]> {
     const today = new Date().toISOString().slice(0, 10);
-    const key = `rankings:search:${today}`;
 
-    return this.cache.getOrFetch(key, RANKINGS_TTL_MS, async () => {
-      // Fetch ATP and WTA race rankings in parallel.
-      const [atpRaw, wtaRaw] = await Promise.all([
-        this.call<RawRankingEntry[]>(`/tennis/v2/ms-api/ranking/atp?date=${today}&group=race`).catch(() => [] as RawRankingEntry[]),
-        this.call<RawRankingEntry[]>(`/tennis/v2/ms-api/ranking/wta?date=${today}&group=race`).catch(() => [] as RawRankingEntry[]),
-      ]);
-
-      const lowerQuery = query.toLowerCase().trim();
-      const results: PlayerSummary[] = [];
-      const seen = new Set<string>();
-
-      const addEntries = (entries: RawRankingEntry[], tour: "ATP" | "WTA") => {
-        for (const entry of entries) {
-          const p = entry.player;
-          if (!p?.id) continue;
-          const id = String(p.id);
-          if (seen.has(id)) continue;
-          const name = p.name ?? "";
-          if (!name.toLowerCase().includes(lowerQuery)) continue;
-          seen.add(id);
-          results.push({
-            id,
-            name,
-            countryCode: p.country ?? null,
-            currentRank: typeof entry.rank === "number" ? entry.rank : null,
-            tour,
-          });
+    // Cache the FULL rankings list (not query-filtered) so all searches on the same day share
+    // one network call. The previous bug used a query-agnostic key but filtered inside the
+    // cache callback, so searching "Mi" would cache only Mi-results and break every other query.
+    //
+    // If BOTH tours fail (rate limited), throw ProviderUnavailableError so the composite
+    // provider falls back to API-Tennis. A single-tour failure is tolerated (partial results
+    // beat nothing). Throwing means TtlCache does NOT persist the failure, so the next request
+    // retries the network rather than serving a stale empty list all day.
+    const allEntries = await this.cache.getOrFetch(
+      `rankings:all:${today}`,
+      RANKINGS_TTL_MS,
+      async () => {
+        const [atpRaw, wtaRaw] = await Promise.all([
+          this.call<RawRankingEntry[]>(`/tennis/v2/ms-api/ranking/atp?date=${today}&group=race`).catch(() => null),
+          this.call<RawRankingEntry[]>(`/tennis/v2/ms-api/ranking/wta?date=${today}&group=race`).catch(() => null),
+        ]);
+        if (atpRaw === null && wtaRaw === null) {
+          throw new ProviderUnavailableError("MatchStat: both ATP and WTA ranking calls failed -- rate limited or unavailable");
         }
-      };
+        const combined: Array<{ entry: RawRankingEntry; tour: "ATP" | "WTA" }> = [];
+        for (const e of (Array.isArray(atpRaw) ? atpRaw : [])) combined.push({ entry: e, tour: "ATP" });
+        for (const e of (Array.isArray(wtaRaw) ? wtaRaw : [])) combined.push({ entry: e, tour: "WTA" });
+        return combined;
+      },
+    );
 
-      addEntries(Array.isArray(atpRaw) ? atpRaw : [], "ATP");
-      addEntries(Array.isArray(wtaRaw) ? wtaRaw : [], "WTA");
+    // Filter in memory -- instant, no additional network calls
+    const lowerQuery = query.toLowerCase().trim();
+    const results: PlayerSummary[] = [];
+    const seen = new Set<string>();
 
-      results.sort((a, b) => {
-        const aExact = a.name.toLowerCase() === lowerQuery;
-        const bExact = b.name.toLowerCase() === lowerQuery;
-        if (aExact !== bExact) return aExact ? -1 : 1;
-        if (a.currentRank === null && b.currentRank === null) return 0;
-        if (a.currentRank === null) return 1;
-        if (b.currentRank === null) return -1;
-        return a.currentRank - b.currentRank;
+    for (const { entry: e, tour } of allEntries) {
+      const p = e.player;
+      if (!p?.id) continue;
+      const id = String(p.id);
+      if (seen.has(id)) continue;
+      const name = p.name ?? "";
+      if (!name.toLowerCase().includes(lowerQuery)) continue;
+      seen.add(id);
+      results.push({
+        id,
+        name,
+        countryCode: p.country ?? null,
+        currentRank: typeof e.rank === "number" ? e.rank : null,
+        tour,
       });
+    }
 
-      return results.slice(0, 25);
+    results.sort((a, b) => {
+      const aExact = a.name.toLowerCase() === lowerQuery;
+      const bExact = b.name.toLowerCase() === lowerQuery;
+      if (aExact !== bExact) return aExact ? -1 : 1;
+      if (a.currentRank === null && b.currentRank === null) return 0;
+      if (a.currentRank === null) return 1;
+      if (b.currentRank === null) return -1;
+      return a.currentRank - b.currentRank;
     });
+
+    return results.slice(0, 25);
   }
 
   // ── Not available on this API — throw immediately to avoid wasted HTTP calls ──
