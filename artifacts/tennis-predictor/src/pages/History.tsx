@@ -214,7 +214,7 @@ function PredictionRow({
         aria-label={`Select prediction ${prediction.id}`}
       />
 
-      <Link href={`/predictions/${prediction.id}`} className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
+      <Link href={`/predictions/${prediction.id}?from=ledger`} className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
         <div className="flex-1 space-y-2.5">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
             <span>{formatDate(prediction.createdAt)}</span>
@@ -310,7 +310,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
 
   return (
     <Link
-      href={`/predictions/${prediction.id}`}
+      href={`/predictions/${prediction.id}?from=ledger`}
       className="flex flex-col md:flex-row md:items-center justify-between p-5 border-2 border-primary rounded-xl bg-card shadow-md ring-4 ring-primary/20 hover:bg-card/80 transition-all duration-300 gap-4"
     >
       <div className="flex-1 space-y-2.5">

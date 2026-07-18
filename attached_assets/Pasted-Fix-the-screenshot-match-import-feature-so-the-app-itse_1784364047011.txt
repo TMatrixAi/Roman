@@ -1,0 +1,72 @@
+Fix the screenshot match-import feature so the app itself reliably extracts every tennis match shown in an uploaded screenshot.
+
+Do not manually hardcode the matches from this screenshot. Improve the actual extraction pipeline.
+
+Requirements:
+
+1. Accept screenshots containing one or multiple match cards.
+2. Detect each match card separately before reading its text.
+3. Extract:
+   - Tournament name
+   - Match date
+   - Start time
+   - Time zone
+   - Player 1
+   - Player 2
+   - Any visible odds
+   - Visible market volume
+4. Do not treat odds, volume, flags, or tournament labels as player names.
+5. Support names containing spaces, initials, hyphens, accents, and multiple surnames.
+6. Preserve the order in which matches appear in the screenshot.
+7. Never silently drop a partially recognized match.
+8. When a field is uncertain, return the match with that field marked `needs_review` instead of deleting the entire match.
+9. Show a mobile-friendly confirmation screen listing all detected matches before importing them.
+10. Allow the user to edit any incorrectly extracted name, event, date, or time.
+11. Add a “Retry extraction” button.
+12. Prevent duplicate imports by comparing tournament, players, and scheduled time.
+
+Use a structured result like:
+
+{
+  "matches": [
+    {
+      "tournament": "WTA Athens",
+      "date": "2026-07-18",
+      "time": "12:30 PM",
+      "timezone": "EDT",
+      "player1": "Maria Sakkari",
+      "player2": "Alina Korneeva",
+      "player1_odds": ["-155", "+128"],
+      "player2_odds": ["+123", "-149"],
+      "volume": "$7,000",
+      "confidence": 0.95,
+      "needs_review": false
+    }
+  ]
+}
+
+For image processing:
+
+- Preprocess the image with enlargement, contrast improvement, sharpening, and grayscale only when helpful.
+- Divide vertically stacked screenshots into individual match-card regions.
+- Run OCR or vision extraction on each region separately.
+- Run a second full-image extraction pass.
+- Merge both passes and remove duplicates.
+- Validate that each match has exactly two likely player names.
+- Use surrounding layout and text position, not OCR text alone, to associate players, times, odds, and tournament names.
+- Do not stop after detecting the first match.
+
+Add diagnostic logging that records:
+
+- Number of match-card regions detected
+- Raw extracted text for each region
+- Parsed matches
+- Rejected or uncertain fields
+- Reason any match was skipped
+
+Test the completed fix with the attached screenshot. The expected result is exactly two matches:
+
+1. Maria Sakkari vs Alina Korneeva — WTA Athens — Jul 18 at 12:30 PM EDT
+2. Clara Tauson vs Barbora Krejcikova — WTA Athens — Jul 18 at 1:40 PM EDT
+
+Do not mark the task complete unless both matches are automatically detected from the screenshot, displayed on the confirmation screen, and importable without manually entering their names.

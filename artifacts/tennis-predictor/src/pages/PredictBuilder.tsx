@@ -185,18 +185,18 @@ export default function PredictBuilderPage() {
       <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
-            <TabsList className="mb-3">
-              <TabsTrigger value="search" className="font-mono gap-2">
-                <Search className="w-4 h-4" />
-                PLAYER SEARCH
+            <TabsList className="mb-3 w-full">
+              <TabsTrigger value="search" className="font-mono gap-1.5 flex-1">
+                <Search className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">PLAYER </span>SEARCH
               </TabsTrigger>
-              <TabsTrigger value="paste" className="font-mono gap-2">
-                <ClipboardPaste className="w-4 h-4" />
-                PASTE SEARCH
+              <TabsTrigger value="paste" className="font-mono gap-1.5 flex-1">
+                <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                PASTE<span className="hidden sm:inline"> SEARCH</span>
               </TabsTrigger>
-              <TabsTrigger value="bulk" className="font-mono gap-2">
-                <Layers className="w-4 h-4" />
-                BULK UPLOAD
+              <TabsTrigger value="bulk" className="font-mono gap-1.5 flex-1">
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                BULK<span className="hidden sm:inline"> UPLOAD</span>
               </TabsTrigger>
             </TabsList>
 

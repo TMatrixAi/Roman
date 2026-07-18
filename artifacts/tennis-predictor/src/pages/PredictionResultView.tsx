@@ -21,7 +21,10 @@ export default function PredictionResultView() {
   const searchString = useSearch()
   const touchStartX = useRef<number | null>(null)
 
-  const batchParam = new URLSearchParams(searchString).get("batch")
+  const searchParams = new URLSearchParams(searchString)
+  const batchParam = searchParams.get("batch")
+  const fromLedger = searchParams.get("from") === "ledger"
+
   const batchIds = batchParam
     ? batchParam
         .split(",")
@@ -57,16 +60,16 @@ export default function PredictionResultView() {
 
   return (
     <div onTouchStart={showNav ? handleTouchStart : undefined} onTouchEnd={showNav ? handleTouchEnd : undefined}>
-      {/* Back button — always visible */}
+      {/* Back button — navigates to Ledger when opened from there, Build Match otherwise */}
       <div className="mb-4">
         <Button
           variant="ghost"
           size="sm"
           className="font-mono text-xs text-muted-foreground hover:text-foreground gap-1 -ml-2"
-          onClick={() => setLocation("/predict")}
+          onClick={() => setLocation(fromLedger ? "/history" : "/predict")}
         >
           <ChevronLeft className="w-4 h-4" />
-          BACK TO BUILD MATCH
+          {fromLedger ? "BACK TO LEDGER" : "BACK TO BUILD MATCH"}
         </Button>
       </div>
 
