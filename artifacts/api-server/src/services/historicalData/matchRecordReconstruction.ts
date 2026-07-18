@@ -51,6 +51,17 @@ function toMatchRecord(row: HistoricalMatchRow, playerId: string): MatchRecord {
   const margins = (row.gameMarginsPlayer1 as GameMargins | null) ?? [];
   const surface = (row.surface as Surface | null) ?? null;
 
+  // Use the stored indoor flag when available (captured from the provider's raw payload at
+  // import time); fall back to surface inference only when the stored value is null.
+  const storedIndoor = (row as { indoor?: boolean | null }).indoor ?? null;
+  const indoor: boolean | null = storedIndoor != null ? storedIndoor : (surface === "IndoorHard" ? true : null);
+
+  // Opponent rank from stored columns, not recomputed at query time. Null is explicit
+  // "provider didn't supply it at import time" -- never zero, never a placeholder.
+  const opponentRank: number | null = isPlayer1
+    ? ((row as { player2Rank?: number | null }).player2Rank ?? null)
+    : ((row as { player1Rank?: number | null }).player1Rank ?? null);
+
   return {
     id: String(row.id),
     date: row.scheduledStartAt.toISOString(),
@@ -59,10 +70,10 @@ function toMatchRecord(row: HistoricalMatchRow, playerId: string): MatchRecord {
     round: row.round,
     matchFormat: (row.matchFormat as MatchFormat | null) ?? null,
     surface,
-    indoor: surface === "IndoorHard" ? true : null,
+    indoor,
     opponentId,
     opponentName,
-    opponentRank: null,
+    opponentRank,
     result: row.winnerId === playerId ? "W" : "L",
     score: row.score,
     retired: row.retired,

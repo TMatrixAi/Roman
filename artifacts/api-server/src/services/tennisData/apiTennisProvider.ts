@@ -194,6 +194,18 @@ export interface RawMatch {
   tournament_round?: string;
   scores?: RawScoreEntry[];
   statistics?: RawStatEntry[];
+  /**
+   * Per-match player ranks when the provider includes them in the fixture payload. API-Tennis
+   * doesn't document these fields and doesn't supply them in most responses, so they are typed
+   * as optional -- callers must treat absence as "not available", never as rank 0.
+   */
+  first_player_rank?: string | number | null;
+  second_player_rank?: string | number | null;
+  /**
+   * Indoor venue flag when the provider includes it. API-Tennis rarely surfaces this; when
+   * absent callers fall back to the "IndoorHard" surface inference as a secondary signal.
+   */
+  indoor?: 0 | 1 | boolean | null;
 }
 
 /** Parses "65%" -> 65, "3" -> 3; returns null on anything unparseable, never a fabricated default. */
@@ -462,6 +474,30 @@ export class ApiTennisProvider implements TennisDataProvider {
   }
 
   /**
+   * Returns the current ATP + WTA standings in a flat, provider-neutral shape. Used by the
+   * ranking-verification job to diff stored `master_players.currentRank` values against the
+   * live official standings without the caller needing to know anything about the raw provider
+   * format. Players whose `place` field doesn't parse to a valid integer are excluded (they
+   * represent provisional/unranked rows that have no real rank to compare against).
+   */
+  async getCurrentStandings(): Promise<Array<{ playerKey: string; rank: number; name: string; tour: "ATP" | "WTA" }>> {
+    const [atp, wta] = await Promise.all([
+      this.call<RawStandingRow[]>("get_standings", { event_type: "ATP" }),
+      this.call<RawStandingRow[]>("get_standings", { event_type: "WTA" }),
+    ]);
+    const result: Array<{ playerKey: string; rank: number; name: string; tour: "ATP" | "WTA" }> = [];
+    for (const row of atp ?? []) {
+      const rank = parseInt(row.place, 10);
+      if (!Number.isNaN(rank) && rank > 0) result.push({ playerKey: str(row.player_key), rank, name: row.player, tour: "ATP" });
+    }
+    for (const row of wta ?? []) {
+      const rank = parseInt(row.place, 10);
+      if (!Number.isNaN(rank) && rank > 0) result.push({ playerKey: str(row.player_key), rank, name: row.player, tour: "WTA" });
+    }
+    return result;
+  }
+
+  /**
    * Player search is scoped to players who currently appear in the ATP/WTA standings feed.
    * API-Tennis has no name-search endpoint (`get_players` requires an exact `player_key`,
    * confirmed live: passing `player_name` returns a "Required parameter missing: player_key"
@@ -721,6 +757,25 @@ export class ApiTennisProvider implements TennisDataProvider {
               ? str(m.second_player_key)
               : null;
 
+        // Extract indoor flag: use provider's field when present (truthy 1/true = indoor),
+        // fall back to the "IndoorHard" surface inference only when the flag is absent.
+        const rawIndoor = m.indoor;
+        const indoor: boolean | null =
+          rawIndoor != null
+            ? rawIndoor === 1 || rawIndoor === true
+            : surface === "IndoorHard"
+              ? true
+              : null;
+
+        // Extract player ranks when the provider includes them; parse defensively (API-Tennis
+        // is known to return numeric keys as strings or numbers interchangeably).
+        const rawP1Rank = m.first_player_rank;
+        const player1Rank: number | null =
+          rawP1Rank != null ? (parseInt(String(rawP1Rank), 10) || null) : null;
+        const rawP2Rank = m.second_player_rank;
+        const player2Rank: number | null =
+          rawP2Rank != null ? (parseInt(String(rawP2Rank), 10) || null) : null;
+
         const fixture: HistoricalFixture = {
           id: str(m.event_key),
           provider: this.name,
@@ -742,6 +797,9 @@ export class ApiTennisProvider implements TennisDataProvider {
           walkover: status.walkover,
           cancelled: isCancelled,
           setGameMargins: mapHistoricalFixtureGameMargins(m),
+          indoor,
+          player1Rank,
+          player2Rank,
           raw: m,
         };
         return fixture;

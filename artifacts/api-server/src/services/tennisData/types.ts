@@ -171,6 +171,19 @@ export interface HistoricalFixture {
   cancelled: boolean;
   /** Games won/lost per set, from player1's perspective, when the provider reports it. */
   setGameMargins: Array<{ player1Games: number; player2Games: number }>;
+  /**
+   * Whether the match was played indoors, taken directly from the provider's `indoor` flag when
+   * available. Null when the provider doesn't supply it -- callers can still infer a best-guess
+   * from surface ("IndoorHard" → indoor) but should treat that as a fallback, not this field.
+   */
+  indoor: boolean | null;
+  /**
+   * ATP/WTA ranking of player1 and player2 at time of the match, taken directly from the
+   * provider's fixture payload when available. Null when the provider doesn't supply it for this
+   * match -- never fabricated as zero or a placeholder.
+   */
+  player1Rank: number | null;
+  player2Rank: number | null;
   /** Raw provider payload, kept for audit trails in the historical store. */
   raw: unknown;
 }
@@ -227,4 +240,11 @@ export interface TennisDataProvider {
    * API-Tennis aren't forced to implement a real name search they may not have.
    */
   findTournamentSurfaceByName?(name: string): Promise<{ surface: Surface | null; level: TournamentLevel | null } | null>;
+  /**
+   * Fetches current ATP + WTA standings from the provider and returns them in a flat,
+   * provider-neutral shape. Used by the ranking-verification job to compare stored
+   * `master_players.currentRank` values against live official standings. Optional so
+   * providers that have no rankings feed aren't forced to implement it.
+   */
+  getCurrentStandings?(): Promise<Array<{ playerKey: string; rank: number; name: string; tour: "ATP" | "WTA" }>>;
 }

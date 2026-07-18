@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable } from "@workspace/db";
+import { and, desc, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable, historicalMatchesTable } from "@workspace/db";
 import {
   ListEvaluationPredictionsQueryParams,
   ListEvaluationPredictionsResponse,
@@ -54,7 +54,9 @@ import {
   ListHistoricalBackfillJobRunsQueryParams,
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
+  GetRankingVerificationResponse,
 } from "@workspace/api-zod";
+import { runRankingVerification } from "../services/historicalData/rankingVerification";
 
 const router: IRouter = Router();
 
@@ -331,15 +333,65 @@ router.get("/evaluation/historical-backfill/job-runs", async (req, res): Promise
 });
 
 router.get("/evaluation/historical-backfill/freshness", async (_req, res): Promise<void> => {
-  const latestCoveredDate = await getLatestCoveredMatchDate();
   const asOf = new Date();
+
+  // Run count queries and gap detection in parallel -- each is a simple indexed scan.
+  const [latestCoveredDate, missingRankRow, missingSurfaceRow, rawGaps] = await Promise.all([
+    getLatestCoveredMatchDate(),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(historicalMatchesTable)
+      .where(
+        and(
+          isNotNull(historicalMatchesTable.winnerId),
+          eq(historicalMatchesTable.cancelled, false),
+          isNull(historicalMatchesTable.player1Rank),
+          isNull(historicalMatchesTable.player2Rank),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(historicalMatchesTable)
+      .where(and(isNotNull(historicalMatchesTable.winnerId), eq(historicalMatchesTable.cancelled, false), isNull(historicalMatchesTable.surface))),
+    // Distinct-date gap detection: at most ~3,650 rows for a decade of data, manageable in memory.
+    db
+      .select({ matchDate: sql<string>`(scheduled_start_at AT TIME ZONE 'UTC')::date::text` })
+      .from(historicalMatchesTable)
+      .groupBy(sql`(scheduled_start_at AT TIME ZONE 'UTC')::date`)
+      .orderBy(sql`(scheduled_start_at AT TIME ZONE 'UTC')::date`),
+  ]);
+
   let daysBehind: number | null = null;
   if (latestCoveredDate) {
     const todayUtc = asOf.toISOString().slice(0, 10);
     const msPerDay = 24 * 60 * 60 * 1000;
     daysBehind = Math.round((Date.parse(`${todayUtc}T00:00:00.000Z`) - Date.parse(`${latestCoveredDate}T00:00:00.000Z`)) / msPerDay);
   }
-  res.json(GetHistoricalDataFreshnessResponse.parse({ latestCoveredDate, daysBehind, asOf: asOf.toISOString() }));
+
+  const dateGapsOver30Days: Array<{ fromDate: string; toDate: string; dayCount: number }> = [];
+  for (let i = 1; i < rawGaps.length; i++) {
+    const dayCount = Math.round(
+      (Date.parse(`${rawGaps[i].matchDate}T00:00:00.000Z`) - Date.parse(`${rawGaps[i - 1].matchDate}T00:00:00.000Z`)) / (24 * 60 * 60 * 1000),
+    );
+    if (dayCount > 30) dateGapsOver30Days.push({ fromDate: rawGaps[i - 1].matchDate, toDate: rawGaps[i].matchDate, dayCount });
+  }
+
+  res.json(
+    GetHistoricalDataFreshnessResponse.parse({
+      latestCoveredDate,
+      daysBehind,
+      asOf: asOf.toISOString(),
+      matchesMissingOpponentRank: latestCoveredDate ? (missingRankRow[0]?.count ?? null) : null,
+      matchesMissingSurface: latestCoveredDate ? (missingSurfaceRow[0]?.count ?? null) : null,
+      dateGapsOver30Days,
+    }),
+  );
+});
+
+router.post("/evaluation/ranking-verification", async (_req, res): Promise<void> => {
+  const provider = getTennisDataProvider();
+  const result = await runRankingVerification(provider);
+  res.json(GetRankingVerificationResponse.parse(result));
 });
 
 router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {

@@ -203,8 +203,10 @@ export async function runHistoricalBackfill(
     featureRowsInserted: 0,
     byTour: {},
     bySurface: {},
+    byYear: {},
     earliestImportedMatchDate: null,
     latestImportedMatchDate: null,
+    dateGapsOver30Days: [],
     durationMs: 0,
   };
 
@@ -360,6 +362,9 @@ export async function runHistoricalBackfill(
             cutoffMinutes,
             cutoffAt,
             gameMarginsPlayer1: fixture.setGameMargins,
+            indoor: fixture.indoor,
+            player1Rank: fixture.player1Rank,
+            player2Rank: fixture.player2Rank,
             rawSource: fixture.raw as object,
           })
           .returning({ id: historicalMatchesTable.id });
@@ -383,6 +388,7 @@ export async function runHistoricalBackfill(
       summary.featureRowsInserted += featureRows.length;
       summary.byTour[fixture.tour ?? "Unknown"] = (summary.byTour[fixture.tour ?? "Unknown"] ?? 0) + 1;
       summary.bySurface[fixture.surface ?? "Unknown"] = (summary.bySurface[fixture.surface ?? "Unknown"] ?? 0) + 1;
+      summary.byYear[fixture.date.slice(0, 4)] = (summary.byYear[fixture.date.slice(0, 4)] ?? 0) + 1;
       if (!summary.earliestImportedMatchDate || fixture.date < summary.earliestImportedMatchDate) {
         summary.earliestImportedMatchDate = fixture.date;
       }
@@ -406,6 +412,11 @@ export async function runHistoricalBackfill(
   }
 
   summary.durationMs = Date.now() - startedAt;
+
+  // Detect gaps > 30 days across the FULL historical_matches store (not just this run's window)
+  // so the summary gives a complete picture of coverage health every time it's checked.
+  summary.dateGapsOver30Days = await detectStoredDateGaps();
+
   logger.info({ summary }, "Historical backfill complete");
 
   // Refresh the player stats cache for every player whose match history changed this run.
@@ -427,6 +438,31 @@ export async function runHistoricalBackfill(
 /** YYYY-MM-DD for `date`, in UTC. */
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Scans the full `historical_matches` store for consecutive date gaps exceeding 30 days.
+ * Returns one entry per gap, sorted chronologically. An empty array means coverage is
+ * contiguous (or the table is empty). At most ~3,650 distinct dates for a decade of
+ * data, so loading them into memory is fine -- no full table scan needed.
+ */
+async function detectStoredDateGaps(): Promise<Array<{ fromDate: string; toDate: string; dayCount: number }>> {
+  const dateRows = await db
+    .select({ matchDate: sql<string>`(scheduled_start_at AT TIME ZONE 'UTC')::date::text` })
+    .from(historicalMatchesTable)
+    .groupBy(sql`(scheduled_start_at AT TIME ZONE 'UTC')::date`)
+    .orderBy(sql`(scheduled_start_at AT TIME ZONE 'UTC')::date`);
+
+  const gaps: Array<{ fromDate: string; toDate: string; dayCount: number }> = [];
+  for (let i = 1; i < dateRows.length; i++) {
+    const fromDate = dateRows[i - 1].matchDate;
+    const toDate = dateRows[i].matchDate;
+    const dayCount = Math.round(
+      (Date.parse(`${toDate}T00:00:00.000Z`) - Date.parse(`${fromDate}T00:00:00.000Z`)) / (24 * 60 * 60 * 1000),
+    );
+    if (dayCount > 30) gaps.push({ fromDate, toDate, dayCount });
+  }
+  return gaps;
 }
 
 /**

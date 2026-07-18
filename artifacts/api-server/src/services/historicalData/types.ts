@@ -51,7 +51,15 @@ export interface BackfillSummary {
   featureRowsInserted: number;
   byTour: Record<string, number>;
   bySurface: Record<string, number>;
+  /** Match count by calendar year (YYYY), built from `fixture.date` of newly-inserted matches. */
+  byYear: Record<string, number>;
   earliestImportedMatchDate: string | null;
   latestImportedMatchDate: string | null;
+  /**
+   * Date gaps of more than 30 days within the full historical_matches coverage detected at run
+   * end. Each entry is a gap in the stored record — not necessarily in the provider's data (the
+   * provider may simply have had no matches in that window). Empty when coverage is contiguous.
+   */
+  dateGapsOver30Days: Array<{ fromDate: string; toDate: string; dayCount: number }>;
   durationMs: number;
 }

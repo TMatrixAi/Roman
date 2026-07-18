@@ -1622,8 +1622,14 @@ export const RunHistoricalBackfillCycleResponse = zod.object({
   "featureRowsInserted": zod.number(),
   "byTour": zod.record(zod.string(), zod.number()),
   "bySurface": zod.record(zod.string(), zod.number()),
+  "byYear": zod.record(zod.string(), zod.number()).describe('Newly-inserted match count by calendar year (YYYY).'),
   "earliestImportedMatchDate": zod.string().nullable(),
   "latestImportedMatchDate": zod.string().nullable(),
+  "dateGapsOver30Days": zod.array(zod.object({
+    "fromDate": zod.string(),
+    "toDate": zod.string(),
+    "dayCount": zod.number(),
+  })).describe('Date gaps of more than 30 consecutive days found in the full historical_matches store as of this run.'),
   "durationMs": zod.number()
 }).nullish()
 })
@@ -1660,7 +1666,27 @@ export const ListHistoricalBackfillJobRunsResponse = zod.array(ListHistoricalBac
 export const GetHistoricalDataFreshnessResponse = zod.object({
   "latestCoveredDate": zod.string().nullable().describe('Most recent scheduledStartAt date already stored in historical_matches (YYYY-MM-DD), or null if the table is empty.'),
   "daysBehind": zod.number().nullable().describe('Whole days between latestCoveredDate and today (UTC). Null when latestCoveredDate is null.'),
-  "asOf": zod.coerce.date()
+  "asOf": zod.coerce.date(),
+  "matchesMissingOpponentRank": zod.number().nullable().describe('Decided, non-cancelled matches where both player1_rank and player2_rank are null. Null when the table is empty.'),
+  "matchesMissingSurface": zod.number().nullable().describe('Decided, non-cancelled matches where surface is null.'),
+  "dateGapsOver30Days": zod.array(zod.object({
+    "fromDate": zod.string(),
+    "toDate": zod.string(),
+    "dayCount": zod.number(),
+  })).describe('Consecutive date gaps exceeding 30 days in the full historical_matches coverage.'),
+})
+
+export const GetRankingVerificationResponse = zod.object({
+  "computedAt": zod.string(),
+  "totalProviderRankings": zod.number().describe('Total ATP + WTA players returned by the live provider standings feed.'),
+  "totalStoredPlayers": zod.number().describe('Total players in master_players.'),
+  "discrepancies": zod.array(zod.object({
+    "playerId": zod.string(),
+    "playerName": zod.string(),
+    "storedRank": zod.number().nullable().describe('Stored currentRank in master_players, or null when not yet set.'),
+    "providerRank": zod.number().describe('Current rank from the live provider standings.'),
+    "gapPlaces": zod.number().describe('Absolute difference between stored and provider rank (or providerRank when stored is null).'),
+  })).describe('Players with a stored vs. live rank gap exceeding 10 places, sorted largest-gap-first.'),
 })
 
 

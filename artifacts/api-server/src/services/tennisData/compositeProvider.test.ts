@@ -133,3 +133,39 @@ test("non-ProviderUnavailableError from primary propagates without falling back"
   );
   assert.equal(fallback.calls.length, 0, "Fallback must not be called for non-ProviderUnavailableError");
 });
+
+// ─── getCurrentStandings routing ─────────────────────────────────────────────
+
+test("getCurrentStandings always routes to the FALLBACK (API-Tennis), not the primary", async () => {
+  const standings = [{ playerKey: "p1", rank: 1, name: "Player One", tour: "ATP" as const }];
+  const primary = makeProvider("MatchStat");
+  // Fallback implements getCurrentStandings (API-Tennis does; MatchStat does not).
+  const fallback = makeProvider("API-Tennis", {
+    getCurrentStandings: async () => { fallback.calls.push("API-Tennis.getCurrentStandings"); return standings; },
+  });
+  const composite = new CompositeTennisProvider(primary, fallback);
+
+  const result = await composite.getCurrentStandings();
+
+  assert.deepEqual(result, standings, "Should return the fallback standings unchanged");
+  assert.equal(
+    fallback.calls.filter((c) => c.includes("getCurrentStandings")).length,
+    1,
+    "Fallback getCurrentStandings must be called exactly once",
+  );
+  assert.equal(
+    primary.calls.filter((c) => c.includes("getCurrentStandings")).length,
+    0,
+    "Primary must never be called for getCurrentStandings",
+  );
+});
+
+test("getCurrentStandings returns an empty array gracefully when fallback does not implement it", async () => {
+  const primary = makeProvider("MatchStat");
+  const fallback = makeProvider("API-Tennis"); // no getCurrentStandings override
+  const composite = new CompositeTennisProvider(primary, fallback);
+
+  // Should not throw — returns [] so runRankingVerification logs the zero-standings sentinel.
+  const result = await composite.getCurrentStandings();
+  assert.deepEqual(result, [], "Should return empty array, not throw");
+});

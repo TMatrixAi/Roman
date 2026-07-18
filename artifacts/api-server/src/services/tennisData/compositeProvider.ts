@@ -128,4 +128,20 @@ export class CompositeTennisProvider implements TennisDataProvider {
     }
     return null;
   }
+
+  /**
+   * Live standings come exclusively from API-Tennis (the fallback). The MatchStat primary does
+   * not implement this method, so — like `getLiveScores` and `getCompletedMatchesByDateRange` —
+   * we route directly to the provider that can actually serve the data. If the fallback also
+   * doesn't implement it (e.g. a test stub), we return an empty array rather than throwing,
+   * which is consistent with the `runRankingVerification` guard that already handles the
+   * `totalProviderRankings: 0` sentinel.
+   */
+  async getCurrentStandings(): Promise<Array<{ playerKey: string; rank: number; name: string; tour: "ATP" | "WTA" }>> {
+    if (!this.fallback.getCurrentStandings) {
+      logger.warn({ provider: this.name }, "Neither primary nor fallback implements getCurrentStandings — ranking verification will be skipped");
+      return [];
+    }
+    return this.fallback.getCurrentStandings();
+  }
 }

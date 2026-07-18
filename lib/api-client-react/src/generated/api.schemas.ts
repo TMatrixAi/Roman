@@ -1348,12 +1348,24 @@ export interface HistoricalBackfillCycleResult {
   summary?: HistoricalBackfillCycleSummary | null;
 }
 
+export interface HistoricalDataFreshnessGap {
+  fromDate: string;
+  toDate: string;
+  dayCount: number;
+}
+
 export interface HistoricalDataFreshness {
   /** Most recent scheduledStartAt date already stored in historical_matches (YYYY-MM-DD), or null if the table is empty. */
   latestCoveredDate: string | null;
   /** Whole days between latestCoveredDate and today (UTC). Null when latestCoveredDate is null. */
   daysBehind: number | null;
   asOf: string;
+  /** Decided, non-cancelled matches where both player1_rank and player2_rank are null. */
+  matchesMissingOpponentRank?: number | null;
+  /** Decided, non-cancelled matches where surface is null. */
+  matchesMissingSurface?: number | null;
+  /** Consecutive date gaps exceeding 30 days in the full historical_matches coverage. */
+  dateGapsOver30Days?: HistoricalDataFreshnessGap[];
 }
 
 export interface RunAblationAnalysisRequest {

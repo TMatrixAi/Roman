@@ -10,10 +10,13 @@ import {
   useUpdateCandidateConfig,
   useDeleteCandidateConfig,
   getListBacktestsQueryKey,
+  useRunRankingVerification,
+  type RankingVerificationResult,
   type BacktestRun,
   type BacktestFilters,
   type BacktestDateRange,
 } from "@workspace/api-client-react"
+import { useGetHistoricalDataFreshness } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -539,6 +542,144 @@ function CandidateConfigsSection() {
   )
 }
 
+// ─── Data Health Panel ───────────────────────────────────────────────────────
+
+function DataHealthPanel() {
+  const { data: freshness, isLoading: freshnessLoading } = useGetHistoricalDataFreshness()
+  const rankVerify = useRunRankingVerification()
+  const [verifyResult, setVerifyResult] = useState<RankingVerificationResult | null>(null)
+  const [showDiscrepancies, setShowDiscrepancies] = useState(false)
+
+  const missingRank = freshness?.matchesMissingOpponentRank
+  const missingSurface = freshness?.matchesMissingSurface
+  const gaps = freshness?.dateGapsOver30Days ?? []
+
+  function handleVerify() {
+    rankVerify.mutate(undefined, {
+      onSuccess: (result) => {
+        setVerifyResult(result)
+        setShowDiscrepancies(false)
+      },
+    })
+  }
+
+  return (
+    <Card className="glass-panel border-border/40">
+      <CardHeader className="border-b border-border/50 bg-secondary/10 px-5 py-3.5">
+        <CardTitle className="text-xs font-mono font-bold tracking-widest uppercase text-muted-foreground flex items-center gap-2">
+          <Database className="w-3.5 h-3.5" />
+          Data Health
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-5 space-y-4">
+        {/* Coverage stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: "Latest Date",
+              value: freshnessLoading ? "…" : (freshness?.latestCoveredDate ?? "—"),
+              warn: false,
+            },
+            {
+              label: "Days Behind",
+              value: freshnessLoading ? "…" : (freshness?.daysBehind != null ? `${freshness.daysBehind}d` : "—"),
+              warn: (freshness?.daysBehind ?? 0) > 7,
+            },
+            {
+              label: "Missing Rank",
+              value: freshnessLoading ? "…" : (missingRank != null ? missingRank.toLocaleString() : "—"),
+              warn: (missingRank ?? 0) > 100,
+            },
+            {
+              label: "Missing Surface",
+              value: freshnessLoading ? "…" : (missingSurface != null ? missingSurface.toLocaleString() : "—"),
+              warn: (missingSurface ?? 0) > 50,
+            },
+          ].map(({ label, value, warn }) => (
+            <div key={label} className="space-y-1">
+              <div className="text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
+              <div className={`text-sm font-mono font-bold ${warn ? "text-yellow-500" : "text-foreground"}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Date gaps */}
+        {gaps.length > 0 && (
+          <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 space-y-1.5">
+            <div className="text-[9px] font-mono font-bold text-yellow-500 tracking-widest uppercase flex items-center gap-1.5">
+              <AlertTriangle className="w-3 h-3" />
+              {gaps.length} Coverage Gap{gaps.length > 1 ? "s" : ""} &gt; 30 Days
+            </div>
+            <div className="space-y-0.5">
+              {gaps.slice(0, 5).map((g, i) => (
+                <div key={i} className="text-[10px] font-mono text-muted-foreground">
+                  {g.fromDate} → {g.toDate} <span className="text-yellow-500">({g.dayCount}d)</span>
+                </div>
+              ))}
+              {gaps.length > 5 && (
+                <div className="text-[10px] font-mono text-muted-foreground">…and {gaps.length - 5} more</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Ranking verification */}
+        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/30">
+          <Button
+            size="sm"
+            variant="outline"
+            className="font-mono text-[10px] tracking-widest h-7 px-3"
+            onClick={handleVerify}
+            disabled={rankVerify.isPending}
+          >
+            {rankVerify.isPending ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1.5" />}
+            VERIFY RANKINGS
+          </Button>
+          {verifyResult && (
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {verifyResult.discrepancies.length === 0
+                ? <span className="text-green-500">✓ All rankings match (checked {verifyResult.totalProviderRankings} players)</span>
+                : (
+                  <button
+                    className="text-yellow-500 underline underline-offset-2 cursor-pointer"
+                    onClick={() => setShowDiscrepancies((p) => !p)}
+                  >
+                    {verifyResult.discrepancies.length} discrepan{verifyResult.discrepancies.length === 1 ? "cy" : "cies"} &gt;10 places
+                  </button>
+                )
+              }
+            </span>
+          )}
+          {rankVerify.isError && (
+            <span className="text-[10px] font-mono text-destructive">Verification failed</span>
+          )}
+        </div>
+
+        {/* Discrepancy detail */}
+        {showDiscrepancies && verifyResult && verifyResult.discrepancies.length > 0 && (
+          <div className="space-y-1">
+            {verifyResult.discrepancies.slice(0, 10).map((d) => (
+              <div key={d.playerId} className="flex items-center justify-between text-[10px] font-mono py-0.5 border-b border-border/20">
+                <span className="text-foreground truncate max-w-[60%]">{d.playerName}</span>
+                <span className="text-muted-foreground shrink-0">
+                  stored <span className={d.storedRank == null ? "text-destructive" : ""}>{d.storedRank ?? "—"}</span>
+                  {" → "}
+                  live <span className="text-foreground">{d.providerRank}</span>
+                  {" "}
+                  <span className="text-yellow-500">({d.gapPlaces > 0 ? "+" : ""}{(d.providerRank - (d.storedRank ?? 0))})</span>
+                </span>
+              </div>
+            ))}
+            {verifyResult.discrepancies.length > 10 && (
+              <div className="text-[10px] font-mono text-muted-foreground">…and {verifyResult.discrepancies.length - 10} more</div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 type Tab = "runs" | "candidates"
@@ -592,6 +733,9 @@ export default function BacktestingPortalPage() {
           <p><strong className="text-foreground">Original prediction records</strong> (evaluation_predictions, paper trades) are never touched by any backtest operation, including delete.</p>
         </div>
       </div>
+
+      {/* Data health */}
+      <DataHealthPanel />
 
       {/* Active runs */}
       {activeRuns.length > 0 && (

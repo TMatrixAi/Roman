@@ -43,6 +43,16 @@ export const historicalMatchesTable = pgTable(
     // without needing to know the specific upstream provider's raw payload shape.
     gameMarginsPlayer1: jsonb("game_margins_player1").notNull().default([]),
 
+    // Whether the match was played indoors. Populated from the provider's `indoor` flag when
+    // available; falls back to null rather than fabricating a value. Callers that need a best-
+    // guess can still infer it from surface ("IndoorHard" implies indoor) as a secondary signal.
+    indoor: boolean("indoor"),
+
+    // Official ATP/WTA ranking at time of match, extracted from the provider's fixture payload
+    // when available. Null means the provider did not supply it for this match -- never zero.
+    player1Rank: integer("player1_rank"),
+    player2Rank: integer("player2_rank"),
+
     // Scheduled start as reported by the provider (best available "match start" timestamp),
     // converted from the tournament venue's real local wall-clock time to UTC via
     // `resolveTournamentTimezone`/`combineDateTimeUtc`.
