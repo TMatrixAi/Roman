@@ -1,0 +1,283 @@
+Run a focused prediction-engine improvement sprint covering Recent Form, specialist models, Serve & Return calibration, and post-change Walk-Forward validation.
+
+Important rules:
+
+Do not make blind weight changes.
+Do not overwrite the active production configuration.
+Do not deploy any change unless out-of-sample testing shows a clear, reproducible improvement.
+Do not optimize raw accuracy alone. Compare accuracy, log loss, Brier score, ECE/calibration, temporal stability, and segment regressions.
+Preserve the current production config as an immutable baseline before starting.
+All proposed changes must be written as versioned candidate configurations first.
+Use only graded, locked, pre-match predictions and valid historical match data.
+Exclude pending, void, cancelled, duplicate, post-match, and known-bad pre-cascade-removal training rows.
+
+PHASE 1 — RECENT FORM AUDIT
+
+Audit the exact Recent Form implementation currently used in production.
+
+Confirm:
+
+1. Which Recent Form function is active.
+2. Whether it uses plain win rate or opponent-adjusted form.
+3. Whether it includes surface, tour level, recency decay, opponent Elo/ranking, and match quality.
+4. Whether any older Recent Form implementation is still being called.
+5. Whether the stored weight of approximately 0.367 belongs to the current implementation or an older version.
+6. Whether missing-data fallback values are pulling the module toward 50%.
+7. Whether Recent Form is duplicated or strongly correlated with Surface Elo or Serve & Return.
+
+Produce a report containing:
+
+- Current implementation path
+- Current weight
+- Average probability edge away from 50%
+- Module standalone accuracy
+- Log loss
+- Brier score
+- ECE
+- Accuracy when the module is confident
+- Accuracy when the module disagrees with the final winner
+- Correlation with Surface Elo
+- Correlation with Serve & Return
+- Results by ATP, WTA, Challenger, and ITF
+- Results by Hard, Clay, Grass, and Indoor Hard
+- Results by probability bucket and disagreement tier
+- Sample size and 95% confidence interval for every result
+
+Test candidate Recent Form versions separately:
+
+A. Current production Recent Form
+B. Plain recent win rate
+C. Opponent-adjusted Recent Form
+D. Opponent-adjusted plus recency weighting
+E. Opponent-adjusted plus recency and surface weighting
+F. Reduced-weight current Recent Form
+G. Current Recent Form removed entirely
+
+Do not assume the current module should remain the highest-weighted module.
+
+Use walk-forward and held-out evaluation to determine whether:
+
+- The implementation needs correction
+- The module weight should be reduced
+- The module should be segmented by tour or surface
+- The module should be disabled in low-data cases
+- A new opponent-adjusted version should replace the current one
+
+Save all candidate results without deploying them.
+
+PHASE 2 — RESTORE AND VALIDATE SPECIALIST MODELS
+
+Audit the specialist model pipeline.
+
+The specialist_models table currently appears to have zero rows. Determine why.
+
+Check:
+
+1. Whether the table is being populated.
+2. Whether the specialist training job runs.
+3. Whether the prediction engine reads specialist records.
+4. Whether minimum sample-size rules are blocking every specialist.
+5. Whether a schema, query, naming, surface mapping, or migration issue prevents inserts.
+6. Whether IndoorHard is inconsistently stored as Indoor Hard, indoor_hard, hard_indoor, or another value.
+7. Whether specialist configurations were removed, disabled, or left behind a feature flag.
+8. Whether historical data coverage is sufficient for ATP, WTA, Challenger, and ITF specialists.
+
+Restore the existing specialist pipeline without inventing unsupported formulas.
+
+At minimum, evaluate specialists for:
+
+- ATP Hard
+- ATP Clay
+- ATP Grass
+- ATP Indoor Hard
+- WTA Hard
+- WTA Clay
+- WTA Grass
+- WTA Indoor Hard
+- Challenger Hard
+- Challenger Clay
+- ITF Hard
+- ITF Clay
+
+Only create a specialist where sample size is sufficient.
+
+Each specialist record must store:
+
+- Segment definition
+- Training sample size
+- Validation sample size
+- Learned weights
+- Learned thresholds
+- Accuracy
+- Log loss
+- Brier score
+- ECE
+- Confidence interval
+- Created timestamp
+- Data cutoff date
+- Model version
+- Status: candidate, shadow, active, rejected
+
+Specialists must remain candidates or shadow models unless they beat the general model out of sample.
+
+Add graceful fallback to the general model when no qualified specialist exists.
+
+PHASE 3 — SERVE & RETURN CONFIDENCE CALIBRATION
+
+Audit the Serve & Return module.
+
+The current finding is that it produces the largest average edge from 50% but has the weakest accuracy when highly confident compared with Surface Elo and the General Model.
+
+Determine whether the issue comes from:
+
+- Probability scaling
+- Weighting
+- Missing or stale serve data
+- Low-quality provider fields
+- Small sample sizes
+- Tour-level differences
+- Surface differences
+- Player identity mismatches
+- Career averages overpowering recent performance
+- Return metrics being incomplete
+- Double-counting with Surface Elo or Recent Form
+- Confidence thresholds being too aggressive
+
+Measure:
+
+- Standalone accuracy
+- Accuracy by confidence bucket
+- Log loss
+- Brier score
+- ECE
+- Average edge from 50%
+- Accuracy when it agrees with Surface Elo
+- Accuracy when it disagrees with Surface Elo
+- Accuracy when it is the strongest module
+- Results by tour, surface, data-quality tier, and sample-size tier
+- Performance with complete serve/return data versus partial data
+
+Test candidate fixes independently:
+
+A. Recalibrate module probability output only
+B. Cap maximum Serve & Return edge
+C. Reduce its ensemble weight
+D. Reduce weight only in low-data segments
+E. Surface-specific calibration
+F. Tour-specific calibration
+G. Require minimum serve/return sample size before allowing a high-confidence vote
+H. Use a fallback neutral vote when critical serve/return inputs are missing
+I. Current production version unchanged
+
+Do not lower the weight solely because accuracy is imperfect. Select changes based on held-out log loss, Brier score, ECE, and stability.
+
+PHASE 4 — CREATE VERSIONED CANDIDATES
+
+For every proposed improvement, create a separate candidate configuration.
+
+Each candidate must store:
+
+- Base production config version
+- Exact Recent Form implementation and weight
+- Exact specialist model settings
+- Exact Serve & Return calibration and weight
+- All thresholds
+- Training metrics
+- Validation metrics
+- Holdout metrics
+- Surface results
+- Tour results
+- Confidence-tier results
+- Disagreement-tier results
+- Sample sizes
+- Regression warnings
+- Status: pending_review, shadow_testing, promoted, rejected
+
+Never overwrite the current active configuration.
+
+PHASE 5 — FULL WALK-FORWARD VALIDATION
+
+After the audits and candidate generation, run full-corpus walk-forward evaluation using evaluation-only mode.
+
+Compare:
+
+1. Current production baseline
+2. Best Recent Form candidate
+3. Best specialist-enabled candidate
+4. Best Serve & Return candidate
+5. Best combined candidate
+6. Ablation candidate with Recent Form removed
+7. Ablation candidate with Serve & Return removed
+8. General model without specialists
+
+Report:
+
+- Overall accuracy
+- Log loss
+- Brier score
+- ECE
+- Per-fold results
+- Temporal stability
+- Accuracy by ATP, WTA, Challenger, and ITF
+- Accuracy by Hard, Clay, Grass, and Indoor Hard
+- Accuracy by confidence tier
+- Accuracy by upset-risk tier
+- Accuracy by agreement tier
+- Accuracy in close matches
+- Accuracy where fallback logic was used
+- Percentage of matches in EXTREME disagreement
+- Total losses from HIGH and EXTREME disagreement
+- Change in 50–55% bucket performance
+- Change in 55–60% bucket performance
+- Calibration gaps by probability bucket
+- Minimum and maximum fold performance
+- Any segment regression greater than 2 percentage points
+- Any log-loss or Brier regression
+- Sample size and confidence interval
+
+The main success question is:
+
+Did the changes reduce the percentage of matches in EXTREME disagreement without creating false confidence or hurting out-of-sample calibration?
+
+PHASE 6 — FINAL REPORT
+
+Write a complete report to:
+
+docs/recent-form-specialists-serve-return-validation.md
+
+The report must include:
+
+1. Executive summary
+2. Baseline metrics
+3. Recent Form findings
+4. Specialist model findings
+5. Serve & Return findings
+6. Candidate comparison table
+7. Full Walk-Forward results
+8. Change in EXTREME disagreement rate
+9. Change in close-match performance
+10. Segment regressions
+11. Data-quality concerns
+12. Recommended next action for each module
+13. Final classification for each candidate:
+   - Deploy
+   - Continue Shadow
+   - Needs More Data
+   - Reject
+   - Investigate
+14. Exact evidence supporting each recommendation
+
+Do not automatically deploy anything.
+
+At the end, return:
+
+- Files changed
+- Migrations added
+- Tests added
+- Commands run
+- Baseline metrics
+- Best candidate metrics
+- EXTREME disagreement before and after
+- Close-match accuracy before and after
+- Any unresolved data problems
+- Clear recommendation for what I should manually approve next

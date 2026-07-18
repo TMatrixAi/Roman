@@ -7,7 +7,7 @@ import { computeAvailabilityModule } from "./availability";
 import { computeStyleMatchupModule } from "./styleMatchup";
 import { computeHeadToHeadModule } from "./headToHead";
 import { computeDataQuality, computeSurfaceSampleDepth, MODULE_IMPORTANCE, ENSEMBLE_WEIGHT_PRIOR, EXCLUDED_FROM_ENSEMBLE, EXCLUDED_FROM_DATA_QUALITY, CONFIDENCE_SHRINK, TOUR_RELIABILITY_DISCOUNT, LOW_SURFACE_SAMPLE_DISCOUNT } from "./dataQuality";
-import { buildEnsemble, worseAgreement, type ModelVote } from "./ensemble";
+import { buildEnsemble, edgeToProbability, worseAgreement, type ModelVote } from "./ensemble";
 import { computeWeightedDisagreement, computeMatchupCloseness, buildDisagreementNote, AGREEMENT_ORDER, type MatchupCloseness } from "./disagreement";
 import { calibrateProbability } from "./calibration";
 import { applyCalibration } from "../evaluation/calibration";
@@ -345,11 +345,28 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
 
   const excludedModels = input.excludedModels ?? null;
 
+  // Conditional Form weight gate (docs/module-audit-recent-form-snr.md, 2026-07-18):
+  // When Recent Form fires at >3pp edge in the OPPOSITE direction from Surface Elo (which has
+  // its own >2pp edge), the ensemble historically follows Form 73% of the time and achieves
+  // only 45.4% accuracy — below a coin flip. Following Elo instead in those cases achieves
+  // 56.7%. This gate reduces Form's weight to near-zero in that specific anti-pattern while
+  // leaving it unchanged everywhere else (Form is a +6pp confirmation signal when it agrees
+  // with Elo). The 163 affected predictions per test corpus are a small but clean gain.
+  const rawFormEdge = (recentForm.player1Form - recentForm.player2Form) / 2;
+  const rawEloEdge = surfaceElo.eloDifference / 8;
+  const formProbEdge = Math.abs(edgeToProbability(rawFormEdge) - 50);
+  const eloProbEdge = Math.abs(edgeToProbability(rawEloEdge) - 50);
+  const formEloConflict =
+    formProbEdge > 3 &&
+    eloProbEdge > 2 &&
+    Math.sign(rawFormEdge) !== Math.sign(rawEloEdge);
+  const formWeightPrior = formEloConflict ? 0.1 : ENSEMBLE_WEIGHT_PRIOR.recentForm;
+
   const moduleEdges = [
     {
       key: "surfaceElo" as const,
       name: "Surface Elo",
-      player1Edge: surfaceElo.eloDifference / 8,
+      player1Edge: rawEloEdge,
       reliability: surfaceElo.reliability,
       importance: MODULE_IMPORTANCE.surfaceElo,
       weightPrior: ENSEMBLE_WEIGHT_PRIOR.surfaceElo,
@@ -366,10 +383,10 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     {
       key: "recentForm" as const,
       name: "Recent Form",
-      player1Edge: (recentForm.player1Form - recentForm.player2Form) / 2,
+      player1Edge: rawFormEdge,
       reliability: recentForm.reliability,
       importance: MODULE_IMPORTANCE.recentForm,
-      weightPrior: ENSEMBLE_WEIGHT_PRIOR.recentForm,
+      weightPrior: formWeightPrior,
       confidenceShrink: CONFIDENCE_SHRINK.recentForm,
     },
     {
