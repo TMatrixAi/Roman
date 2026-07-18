@@ -1,0 +1,128 @@
+Make the following two fixes. Do not only change the appearance—verify both features work end to end.
+
+1. Add the Force Signal button to the main dashboard header
+
+Add a mobile-friendly FORCE SIGNAL button near the top of the main dashboard.
+
+Arrange the top controls in this order:
+
+FORCE SIGNAL → ONLINE SIGNAL → one control-space gap → LIGHT/DARK MODE
+
+Do not place Force Signal directly beside the light/dark switch. Leave enough spacing so the theme control remains visually separate.
+
+Requirements:
+
+* Keep the header responsive on mobile.
+* Prevent the controls from overlapping, wrapping incorrectly, or extending beyond the phone screen.
+* Match the existing dashboard design.
+* Make Force Signal visually different from Online Signal so users do not confuse them.
+* Force Signal should open the Force Signal workflow or page.
+* Online Signal should continue using its existing behavior.
+* Do not remove or break any existing navigation controls.
+* Verify the buttons work after refreshing the page and after switching between light and dark mode.
+
+2. Fully diagnose and repair the multi-match screenshot importer
+
+The screenshot importer previously extracted and imported multiple tennis matches from one screenshot, but it has stopped working.
+
+Do not apply another surface-level patch. Trace the complete workflow and identify the exact failure point.
+
+Audit the entire flow:
+
+1. Screenshot selection and upload
+2. Mobile image permissions
+3. File-type and file-size validation
+4. Image compression or resizing
+5. Upload request
+6. OCR or vision extraction request
+7. API authentication and environment variables
+8. Response parsing
+9. Player-name and tournament extraction
+10. Match-pair construction
+11. Duplicate filtering
+12. Importing the extracted matches into the editable batch list
+13. Sending the selected matches into the bulk prediction endpoint
+
+Add temporary structured logging for every stage so the failed stage is visible.
+
+Log:
+
+* File received
+* File name
+* MIME type
+* File size
+* Upload success or failure
+* OCR request status
+* Raw extraction response
+* Number of players detected
+* Number of match pairings created
+* Number of matches rejected
+* Exact rejection reason
+* Final number of matches added to the batch
+
+Check for these common regressions:
+
+* The frontend field name no longer matches the backend upload field
+* The API route changed
+* The response schema changed
+* JSON is being returned inside markdown code fences
+* The parser expects one match instead of an array
+* OCR output contains numbering, times, odds, seed numbers, flags, or tournament headings
+* Player names are being split across lines
+* Duplicate detection is incorrectly deleting valid matches
+* HEIC or iPhone image formats are being rejected
+* Large screenshots are timing out
+* The screenshot is being compressed too heavily
+* The request is hitting a usage limit or returning 401, 403, 413, 429, or 500 errors
+* An API key or environment variable is missing
+* The importer succeeds but the extracted matches are never written into frontend state
+* The import button remains disabled because of stale loading or validation state
+
+Make the parser tolerant of imperfect extraction.
+
+It should accept formats such as:
+
+Player A vs Player B
+Player A v Player B
+Player A - Player B
+Player A on one line and Player B directly below it
+
+It must ignore:
+
+* Match times
+* Odds
+* Rankings
+* Seed numbers
+* Flags
+* Court numbers
+* Tournament headings
+* Score information
+* Prediction percentages
+
+Add a visible error panel that shows the real failure reason instead of only saying the upload failed.
+
+Include a Copy Debug Details button so the full diagnostic result can be copied.
+
+Add a fallback option that displays the raw extracted text and allows the user to correct it before importing.
+
+Test the importer using:
+
+* One match
+* Five matches
+* Ten or more matches
+* A tall iPhone screenshot
+* PNG
+* JPEG
+* HEIC, or convert HEIC before upload
+* Player names containing hyphens, initials, accents, and multiple surnames
+
+Do not mark this task complete until an actual screenshot successfully produces multiple separate editable match rows in the Bulk Predictor.
+
+After fixing it, report:
+
+* The exact root cause
+* The files changed
+* The failed stage
+* The final response structure
+* The number of matches extracted in the test
+* Any external API or quota dependency that can still cause failure

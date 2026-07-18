@@ -1,5 +1,5 @@
 import { useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
-import { useParams } from "wouter"
+import { useParams, useSearch } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
 import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
 const AGREEMENT_STYLES: Record<string, string> = {
@@ -92,6 +92,10 @@ function ModuleCard({ title, reliability, children, icon: Icon, reliabilityLabel
 export default function PredictionResultPage() {
   const params = useParams()
   const id = parseInt(params.id || "0", 10)
+  const searchString = useSearch()
+  // forceSignal=true: show a directional pick even when tieBreakerApplied, because the user
+  // explicitly requested a forced call (e.g. arrived via the Force Signal page).
+  const forceSignal = new URLSearchParams(searchString).get("forceSignal") === "true"
   
   const { data: prediction, isLoading, isError } = useGetPrediction(id, {
     query: { queryKey: getGetPredictionQueryKey(id), enabled: !!id }
@@ -141,7 +145,7 @@ export default function PredictionResultPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
-              {engine.tieBreakerApplied ? (
+              {engine.tieBreakerApplied && !forceSignal ? (
                 /* ── TOO CLOSE TO CALL hero ─────────────────────────────────── */
                 <div>
                   <div className="flex items-center gap-2 mb-3">
@@ -211,7 +215,21 @@ export default function PredictionResultPage() {
                     <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
                       SET SCORE: {prediction.predictedSetScore}
                     </Badge>
+                    {engine.tieBreakerApplied && forceSignal && (
+                      <Badge
+                        variant="outline"
+                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md border-warning/40 bg-warning/10 text-warning"
+                        title="This prediction was within 3% of a coin flip. Force Signal mode is active — the directional pick is shown at your request, but backtesting shows these calls perform at or below chance."
+                      >
+                        <Zap className="w-3.5 h-3.5" /> FORCED SIGNAL
+                      </Badge>
+                    )}
                   </div>
+                  {engine.tieBreakerApplied && forceSignal && (
+                    <p className="text-xs text-warning/80 mt-4 max-w-md leading-relaxed font-mono border border-warning/20 bg-warning/5 rounded-lg p-3">
+                      Raw ensemble was within 3% of 50/50. Force Signal mode is active — this pick was forced at your request. Backtesting shows calls in this range perform at or below chance.
+                    </p>
+                  )}
                   {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
                     <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                       "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
@@ -230,7 +248,7 @@ export default function PredictionResultPage() {
                 </div>
               )}
 
-              {!engine.tieBreakerApplied && (
+              {(!engine.tieBreakerApplied || forceSignal) && (
                 <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
                   <div className="flex justify-between font-mono text-sm items-center">
                     <span className="font-bold text-muted-foreground tracking-widest">WIN PROBABILITY</span>
@@ -242,7 +260,7 @@ export default function PredictionResultPage() {
                 </div>
               )}
 
-              {engine.tieBreakerApplied && (
+              {engine.tieBreakerApplied && !forceSignal && (
                 <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
                   <div className="flex justify-between font-mono text-sm items-center">
                     <span className="font-bold text-muted-foreground tracking-widest">RAW PROBABILITY SPLIT</span>

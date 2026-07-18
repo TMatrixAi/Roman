@@ -20,6 +20,7 @@ const AccuracyDashboardPage = lazy(() => import('@/pages/AccuracyDashboard'));
 const ShadowReplayPage = lazy(() => import('@/pages/ShadowReplay'));
 const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
+const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ function Router() {
           <Route path="/history" component={HistoryPage} />
           <Route path="/evaluation/log" component={PredictionLogPage} />
           <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
+          <Route path="/force-signal" component={ForceSignalPage} />
           <Route path="/shadow-replay" component={ShadowReplayPage} />
           <Route path="/backtesting/:id" component={BacktestResultsPage} />
           <Route path="/backtesting" component={BacktestingPortalPage} />

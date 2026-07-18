@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -39,6 +39,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  const isForceSignalActive = location.startsWith("/force-signal")
+
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground font-sans overflow-x-hidden selection:bg-primary/20 selection:text-primary">
       {/* Background gradient */}
@@ -46,14 +48,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* ─── Top header ─────────────────────────────────────── */}
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 shadow-sm">
-        <div className="app-container min-h-[3.75rem] py-2.5 flex items-center justify-between gap-3">
+        <div className="app-container min-h-[3.75rem] py-2.5 flex items-center justify-between gap-2">
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 font-display font-bold tracking-tight text-[1.05rem] hover:opacity-80 transition-opacity shrink-0">
             <div className="w-7 h-7 bg-gradient-to-br from-accent to-accent/80 rounded-lg shadow-inner flex items-center justify-center text-accent-foreground">
               <ActivitySquare className="w-4 h-4" />
             </div>
-            <span>TENNIS<span className="text-muted-foreground font-medium">QUANT</span></span>
+            <span className="hidden sm:inline">TENNIS<span className="text-muted-foreground font-medium">QUANT</span></span>
           </Link>
 
           {/* Desktop nav */}
@@ -73,10 +75,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Right side */}
-          <div className="flex items-center gap-1">
+          {/* Right side controls: FORCE SIGNAL → ONLINE SIGNAL → [gap] → THEME */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Force Signal — visually distinct (warning/amber) from Online Signal (primary) */}
+            <Link
+              href="/force-signal"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border ${
+                isForceSignalActive
+                  ? "bg-warning/20 text-warning border-warning/40"
+                  : "bg-warning/10 text-warning/80 border-warning/20 hover:bg-warning/20 hover:text-warning hover:border-warning/40"
+              }`}
+              title="Force Signal — show a directional pick even on close matches"
+            >
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">FORCE</span>
+              <span className="sm:hidden">FS</span>
+            </Link>
+
+            {/* Online Signal (existing) */}
             <ProviderStatusIndicator />
+
+            {/* Visual gap to keep theme toggle separate */}
+            <div className="w-px h-5 bg-border/50 mx-1 hidden sm:block" />
+
+            {/* Theme toggle */}
             <ThemeToggle />
+
             {/* Mobile menu toggle */}
             <button
               className="md:hidden p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
@@ -92,6 +116,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {mobileOpen && (
           <div className="md:hidden border-t border-border/50 bg-background/95 backdrop-blur-xl">
             <nav className="app-container py-3 flex flex-col gap-1">
+              {/* Force Signal link in mobile nav */}
+              <Link
+                href="/force-signal"
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isForceSignalActive ? "bg-warning/10 text-warning font-semibold" : "text-warning/70 hover:bg-warning/10 hover:text-warning"}`}
+              >
+                <Zap className="w-4 h-4 shrink-0" />
+                Force Signal
+              </Link>
               {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
                 const active = isActive(href, location, exact)
                 return (

@@ -3,18 +3,22 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../../lib/logger";
 
 /**
- * Task #63 / Task #20: reads a matchup screenshot (bracket, schedule, or another app's matchup
- * card) and extracts ALL visible player matchups plus the event/tournament name, using a vision-
- * capable model. Supports long screenshots with multiple match cards, dark/light mode, partial
- * cards, and varying font sizes.
+ * Reads a matchup screenshot (bracket, schedule, or another app's matchup card) and extracts
+ * ALL visible player matchups plus the event/tournament name, using a vision-capable model.
  *
- * Key selection order (first that resolves wins):
- *   1. SCREENSHOT_AI_KEY (dedicated override — any provider, auto-detected by prefix)
- *   2. ANTHROPIC_API_KEY (user-provided — auto-detected by prefix)
- *   3. AI_INTEGRATIONS_OPENAI_API_KEY + AI_INTEGRATIONS_OPENAI_BASE_URL (Replit integration)
+ * Provider selection — ALL configured keys are tried in priority order; if an earlier key
+ * fails with a permanent error (quota exhaustion, invalid key, 401/403) the next configured
+ * key is tried automatically rather than failing the whole request:
+ *   1. SCREENSHOT_AI_KEY  (dedicated override — any provider, auto-detected by prefix)
+ *   2. ANTHROPIC_API_KEY  (user-provided — auto-detected by prefix; may actually be an OpenAI key)
+ *   3. AI_INTEGRATIONS_OPENAI_API_KEY + AI_INTEGRATIONS_OPENAI_BASE_URL  (Replit proxy)
  *
  * "Absent, not faked": any field the model isn't confident about comes back null rather than a
  * guess. A malformed or unparseable model response degrades gracefully into "found nothing".
+ *
+ * The returned object includes a `debugLog` array tracing every stage and, on success, the
+ * `rawText` the model returned before parsing — both are passed through to the API response
+ * so the frontend can show a real failure reason and the raw extracted text.
  */
 
 export interface RawMatchupEntry {
@@ -26,6 +30,14 @@ export interface RawMatchupEntry {
 export interface RawScreenshotRecognition {
   /** Every matchup extracted from the image. Empty array when nothing could be read. */
   matchups: RawMatchupEntry[];
+}
+
+export interface RawScreenshotRecognitionWithDebug extends RawScreenshotRecognition {
+  /** Stage-by-stage diagnostic log for every step of the recognition pipeline. */
+  debugLog: string[];
+  /** The raw text string the vision model returned before JSON parsing. Useful when the model
+   *  found something but the JSON was malformed or the player names weren't resolved. */
+  rawText?: string;
 }
 
 const EMPTY_RECOGNITION: RawScreenshotRecognition = { matchups: [] };
@@ -41,8 +53,10 @@ For each matchup, extract:
 
 Rules:
 - Ignore betting odds, probability percentages, prices, team logos, country flags, decorative elements, and sponsored content. Extract player names only.
+- Ignore match times, court numbers, seed numbers in brackets (e.g. "(1)"), rankings, scores, and score-related numbers.
 - If the image shows a full bracket or schedule, return EACH individual matchup row/card as a separate entry.
 - For long scroll-images with multiple match cards stacked vertically, return each card as a separate entry.
+- Player names may appear on separate lines (e.g. one player above the other, separated by a divider, "vs", "v", or a dash). Treat consecutive player names as a pair.
 - Only include entries where you can read at least one player name. Set unreadable fields to null.
 - If both players in a matchup are unclear or unreadable, omit that matchup from the array.
 - If the image is unrelated to tennis or completely unreadable, return an empty array.
@@ -66,23 +80,41 @@ interface ResolvedKey {
   provider: Provider;
   /** For OpenAI: override base URL (Replit proxy). Undefined = use api.openai.com directly. */
   baseUrl?: string;
+  /** Human-readable label for debug logging (never includes the key value). */
+  label: string;
 }
 
-function resolveKey(): ResolvedKey | null {
+/**
+ * Returns ALL configured providers in priority order, deduplicating by key value so the same
+ * key is never tried twice even if it appears under multiple env variable names.
+ */
+function resolveAllKeys(): ResolvedKey[] {
+  const keys: ResolvedKey[] = [];
+  const seen = new Set<string>();
+
+  function add(k: ResolvedKey) {
+    if (!seen.has(k.key)) {
+      seen.add(k.key);
+      keys.push(k);
+    }
+  }
+
   // 1. Dedicated override key (any provider)
   const dedicated = process.env.SCREENSHOT_AI_KEY;
-  if (dedicated) return { key: dedicated, provider: detectProvider(dedicated) };
+  if (dedicated) add({ key: dedicated, provider: detectProvider(dedicated), label: "SCREENSHOT_AI_KEY" });
 
   // 2. User-provided key stored as ANTHROPIC_API_KEY (may actually be OpenAI sk-proj-)
   const userKey = process.env.ANTHROPIC_API_KEY;
-  if (userKey) return { key: userKey, provider: detectProvider(userKey) };
+  if (userKey) add({ key: userKey, provider: detectProvider(userKey), label: "ANTHROPIC_API_KEY" });
 
   // 3. Replit OpenAI integration proxy
   const replitKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   const replitBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  if (replitKey && replitBase) return { key: replitKey, provider: "openai", baseUrl: replitBase };
+  if (replitKey && replitBase) {
+    add({ key: replitKey, provider: "openai", baseUrl: replitBase, label: "AI_INTEGRATIONS_OPENAI" });
+  }
 
-  return null;
+  return keys;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +171,7 @@ function parseRecognitionResponse(raw: string | null | undefined): RawScreenshot
       return { matchups: entry ? [entry] : [] };
     }
   } catch (err) {
-    logger.warn({ err, raw }, "Screenshot recognition model returned unparseable JSON -- treating as nothing recognized");
+    logger.warn({ err, rawPreview: raw.slice(0, 200) }, "Screenshot recognition model returned unparseable JSON -- treating as nothing recognized");
   }
   return EMPTY_RECOGNITION;
 }
@@ -188,50 +220,113 @@ async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "im
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Error classification
 // ---------------------------------------------------------------------------
 
-export class ScreenshotRecognitionUnavailableError extends Error {}
-
-function isRetryable(err: unknown): boolean {
+/**
+ * A permanent error means: this provider will never succeed on retry, AND we should try the
+ * next configured provider. Quota exhaustion and auth errors are permanent; rate limits are not.
+ */
+function isPermanentProviderError(err: unknown): boolean {
   const e = err as { status?: number; code?: string };
-  // Quota exhaustion is a permanent billing error — never retry it.
-  if (e?.code === "insufficient_quota") return false;
-  const status = e?.status ?? 0;
+  return (
+    e?.code === "insufficient_quota" ||
+    e?.code === "invalid_api_key" ||
+    e?.status === 401 ||
+    e?.status === 403
+  );
+}
+
+function isRateLimitError(err: unknown): boolean {
+  const status = (err as { status?: number }).status ?? 0;
   return status === 429 || status >= 500;
 }
 
-export async function recognizeMatchupScreenshot(imageBase64: string): Promise<RawScreenshotRecognition> {
-  const resolved = resolveKey();
-  if (!resolved) {
-    throw new ScreenshotRecognitionUnavailableError("No vision AI key configured (set SCREENSHOT_AI_KEY, ANTHROPIC_API_KEY, or the Replit OpenAI integration)");
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export class ScreenshotRecognitionUnavailableError extends Error {
+  debugLog?: string[];
+  constructor(message: string, debugLog?: string[]) {
+    super(message);
+    this.debugLog = debugLog;
+  }
+}
+
+export async function recognizeMatchupScreenshot(imageBase64: string): Promise<RawScreenshotRecognitionWithDebug> {
+  const providers = resolveAllKeys();
+  const debugLog: string[] = [];
+
+  const providerLabels = providers.map((p) => `${p.label}(${p.provider})`).join(", ");
+  debugLog.push(`[INIT] ${providers.length} provider(s): ${providerLabels || "NONE"}`);
+
+  if (providers.length === 0) {
+    const msg = "No vision AI key configured (set SCREENSHOT_AI_KEY, ANTHROPIC_API_KEY, or the Replit OpenAI integration)";
+    debugLog.push(`[ERROR] ${msg}`);
+    throw new ScreenshotRecognitionUnavailableError(msg, debugLog);
   }
 
   const { data, mediaType, dataUrl } = parseImageBase64(imageBase64);
-  const RETRIES = 3;
-  let lastErr: unknown;
+  const imageSizeKb = Math.round((data.length * 0.75) / 1024);
+  debugLog.push(`[IMAGE] mediaType=${mediaType} estimatedSize≈${imageSizeKb}KB`);
+  logger.info({ mediaType, imageSizeKb, providerCount: providers.length }, "Screenshot recognition starting");
 
-  logger.info({ provider: resolved.provider, hasBaseUrl: !!resolved.baseUrl }, "Screenshot recognition starting");
+  for (const resolved of providers) {
+    debugLog.push(`[TRY] ${resolved.label} provider=${resolved.provider}${resolved.baseUrl ? " (proxy)" : ""}`);
+    logger.info({ provider: resolved.provider, label: resolved.label, hasProxy: !!resolved.baseUrl }, "Screenshot recognition: trying provider");
 
-  for (let attempt = 0; attempt <= RETRIES; attempt++) {
-    try {
-      const rawText = resolved.provider === "anthropic"
-        ? await callAnthropic(resolved, data, mediaType)
-        : await callOpenAI(resolved, dataUrl);
+    const RETRIES = 2;
+    let lastErr: unknown;
+    let triedAttempts = 0;
 
-      logger.info({ attempt, provider: resolved.provider }, "Screenshot recognition succeeded");
-      return parseRecognitionResponse(rawText);
-    } catch (err: unknown) {
-      lastErr = err;
-      if (!isRetryable(err)) break; // auth, bad request, etc — bail immediately
-      if (attempt < RETRIES) {
-        const delayMs = Math.min(1000 * 2 ** attempt, 10000);
-        logger.warn({ err, attempt, delayMs, provider: resolved.provider }, "Screenshot recognition rate-limited, retrying");
-        await new Promise((r) => setTimeout(r, delayMs));
+    for (let attempt = 0; attempt <= RETRIES; attempt++) {
+      triedAttempts = attempt;
+      try {
+        const rawText =
+          resolved.provider === "anthropic"
+            ? await callAnthropic(resolved, data, mediaType)
+            : await callOpenAI(resolved, dataUrl);
+
+        const preview = rawText ? rawText.slice(0, 300).replace(/\n/g, "\\n") : "(null)";
+        debugLog.push(`[RAW] attempt=${attempt} rawText="${preview}"`);
+        logger.info({ attempt, provider: resolved.provider, label: resolved.label, rawPreview: preview }, "Screenshot recognition API call succeeded");
+
+        const result = parseRecognitionResponse(rawText);
+        debugLog.push(`[PARSED] matchups=${result.matchups.length} entries parsed from rawText`);
+        for (const m of result.matchups) {
+          debugLog.push(`  • player1="${m.player1Name}" player2="${m.player2Name}" event="${m.eventName}"`);
+        }
+
+        return { ...result, debugLog, rawText: rawText ?? undefined };
+      } catch (err: unknown) {
+        lastErr = err;
+        const e = err as { status?: number; code?: string; message?: string };
+        const errDesc = `status=${e?.status ?? "?"} code=${e?.code ?? "?"} msg="${String(e?.message ?? err).slice(0, 120)}"`;
+        debugLog.push(`[FAIL] ${resolved.label} attempt=${attempt} ${errDesc}`);
+        logger.warn({ err, attempt, provider: resolved.provider, label: resolved.label }, "Screenshot recognition attempt failed");
+
+        if (isPermanentProviderError(err)) {
+          debugLog.push(`[SKIP] ${resolved.label}: permanent error (quota/auth) — trying next provider`);
+          break;
+        }
+        if (!isRateLimitError(err)) {
+          debugLog.push(`[SKIP] ${resolved.label}: non-retryable error — trying next provider`);
+          break;
+        }
+        if (attempt < RETRIES) {
+          const delayMs = Math.min(1000 * 2 ** attempt, 8000);
+          debugLog.push(`[RETRY] waiting ${delayMs}ms before retry ${attempt + 1}`);
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
       }
     }
+
+    debugLog.push(`[NEXT] exhausted ${resolved.label} after ${triedAttempts + 1} attempt(s), trying next provider`);
+    void lastErr; // suppress unused-variable warning
   }
 
-  logger.error({ err: lastErr, provider: resolved.provider }, "Vision AI provider call failed for screenshot matchup recognition");
-  throw new ScreenshotRecognitionUnavailableError("Vision AI provider unavailable");
+  logger.error({ providers: providers.map((p) => p.label), debugLog }, "All vision AI providers failed for screenshot recognition");
+  const msg = `All ${providers.length} configured vision AI provider(s) failed — check debug log for details`;
+  throw new ScreenshotRecognitionUnavailableError(msg, debugLog);
 }

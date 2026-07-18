@@ -16,13 +16,24 @@ import { Input } from "@/components/ui/input"
 import { RecognizedChip } from "@/components/ScreenshotMatchupUpload"
 import {
   Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2, X,
-  ChevronDown, Settings2,
+  ChevronDown, Settings2, Copy, Bug, FileText, RotateCcw,
 } from "lucide-react"
 
 const MAX_FILES = 20
 
 const STORAGE_KEY = "bulkMatchupPredictor.batch.v1"
 
+// ---------------------------------------------------------------------------
+// Extended result type — the backend returns these alongside the standard fields
+// ---------------------------------------------------------------------------
+type ScreenshotResultExtended = ScreenshotMatchupResult & {
+  debugLog?: string[]
+  rawText?: string
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence
+// ---------------------------------------------------------------------------
 function readStoredBatch(): BatchItem[] | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
@@ -113,6 +124,14 @@ interface BatchItem {
   predictStatus: PredictStatus
   predictionId: number | null
   predictError: string | null
+  // Debug diagnostics from the recognition pipeline
+  debugLog?: string[]
+  rawText?: string
+  // Raw text editing fallback state
+  rawTextEditing?: boolean
+  rawTextDraft?: string
+  rawTextParsing?: boolean
+  rawTextError?: string | null
 }
 
 function isReady(item: BatchItem): boolean {
@@ -177,6 +196,85 @@ function computeGaps(items: BatchItem[]): DataGap[] {
 }
 
 // ---------------------------------------------------------------------------
+// Raw-text client-side parser
+// Turns user-edited text into name pairs to send to /api/matchups/from-text-names
+// ---------------------------------------------------------------------------
+interface NamePair { player1Name: string; player2Name: string; eventName: string | null }
+
+function parseRawTextMatchups(text: string): NamePair[] {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 1)
+  const results: NamePair[] = []
+
+  for (const line of lines) {
+    // "Player A vs Player B" / "A v B" / "A - B" / "A – B"
+    const vsMatch = line.match(/^(.+?)\s+(?:vs?\.?|[-–—])\s+(.+)$/i)
+    if (vsMatch) {
+      const p1 = vsMatch[1].trim().replace(/^\(\d+\)\s*/, "").replace(/\s*\(\d+\)$/, "")
+      const p2 = vsMatch[2].trim().replace(/^\(\d+\)\s*/, "").replace(/\s*\(\d+\)$/, "")
+      if (p1.length > 1 && p2.length > 1) {
+        results.push({ player1Name: p1, player2Name: p2, eventName: null })
+      }
+    }
+  }
+
+  // Fallback: consecutive non-empty line pairs → one matchup
+  if (results.length === 0 && lines.length >= 2) {
+    for (let i = 0; i + 1 < lines.length; i += 2) {
+      if (lines[i].length > 1 && lines[i + 1].length > 1) {
+        results.push({ player1Name: lines[i], player2Name: lines[i + 1], eventName: null })
+      }
+    }
+  }
+
+  return results
+}
+
+async function resolveFromTextNames(pairs: NamePair[]): Promise<ScreenshotResultExtended> {
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
+  const res = await fetch(`${BASE}/api/matchups/from-text-names`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ matchups: pairs }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string; detail?: string }
+    throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<ScreenshotResultExtended>
+}
+
+// ---------------------------------------------------------------------------
+// Debug helpers
+// ---------------------------------------------------------------------------
+function buildDebugText(item: BatchItem): string {
+  const lines: string[] = [
+    `FILE: ${item.fileName}`,
+    `STATUS: ${item.status}`,
+    `ERROR: ${item.errorMessage ?? "none"}`,
+    "",
+  ]
+  if (item.debugLog && item.debugLog.length > 0) {
+    lines.push("=== PIPELINE LOG ===")
+    lines.push(...item.debugLog)
+    lines.push("")
+  }
+  if (item.rawText) {
+    lines.push("=== RAW MODEL OUTPUT ===")
+    lines.push(item.rawText)
+  }
+  return lines.join("\n")
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -192,6 +290,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const [isPredicting, setIsPredicting] = useState(false)
   const [batchError, setBatchError] = useState<string | null>(null)
   const [resumableBatch, setResumableBatch] = useState<BatchItem[] | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   useEffect(() => { setResumableBatch(readStoredBatch()) }, [])
   useEffect(() => { if (items.length > 0) writeStoredBatch(items) }, [items])
@@ -222,7 +321,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   }
 
   // ---------------------------------------------------------------------------
-  // Per-item condition editing
+  // Per-item updates
   // ---------------------------------------------------------------------------
   function updateItem(key: string, patch: Partial<BatchItem>) {
     setItems((prev) => prev.map((it) => it.key === key ? { ...it, ...patch } : it))
@@ -253,11 +352,22 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
     await runWithConcurrency(toProcess, RESOLVE_CONCURRENCY, async (file, index) => {
       const key = initialItems[index].key
+      console.log(`[SCREENSHOT] [1/13] File received: ${file.name} type=${file.type} size=${file.size}B`)
+
       try {
+        console.log(`[SCREENSHOT] [4/13] Converting to base64 data URL`)
         const imageBase64 = await fileToBase64DataUrl(file)
-        const result = await recognizeMatchupScreenshot({ imageBase64 })
+        console.log(`[SCREENSHOT] [5/13] Sending OCR request — base64 length=${imageBase64.length}`)
+
+        const rawResult = await recognizeMatchupScreenshot({ imageBase64 }) as ScreenshotResultExtended
+        const result = rawResult as ScreenshotMatchupResult
+        const { debugLog, rawText } = rawResult
+
+        console.log(`[SCREENSHOT] [8/13] OCR response received — matchups=${result.matchups?.length ?? 0} warnings=${result.warnings.length}`)
+        if (debugLog) console.log(`[SCREENSHOT] Pipeline log:\n${debugLog.join("\n")}`)
 
         if (result.matchups && result.matchups.length > 1) {
+          console.log(`[SCREENSHOT] [10/13] Expanding ${result.matchups.length} matchups into separate rows`)
           const expandedItems: BatchItem[] = result.matchups.map((m, mi) => ({
             ...makeDefaultItem(`${key}-m${mi}`, mi === 0 ? file.name : `${file.name} (match ${mi + 1} of ${result.matchups!.length})`),
             status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
@@ -269,7 +379,10 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
             surfaceDetected: !!m.event.surface,
             levelDetected: !!m.event.level,
             tournamentDetected: !!m.event.recognizedName,
+            debugLog,
+            rawText,
           }))
+          console.log(`[SCREENSHOT] [12/13] ${expandedItems.filter(e => e.status === "resolved").length}/${expandedItems.length} matchups resolved`)
           setItems((prev) => {
             const idx = prev.findIndex((it) => it.key === key)
             if (idx === -1) return prev
@@ -280,6 +393,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           const detectedSurface = result.event.surface as Surface | null
           const detectedLevel = result.event.level as TournamentLevel | null
           const detectedTournament = result.event.recognizedName ?? null
+          console.log(`[SCREENSHOT] [10/13] Single match: resolved=${ready} surface=${detectedSurface} tournament=${detectedTournament}`)
           setItems((prev) =>
             prev.map((it) =>
               it.key === key
@@ -294,6 +408,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                     surfaceDetected: !!detectedSurface,
                     levelDetected: !!detectedLevel,
                     tournamentDetected: !!detectedTournament,
+                    debugLog,
+                    rawText,
                   }
                 : it,
             ),
@@ -301,22 +417,102 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        const isQuota = msg.toLowerCase().includes("quota") || msg.includes("502")
+        // Extract debugLog from ApiError.data if available (502 responses include it)
+        const errData = (err as { data?: { debugLog?: string[]; detail?: string } }).data
+        const debugLog: string[] | undefined = errData?.debugLog
+        const detail = errData?.detail ?? msg
+
+        console.error(`[SCREENSHOT] [13/13] Error for ${file.name}: ${detail}`)
+        if (debugLog) console.error(`[SCREENSHOT] Debug log:\n${debugLog.join("\n")}`)
+
+        const isQuota = msg.toLowerCase().includes("quota") || msg.includes("502") || msg.includes("insufficient")
+        const isAuth = msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("invalid_api_key")
+        const isNoKey = msg.toLowerCase().includes("no vision ai key") || msg.toLowerCase().includes("no key")
+
+        let friendlyError = "Couldn't read this screenshot. Try a clearer image."
+        if (isNoKey) friendlyError = "Vision AI is not configured — no API key is set up."
+        else if (isAuth) friendlyError = "Vision AI authentication failed — check your API key."
+        else if (isQuota) friendlyError = "Vision AI quota exhausted — all configured providers are out of credits."
+
         setItems((prev) =>
           prev.map((it) =>
             it.key === key
               ? {
                   ...it,
                   status: "read-error",
-                  errorMessage: isQuota
-                    ? "Screenshot AI is unavailable right now — try again later."
-                    : "Couldn't read this screenshot. Try a clearer image.",
+                  errorMessage: friendlyError,
+                  debugLog,
                 }
               : it,
           ),
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Raw text fallback: Parse & Retry
+  // ---------------------------------------------------------------------------
+  const handleParseRawText = async (key: string, draft: string) => {
+    const pairs = parseRawTextMatchups(draft)
+    if (pairs.length === 0) {
+      updateItem(key, { rawTextError: "No matchups found in that text. Use 'Player A vs Player B' format." })
+      return
+    }
+    updateItem(key, { rawTextParsing: true, rawTextError: null })
+    try {
+      const result = await resolveFromTextNames(pairs) as ScreenshotResultExtended
+
+      if (result.matchups && result.matchups.length > 1) {
+        const expandedItems: BatchItem[] = result.matchups.map((m, mi) => ({
+          ...makeDefaultItem(`${key}-text-m${mi}`, mi === 0 ? "Text import" : `Text import (${mi + 1} of ${result.matchups!.length})`),
+          status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
+          result: entryToResult(m),
+          errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup."),
+          surface: (m.event.surface ?? "Hard") as Surface,
+          level: (m.event.level ?? "ATP250") as TournamentLevel,
+          tournamentName: m.event.recognizedName ?? null,
+          surfaceDetected: !!m.event.surface,
+          levelDetected: !!m.event.level,
+          tournamentDetected: !!m.event.recognizedName,
+        }))
+        setItems((prev) => {
+          const idx = prev.findIndex((it) => it.key === key)
+          if (idx === -1) return prev
+          return [...prev.slice(0, idx), ...expandedItems, ...prev.slice(idx + 1)]
+        })
+      } else {
+        const ready = !!result.player1.player && !!result.player2.player
+        updateItem(key, {
+          status: ready ? "resolved" : "unresolved",
+          result,
+          rawTextEditing: false,
+          rawTextParsing: false,
+          errorMessage: ready ? null : (result.warnings[0] ?? "Couldn't match these names to known players."),
+          surface: (result.event.surface as Surface | null) ?? "Hard",
+          level: (result.event.level as TournamentLevel | null) ?? "ATP250",
+          tournamentName: result.event.recognizedName ?? null,
+          surfaceDetected: !!result.event.surface,
+          levelDetected: !!result.event.level,
+          tournamentDetected: !!result.event.recognizedName,
+        })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      updateItem(key, { rawTextParsing: false, rawTextError: `Failed to resolve names: ${msg}` })
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy debug details
+  // ---------------------------------------------------------------------------
+  const handleCopyDebug = async (item: BatchItem) => {
+    const text = buildDebugText(item)
+    const ok = await copyToClipboard(text)
+    if (ok) {
+      setCopiedKey(item.key)
+      setTimeout(() => setCopiedKey((k) => k === item.key ? null : k), 2000)
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -384,7 +580,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         <input
           ref={inputRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
           multiple
           className="hidden"
           onChange={(e) => {
@@ -465,25 +661,97 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                     {item.result.event.recognizedName && (
                       <RecognizedChip label="EVENT" name={item.result.event.recognizedName} matched={!!item.result.event.surface} />
                     )}
-                    {/* Surface chip — dim if not detected (defaulted) */}
                     <span className={`text-[0.6rem] font-bold uppercase px-1.5 py-0.5 rounded bg-secondary font-mono ${surfaceColour(item.surface)} ${!item.surfaceDetected ? "opacity-50" : ""}`} title={item.surfaceDetected ? "Detected from screenshot" : "Default — not detected"}>
                       {item.surface}
                     </span>
-                    {/* Level chip */}
                     <span className={`text-[0.6rem] text-muted-foreground uppercase font-mono px-1 py-0.5 rounded bg-secondary/60 ${!item.levelDetected ? "opacity-50" : ""}`} title={item.levelDetected ? "Detected from screenshot" : "Default — not detected"}>
                       {item.level}
                     </span>
-                    {/* Format chip */}
                     <span className="text-[0.6rem] text-muted-foreground/60 uppercase font-mono px-1 py-0.5">
                       {item.matchFormat === "BestOf5" ? "BO5" : "BO3"}
                     </span>
                   </div>
                 )}
 
+                {/* ── Error / unresolved panel ── */}
                 {(item.status === "unresolved" || item.status === "read-error") && item.errorMessage && (
-                  <div className="mt-2 text-xs text-destructive font-mono flex items-start gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>{item.errorMessage} This item will be skipped.</span>
+                  <div className="mt-2 space-y-2">
+                    {/* Main error message */}
+                    <div className="text-xs text-destructive font-mono flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{item.errorMessage} This item will be skipped unless you fix it.</span>
+                    </div>
+
+                    {/* Action row: Copy debug + raw text fallback */}
+                    <div className="flex flex-wrap gap-2 pl-5">
+                      {(item.debugLog && item.debugLog.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyDebug(item)}
+                          className="flex items-center gap-1 text-[0.6rem] font-mono text-muted-foreground/70 hover:text-muted-foreground transition-colors bg-secondary/40 px-2 py-1 rounded border border-border/40"
+                        >
+                          {copiedKey === item.key
+                            ? <><CheckCircle2 className="w-3 h-3 text-success" /> COPIED</>
+                            : <><Copy className="w-3 h-3" /> COPY DEBUG DETAILS</>}
+                        </button>
+                      )}
+                      {item.rawText && !item.rawTextEditing && (
+                        <button
+                          type="button"
+                          onClick={() => updateItem(item.key, { rawTextEditing: true, rawTextDraft: item.rawText, rawTextError: null })}
+                          className="flex items-center gap-1 text-[0.6rem] font-mono text-muted-foreground/70 hover:text-muted-foreground transition-colors bg-secondary/40 px-2 py-1 rounded border border-border/40"
+                        >
+                          <FileText className="w-3 h-3" /> EDIT & RETRY FROM RAW TEXT
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Debug log accordion */}
+                    {item.debugLog && item.debugLog.length > 0 && (
+                      <details className="pl-5">
+                        <summary className="text-[0.6rem] font-mono text-muted-foreground/50 hover:text-muted-foreground cursor-pointer flex items-center gap-1">
+                          <Bug className="w-3 h-3" /> Show diagnostic log ({item.debugLog.length} lines)
+                        </summary>
+                        <pre className="mt-1 text-[0.55rem] font-mono text-muted-foreground/60 bg-background/50 border border-border/30 rounded p-2 overflow-x-auto leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                          {item.debugLog.join("\n")}
+                        </pre>
+                      </details>
+                    )}
+
+                    {/* Raw text fallback editor */}
+                    {item.rawTextEditing && (
+                      <div className="pl-5 space-y-2">
+                        <p className="text-[0.6rem] font-mono text-muted-foreground/70">
+                          Edit the raw text below — one matchup per line in <code>Player A vs Player B</code> format, or two consecutive lines per player.
+                        </p>
+                        <textarea
+                          className="w-full text-xs font-mono bg-background border border-border rounded p-2 min-h-[80px] resize-y leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/50"
+                          value={item.rawTextDraft ?? ""}
+                          onChange={(e) => updateItem(item.key, { rawTextDraft: e.target.value })}
+                          placeholder={"Novak Djokovic vs Carlos Alcaraz\nJannik Sinner vs Daniil Medvedev"}
+                        />
+                        {item.rawTextError && (
+                          <p className="text-[0.6rem] text-destructive font-mono">{item.rawTextError}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm" variant="outline" className="font-mono text-[0.65rem] h-7 px-3"
+                            disabled={item.rawTextParsing}
+                            onClick={() => handleParseRawText(item.key, item.rawTextDraft ?? "")}
+                          >
+                            {item.rawTextParsing
+                              ? <><RefreshCw className="w-3 h-3 mr-1.5 animate-spin" /> RESOLVING...</>
+                              : <><RotateCcw className="w-3 h-3 mr-1.5" /> PARSE & MATCH</>}
+                          </Button>
+                          <Button
+                            size="sm" variant="ghost" className="font-mono text-[0.65rem] h-7 px-3 text-muted-foreground"
+                            onClick={() => updateItem(item.key, { rawTextEditing: false, rawTextError: null })}
+                          >
+                            CANCEL
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -570,7 +838,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         </div>
       )}
 
-      {/* Missing-data warnings — only shown when there are ready items with gaps */}
+      {/* Missing-data warnings */}
       {gaps.length > 0 && !anyResolving && (
         <div className="p-3 border border-warning/20 bg-warning/5 rounded-md space-y-1.5">
           <p className="text-[0.6rem] font-mono font-bold text-warning uppercase tracking-widest flex items-center gap-1.5">
