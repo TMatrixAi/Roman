@@ -49,8 +49,16 @@ export class CompositeTennisProvider implements TennisDataProvider {
   }
 
   getStatus(): ProviderStatusInfo {
-    // Report primary status; callers can also call each provider's getStatus() directly.
-    return this.primary.getStatus();
+    // When the primary is connected, report it. When it isn't (rate-limited, quota exhausted,
+    // network error) report the fallback instead — that's the provider actually serving requests,
+    // and showing the primary's "disconnected" state while the app is perfectly functional causes
+    // a misleading offline badge in the UI.
+    const primaryStatus = this.primary.getStatus();
+    if (primaryStatus.connected) return primaryStatus;
+    const fallbackStatus = this.fallback.getStatus();
+    if (fallbackStatus.connected) return fallbackStatus;
+    // Both down: return primary so the error message is as specific as possible.
+    return primaryStatus;
   }
 
   async searchPlayers(query: string): Promise<PlayerSummary[]> {
