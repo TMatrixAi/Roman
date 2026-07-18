@@ -387,3 +387,133 @@ a region-specific calibration shrink or a per-module weight cap at extreme outpu
 218/218 pass. TypeScript compilation: no errors in the specialist pipeline code; pre-existing
 type errors in `evaluation.ts` routes are from Task #44 schema additions (patternAnalysisRunsTable,
 thresholdEvaluationRunsTable) not yet present in the shared `@workspace/db` package.
+
+---
+
+## 12. Task #54 — Shadow Replay Apr–Jul 2026 (2026-07-18)
+
+### §5.3 Shadow replay batch: sprint2-validation-recent-90d (Apr 20 – Jul 17 2026)
+
+**Run summary:**
+
+| Field | Value |
+|---|---|
+| Batch label | `sprint2-validation-recent-90d` |
+| Date range | 2026-04-20 → 2026-07-17 |
+| Matches in range | 24,787 |
+| Rows written | 20,764 |
+| Accuracy-eligible (scored) | 20,106 |
+| Skipped (insufficient data) | ~2,193 |
+| Void | 0 |
+| **Accuracy** | **62.37%** |
+| Avg calibrated confidence | 50.2% |
+
+**Methodology note:** run via direct `runShadowPaperTradingReplay()` tsx invocations in
+append-only chunks (Apr 20–May 6, May 7–21, May 22–Jun 5, Jun 6–20, Jun 21–Jul 4, Jul 5–17)
+using the shared `(runKind, historicalMatchId)` unique index to prevent double-counting across
+chunks. Each chunk uses per-match point-in-time calibration history.
+
+---
+
+### §5.3.1 Accuracy trend vs earlier batches
+
+| Batch | Period | Accuracy | Gap from walk-forward test (64.5%) |
+|---|---|---|---|
+| Historical | 2020-01 – 2025-04 | 58.20% | −6.3pp |
+| Jan 2026 | 2026-01-01 – 2026-01-30 | 61.86% | −2.6pp |
+| **Apr–Jul 2026** | **2026-04-20 – 2026-07-17** | **62.37%** | **−2.1pp** |
+
+**No concerning divergence.** The Apr–Jul batch (62.37%) is within 0.5pp of the Jan batch
+(61.86%) — well below the 3pp alert threshold. The long-run trend is improving: each successive
+recent-era batch is closer to the walk-forward test estimate, which is consistent with the engine
+accumulating better Elo/form context as the corpus deepens.
+
+---
+
+### §5.3.2 Upset-risk tier breakdown (correctly monotonic)
+
+| Tier | N | Accuracy | Avg confidence |
+|---|---|---|---|
+| LOW | 1,257 | 76.2% | 50.6% |
+| MODERATE | 5,063 | 72.5% | 50.3% |
+| HIGH | 5,714 | 61.0% | 50.4% |
+| EXTREME | 8,072 | 54.7% | 49.9% |
+
+Upset-risk tiers remain properly monotonic (LOW > MODERATE > HIGH > EXTREME), consistent with
+the walk-forward test results (§3.6). The 54.7% EXTREME-tier accuracy — confirmed above 50% on
+8,072 samples — validates that even the engine's most uncertain predictions carry a small but
+real edge over random.
+
+---
+
+### §5.3.3 Surface breakdown
+
+| Surface | N scored | Accuracy |
+|---|---|---|
+| Clay | 10,909 | 62.7% |
+| Hard | 7,425 | 62.5% |
+| **Grass** | **1,772** | **60.1%** |
+
+This is the **first shadow replay batch with meaningful Grass coverage** (1,772 scored matches).
+The Apr–Jul window captures Roland Garros (May/Jun clay) and Wimbledon (Jun/Jul grass). Grass
+accuracy (60.1%) is 2.4–2.6pp below clay/hard — consistent with the walk-forward test's sparse
+grass sample (n=57, 71.9%), though the larger sample here gives a more reliable estimate.
+No specialist model for ATP/WTA-Grass exists yet (the walk-forward validation window didn't cover
+the grass season). Task #67 (fresh 4-fold walk-forward) will generate the first grass validation
+data for specialist fitting.
+
+---
+
+### §5.3.4 Tournament level breakdown
+
+| Level | N scored | Accuracy |
+|---|---|---|
+| ITF | 12,722 | 65.6% |
+| Challenger | 4,328 | 62.7% |
+| GrandSlam | 1,058 | 63.7% |
+| WTA250 | 586 | 62.6% |
+| ATP250 | 450 | **53.3%** ← flag |
+| Masters1000 | 307 | 65.5% |
+| Other | 432 | 61.3% |
+
+**ATP250 accuracy (53.3%) is the one notable concern.** On 450 samples this is robust enough to
+flag: the engine is essentially at coin-flip for ATP250 predictions in this period (French Open
+clay swing + early grass ATP250 events). Two likely drivers:
+
+1. **No ATP-Clay specialist** — the current ATP-Clay specialist has only 136 validation samples
+   and 53.0% accuracy (§11.3), so it contributes minimally. Roland Garros clay predictions in
+   May–Jun fall into this gap.
+2. **Transition window difficulty** — the Apr–Jul period straddles the clay→grass surface switch,
+   which is when ATP tour-level predictions are historically hardest (player form on new surfaces
+   is inherently noisier in the first weeks).
+
+This finding reinforces Tasks #59 (S&R over-confidence on tour-level matches) and #67 (fresh
+walk-forward to generate grass/clay specialist validation data).
+
+---
+
+### §5.3.5 Calibration bucket check (shadow batch)
+
+| Bucket | N | Avg stated | Actual acc | Gap |
+|---|---|---|---|---|
+| <55% | 17,999 | 49.2% | 63.0% | −13.8pp underconfident |
+| 55–60% | 1,595 | 56.5% | 78.2% | −21.7pp underconfident |
+| 60–65% | 256 | 62.2% | 67.2% | −5.0pp underconfident |
+| 65–70% | 154 | 67.2% | 70.1% | −2.9pp underconfident |
+| 70–75% | 94 | 71.7% | 74.5% | −2.8pp underconfident |
+| 75–80% | 7 | 76.3% | 57.1% | +19.2pp (n=7, not robust) |
+| 80%+ | 1 | 82.2% | 100% | (n=1, not robust) |
+
+The dominant pattern is **structural underconfidence in the <60% range**: 17,999 of 20,106 scored
+predictions (89.5%) are in the <55% bucket, with actual accuracy 13.8pp above stated. This
+mirrors the walk-forward finding (§8.1 and §3.3) and confirms it is a persistent engine
+characteristic, not an artifact of the historical test period.
+
+The 75–80% and 80%+ buckets are too small (n=8 combined) to draw any calibration conclusions
+from this batch alone.
+
+---
+
+*Shadow replay complete. All three sprint2 shadow batches now on record. Next shadow replay after
+Task #67 (fresh 4-fold walk-forward + specialist fitting) is recommended to assess impact of
+updated specialists and calibration on live-era simulation accuracy.*
