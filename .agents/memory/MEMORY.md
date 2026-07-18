@@ -32,6 +32,7 @@
 - [Tailwind grid mobile overflow](tailwind-grid-mobile-overflow.md) — bare `grid md:grid-cols-2` (no base grid-cols-1) lets unwrapped flex rows/long words blow past the viewport, invisibly clipped.
 - [TTL cache silent refresh & live-fixtures filter](ttl-cache-silent-refresh-and-live-fixtures-filter.md) — TtlCache needs explicit bypass for "refresh" actions; live matches were deliberately (wrongly) filtered from upcoming window.
 - [Tie-break cascade underperforms baseline](tiebreak-cascade-underperformance.md) — when the tie-break cascade actually decides a pick, real graded accuracy is at/below a coin flip — worse than the honest 50/50 it replaces.
+- [Gemini screenshot provider setup](gemini-screenshot-provider.md) — AQ.* keys use ?key= param not Bearer; gemini-flash-latest alias works when numbered models show limit:0.
 - [Full-audit-before-new-task workflow](full-audit-workflow-pattern.md) — a broad "audit everything" ask needs a scoped, report-only project task that opens by citing prior audit docs so it doesn't re-litigate settled findings.
 - [Confidence-discount fix verification](confidence-discount-verification.md) — shrink-toward-50 fixes can't move raw accuracy; check direction/gap in one fresh report, verify specialist_models isn't empty first, ablation job needs a bigger Node heap as the corpus grows.
 - [MatchStat provider & NFD transliteration](matchstat-provider-nfd-transliteration.md) — tennisapi1.p.rapidapi.com endpoint paths (now replaced), Đ/Ł/Ø non-NFD transliteration, composite provider pattern.

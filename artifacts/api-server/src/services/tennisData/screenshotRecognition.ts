@@ -71,10 +71,14 @@ Respond with ONLY a strict JSON array, no markdown, no other text:
 
 type Provider = "openai" | "anthropic" | "gemini";
 
-function detectProvider(key: string): Provider {
-  if (key.startsWith("sk-ant-")) return "anthropic";
-  if (key.startsWith("AIza")) return "gemini";
-  return "openai";
+/**
+ * Detect provider from key prefix for keys that aren't coming from a named Gemini env var.
+ * sk-ant-* → Anthropic; everything else → OpenAI.
+ * Gemini keys MUST be registered via GEMINI_API_KEY / GOOGLE_API_KEY in resolveAllKeys()
+ * where the env var name is authoritative — never inferred from key prefix.
+ */
+function detectProviderFromPrefix(key: string): "openai" | "anthropic" {
+  return key.startsWith("sk-ant-") ? "anthropic" : "openai";
 }
 
 interface ResolvedKey {
@@ -101,13 +105,13 @@ function resolveAllKeys(): ResolvedKey[] {
     }
   }
 
-  // 1. Dedicated override key (any provider)
+  // 1. Dedicated override key (any provider, detected by prefix — NOT Gemini, which needs named env var)
   const dedicated = process.env.SCREENSHOT_AI_KEY;
-  if (dedicated) add({ key: dedicated, provider: detectProvider(dedicated), label: "SCREENSHOT_AI_KEY" });
+  if (dedicated) add({ key: dedicated, provider: detectProviderFromPrefix(dedicated), label: "SCREENSHOT_AI_KEY" });
 
   // 2. User-provided key stored as ANTHROPIC_API_KEY (may actually be OpenAI sk-proj-)
   const userKey = process.env.ANTHROPIC_API_KEY;
-  if (userKey) add({ key: userKey, provider: detectProvider(userKey), label: "ANTHROPIC_API_KEY" });
+  if (userKey) add({ key: userKey, provider: detectProviderFromPrefix(userKey), label: "ANTHROPIC_API_KEY" });
 
   // 3. Replit OpenAI integration proxy
   const replitKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
@@ -207,49 +211,114 @@ async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<
 
 /**
  * Google Gemini vision call using direct REST (no SDK needed).
- * Free tier: gemini-1.5-flash supports image input, 15 RPM, 1M tokens/day.
+ * Key format from Google AI Studio is NOT required to start with "AIza" — accept any format.
+ *
+ * Model fallback chain: tries each model in order; on RESOURCE_EXHAUSTED moves to next model.
+ * Returns retryAfterMs on the thrown error so the caller can decide retryable vs permanent:
+ *   - retryAfterMs < 30 000 → transient rate-limit, outer loop will retry with backoff
+ *   - retryAfterMs >= 30 000 (or undefined) → daily quota exhausted, skip to next provider
  */
 async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
-  const model = "gemini-2.0-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${resolved.key}`;
+  const GEMINI_MODELS = [
+    "gemini-flash-latest",      // alias — always points to the current stable flash
+    "gemini-flash-lite-latest", // lighter alias — separate quota bucket
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-001",
+  ];
 
-  const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{
-      role: "user",
-      parts: [
-        { inline_data: { mime_type: mediaType, data } },
-        { text: "Extract all matchups from this screenshot." },
-      ],
-    }],
-    generationConfig: { maxOutputTokens: 800 },
-  };
+  let lastErr: unknown;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  for (const model of GEMINI_MODELS) {
+    // All Gemini API key formats (AIza*, AQ.*, etc.) use ?key= URL parameter auth.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${resolved.key}`;
 
-  if (!res.ok) {
-    // Surface the status so isPermanentProviderError can classify it
-    const errBody = await res.json().catch(() => ({})) as { error?: { code?: number; status?: string; message?: string } };
-    const code = errBody.error?.status ?? "";
-    const status = res.status;
+    const body = {
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{
+        role: "user",
+        parts: [
+          { inline_data: { mime_type: mediaType, data } },
+          { text: "Extract all matchups from this screenshot." },
+        ],
+      }],
+      generationConfig: { maxOutputTokens: 800 },
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const json = await res.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      return json.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text ?? null;
+    }
+
+    const errBody = await res.json().catch(() => ({})) as {
+      error?: {
+        code?: number;
+        status?: string;
+        message?: string;
+        details?: Array<{ retryDelay?: string; [k: string]: unknown }>;
+      }
+    };
+    const gStatus = errBody.error?.status ?? "";
+    const httpStatus = res.status;
+
+    // Parse retry delay hint from Gemini error (e.g. "155.278535ms", "2s")
+    let retryAfterMs: number | undefined;
+    for (const detail of errBody.error?.details ?? []) {
+      if (typeof detail.retryDelay === "string") {
+        const ms = detail.retryDelay.endsWith("ms")
+          ? parseFloat(detail.retryDelay)
+          : detail.retryDelay.endsWith("s")
+            ? parseFloat(detail.retryDelay) * 1000
+            : undefined;
+        if (ms !== undefined && !isNaN(ms)) { retryAfterMs = ms; break; }
+      }
+    }
+    // Also check the message text: "retry in Xs" / "retry in Xms"
+    if (retryAfterMs === undefined) {
+      const m = errBody.error?.message?.match(/retry in ([\d.]+)(m?s)/i);
+      if (m) retryAfterMs = m[2].toLowerCase() === "ms" ? parseFloat(m[1]) : parseFloat(m[1]) * 1000;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const err: any = new Error(`Gemini API error ${status}: ${errBody.error?.message ?? res.statusText}`);
-    err.status = status;
-    // Map Gemini error codes to the same shape as OpenAI errors so isPermanentProviderError works
-    if (code === "RESOURCE_EXHAUSTED" || status === 429) err.code = "insufficient_quota";
-    if (code === "PERMISSION_DENIED" || status === 403) err.status = 403;
-    if (code === "UNAUTHENTICATED" || status === 401) err.status = 401;
+    const err: any = new Error(`Gemini API error ${httpStatus} (${model}): ${errBody.error?.message ?? res.statusText}`);
+    err.status = httpStatus;
+    err.geminiStatus = gStatus;
+    err.model = model;
+    err.retryAfterMs = retryAfterMs;
+
+    // Permanent auth failures — no point trying other models
+    if (gStatus === "PERMISSION_DENIED" || httpStatus === 403) { err.status = 403; throw err; }
+    if (gStatus === "UNAUTHENTICATED" || httpStatus === 401) { err.status = 401; throw err; }
+    // 404 = model not found — try next model in the chain
+    if (httpStatus === 404) { lastErr = err; continue; }
+    // RESOURCE_EXHAUSTED with a very short retry hint = transient RPM limit, NOT quota exhaustion
+    if (gStatus === "RESOURCE_EXHAUSTED" || httpStatus === 429) {
+      const isTransient = retryAfterMs !== undefined && retryAfterMs < 30_000;
+      if (isTransient) {
+        // Let outer retry loop handle it — do NOT mark as insufficient_quota
+        throw err;
+      }
+      // Long or unknown delay = likely daily quota exhausted for this model; try next model
+      lastErr = err;
+      continue;
+    }
+
     throw err;
   }
 
-  const json = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  return json.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text ?? null;
+  // All models in the chain exhausted with long/unknown quota delays — mark as permanent so
+  // the outer provider loop skips to the next provider rather than pointlessly retrying.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (lastErr) (lastErr as any).code = "quota_exhausted";
+  throw lastErr ?? new Error("Gemini: all models in fallback chain failed");
 }
 
 async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
@@ -279,20 +348,36 @@ async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "im
 /**
  * A permanent error means: this provider will never succeed on retry, AND we should try the
  * next configured provider. Quota exhaustion and auth errors are permanent; rate limits are not.
+ *
+ * For Gemini: a 429 with a short retryAfterMs is a transient RPM rate-limit (retryable).
+ * A 429 where callGemini exhausted all models in its chain arrives with code="quota_exhausted"
+ * and IS permanent for this provider slot.
  */
 function isPermanentProviderError(err: unknown): boolean {
-  const e = err as { status?: number; code?: string };
-  return (
-    e?.code === "insufficient_quota" ||
-    e?.code === "invalid_api_key" ||
-    e?.status === 401 ||
-    e?.status === 403
-  );
+  const e = err as { status?: number; code?: string; retryAfterMs?: number };
+  // Permanent quota/auth codes
+  if (e?.code === "insufficient_quota" || e?.code === "quota_exhausted" || e?.code === "invalid_api_key") return true;
+  if (e?.status === 401 || e?.status === 403) return true;
+  // Gemini transient RPM rate-limit: has a short retry hint — NOT permanent
+  if (e?.status === 429 && e?.retryAfterMs !== undefined && e.retryAfterMs < 30_000) return false;
+  return false;
 }
 
 function isRateLimitError(err: unknown): boolean {
-  const status = (err as { status?: number }).status ?? 0;
-  return status === 429 || status >= 500;
+  const e = err as { status?: number; retryAfterMs?: number };
+  // 429 is only retryable when it's a short transient delay (Gemini RPM) or standard rate limit
+  if (e?.status === 429) return true;
+  return (e?.status ?? 0) >= 500;
+}
+
+/** Return the delay to wait before the next retry attempt (ms). Uses provider hint when available. */
+function retryDelayMs(err: unknown, attempt: number): number {
+  const hint = (err as { retryAfterMs?: number })?.retryAfterMs;
+  if (hint !== undefined && hint > 0 && hint < 30_000) {
+    // Add a small buffer on top of the provider's own hint
+    return Math.ceil(hint) + 200;
+  }
+  return Math.min(1000 * 2 ** attempt, 8000);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +455,7 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
           break;
         }
         if (attempt < RETRIES) {
-          const delayMs = Math.min(1000 * 2 ** attempt, 8000);
+          const delayMs = retryDelayMs(err, attempt);
           debugLog.push(`[RETRY] waiting ${delayMs}ms before retry ${attempt + 1}`);
           await new Promise((r) => setTimeout(r, delayMs));
         }
