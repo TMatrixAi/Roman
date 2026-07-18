@@ -111,3 +111,55 @@ test("a marker-less line is unaffected", () => {
   assert.equal(result.playerAName, "Murphy Cassone")
   assert.equal(result.playerBName, "Tristan Schoolkate")
 })
+
+// ── Task #20: new formats ────────────────────────────────────────────────────
+
+test("parses 'A — B' (em dash as player separator, no tournament)", () => {
+  const result = parseMatchupLine("Alcaraz — Sinner")
+  assert.equal(result.playerAName, "Alcaraz")
+  assert.equal(result.playerBName, "Sinner")
+  assert.equal(result.tournamentName, null)
+  assert.equal(result.parseError, null)
+})
+
+test("parses 'A — B — Tournament' (two em dashes: player separator + tournament separator)", () => {
+  const result = parseMatchupLine("Alcaraz — Sinner — Cincinnati Open")
+  assert.equal(result.playerAName, "Alcaraz")
+  assert.equal(result.playerBName, "Sinner")
+  assert.equal(result.tournamentName, "Cincinnati Open")
+  assert.equal(result.parseError, null)
+})
+
+test("parses 'A vs B (Tournament)' parenthetical suffix", () => {
+  const result = parseMatchupLine("Djokovic vs Zverev (Wimbledon)")
+  assert.equal(result.playerAName, "Djokovic")
+  assert.equal(result.playerBName, "Zverev")
+  assert.equal(result.tournamentName, "Wimbledon")
+  assert.equal(result.parseError, null)
+})
+
+test("parses 'A — B (Tournament)' (em dash player separator + parenthetical tournament)", () => {
+  const result = parseMatchupLine("Swiatek — Sabalenka (French Open)")
+  assert.equal(result.playerAName, "Swiatek")
+  assert.equal(result.playerBName, "Sabalenka")
+  assert.equal(result.tournamentName, "French Open")
+  assert.equal(result.parseError, null)
+})
+
+test("parenthetical suffix takes priority over em-dash tournament separator", () => {
+  // '(Cincinnati Open)' is the tournament; the em dash is the player separator
+  const result = parseMatchupLine("Alcaraz — Sinner (Cincinnati Open)")
+  assert.equal(result.playerAName, "Alcaraz")
+  assert.equal(result.playerBName, "Sinner")
+  assert.equal(result.tournamentName, "Cincinnati Open")
+  assert.equal(result.parseError, null)
+})
+
+test("'A vs B — Tournament' still works (em dash as tournament separator when vs is present)", () => {
+  // Regression: existing format must keep working after the em-dash fallback change.
+  const result = parseMatchupLine("Alcaraz vs Sinner — Cincinnati Open")
+  assert.equal(result.playerAName, "Alcaraz")
+  assert.equal(result.playerBName, "Sinner")
+  assert.equal(result.tournamentName, "Cincinnati Open")
+  assert.equal(result.parseError, null)
+})

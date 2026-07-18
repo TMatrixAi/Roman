@@ -4,12 +4,12 @@ import {
   recognizeMatchupScreenshot,
   createPrediction,
   type ScreenshotMatchupResult,
+  type ScreenshotMatchupEntry,
   type Surface,
   type TournamentLevel,
 } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { RecognizedChip } from "@/components/ScreenshotMatchupUpload"
 import { Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2, X } from "lucide-react"
 
@@ -133,13 +133,28 @@ function needsPredicting(item: BatchItem): boolean {
   return isReady(item) && item.predictStatus !== "success"
 }
 
+/** Converts a multi-matchup entry to a synthetic ScreenshotMatchupResult for BatchItem.result. */
+function entryToResult(m: ScreenshotMatchupEntry): ScreenshotMatchupResult {
+  return {
+    player1: m.player1,
+    player2: m.player2,
+    event: m.event,
+    warnings: m.warnings,
+  }
+}
+
 /**
- * Task #97: lets a user drop up to 20 matchup screenshots at once, resolves each one
+ * Task #97 / Task #20: lets a user drop up to 20 matchup screenshots at once, resolves each one
  * independently through the same recognition/resolution call the single-screenshot flow uses
  * (so no leaking of one screenshot's detected player/surface into another), then batch-runs the
  * existing single-match prediction engine across everything that resolved cleanly. Screenshots
  * that fail to resolve a full matchup are flagged in their own row and simply excluded from the
  * predict step -- they never block the rest of the batch.
+ *
+ * Task #20 addition: when a single screenshot contains multiple visible matchups (long bracket
+ * images, schedule cards), the API now returns a `matchups` array. Each entry is expanded into
+ * its own BatchItem with its own resolve status, so partial failures in one matchup on the image
+ * never block the others.
  */
 export interface BulkMatchupPredictorHandle {
   handleFiles: (files: File[]) => void
@@ -162,12 +177,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   }, [])
 
   // Mirror the live batch into sessionStorage as it changes, so a refresh or accidental
-  // navigation mid-run has something to offer back on return. Deliberately only fires once this
-  // run actually has items -- `items` starts empty on every mount (including right after a
-  // refresh, before the user has chosen Resume/Discard), so writing unconditionally here would
-  // wipe out the very batch we just loaded into `resumableBatch` before the user ever saw it.
-  // Storage is only ever cleared by an explicit action: discard, starting a new selection, or
-  // successfully navigating to results.
+  // navigation mid-run has something to offer back on return.
   useEffect(() => {
     if (items.length > 0) {
       writeStoredBatch(items)
@@ -237,31 +247,57 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
     // Each file is read and resolved completely independently -- separate base64 read, separate
     // API call, separate result object -- so nothing from one screenshot can leak into another's
-    // detected player/surface/tournament. Capped at RESOLVE_CONCURRENCY at a time (see above)
-    // rather than all firing at once.
+    // detected player/surface/tournament. Capped at RESOLVE_CONCURRENCY at a time.
     await runWithConcurrency(toProcess, RESOLVE_CONCURRENCY, async (file, index) => {
       const key = initialItems[index].key
       try {
         const imageBase64 = await fileToBase64DataUrl(file)
         const result = await recognizeMatchupScreenshot({ imageBase64 })
-        const ready = !!result.player1.player && !!result.player2.player
-        setItems((prev) =>
-          prev.map((it) =>
-            it.key === key
-              ? {
-                  ...it,
-                  status: ready ? "resolved" : "unresolved",
-                  result,
-                  errorMessage: ready
-                    ? null
-                    : result.warnings[0] ?? "Couldn't confidently resolve both players from this screenshot.",
-                  surface: result.event.surface ?? it.surface,
-                  level: result.event.level ?? it.level,
-                  tournamentName: result.event.recognizedName ?? null,
-                }
-              : it,
-          ),
-        )
+
+        // Multi-matchup: when the image contains multiple visible match cards, the API returns a
+        // `matchups` array with one entry per card. Expand the single BatchItem placeholder into
+        // one BatchItem per matchup so each can be resolved/predicted independently.
+        if (result.matchups && result.matchups.length > 1) {
+          const expandedItems: BatchItem[] = result.matchups.map((m, mi) => ({
+            key: `${key}-m${mi}`,
+            fileName: mi === 0 ? file.name : `${file.name} (match ${mi + 1} of ${result.matchups!.length})`,
+            status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
+            result: entryToResult(m),
+            errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup from the screenshot."),
+            surface: (m.event.surface ?? "Hard") as Surface,
+            level: (m.event.level ?? "ATP250") as TournamentLevel,
+            tournamentName: m.event.recognizedName,
+            predictStatus: "idle" as PredictStatus,
+            predictionId: null,
+            predictError: null,
+          }))
+
+          setItems((prev) => {
+            const idx = prev.findIndex((it) => it.key === key)
+            if (idx === -1) return prev
+            return [...prev.slice(0, idx), ...expandedItems, ...prev.slice(idx + 1)]
+          })
+        } else {
+          // Single matchup (or no matchup found): existing behavior.
+          const ready = !!result.player1.player && !!result.player2.player
+          setItems((prev) =>
+            prev.map((it) =>
+              it.key === key
+                ? {
+                    ...it,
+                    status: ready ? "resolved" : "unresolved",
+                    result,
+                    errorMessage: ready
+                      ? null
+                      : result.warnings[0] ?? "Couldn't confidently resolve both players from this screenshot.",
+                    surface: result.event.surface ?? it.surface,
+                    level: result.event.level ?? it.level,
+                    tournamentName: result.event.recognizedName ?? null,
+                  }
+                : it,
+            ),
+          )
+        }
       } catch {
         setItems((prev) =>
           prev.map((it) =>
@@ -283,7 +319,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
     // Run one at a time -- these hit the same real prediction engine as the single-match flow,
     // and keeping it sequential keeps provider load/rate limits predictable for a batch of up to
-    // 20, while still letting one failure not block the rest.
+    // 20 (possibly more when multi-matchup screenshots are expanded), while still letting one
+    // failure not block the rest.
     for (const item of items) {
       if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
       try {
@@ -334,168 +371,157 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   }
 
   return (
-    <Card className="border-dashed">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-sm bg-secondary flex items-center justify-center shrink-0">
-              <Layers className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="font-bold text-sm">BULK UPLOAD</p>
-              <p className="text-xs text-muted-foreground font-mono">
-                Drop up to {MAX_FILES} screenshots -- we'll resolve each matchup and run the engine on everything that matches
-              </p>
-            </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-xs text-muted-foreground font-mono">
+          Drop up to {MAX_FILES} screenshots — each image is read by the vision AI independently.
+          Long images with multiple match cards are expanded into separate matchup rows automatically.
+        </p>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? [])
+            if (files.length > 0) void handleFiles(files)
+            e.target.value = ""
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="font-mono shrink-0"
+          disabled={anyResolving || isPredicting}
+          onClick={() => inputRef.current?.click()}
+        >
+          {anyResolving ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> READING...</>
+          ) : (
+            <><Layers className="w-4 h-4 mr-2" /> SELECT SCREENSHOTS</>
+          )}
+        </Button>
+      </div>
+
+      {resumableBatch && !hasItems && (
+        <div className="p-3 border border-primary/30 bg-primary/5 text-sm rounded-md font-mono flex items-start gap-3 flex-wrap">
+          <History className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
+          <div className="flex-1 min-w-[220px]">
+            <p>
+              Found an unfinished batch from before the page refreshed —{" "}
+              {resumableBatch.length} item{resumableBatch.length === 1 ? "" : "s"}, {resumableBatch.filter(isReady).length} resolved.
+            </p>
           </div>
-
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? [])
-              if (files.length > 0) void handleFiles(files)
-              e.target.value = ""
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono"
-            disabled={anyResolving || isPredicting}
-            onClick={() => inputRef.current?.click()}
-          >
-            {anyResolving ? (
-              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> READING...</>
-            ) : (
-              <><Layers className="w-4 h-4 mr-2" /> SELECT SCREENSHOTS</>
-            )}
-          </Button>
-        </div>
-
-        {resumableBatch && !hasItems && (
-          <div className="mt-4 p-3 border border-primary/30 bg-primary/5 text-sm rounded-md font-mono flex items-start gap-3 flex-wrap">
-            <History className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
-            <div className="flex-1 min-w-[220px]">
-              <p>
-                Found an unfinished batch from before the page refreshed --{" "}
-                {resumableBatch.length} screenshot{resumableBatch.length === 1 ? "" : "s"}, {resumableBatch.filter(isReady).length} resolved.
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <Button size="sm" variant="accent" className="font-mono" onClick={handleResume}>
-                RESUME BATCH
-              </Button>
-              <Button size="sm" variant="outline" className="font-mono" onClick={handleDiscardResumable}>
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> DISCARD
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {selectionWarning && (
-          <div className="mt-4 p-3 border border-warning/30 bg-warning/10 text-sm rounded-md font-mono flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warning" />
-            <div>{selectionWarning}</div>
-          </div>
-        )}
-
-        {hasItems && (
-          <div className="mt-4 space-y-2">
-            {items.map((item) => (
-              <div key={item.key} className="p-3 border rounded-md bg-secondary/20">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">{item.fileName}</span>
-                  <div className="flex items-center gap-2 ml-auto shrink-0">
-                    <ItemStatusBadge item={item} />
-                    {/* Per-row delete button */}
-                    <button
-                      onClick={() => handleDeleteItem(item.key)}
-                      disabled={item.status === "resolving" || item.predictStatus === "pending"}
-                      className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      aria-label={`Remove ${item.fileName}`}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {item.status === "resolving" && (
-                  <div className="mt-2 text-xs text-muted-foreground font-mono flex items-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Reading screenshot...
-                  </div>
-                )}
-
-                {item.result && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <RecognizedChip label="PLAYER 1" name={item.result.player1.recognizedName} matched={!!item.result.player1.player} />
-                    <RecognizedChip label="PLAYER 2" name={item.result.player2.recognizedName} matched={!!item.result.player2.player} />
-                    <RecognizedChip label="EVENT" name={item.result.event.recognizedName} matched={!!item.result.event.surface} />
-                  </div>
-                )}
-
-                {item.errorMessage && (item.status === "unresolved" || item.status === "read-error") && (
-                  <div className="mt-2 text-xs text-destructive font-mono flex items-start gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>{item.errorMessage} This screenshot will be skipped.</span>
-                  </div>
-                )}
-
-                {item.predictStatus === "error" && (
-                  <div className="mt-2 text-xs text-destructive font-mono flex items-start gap-2">
-                    <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>{item.predictError}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {batchError && (
-          <div className="mt-4 p-3 border border-destructive/30 bg-destructive/10 text-destructive text-sm rounded-md font-mono flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>{batchError}</div>
-          </div>
-        )}
-
-        {hasItems && (
-          <div className="mt-5">
-            <Button
-              size="lg"
-              className="w-full font-bold font-mono h-12"
-              variant="accent"
-              disabled={anyResolving || isPredicting || resolvedCount === 0}
-              onClick={handlePredictClick}
-            >
-              {isPredicting ? (
-                <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
-              ) : pendingPredictCount === 0 ? (
-                // Everything ready in this batch was already predicted (e.g. resumed after a
-                // refresh that hit mid-run) -- nothing left to (re-)submit, just take the user to
-                // the results they already generated.
-                <><CheckCircle2 className="w-5 h-5 mr-2" /> VIEW {alreadyPredictedCount} PREDICTED RESULT{alreadyPredictedCount === 1 ? "" : "S"}</>
-              ) : (
-                <><Activity className="w-5 h-5 mr-2" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
-              )}
+          <div className="flex gap-2 shrink-0">
+            <Button size="sm" variant="accent" className="font-mono" onClick={handleResume}>
+              RESUME BATCH
             </Button>
-            {alreadyPredictedCount > 0 && pendingPredictCount > 0 && !anyResolving && (
-              <p className="text-xs text-muted-foreground font-mono mt-2 text-center">
-                {alreadyPredictedCount} matchup{alreadyPredictedCount === 1 ? "" : "s"} already predicted from before -- only the remaining {pendingPredictCount} will run.
-              </p>
-            )}
-            {resolvedCount === 0 && !anyResolving && (
-              <p className="text-xs text-muted-foreground font-mono mt-2 text-center">
-                No screenshots in this batch resolved to a full matchup yet.
-              </p>
-            )}
+            <Button size="sm" variant="outline" className="font-mono" onClick={handleDiscardResumable}>
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" /> DISCARD
+            </Button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+
+      {selectionWarning && (
+        <div className="p-3 border border-warning/30 bg-warning/10 text-sm rounded-md font-mono flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warning" />
+          <div>{selectionWarning}</div>
+        </div>
+      )}
+
+      {hasItems && (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item.key} className="p-3 border rounded-md bg-secondary/20">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">{item.fileName}</span>
+                <div className="flex items-center gap-2 ml-auto shrink-0">
+                  <ItemStatusBadge item={item} />
+                  {/* Per-row delete button */}
+                  <button
+                    onClick={() => handleDeleteItem(item.key)}
+                    disabled={item.status === "resolving" || item.predictStatus === "pending"}
+                    className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label={`Remove ${item.fileName}`}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {item.status === "resolving" && (
+                <div className="mt-2 text-xs text-muted-foreground font-mono flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Reading screenshot...
+                </div>
+              )}
+
+              {item.result && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <RecognizedChip label="PLAYER 1" name={item.result.player1.recognizedName} matched={!!item.result.player1.player} />
+                  <RecognizedChip label="PLAYER 2" name={item.result.player2.recognizedName} matched={!!item.result.player2.player} />
+                  <RecognizedChip label="EVENT" name={item.result.event.recognizedName} matched={!!item.result.event.surface} />
+                </div>
+              )}
+
+              {item.errorMessage && (item.status === "unresolved" || item.status === "read-error") && (
+                <div className="mt-2 text-xs text-destructive font-mono flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{item.errorMessage} This item will be skipped.</span>
+                </div>
+              )}
+
+              {item.predictStatus === "error" && (
+                <div className="mt-2 text-xs text-destructive font-mono flex items-start gap-2">
+                  <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{item.predictError}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {batchError && (
+        <div className="p-3 border border-destructive/30 bg-destructive/10 text-destructive text-sm rounded-md font-mono flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div>{batchError}</div>
+        </div>
+      )}
+
+      {hasItems && (
+        <Button
+          size="lg"
+          className="w-full font-bold font-mono h-12"
+          variant="accent"
+          disabled={anyResolving || isPredicting || resolvedCount === 0}
+          onClick={handlePredictClick}
+        >
+          {isPredicting ? (
+            <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
+          ) : pendingPredictCount === 0 ? (
+            // Everything ready in this batch was already predicted (e.g. resumed after a
+            // refresh that hit mid-run) -- nothing left to (re-)submit, just take the user to
+            // the results they already generated.
+            <><CheckCircle2 className="w-5 h-5 mr-2" /> VIEW {alreadyPredictedCount} PREDICTED RESULT{alreadyPredictedCount === 1 ? "" : "S"}</>
+          ) : (
+            <><Activity className="w-5 h-5 mr-2" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
+          )}
+        </Button>
+      )}
+      {hasItems && alreadyPredictedCount > 0 && pendingPredictCount > 0 && !anyResolving && (
+        <p className="text-xs text-muted-foreground font-mono text-center">
+          {alreadyPredictedCount} matchup{alreadyPredictedCount === 1 ? "" : "s"} already predicted — only the remaining {pendingPredictCount} will run.
+        </p>
+      )}
+      {hasItems && resolvedCount === 0 && !anyResolving && (
+        <p className="text-xs text-muted-foreground font-mono text-center">
+          No items in this batch resolved to a full matchup yet.
+        </p>
+      )}
+    </div>
   )
 })
 

@@ -9,11 +9,10 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
-import { LedgerMatchupSearch } from "@/components/LedgerMatchupSearch"
+import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
-import { storePasteSearchHandoff } from "@/lib/pasteSearchHandoff"
-import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste } from "lucide-react"
+import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
 
 function PlayerCard({ 
   playerId, 
@@ -129,6 +128,9 @@ export default function PredictBuilderPage() {
   const [tournamentName, setTournamentName] = useState(prefillTournamentName ?? '')
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
+  // Match Conditions collapsed by default -- only the Execute button is visible until expanded.
+  const [conditionsExpanded, setConditionsExpanded] = useState(false)
+
   const createPrediction = useCreatePrediction()
 
   const handleRunModel = () => {
@@ -150,11 +152,6 @@ export default function PredictBuilderPage() {
         setLocation(`/predictions/${prediction.id}`)
       }
     })
-  }
-
-  const goToPasteMatches = (predictions: PredictionSummary[], startIndex: number) => {
-    storePasteSearchHandoff(predictions, startIndex)
-    setLocation("/history?pasteSearch=1")
   }
 
   return (
@@ -184,7 +181,7 @@ export default function PredictBuilderPage() {
         />
       </div>
 
-      {/* Box 3 — Player Search: search live provider to fill slots above, or paste multiple matchups to find existing ones */}
+      {/* Box 3 — Input methods: Player Search, Paste Search (multi-line), Bulk Upload (screenshots) */}
       <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
@@ -196,6 +193,10 @@ export default function PredictBuilderPage() {
               <TabsTrigger value="paste" className="font-mono gap-2">
                 <ClipboardPaste className="w-4 h-4" />
                 PASTE SEARCH
+              </TabsTrigger>
+              <TabsTrigger value="bulk" className="font-mono gap-2">
+                <Layers className="w-4 h-4" />
+                BULK UPLOAD
               </TabsTrigger>
             </TabsList>
 
@@ -209,115 +210,138 @@ export default function PredictBuilderPage() {
             </TabsContent>
 
             <TabsContent value="paste">
-              <p className="text-xs text-muted-foreground font-mono mb-4">
-                Paste a list of matchups (one per line) to find saved predictions in the Ledger. Results open in the Ledger with step-through navigation.
-              </p>
-              <LedgerMatchupSearch onView={goToPasteMatches} />
+              <PasteMatchupPredictor />
+            </TabsContent>
+
+            <TabsContent value="bulk">
+              <BulkMatchupPredictor />
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
-      {/* Box 4 — Bulk Uploads: predict multiple matchups from screenshots */}
-      <BulkMatchupPredictor />
-
       {/* Match Conditions — only visible once both players are selected */}
       {player1Id && player2Id && (
         <Card className="border-primary/30 shadow-xl overflow-hidden glass-panel relative">
           <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -mr-48 -mt-48 pointer-events-none" />
-          <CardHeader className="bg-secondary/40 border-b border-border/50 relative z-10 p-6 sm:p-8">
-            <CardTitle className="text-2xl font-display flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Settings2 className="w-6 h-6 text-primary" />
-              </div>
-              Match Conditions
-            </CardTitle>
-            <CardDescription className="text-base mt-2">Engine weights adjust based on these parameters.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 sm:p-8 relative z-10">
-            <div className="space-y-3 mb-8">
-              <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
-                Tournament Name
-                {prefillTournamentName && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
-              </label>
-              <Input
-                value={tournamentName}
-                onChange={(e) => setTournamentName(e.target.value)}
-                placeholder="e.g. Cincinnati Open"
-                className="h-12 text-base bg-background/50 border-border/60 focus:border-primary focus:ring-primary/20 transition-all"
-              />
-              <p className="text-xs text-muted-foreground/80 font-mono">
-                Used to look up real venue weather and travel distance. Separate from Level below — enter the actual tournament name, not a category.
-              </p>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-              <div className="space-y-3">
-                <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
-                  Surface
-                  {prefillSurface && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
-                </label>
-                <Select value={surface} onChange={(e) => setSurface(e.target.value as Surface)} className="h-12 bg-background/50">
-                  <option value="Hard">Hard Court</option>
-                  <option value="Clay">Clay</option>
-                  <option value="Grass">Grass</option>
-                  <option value="IndoorHard">Indoor Hard</option>
-                </Select>
-              </div>
-              <div className="space-y-3">
-                <label className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">Format</label>
-                <Select value={format} onChange={(e) => setFormat(e.target.value as MatchFormat)} className="h-12 bg-background/50">
-                  <option value="BestOf3">Best of 3</option>
-                  <option value="BestOf5">Best of 5 (Slams)</option>
-                </Select>
-              </div>
-              <div className="space-y-3">
-                <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
-                  Level
-                  {prefillLevel && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
-                </label>
-                <Select value={level} onChange={(e) => setLevel(e.target.value as TournamentLevel)} className="h-12 bg-background/50">
-                  <option value="GrandSlam">Grand Slam</option>
-                  <option value="Masters1000">Masters 1000</option>
-                  <option value="WTA1000">WTA 1000</option>
-                  <option value="ATP500">ATP 500</option>
-                  <option value="WTA500">WTA 500</option>
-                  <option value="ATP250">ATP 250</option>
-                  <option value="WTA250">WTA 250</option>
-                  <option value="Challenger">Challenger</option>
-                </Select>
-              </div>
-            </div>
-
-            <div className="mt-10 pt-8 border-t border-border/50">
-              {createPrediction.isError && (
-                <div className="mb-6 p-4 border border-destructive/30 bg-destructive/5 text-destructive text-sm rounded-xl font-mono flex items-start gap-3">
-                  <Activity className="w-5 h-5 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="block mb-1">ENGINE ERROR:</strong>
-                    Failed to run prediction. Provider may be unavailable or matchup data is insufficient.
-                  </div>
+          {/* Collapsible header — always visible, click to expand/collapse the settings */}
+          <button
+            type="button"
+            className="w-full text-left bg-secondary/40 border-b border-border/50 relative z-10 p-6 sm:p-8 hover:bg-secondary/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            onClick={() => setConditionsExpanded((prev) => !prev)}
+            aria-expanded={conditionsExpanded}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Settings2 className="w-6 h-6 text-primary" />
                 </div>
-              )}
-
-              <Button 
-                size="lg" 
-                className="w-full font-bold font-mono text-lg h-16 rounded-xl relative overflow-hidden group" 
-                variant="accent"
-                disabled={createPrediction.isPending || player1Id === player2Id}
-                onClick={handleRunModel}
-              >
-                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-                <span className="relative z-10 flex items-center justify-center gap-3">
-                  {createPrediction.isPending ? (
-                    <><RefreshCw className="w-6 h-6 animate-spin" /> RUNNING MODELS...</>
-                  ) : (
-                    <><Activity className="w-6 h-6" /> EXECUTE PREDICTION ENGINE</>
-                  )}
-                </span>
-              </Button>
+                <div>
+                  <CardTitle className="text-2xl font-display">Match Conditions</CardTitle>
+                  <CardDescription className="text-base mt-1">
+                    {conditionsExpanded ? "Engine weights adjust based on these parameters." : "Tap to set surface, format, and tournament."}
+                  </CardDescription>
+                </div>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform duration-200 ${conditionsExpanded ? "rotate-180" : ""}`} />
             </div>
-          </CardContent>
+          </button>
+
+          {/* Collapsible fields */}
+          {conditionsExpanded && (
+            <CardContent className="p-6 sm:p-8 relative z-10">
+              <div className="space-y-3 mb-8">
+                <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
+                  Tournament Name
+                  {prefillTournamentName && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
+                </label>
+                <Input
+                  value={tournamentName}
+                  onChange={(e) => setTournamentName(e.target.value)}
+                  placeholder="e.g. Cincinnati Open"
+                  className="h-12 text-base bg-background/50 border-border/60 focus:border-primary focus:ring-primary/20 transition-all"
+                />
+                <p className="text-xs text-muted-foreground/80 font-mono">
+                  Used to look up real venue weather and travel distance. Separate from Level below — enter the actual tournament name, not a category.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
+                    Surface
+                    {prefillSurface && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
+                  </label>
+                  <Select value={surface} onChange={(e) => setSurface(e.target.value as Surface)} className="h-12 bg-background/50">
+                    <option value="Hard">Hard Court</option>
+                    <option value="Clay">Clay</option>
+                    <option value="Grass">Grass</option>
+                    <option value="IndoorHard">Indoor Hard</option>
+                  </Select>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">Format</label>
+                  <Select value={format} onChange={(e) => setFormat(e.target.value as MatchFormat)} className="h-12 bg-background/50">
+                    <option value="BestOf3">Best of 3</option>
+                    <option value="BestOf5">Best of 5 (Slams)</option>
+                  </Select>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-2 uppercase tracking-widest">
+                    Level
+                    {prefillLevel && <Badge variant="secondary" className="text-[9px] px-1.5 py-0">AUTO-DETECTED</Badge>}
+                  </label>
+                  <Select value={level} onChange={(e) => setLevel(e.target.value as TournamentLevel)} className="h-12 bg-background/50">
+                    <option value="GrandSlam">Grand Slam</option>
+                    <option value="Masters1000">Masters 1000</option>
+                    <option value="WTA1000">WTA 1000</option>
+                    <option value="ATP500">ATP 500</option>
+                    <option value="WTA500">WTA 500</option>
+                    <option value="ATP250">ATP 250</option>
+                    <option value="WTA250">WTA 250</option>
+                    <option value="Challenger">Challenger</option>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          )}
+
+          {/* Execute button — always visible regardless of collapse state */}
+          <div className="p-6 sm:p-8 pt-0 relative z-10">
+            {createPrediction.isError && conditionsExpanded && (
+              <div className="mb-6 p-4 border border-destructive/30 bg-destructive/5 text-destructive text-sm rounded-xl font-mono flex items-start gap-3">
+                <Activity className="w-5 h-5 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block mb-1">ENGINE ERROR:</strong>
+                  Failed to run prediction. Provider may be unavailable or matchup data is insufficient.
+                </div>
+              </div>
+            )}
+            {createPrediction.isError && !conditionsExpanded && (
+              <div className="mb-4 p-3 border border-destructive/30 bg-destructive/5 text-destructive text-xs rounded-lg font-mono flex items-center gap-2">
+                <Activity className="w-4 h-4 shrink-0" />
+                Engine error — expand Match Conditions for details.
+              </div>
+            )}
+
+            <Button 
+              size="lg" 
+              className="w-full font-bold font-mono text-lg h-16 rounded-xl relative overflow-hidden group" 
+              variant="accent"
+              disabled={createPrediction.isPending || player1Id === player2Id}
+              onClick={handleRunModel}
+            >
+              <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+              <span className="relative z-10 flex items-center justify-center gap-3">
+                {createPrediction.isPending ? (
+                  <><RefreshCw className="w-6 h-6 animate-spin" /> RUNNING MODELS...</>
+                ) : (
+                  <><Activity className="w-6 h-6" /> EXECUTE PREDICTION ENGINE</>
+                )}
+              </span>
+            </Button>
+          </div>
         </Card>
       )}
 

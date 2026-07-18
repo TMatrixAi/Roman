@@ -1,0 +1,374 @@
+import { useEffect, useState } from "react"
+import { useLocation } from "wouter"
+import { searchPlayers, createPrediction, type PlayerSummary } from "@workspace/api-client-react"
+import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { ClipboardPaste, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, HelpCircle } from "lucide-react"
+
+const STORAGE_KEY = "pasteMatchupPredictor.text.v1"
+const RESOLVE_CONCURRENCY = 4
+
+type LineStatus =
+  | "resolving"
+  | "resolved"
+  | "ambiguous"
+  | "not-found"
+  | "parse-error"
+  | "predict-pending"
+  | "predict-success"
+  | "predict-error"
+
+interface PasteLine {
+  key: string
+  raw: string
+  parsed: ParsedMatchupLine
+  status: LineStatus
+  player1: PlayerSummary | null
+  player2: PlayerSummary | null
+  errorMessage: string | null
+  predictionId: number | null
+  resolvedTournament: string | null
+}
+
+async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T, index: number) => Promise<void>): Promise<void> {
+  let nextIndex = 0
+  async function runNext(): Promise<void> {
+    const index = nextIndex++
+    if (index >= items.length) return
+    await worker(items[index], index)
+    await runNext()
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext))
+}
+
+function normName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/**
+ * Resolves a pasted player name to a real PlayerSummary by name search.
+ * Uses an exact case-insensitive match first, then a word-subset match (so "Alcaraz" →
+ * "Carlos Alcaraz"). Returns null (with error message) for ambiguous or not-found cases.
+ * Never guesses: two or more confident candidates → ambiguous, not silently resolved.
+ */
+async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummary | null; error: string | null }> {
+  try {
+    if (name.trim().length < 2) return { player: null, error: `"${name}" is too short to search` }
+    const candidates = await searchPlayers({ query: name })
+
+    // Exact case-insensitive match
+    const exact = candidates.filter((c) => normName(c.name) === normName(name))
+    if (exact.length === 1) return { player: exact[0], error: null }
+    if (exact.length > 1) return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+
+    // Word-subset match: handles "Alcaraz" → "Carlos Alcaraz", surname-only inputs, etc.
+    const words = normName(name).split(" ").filter(Boolean)
+    const confident = candidates.filter((c) => {
+      const cWords = new Set(normName(c.name).split(" ").filter(Boolean))
+      return words.length > 0 && words.every((w) => cWords.has(w))
+    })
+    if (confident.length === 1) return { player: confident[0], error: null }
+    if (confident.length > 1) return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+
+    return { player: null, error: `"${name}" not found — check spelling or use Player Search` }
+  } catch {
+    return { player: null, error: `Search failed for "${name}" — try again` }
+  }
+}
+
+/**
+ * Multi-line paste → prediction batch.
+ * Accepts one matchup per line in any of the supported formats (A vs B, A v B, A - B, A — B,
+ * A versus B, with optional (Tournament) suffix). Resolves player names against the live player
+ * search and shows per-line status. Never fails the whole batch on one bad line.
+ * Pasted text is preserved in sessionStorage across page refreshes.
+ */
+export function PasteMatchupPredictor() {
+  const [text, setText] = useState("")
+  const [lines, setLines] = useState<PasteLine[]>([])
+  const [isResolving, setIsResolving] = useState(false)
+  const [isPredicting, setIsPredicting] = useState(false)
+  const [batchError, setBatchError] = useState<string | null>(null)
+  const [, setLocation] = useLocation()
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY)
+      if (saved) setText(saved)
+    } catch { /* best-effort */ }
+  }, [])
+
+  const handleTextChange = (newText: string) => {
+    setText(newText)
+    try { sessionStorage.setItem(STORAGE_KEY, newText) } catch { /* best-effort */ }
+  }
+
+  const handleResolve = async () => {
+    setBatchError(null)
+    const parsed = parseMatchupLines(text)
+
+    if (parsed.length === 0) {
+      setBatchError('No matchup lines found. Paste one or more lines like "Player A vs Player B".')
+      return
+    }
+
+    const initialLines: PasteLine[] = parsed.map((p, i) => ({
+      key: `line-${i}-${crypto.randomUUID()}`,
+      raw: p.raw,
+      parsed: p,
+      status: p.parseError ? ("parse-error" as LineStatus) : ("resolving" as LineStatus),
+      player1: null,
+      player2: null,
+      errorMessage: p.parseError,
+      predictionId: null,
+      resolvedTournament: p.tournamentName,
+    }))
+
+    setLines(initialLines)
+    setIsResolving(true)
+
+    const resolvable = initialLines.filter((l) => !l.parsed.parseError && l.parsed.playerAName && l.parsed.playerBName)
+
+    await runWithConcurrency(resolvable, RESOLVE_CONCURRENCY, async (lineItem) => {
+      const { parsed: p } = lineItem
+      if (!p.playerAName || !p.playerBName) return
+
+      const [resA, resB] = await Promise.all([
+        resolvePlayerByName(p.playerAName),
+        resolvePlayerByName(p.playerBName),
+      ])
+
+      let status: LineStatus
+      let errorMessage: string | null = null
+
+      if (resA.player && resB.player) {
+        if (resA.player.id === resB.player.id) {
+          status = "ambiguous"
+          errorMessage = "Both names resolved to the same player — check the matchup"
+        } else {
+          status = "resolved"
+        }
+      } else {
+        const errs = [resA.error, resB.error].filter(Boolean)
+        status = "not-found"
+        errorMessage = errs.join(" | ")
+      }
+
+      setLines((prev) =>
+        prev.map((l) =>
+          l.key === lineItem.key
+            ? { ...l, status, player1: resA.player, player2: resB.player, errorMessage }
+            : l,
+        ),
+      )
+    })
+
+    setIsResolving(false)
+  }
+
+  const handlePredict = async () => {
+    setBatchError(null)
+    // Capture the lines to predict at this moment (resolved lines only).
+    const toPredict = lines.filter((l) => l.status === "resolved" && l.player1 && l.player2)
+    if (toPredict.length === 0) return
+
+    setIsPredicting(true)
+    setLines((prev) => prev.map((l) => (l.status === "resolved" ? { ...l, status: "predict-pending" as LineStatus } : l)))
+
+    const resultIds: number[] = []
+
+    for (const line of toPredict) {
+      if (!line.player1 || !line.player2) continue
+      try {
+        const prediction = await createPrediction({
+          player1Id: line.player1.id,
+          player2Id: line.player2.id,
+          surface: "Hard",
+          matchFormat: "BestOf3",
+          tournamentLevel: "ATP250",
+          tournamentName: line.resolvedTournament ?? undefined,
+        })
+        resultIds.push(prediction.id)
+        setLines((prev) =>
+          prev.map((l) => (l.key === line.key ? { ...l, status: "predict-success" as LineStatus, predictionId: prediction.id } : l)),
+        )
+      } catch {
+        setLines((prev) =>
+          prev.map((l) =>
+            l.key === line.key
+              ? { ...l, status: "predict-error" as LineStatus, errorMessage: "Failed to run prediction engine for this matchup" }
+              : l,
+          ),
+        )
+      }
+    }
+
+    setIsPredicting(false)
+
+    if (resultIds.length > 0) {
+      setLocation(`/predictions/${resultIds[0]}?batch=${resultIds.join(",")}`)
+    } else {
+      setBatchError("None of the matchups could be predicted. Check the errors below.")
+    }
+  }
+
+  const handleReset = () => {
+    setLines([])
+    setBatchError(null)
+  }
+
+  const pendingPredictCount = lines.filter((l) => l.status === "resolved").length
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground font-mono">
+        Paste one matchup per line — supported formats:{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A vs B</code>,{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A v B</code>,{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A versus B</code>,{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A - B</code>,{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A — B</code>,{" "}
+        with optional{" "}
+        <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">(Tournament)</code> suffix.
+      </p>
+
+      <Textarea
+        value={text}
+        onChange={(e) => handleTextChange(e.target.value)}
+        placeholder={"Alcaraz vs Sinner\nDjokovic v Zverev (Wimbledon)\nSwiatek — Sabalenka"}
+        className="min-h-[120px] font-mono text-sm bg-background/50 resize-y"
+        disabled={isResolving || isPredicting}
+      />
+
+      <div className="flex gap-2 flex-wrap">
+        {lines.length === 0 ? (
+          <Button
+            size="sm"
+            variant="accent"
+            className="font-mono gap-1.5"
+            disabled={!text.trim() || isResolving}
+            onClick={handleResolve}
+          >
+            {isResolving ? (
+              <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Resolving...</>
+            ) : (
+              <><ClipboardPaste className="w-3.5 h-3.5" /> RESOLVE PLAYERS</>
+            )}
+          </Button>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="accent"
+              className="font-mono gap-1.5"
+              disabled={isPredicting || isResolving || pendingPredictCount === 0}
+              onClick={handlePredict}
+            >
+              {isPredicting ? (
+                <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Predicting...</>
+              ) : (
+                <><Activity className="w-3.5 h-3.5" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="font-mono text-xs gap-1.5"
+              disabled={isResolving || isPredicting}
+              onClick={handleReset}
+            >
+              CLEAR
+            </Button>
+          </>
+        )}
+      </div>
+
+      {batchError && (
+        <div className="p-3 border border-destructive/30 bg-destructive/10 text-destructive text-xs rounded-md font-mono flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>{batchError}</span>
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <div className="space-y-1.5">
+          {lines.map((line) => (
+            <PasteLineRow key={line.key} line={line} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const STATUS_ICON: Record<LineStatus, React.ReactNode> = {
+  resolving: <RefreshCw className="w-3 h-3 animate-spin text-primary" />,
+  resolved: <CheckCircle2 className="w-3 h-3 text-success" />,
+  ambiguous: <HelpCircle className="w-3 h-3 text-warning" />,
+  "not-found": <XCircle className="w-3 h-3 text-destructive" />,
+  "parse-error": <XCircle className="w-3 h-3 text-muted-foreground" />,
+  "predict-pending": <RefreshCw className="w-3 h-3 animate-spin text-primary" />,
+  "predict-success": <CheckCircle2 className="w-3 h-3 text-success" />,
+  "predict-error": <XCircle className="w-3 h-3 text-destructive" />,
+}
+
+const STATUS_LABEL: Record<LineStatus, string> = {
+  resolving: "SEARCHING",
+  resolved: "READY",
+  ambiguous: "AMBIGUOUS",
+  "not-found": "NOT FOUND",
+  "parse-error": "PARSE ERROR",
+  "predict-pending": "PREDICTING",
+  "predict-success": "PREDICTED",
+  "predict-error": "FAILED",
+}
+
+type BadgeVariant = "default" | "secondary" | "success" | "warning" | "destructive"
+const STATUS_BADGE: Record<LineStatus, BadgeVariant> = {
+  resolving: "secondary",
+  resolved: "success",
+  ambiguous: "warning",
+  "not-found": "destructive",
+  "parse-error": "secondary",
+  "predict-pending": "secondary",
+  "predict-success": "success",
+  "predict-error": "destructive",
+}
+
+function PasteLineRow({ line }: { line: PasteLine }) {
+  return (
+    <div className="p-2.5 border rounded-md bg-secondary/20 text-xs font-mono">
+      <div className="flex items-center gap-2 flex-wrap">
+        {STATUS_ICON[line.status]}
+        <span className="truncate flex-1 min-w-0 text-foreground/80">{line.raw}</span>
+        <Badge variant={STATUS_BADGE[line.status]} className="text-[0.625rem] px-1.5 py-0 h-4 leading-none shrink-0">
+          {STATUS_LABEL[line.status]}
+        </Badge>
+      </div>
+
+      {line.status === "resolved" && line.player1 && line.player2 && (
+        <div className="mt-1.5 text-muted-foreground/70">
+          {line.player1.name}{line.player1.currentRank ? ` #${line.player1.currentRank}` : ""}
+          {" vs "}
+          {line.player2.name}{line.player2.currentRank ? ` #${line.player2.currentRank}` : ""}
+          {line.resolvedTournament && (
+            <span className="ml-2 text-muted-foreground/50">· {line.resolvedTournament}</span>
+          )}
+        </div>
+      )}
+
+      {line.errorMessage && (line.status === "not-found" || line.status === "ambiguous" || line.status === "predict-error" || line.status === "parse-error") && (
+        <div className="mt-1 text-muted-foreground/70 flex items-start gap-1">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-warning" />
+          <span>{line.errorMessage}</span>
+        </div>
+      )}
+
+      {line.status === "predict-success" && line.predictionId != null && (
+        <div className="mt-1 text-success/70">Prediction #{line.predictionId} created ✓</div>
+      )}
+    </div>
+  )
+}

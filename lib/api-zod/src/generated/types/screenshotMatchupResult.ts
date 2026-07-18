@@ -8,10 +8,26 @@
 import type { ScreenshotEventMatch } from './screenshotEventMatch';
 import type { ScreenshotPlayerMatch } from './screenshotPlayerMatch';
 
+/** A single matchup entry extracted from a screenshot (one of potentially many). */
+export interface ScreenshotMatchupEntry {
+  player1: ScreenshotPlayerMatch;
+  player2: ScreenshotPlayerMatch;
+  event: ScreenshotEventMatch;
+  /** True when both players in this entry were confidently resolved to real players. */
+  resolved: boolean;
+  /** Per-matchup warnings for this entry. */
+  warnings: string[];
+}
+
 export interface ScreenshotMatchupResult {
   player1: ScreenshotPlayerMatch;
   player2: ScreenshotPlayerMatch;
   event: ScreenshotEventMatch;
   /** Human-readable notes on anything not confidently recognized or matched -- the user should fill these in manually. */
   warnings: string[];
+  /**
+   * All matchups extracted from the screenshot. matchups[0] is the same as player1/player2/event.
+   * Present when the image contained at least one matchup.
+   */
+  matchups?: ScreenshotMatchupEntry[];
 }

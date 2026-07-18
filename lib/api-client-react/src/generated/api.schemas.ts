@@ -273,12 +273,30 @@ export interface ScreenshotEventMatch {
   level: TournamentLevel | null;
 }
 
+/** A single matchup entry extracted from a screenshot (one of potentially many on the same image). */
+export interface ScreenshotMatchupEntry {
+  player1: ScreenshotPlayerMatch;
+  player2: ScreenshotPlayerMatch;
+  event: ScreenshotEventMatch;
+  /** True when both players in this entry were confidently resolved to real players. */
+  resolved: boolean;
+  /** Per-matchup warnings — filled when one or both players could not be resolved. */
+  warnings: string[];
+}
+
 export interface ScreenshotMatchupResult {
   player1: ScreenshotPlayerMatch;
   player2: ScreenshotPlayerMatch;
   event: ScreenshotEventMatch;
   /** Human-readable notes on anything not confidently recognized or matched -- the user should fill these in manually. */
   warnings: string[];
+  /**
+   * All matchups extracted from this screenshot (including the primary player1/player2/event).
+   * Present when the image contained more than one match card. Each entry carries its own
+   * resolved flag so partially-unrecognised matchups are handled individually rather than
+   * failing the whole screenshot.
+   */
+  matchups?: ScreenshotMatchupEntry[];
 }
 
 export interface PredictionRequest {

@@ -33,9 +33,7 @@ test("resolveScreenshotMatchup falls back to a real name search for a Challenger
   });
 
   const result = await resolveScreenshotMatchup(provider, {
-    player1Name: null,
-    player2Name: null,
-    eventName: "ATP Challenger Pozoblanco",
+    matchups: [{ player1Name: null, player2Name: null, eventName: "ATP Challenger Pozoblanco" }],
   });
 
   assert.equal(result.event.surface, "Clay");
@@ -49,9 +47,7 @@ test("resolveScreenshotMatchup still warns when the name-search fallback also fi
   });
 
   const result = await resolveScreenshotMatchup(provider, {
-    player1Name: null,
-    player2Name: null,
-    eventName: "Some Untraceable Regional Event",
+    matchups: [{ player1Name: null, player2Name: null, eventName: "Some Untraceable Regional Event" }],
   });
 
   assert.equal(result.event.surface, null);
@@ -62,9 +58,7 @@ test("resolveScreenshotMatchup never calls the name-search fallback when a provi
   const provider = makeProvider(); // no findTournamentSurfaceByName at all
 
   const result = await resolveScreenshotMatchup(provider, {
-    player1Name: null,
-    player2Name: null,
-    eventName: "ATP Challenger Pozoblanco",
+    matchups: [{ player1Name: null, player2Name: null, eventName: "ATP Challenger Pozoblanco" }],
   });
 
   assert.equal(result.event.surface, null);
@@ -79,11 +73,43 @@ test("resolveScreenshotMatchup prefers the precise named table over the name-sea
   });
 
   const result = await resolveScreenshotMatchup(provider, {
-    player1Name: null,
-    player2Name: null,
-    eventName: "Wimbledon",
+    matchups: [{ player1Name: null, player2Name: null, eventName: "Wimbledon" }],
   });
 
   assert.equal(result.event.surface, "Grass");
   assert.equal(result.event.level, "GrandSlam");
+});
+
+test("resolveScreenshotMatchup returns matchups array with multiple entries when input has multiple", async () => {
+  // Use clearly fictional names ("Testington", "Fakeovsky") that cannot appear in the real
+  // historical_matches DB rows — avoids the mock-id vs DB-id duplicate that trips isConfidentMatch.
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      if (query.toLowerCase().includes("testington"))
+        return [{ id: "test-1", name: "John Testington", countryCode: "TST", currentRank: 99, tour: "ATP" }];
+      if (query.toLowerCase().includes("fakeovsky"))
+        return [{ id: "fake-1", name: "Ivan Fakeovsky", countryCode: "FAK", currentRank: 98, tour: "ATP" }];
+      if (query.toLowerCase().includes("mockerson"))
+        return [{ id: "mock-1", name: "Dave Mockerson", countryCode: "MCK", currentRank: 97, tour: "ATP" }];
+      if (query.toLowerCase().includes("stubsworth"))
+        return [{ id: "stub-1", name: "Carl Stubsworth", countryCode: "STB", currentRank: 96, tour: "ATP" }];
+      return [];
+    },
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [
+      { player1Name: "Testington", player2Name: "Fakeovsky", eventName: null },
+      { player1Name: "Mockerson", player2Name: "Stubsworth", eventName: null },
+    ],
+  });
+
+  assert.ok(result.matchups, "matchups array present");
+  assert.equal(result.matchups!.length, 2);
+  assert.equal(result.matchups![0].player1.player?.id, "test-1");
+  assert.equal(result.matchups![0].player2.player?.id, "fake-1");
+  assert.equal(result.matchups![1].player1.player?.id, "mock-1");
+  assert.equal(result.matchups![1].player2.player?.id, "stub-1");
+  assert.ok(result.matchups![0].resolved);
+  assert.ok(result.matchups![1].resolved);
 });
