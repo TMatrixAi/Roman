@@ -1,0 +1,140 @@
+Sprint: Tasks #61 → #62 → #63 → #67 (Complete Sequentially)
+
+This is one continuous evaluation sprint. Complete every stage in order. Do NOT skip stages, deploy experimental changes to production, or modify the live prediction engine until all validation is complete.
+
+──────────────────────────────
+STAGE 1 — TASK #61
+Audit Recent Form, Specialist Pipeline & Serve/Return
+
+Objectives:
+• Audit the Recent Form module.
+• Audit Specialist Model coverage and reliability.
+• Audit Serve & Return accuracy by tour, surface, and confidence bucket.
+• Identify every statistically significant weakness.
+• Measure calibration, accuracy, log loss, Brier score, ECE, and sample size.
+• Produce recommendations only.
+• Do NOT modify production code.
+
+Deliverables:
+• Complete audit report.
+• List of every weakness found.
+• List of recommended improvements.
+• Statistical evidence for every recommendation.
+
+──────────────────────────────
+STAGE 2 — TASK #62
+Build Versioned Candidate Configurations
+
+Using ONLY the findings from Stage 1:
+
+Create multiple candidate engine configurations inside the existing candidate_configs system.
+
+Candidates may include:
+• Recent Form weighting adjustments
+• Specialist weighting adjustments
+• Serve & Return confidence adjustments
+• Calibration adjustments
+• Confidence threshold adjustments
+• Module weighting improvements
+
+Requirements:
+• Version every candidate.
+• Do NOT overwrite production.
+• Do NOT modify live users.
+• Store every configuration separately.
+
+Deliverables:
+• Candidate list
+• Configuration summary
+• Expected improvements
+• Risk assessment
+
+──────────────────────────────
+STAGE 3 — TASK #63
+Validate Every Candidate
+
+Run complete evaluation-only validation.
+
+For every candidate:
+
+• Walk-forward evaluation
+• Shadow replay
+• Calibration analysis
+• Log Loss
+• Brier Score
+• Expected Calibration Error (ECE)
+• Confidence bucket analysis
+• Surface breakdown
+• ATP/WTA breakdown
+• Specialist breakdown
+
+Rank every candidate.
+
+Reject any candidate that regresses ANY important metric.
+
+Recommend ONE production candidate only if statistically superior.
+
+Generate a complete comparison report.
+
+──────────────────────────────
+STAGE 4 — TASK #67
+Complete Fresh Four-Fold Walk-Forward
+
+Using the winning candidate ONLY:
+
+Run a brand-new complete 4-fold walk-forward using the entire historical database, including the newly added ATP/WTA matches.
+
+Requirements:
+
+• Validate ATP
+• Validate WTA
+• Validate Challenger
+• Validate ITF
+• Validate Clay
+• Validate Hard
+• Validate Indoor Hard
+• Validate Grass
+
+Generate:
+
+• Overall Accuracy
+• Log Loss
+• Brier Score
+• ECE
+• Calibration curve
+• Bucket accuracy
+• Specialist model performance
+• Recommendation tier performance
+• Elite tier performance
+• Confidence distribution
+• Surface breakdown
+• Tour breakdown
+
+Refit calibration ONLY after evaluation is complete.
+
+Generate new specialist models only if statistically justified.
+
+──────────────────────────────
+FINAL REPORT
+
+After all four stages complete:
+
+Provide a concise report containing:
+
+1. Stage 1 findings
+2. Candidate configurations created
+3. Winning configuration
+4. Four-fold walk-forward results
+5. Changes in Accuracy
+6. Changes in Log Loss
+7. Changes in Brier Score
+8. Changes in Calibration
+9. Changes in ECE
+10. Remaining weaknesses
+11. Whether production should be updated
+
+Do NOT deploy automatically.
+
+Wait for my approval before promoting the winning configuration to production.
+
+Only after this sprint is complete should I run the final Backtesting Portal evaluation to verify production performance against the finalized engine.

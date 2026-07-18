@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fitBestCalibration, type CalibrationPoint } from "./calibration";
+import { fitBestCalibration, isKnownBadCascadeRow, CASCADE_CUTOFF_DATE, type CalibrationPoint } from "./calibration";
 
 /**
  * Task #128 regression test. A real production fold's validation data showed a local
@@ -81,4 +81,89 @@ test("fitBestCalibration returns null holdout metrics (never guesses) when there
   assert.equal(result.holdoutSampleSize, 0);
   assert.equal(result.isotonicHoldoutEce, null);
   assert.equal(result.plattHoldoutEce, null);
+});
+
+// ── Task #55: isKnownBadCascadeRow unit tests ─────────────────────────────────
+// These tests confirm the cascade-exclusion filter correctly identifies rows
+// scored by the old directional tie-break cascade (removed 2026-07-15).
+
+const BEFORE_CUTOFF = new Date(CASCADE_CUTOFF_DATE.getTime() - 24 * 60 * 60 * 1000);
+const AT_CUTOFF = CASCADE_CUTOFF_DATE;
+const AFTER_CUTOFF = new Date(CASCADE_CUTOFF_DATE.getTime() + 24 * 60 * 60 * 1000);
+
+test("isKnownBadCascadeRow — cutoff date is 2026-07-15T00:00:00.000Z", () => {
+  assert.equal(CASCADE_CUTOFF_DATE.toISOString(), "2026-07-15T00:00:00.000Z");
+});
+
+test("isKnownBadCascadeRow — rows locked AT or AFTER the cutoff are always clean, regardless of tieBreakerApplied flag", () => {
+  // Any row written by the current engine (post-cutoff) is by definition clean.
+  assert.equal(isKnownBadCascadeRow(AT_CUTOFF, true), false, "AT cutoff with tieBreakerApplied:true must be clean");
+  assert.equal(isKnownBadCascadeRow(AT_CUTOFF, false), false, "AT cutoff with tieBreakerApplied:false must be clean");
+  assert.equal(isKnownBadCascadeRow(AFTER_CUTOFF, true), false, "AFTER cutoff with tieBreakerApplied:true must be clean");
+  assert.equal(isKnownBadCascadeRow(AFTER_CUTOFF, false), false, "AFTER cutoff with tieBreakerApplied:false must be clean");
+  assert.equal(
+    isKnownBadCascadeRow(AFTER_CUTOFF, { engine: { tieBreakerApplied: true } }),
+    false,
+    "AFTER cutoff with full snapshot tieBreakerApplied:true must be clean",
+  );
+});
+
+test("isKnownBadCascadeRow — boolean shorthand: true identifies a bad row, false identifies a clean row (pre-cutoff)", () => {
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, true), true, "pre-cutoff + tieBreakerApplied=true must be flagged as bad");
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, false), false, "pre-cutoff + tieBreakerApplied=false must be clean");
+});
+
+test("isKnownBadCascadeRow — full featureSnapshot: correctly inspects engine.tieBreakerApplied", () => {
+  assert.equal(
+    isKnownBadCascadeRow(BEFORE_CUTOFF, { engine: { tieBreakerApplied: true } }),
+    true,
+    "pre-cutoff snapshot with tieBreakerApplied:true must be flagged",
+  );
+  assert.equal(
+    isKnownBadCascadeRow(BEFORE_CUTOFF, { engine: { tieBreakerApplied: false } }),
+    false,
+    "pre-cutoff snapshot with tieBreakerApplied:false must be clean",
+  );
+  assert.equal(
+    isKnownBadCascadeRow(BEFORE_CUTOFF, { engine: {} }),
+    false,
+    "pre-cutoff snapshot with engine but no tieBreakerApplied field must be clean",
+  );
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, {}), false, "pre-cutoff snapshot with no engine key must be clean");
+});
+
+test("isKnownBadCascadeRow — null / non-object featureSnapshot: treated as clean (never crashes)", () => {
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, null), false, "null snapshot before cutoff must be clean");
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, undefined), false, "undefined snapshot before cutoff must be clean");
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, "bad-cascade"), false, "string value before cutoff must be clean");
+  assert.equal(isKnownBadCascadeRow(BEFORE_CUTOFF, 1), false, "numeric value before cutoff must be clean");
+});
+
+test("isKnownBadCascadeRow — calibration training path: contaminated rows are excluded, clean rows pass through", () => {
+  // Simulates exactly what walkForward.ts does for fold calibration training:
+  //   foldEligible.filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied))
+  const foldRows = [
+    { id: 1, lockedAt: BEFORE_CUTOFF, tieBreakerApplied: true, rawProbability: 0.7, includedInAccuracy: true },
+    { id: 2, lockedAt: BEFORE_CUTOFF, tieBreakerApplied: false, rawProbability: 0.6, includedInAccuracy: true },
+    { id: 3, lockedAt: AFTER_CUTOFF, tieBreakerApplied: true, rawProbability: 0.55, includedInAccuracy: true },
+    { id: 4, lockedAt: AFTER_CUTOFF, tieBreakerApplied: false, rawProbability: 0.65, includedInAccuracy: true },
+  ];
+  const trainingPoints = foldRows.filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied));
+  assert.equal(trainingPoints.length, 3, "Only the pre-cutoff + tieBreakerApplied=true row must be excluded");
+  assert.ok(
+    !trainingPoints.some((r) => r.id === 1),
+    "Row 1 (pre-cutoff, tieBreakerApplied:true) must be excluded from calibration training",
+  );
+  assert.ok(
+    trainingPoints.some((r) => r.id === 2),
+    "Row 2 (pre-cutoff, tieBreakerApplied:false) must NOT be excluded — it was scored cleanly",
+  );
+  assert.ok(
+    trainingPoints.some((r) => r.id === 3),
+    "Row 3 (post-cutoff, tieBreakerApplied:true) must NOT be excluded — post-cutoff rows are always clean",
+  );
+  assert.ok(
+    trainingPoints.some((r) => r.id === 4),
+    "Row 4 (post-cutoff, tieBreakerApplied:false) must NOT be excluded",
+  );
 });

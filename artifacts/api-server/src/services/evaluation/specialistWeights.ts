@@ -1,7 +1,7 @@
 import { db, evaluationPredictionsTable, historicalMatchesTable, specialistModelsTable, type SpecialistModelRow } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, gte } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { fitBestCalibration, splitForCalibrationHoldout, applyCalibration, logLoss, brierScore, type CalibrationPoint } from "./calibration";
+import { fitBestCalibration, splitForCalibrationHoldout, applyCalibration, logLoss, brierScore, isKnownBadCascadeRow, CASCADE_CUTOFF_DATE, type CalibrationPoint } from "./calibration";
 import { listCandidateSegments, resolveSegment, type SegmentDefinition } from "../predictionEngine/segments";
 import type { CalibrationKnot } from "./types";
 import type { SegmentSpecialistInput } from "../predictionEngine/types";
@@ -109,12 +109,22 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
   // Validation-segment rows for this tour+surface: historical_test rows only (paper_trade rows
   // aren't tied to a historicalMatchId and haven't yet accumulated their own leak-proof corpus),
   // joined back to historicalMatches for the authoritative per-match tour.
+  //
+  // Task #56: mirrors the same cascade-exclusion filter walkForward.ts applies during general
+  // calibration training. Rows locked before CASCADE_CUTOFF_DATE with tieBreakerApplied=true
+  // were scored by the old directional cascade (~30.8% accuracy on close matchups) and must not
+  // contaminate specialist fitting. SQL pre-filters pre-cutoff rows at query time; isKnownBadCascadeRow
+  // double-checks the tieBreakerApplied flag in-memory for any pre-cutoff rows that do appear.
   const rows = await db
     .select({
       rawProbability: evaluationPredictionsTable.rawProbability,
       player1Id: evaluationPredictionsTable.player1Id,
       actualWinnerId: evaluationPredictionsTable.actualWinnerId,
       includedInAccuracy: evaluationPredictionsTable.includedInAccuracy,
+      lockedAt: evaluationPredictionsTable.lockedAt,
+      // Extract only the single boolean flag we need from the JSONB — avoids pulling the full
+      // (potentially large) featureSnapshot just for a cascade-exclusion check.
+      tieBreakerApplied: sql<boolean | null>`(${evaluationPredictionsTable.featureSnapshot}->'engine'->>'tieBreakerApplied')::boolean`,
     })
     .from(evaluationPredictionsTable)
     .innerJoin(historicalMatchesTable, eq(evaluationPredictionsTable.historicalMatchId, historicalMatchesTable.id))
@@ -128,8 +138,17 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
       ),
     );
 
+  const cascadeBadCount = rows.filter((r) => isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied ?? false)).length;
+  if (cascadeBadCount > 0) {
+    logger.warn(
+      { segmentKey: segment.segmentKey, cascadeBadCount, total: rows.length },
+      "Task #56: excluding known-bad pre-cascade rows from specialist calibration fitting",
+    );
+  }
+
   const points: CalibrationPoint[] = rows
     .filter((r) => r.rawProbability !== null && r.actualWinnerId !== null)
+    .filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied ?? false))
     .map((r) => ({ rawProbability: (r.rawProbability as number) / 100, outcome: (r.actualWinnerId === r.player1Id ? 1 : 0) as 0 | 1 }));
 
   if (points.length < MIN_VALIDATION_SAMPLES_FOR_SEGMENT) {
