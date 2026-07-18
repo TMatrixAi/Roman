@@ -141,68 +141,125 @@ export default function PredictionResultPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
-              <div>
-                <p className="text-xs font-mono font-bold text-muted-foreground mb-3 tracking-widest uppercase">PREDICTED WINNER</p>
-                <h2 className="text-5xl md:text-7xl font-display font-bold tracking-tight text-primary break-words leading-[1.05]">
-                  {prediction.predictedWinnerName}
-                </h2>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Badge
-                    variant={
-                      prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
-                      prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
-                      prediction.recommendation === 'HIGH_RISK' ? 'warning' :
-                      prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
-                    }
-                    className="text-sm px-3 py-1.5 font-bold shadow-md"
-                    title={
-                      prediction.recommendation === 'STRONG_RECOMMENDATION'
-                        ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
-                        : undefined
-                    }
-                  >
-                    {RECOMMENDATION_LABELS[prediction.recommendation] ?? prediction.recommendation.replace(/_/g, ' ')}
-                  </Badge>
-                  {engine.isEliteTier && (
-                    <Badge
-                      variant="success"
-                      className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30"
-                      title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
-                    >
-                      <Crown className="w-4 h-4" /> ELITE TIER
+              {engine.tieBreakerApplied ? (
+                /* ── TOO CLOSE TO CALL hero ─────────────────────────────────── */
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Scale className="w-5 h-5 text-muted-foreground" />
+                    <p className="text-xs font-mono font-bold text-muted-foreground tracking-widest uppercase">Too Close to Call</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-3">
+                      <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-foreground break-words leading-tight">
+                        {prediction.player1Name}
+                      </h2>
+                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{prediction.calibratedProbability.toFixed(1)}%</span>
+                    </div>
+                    <div className="text-muted-foreground font-mono text-xs tracking-widest uppercase px-1">vs</div>
+                    <div className="flex items-baseline gap-3">
+                      <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-foreground break-words leading-tight">
+                        {prediction.player2Name}
+                      </h2>
+                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{(100 - prediction.calibratedProbability).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Badge variant="outline" className="text-sm px-3 py-1.5 font-bold shadow-md gap-1.5">
+                      <Scale className="w-3.5 h-3.5" /> NO STRONG SIGNAL
                     </Badge>
+                    <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
+                      SET SCORE: {prediction.predictedSetScore}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
+                    The core models are within {engine.tieBreakerApplied ? "3" : "—"}% of a coin flip. No validated signal provides a reliable directional edge in this probability range — previously, forcing a winner here performed at or below chance. The raw ensemble probability is shown for both players; no pick is made.
+                  </p>
+                </div>
+              ) : (
+                /* ── Normal predicted winner hero ───────────────────────────── */
+                <div>
+                  <p className="text-xs font-mono font-bold text-muted-foreground mb-3 tracking-widest uppercase">PREDICTED WINNER</p>
+                  <h2 className="text-5xl md:text-7xl font-display font-bold tracking-tight text-primary break-words leading-[1.05]">
+                    {prediction.predictedWinnerName}
+                  </h2>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Badge
+                      variant={
+                        prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
+                        prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
+                        prediction.recommendation === 'HIGH_RISK' ? 'warning' :
+                        prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
+                      }
+                      className="text-sm px-3 py-1.5 font-bold shadow-md"
+                      title={
+                        prediction.recommendation === 'STRONG_RECOMMENDATION'
+                          ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
+                          : undefined
+                      }
+                    >
+                      {RECOMMENDATION_LABELS[prediction.recommendation] ?? prediction.recommendation.replace(/_/g, ' ')}
+                    </Badge>
+                    {engine.isEliteTier && (
+                      <Badge
+                        variant="success"
+                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30"
+                        title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
+                      >
+                        <Crown className="w-4 h-4" /> ELITE TIER
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
+                      SET SCORE: {prediction.predictedSetScore}
+                    </Badge>
+                  </div>
+                  {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
+                    <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
+                      "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
+                      validation on real outcomes is still early-stage, and this tier hasn't yet been shown to beat
+                      other tiers. See the Accuracy Dashboard for current backtest sample counts.
+                      Treat it as one input, not a proven edge.
+                    </p>
                   )}
-                  <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
-                    SET SCORE: {prediction.predictedSetScore}
-                  </Badge>
+                  {engine.isEliteTier && (
+                    <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
+                      {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
+                      Elite is an early, small-sample tier -- directionally promising but not yet statistically proven
+                      to outperform non-Elite predictions. See the Accuracy Dashboard for current sample counts.
+                    </p>
+                  )}
                 </div>
-                {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
-                  <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
-                    "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
-                    validation on real outcomes is still early-stage, and this tier hasn't yet been shown to beat
-                    other tiers. See the Accuracy Dashboard for current backtest sample counts.
-                    Treat it as one input, not a proven edge.
-                  </p>
-                )}
-                {engine.isEliteTier && (
-                  <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
-                    {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
-                    Elite is an early, small-sample tier -- directionally promising but not yet statistically proven
-                    to outperform non-Elite predictions. See the Accuracy Dashboard for current sample counts.
-                  </p>
-                )}
-              </div>
+              )}
 
-              <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
-                <div className="flex justify-between font-mono text-sm items-center">
-                  <span className="font-bold text-muted-foreground tracking-widest">WIN PROBABILITY</span>
-                  <span className="font-bold text-xl tabular-nums">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</span>
+              {!engine.tieBreakerApplied && (
+                <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
+                  <div className="flex justify-between font-mono text-sm items-center">
+                    <span className="font-bold text-muted-foreground tracking-widest">WIN PROBABILITY</span>
+                    <span className="font-bold text-xl tabular-nums">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</span>
+                  </div>
+                  <div className="h-4 w-full bg-background rounded-full overflow-hidden flex border border-border shadow-inner">
+                    <div className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-1000 ease-out" style={{ width: `${prediction.predictedWinnerProbability}%` }} />
+                  </div>
                 </div>
-                <div className="h-4 w-full bg-background rounded-full overflow-hidden flex border border-border shadow-inner">
-                  <div className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-1000 ease-out" style={{ width: `${prediction.predictedWinnerProbability}%` }} />
+              )}
+
+              {engine.tieBreakerApplied && (
+                <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
+                  <div className="flex justify-between font-mono text-sm items-center">
+                    <span className="font-bold text-muted-foreground tracking-widest">RAW PROBABILITY SPLIT</span>
+                    <span className="font-mono text-sm text-muted-foreground tabular-nums">{prediction.calibratedProbability.toFixed(1)} / {(100 - prediction.calibratedProbability).toFixed(1)}</span>
+                  </div>
+                  {/* Centred bar showing how close to 50/50 the split is */}
+                  <div className="h-4 w-full bg-background rounded-full overflow-hidden flex border border-border shadow-inner relative">
+                    <div className="h-full bg-primary/40 transition-all duration-1000 ease-out" style={{ width: `${prediction.calibratedProbability}%` }} />
+                    <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-border/80" />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                    <span>{prediction.player1Name}</span>
+                    <span>{prediction.player2Name}</span>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </div>{/* end left column */}
 
             <div className="space-y-6 md:pl-10 md:border-l border-border/50">
               <div className="grid grid-cols-2 gap-4">
