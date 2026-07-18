@@ -39,3 +39,4 @@
 - [MatchStat provider & NFD transliteration](matchstat-provider-nfd-transliteration.md) — tennisapi1.p.rapidapi.com endpoint paths (now replaced), Đ/Ł/Ø non-NFD transliteration, composite provider pattern.
 - [tennis-api-atp-wta-itf endpoint map](rapidapi-tennis-api-atp-wta-itf-endpoints.md) — confirmed working paths, actual response shape, rankId→level map, group=race for rankings, daily quota limit, why 403s were rate-limit artifacts not subscription errors.
 - [Unicode surrogate regex bug in OCR stripper](unicode-surrogate-regex-bug.md) — \u1F000 (5 digits) without curly braces in a JS regex char class silently becomes \u1F00 + literal "0", creating a "0"–U+1FFF range that wipes all ASCII; use \u{1F000} or drop the supplementary range.
+- [Contradiction scan calibration findings](contradiction-scan-calibration.md) — all DQ bands show positive calibration gaps (underconfidence); historical tie-breaker rows contaminate calibration training data.

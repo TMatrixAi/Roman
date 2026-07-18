@@ -130,6 +130,133 @@ export interface EngineOutput {
   recommendation: ReturnType<typeof computeRecommendation>;
   predictedSetScore: string;
   engine: EngineBreakdown;
+  /** Task #32: full auditable trace of every intermediate pipeline stage and decision-chain rule. */
+  decisionTrace: DecisionTrace;
+}
+
+// ---------------------------------------------------------------------------
+// Task #32: Decision Trace types — full per-module and pipeline audit record
+// ---------------------------------------------------------------------------
+
+/** Raw edge value and ensemble contribution for a single module. */
+export interface ModuleTrace {
+  key: string;
+  name: string;
+  /** Raw player1Edge value fed into the ensemble (positive = favors player 1). */
+  rawEdge: number;
+  reliability: number;
+  importance: number;
+  weightPrior: number;
+  /** Confidence shrink factor (1.0 if not applicable). */
+  confidenceShrink: number;
+  excludedFromEnsemble: boolean;
+  excludedFromDataQuality: boolean;
+  excludedByAblation: boolean;
+  /** Player 1 win probability from this module; null if excluded from ensemble. */
+  player1Probability: number | null;
+  /** Weight actually used in the ensemble blend; null if excluded. */
+  effectiveWeight: number | null;
+  voteDirection: "player1" | "player2" | "tied" | null;
+}
+
+/** Full per-step pipeline + decision-chain trace; persisted to `decision_trace` JSONB column. */
+export interface DecisionTrace {
+  /** Player-1-relative probability (0-100) at each stage of the pipeline, in order. */
+  pipeline: {
+    rawEnsemble: number;
+    tieBreakerApplied: boolean;
+    afterTieBreaker: number;
+    /** "fitted" = isotonic calibration from walk-forward; "fallback" = dataQuality-shrink heuristic. */
+    calibrationMethod: "fitted" | "fallback";
+    /** Shrink factor applied by the fallback (1.0 if fitted calibration was used instead). */
+    fallbackShrinkFactor: number;
+    afterCalibration: number;
+    specialistWeight: number;
+    afterSpecialist: number;
+    reliabilityDiscount: number;
+    afterReliabilityDiscount: number;
+    simulatorScopeGap: number;
+    simulatorScopeScale: number;
+    simulatorWeight: number;
+    afterSimulator: number;
+  };
+  /** All modules, including those excluded from the ensemble, with their raw edge values. */
+  modules: ModuleTrace[];
+  /** Every recommendation rule tested in order; the first `decided: true` entry is the winner. */
+  recommendation: {
+    result: string;
+    margin: number;
+    rulesChecked: Array<{ rule: string; matched: boolean; decided: boolean }>;
+  };
+  /** Pass/fail for every elite-tier gate. All must be true for isElite. */
+  eliteTier: {
+    isElite: boolean;
+    gates: {
+      dataQuality: { required: number; actual: number; passed: boolean };
+      calibratedMargin: { required: number; actual: number; passed: boolean };
+      allCoreModelsAgree: {
+        surfaceEloFavorsP1: boolean;
+        serveReturnFavorsP1: boolean;
+        recentFormFavorsP1: boolean;
+        passed: boolean;
+      };
+      specialistApplied: { passed: boolean };
+      noModelConflict: { passed: boolean };
+      notHighDisagreement: { actual: string; passed: boolean };
+      upsetRiskAcceptable: { actual: string; passed: boolean };
+      consistencyGuard: { passed: boolean; violations: string[] };
+    };
+  };
+  computedAt: string;
+}
+
+/** Derive the dataQuality-shrink confidence factor (mirrors calibrateProbability internals). */
+function getFallbackShrinkFactor(dq: number): number {
+  if (dq < 20) return 0.4;
+  if (dq < 55) return 0.4 + ((dq - 20) / 35) * (0.85 - 0.4);
+  if (dq < 65) return 0.85;
+  if (dq < 85) return 0.85 - ((dq - 65) / 20) * (0.85 - 0.55);
+  return Math.max(0.4, 0.55 - ((dq - 85) / 15) * (0.55 - 0.4));
+}
+
+/** Trace every condition computeRecommendation tests, in order. */
+function buildRecommendationTrace(
+  calibratedProbability: number,
+  dataQuality: number,
+  dataQualityLabel: string,
+  upsetRisk: string,
+  modelAgreement: string,
+  result: string,
+): DecisionTrace["recommendation"] {
+  const margin = Math.abs(calibratedProbability - 50);
+  const rules: Array<{ rule: string; matched: boolean; decided: boolean }> = [];
+
+  const r1 = dataQualityLabel === "Poor" || dataQuality < 25;
+  rules.push({ rule: `DQ < 25 or label "Poor" → DO_NOT_RECOMMEND (DQ=${dataQuality}, label="${dataQualityLabel}")`, matched: r1, decided: r1 });
+  if (r1) return { result, margin, rulesChecked: rules };
+
+  const r2 = margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement");
+  rules.push({ rule: `margin < 8 AND (Mixed|HighDisagreement) → NO_STRONG_SIGNAL (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r2, decided: r2 });
+  if (r2) return { result, margin, rulesChecked: rules };
+
+  const r3 = upsetRisk === "EXTREME";
+  rules.push({ rule: `upsetRisk === "EXTREME" → HIGH_RISK`, matched: r3, decided: r3 });
+  if (r3) return { result, margin, rulesChecked: rules };
+
+  const r4 = margin >= 22 && dataQuality >= 45 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 22 AND DQ ≥ 45 AND LOW/MODERATE AND not Mixed/HighDisagreement → STRONG_RECOMMENDATION (margin=${margin.toFixed(1)}, DQ=${dataQuality})`, matched: r4, decided: r4 });
+  if (r4) return { result, margin, rulesChecked: rules };
+
+  const r5 = margin >= 10;
+  rules.push({ rule: `margin ≥ 10 → MODERATE_LEAN (margin=${margin.toFixed(1)})`, matched: r5, decided: r5 });
+  if (r5) return { result, margin, rulesChecked: rules };
+
+  const r6 = margin >= 8 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 8 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)})`, matched: r6, decided: r6 });
+  if (r6) return { result, margin, rulesChecked: rules };
+
+  rules.push({ rule: `fallthrough → HIGH_RISK`, matched: true, decided: true });
+  return { result, margin, rulesChecked: rules };
 }
 
 /**
@@ -734,6 +861,89 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     consistencyViolations,
   };
 
+  // ---------------------------------------------------------------------------
+  // Task #32: Build the full decision trace before returning.
+  // All intermediate variables (rawEnsembleProbability, tieBreaker, generalProbability,
+  // blendedProbability, preSimulatorProbability, simulatorScopeGap, etc.) are captured here so
+  // the DB row carries a complete audit trail of every pipeline stage and decision-chain rule.
+  // ---------------------------------------------------------------------------
+  const calibrationMethod: "fitted" | "fallback" =
+    input.activeCalibration && input.activeCalibration.length > 0 ? "fitted" : "fallback";
+  const fallbackShrinkFactor = calibrationMethod === "fallback" ? getFallbackShrinkFactor(dataQuality) : 1.0;
+
+  // Build a name→ModelVote lookup from ensemble contributors so we can enrich each moduleEdge.
+  const featureModelByName = new Map(featureModels.map((m) => [m.modelName, m]));
+
+  const moduleTraces: ModuleTrace[] = moduleEdges.map((m) => {
+    const vote = featureModelByName.get(m.name);
+    const excludedFromEnsemble = EXCLUDED_FROM_ENSEMBLE.has(m.key);
+    const excludedByAblation = excludedModels?.has(m.key) ?? false;
+    const effectivelyContributes = !excludedFromEnsemble && !excludedByAblation;
+    const voteDirection: "player1" | "player2" | "tied" | null = vote
+      ? vote.player1Probability > 50 ? "player1" : vote.player1Probability < 50 ? "player2" : "tied"
+      : null;
+    return {
+      key: m.key,
+      name: m.name,
+      rawEdge: Math.round(m.player1Edge * 1000) / 1000,
+      reliability: m.reliability,
+      importance: m.importance,
+      weightPrior: m.weightPrior,
+      confidenceShrink: (m as { confidenceShrink?: number }).confidenceShrink ?? 1.0,
+      excludedFromEnsemble,
+      excludedFromDataQuality: EXCLUDED_FROM_DATA_QUALITY.has(m.key),
+      excludedByAblation,
+      player1Probability: effectivelyContributes && vote ? vote.player1Probability : null,
+      effectiveWeight: effectivelyContributes && vote ? vote.weightUsed : null,
+      voteDirection: effectivelyContributes ? voteDirection : null,
+    };
+  });
+
+  const calibratedMarginForTrace = Math.abs(calibratedProbability - 50);
+  const surfaceEloFavorsP1 = voteFavorsPlayer1(featureModels, "Surface Elo");
+  const serveReturnFavorsP1 = voteFavorsPlayer1(featureModels, "Serve & Return");
+  const recentFormFavorsP1 = voteFavorsPlayer1(featureModels, "Recent Form");
+
+  const decisionTrace: DecisionTrace = {
+    pipeline: {
+      rawEnsemble: rawEnsembleProbability,
+      tieBreakerApplied: tieBreaker.applied,
+      afterTieBreaker: ensembleProbability,
+      calibrationMethod,
+      fallbackShrinkFactor,
+      afterCalibration: generalProbability,
+      specialistWeight,
+      afterSpecialist: blendedProbability,
+      reliabilityDiscount,
+      afterReliabilityDiscount: preSimulatorProbability,
+      simulatorScopeGap: Math.round(simulatorScopeGap * 1000) / 1000,
+      simulatorScopeScale: Math.round(simulatorScopeScale * 1000) / 1000,
+      simulatorWeight: Math.round(simulatorWeight * 1000) / 1000,
+      afterSimulator: calibratedProbability,
+    },
+    modules: moduleTraces,
+    recommendation: buildRecommendationTrace(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, recommendation),
+    eliteTier: {
+      isElite: isEliteTier,
+      gates: {
+        dataQuality: { required: 55, actual: dataQuality, passed: dataQuality >= 55 },
+        calibratedMargin: { required: 5, actual: Math.round(calibratedMarginForTrace * 10) / 10, passed: calibratedMarginForTrace >= 5 },
+        allCoreModelsAgree: {
+          surfaceEloFavorsP1,
+          serveReturnFavorsP1,
+          recentFormFavorsP1,
+          passed: surfaceEloFavorsP1 === serveReturnFavorsP1 && serveReturnFavorsP1 === recentFormFavorsP1,
+        },
+        specialistApplied: { passed: specialistApplied },
+        noModelConflict: { passed: !modelConflict },
+        notHighDisagreement: { actual: modelAgreement, passed: modelAgreement !== "HighDisagreement" },
+        upsetRiskAcceptable: { actual: upsetRisk, passed: upsetRisk === "LOW" || upsetRisk === "MODERATE" },
+        consistencyGuard: { passed: consistencyViolations.length === 0, violations: consistencyViolations },
+      },
+    },
+    computedAt: new Date().toISOString(),
+  };
+
   return {
     predictedWinnerId,
     predictedWinnerName,
@@ -746,5 +956,6 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     recommendation,
     predictedSetScore,
     engine,
+    decisionTrace,
   };
 }

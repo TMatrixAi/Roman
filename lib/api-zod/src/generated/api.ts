@@ -783,6 +783,8 @@ export const GetPredictionResponse = zod.object({
   "label": zod.enum(['Low', 'Moderate', 'High'])
 }).optional().describe('Per-matchup count of prior matches each player has on the relevant surface, labeled Low\/Moderate\/High. Absent on predictions made before this field existed.')
 }).describe('Full module-by-module output of the prediction engine'),
+  /** Task #32: full pipeline + decision-chain trace; null on predictions made before this field existed. */
+  "decisionTrace": zod.unknown().nullish().describe('Full auditable trace of every pipeline stage and decision-chain rule (Task #32). Null on predictions made before this field existed.'),
   "actualWinnerId": zod.string().nullish(),
   "actualWinnerName": zod.string().nullish(),
   "createdAt": zod.coerce.date(),

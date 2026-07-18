@@ -49,6 +49,15 @@ export const predictionsTable = pgTable(
     actualWinnerId: text("actual_winner_id"),
     actualWinnerName: text("actual_winner_name"),
 
+    /**
+     * Task #32 (Engine Audit + Decision Explainability): per-module raw edge values, pipeline
+     * intermediate probabilities at every stage (rawEnsemble → afterCalibration → afterSpecialist
+     * → afterReliabilityDiscount → afterSimulator), recommendation rule chain, and elite-tier
+     * gate pass/fail breakdown. Nullable: predictions made before this field existed have null.
+     * Shape: DecisionTrace (see predictionEngine/index.ts).
+     */
+    decisionTrace: jsonb("decision_trace"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },

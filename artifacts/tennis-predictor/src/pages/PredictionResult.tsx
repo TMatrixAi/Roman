@@ -9,7 +9,8 @@ import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
 import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown } from "lucide-react"
+import { useState } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
 const AGREEMENT_STYLES: Record<string, string> = {
@@ -835,8 +836,232 @@ export default function PredictionResultPage() {
 
         </div>
       </div>
+
+      {/* DECISION TRACE (Task #32) */}
+      {(prediction as any).decisionTrace && (
+        <DecisionTracePanel
+          trace={(prediction as any).decisionTrace}
+          player1Name={prediction.player1Name}
+          player2Name={prediction.player2Name}
+        />
+      )}
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Decision Trace Panel (Task #32) — full pipeline + decision chain audit view
+// ---------------------------------------------------------------------------
+
+interface PipelineStep {
+  label: string;
+  prob: number;
+  note?: string;
+}
+
+function ProbabilityBar({ value, player1Name, player2Name }: { value: number; player1Name: string; player2Name: string }) {
+  const p1Pct = Math.max(0, Math.min(100, value));
+  const p2Pct = 100 - p1Pct;
+  return (
+    <div className="w-full">
+      <div className="flex justify-between text-[10px] font-mono mb-1">
+        <span className="text-primary truncate max-w-[40%]">{player1Name}: {value.toFixed(1)}%</span>
+        <span className="text-muted-foreground truncate max-w-[40%] text-right">{player2Name}: {(100 - value).toFixed(1)}%</span>
+      </div>
+      <div className="h-3 w-full bg-muted/50 border border-border rounded-full overflow-hidden flex">
+        <div className="h-full bg-primary/70" style={{ width: `${p1Pct}%` }} />
+        <div className="h-full bg-muted-foreground/30" style={{ width: `${p2Pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function GateRow({ label, passed, detail }: { label: string; passed: boolean; detail?: string }) {
+  return (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      {passed
+        ? <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
+        : <XCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
+      <div className="text-sm">
+        <span className={passed ? "text-foreground" : "text-destructive"}>{label}</span>
+        {detail && <span className="text-xs text-muted-foreground ml-2">{detail}</span>}
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, icon: Icon, defaultOpen = false, children }: { title: string; icon: any; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-border/60 rounded-xl overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-5 py-4 bg-secondary/40 hover:bg-secondary/60 transition-colors font-mono text-xs font-bold tracking-widest uppercase"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="flex items-center gap-2.5">
+          <Icon className="w-4 h-4 text-primary" />
+          {title}
+        </span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="p-5 space-y-3 bg-background">{children}</div>}
+    </div>
+  );
+}
+
+function DecisionTracePanel({ trace, player1Name, player2Name }: { trace: any; player1Name: string; player2Name: string }) {
+  const pipeline = trace.pipeline ?? {};
+  const modules: any[] = trace.modules ?? [];
+  const rec = trace.recommendation ?? {};
+  const eliteTier = trace.eliteTier ?? {};
+  const gates = eliteTier.gates ?? {};
+
+  const pipelineSteps: PipelineStep[] = [
+    { label: "Raw Ensemble", prob: pipeline.rawEnsemble, note: "Feature module weighted average" },
+    ...(pipeline.tieBreakerApplied ? [{ label: "After Tie-Breaker", prob: pipeline.afterTieBreaker, note: "Close matchup (within 3%) — passed through unchanged" }] : []),
+    { label: "After Calibration", prob: pipeline.afterCalibration, note: `${pipeline.calibrationMethod === "fitted" ? "Isotonic calibration" : "Fallback DQ-shrink"} (factor ${pipeline.fallbackShrinkFactor?.toFixed(2) ?? "fitted"})` },
+    ...(pipeline.specialistWeight > 0 ? [{ label: "After Specialist Blend", prob: pipeline.afterSpecialist, note: `Specialist weight: ${(pipeline.specialistWeight * 100).toFixed(0)}%` }] : []),
+    ...(pipeline.reliabilityDiscount < 0.999 ? [{ label: "After Reliability Discount", prob: pipeline.afterReliabilityDiscount, note: `Discount: ×${pipeline.reliabilityDiscount?.toFixed(3)}` }] : []),
+    ...(pipeline.simulatorWeight > 0 ? [{ label: "After Simulator Blend", prob: pipeline.afterSimulator, note: `Simulator weight: ${(pipeline.simulatorWeight * 100).toFixed(0)}%, scope gap: ${pipeline.simulatorScopeGap?.toFixed(1)}` }] : []),
+    { label: "Final Probability", prob: pipeline.afterSimulator ?? pipeline.afterReliabilityDiscount ?? pipeline.afterSpecialist ?? pipeline.afterCalibration, note: "Stored calibratedProbability" },
+  ].filter((s) => s.prob !== undefined && !isNaN(s.prob));
+
+  const ensembleModules = modules.filter((m) => !m.excludedFromEnsemble && !m.excludedByAblation && m.player1Probability !== null);
+  const excludedModules = modules.filter((m) => m.excludedFromEnsemble || m.excludedByAblation);
+
+  return (
+    <div className="pt-8">
+      <h3 className="text-2xl font-display font-bold flex items-center gap-3 mb-6">
+        <div className="p-2 bg-primary/10 rounded-lg">
+          <GitBranch className="w-5 h-5 text-primary" />
+        </div>
+        Decision Trace
+        <Badge variant="outline" className="font-mono text-[10px] ml-2">AUDIT</Badge>
+      </h3>
+      <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+        Full pipeline trace for this prediction — every intermediate probability stage, per-module raw edge, recommendation rule chain, and elite-tier gate. Captured at prediction time; unaffected by subsequent engine changes.
+      </p>
+
+      <div className="space-y-4">
+        {/* Pipeline stages */}
+        <CollapsibleSection title="Probability Pipeline" icon={TrendingUp} defaultOpen>
+          <div className="space-y-5">
+            {pipelineSteps.map((step, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-foreground">{step.label}</span>
+                  {step.note && <span className="text-[10px] text-muted-foreground">{step.note}</span>}
+                </div>
+                <ProbabilityBar value={step.prob} player1Name={player1Name} player2Name={player2Name} />
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+
+        {/* Per-module edges */}
+        {ensembleModules.length > 0 && (
+          <CollapsibleSection title="Module Raw Edges (Ensemble)" icon={Database}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left py-2 pr-3">Module</th>
+                    <th className="text-right py-2 px-3">Raw Edge</th>
+                    <th className="text-right py-2 px-3">Reliability</th>
+                    <th className="text-right py-2 px-3">Weight Prior</th>
+                    <th className="text-right py-2 px-3">Eff. Weight</th>
+                    <th className="text-right py-2 pl-3">P1 Prob</th>
+                    <th className="text-left py-2 pl-3">Direction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ensembleModules.map((m: any, i: number) => (
+                    <tr key={i} className="border-b border-border/40 hover:bg-secondary/30">
+                      <td className="py-2 pr-3 font-medium text-foreground">{m.name}</td>
+                      <td className={`py-2 px-3 text-right tabular-nums ${m.rawEdge > 0 ? "text-primary" : m.rawEdge < 0 ? "text-muted-foreground" : "text-foreground"}`}>
+                        {m.rawEdge >= 0 ? "+" : ""}{m.rawEdge?.toFixed(2)}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{m.reliability}</td>
+                      <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{m.weightPrior}</td>
+                      <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">{m.effectiveWeight?.toFixed(2) ?? "—"}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums font-bold text-primary">{m.player1Probability?.toFixed(1)}%</td>
+                      <td className="py-2 pl-3">
+                        <Badge variant={m.voteDirection === "player1" ? "success" : m.voteDirection === "player2" ? "destructive" : "outline"} className="text-[10px]">
+                          {m.voteDirection === "player1" ? player1Name.split(" ")[0] : m.voteDirection === "player2" ? player2Name.split(" ")[0] : "tied"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {excludedModules.length > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-3">
+                <span className="font-bold">Excluded from ensemble:</span> {excludedModules.map((m: any) => `${m.name}${m.excludedByAblation ? " (ablation)" : ""}`).join(", ")}
+              </p>
+            )}
+          </CollapsibleSection>
+        )}
+
+        {/* Recommendation rule chain */}
+        {rec.rulesChecked?.length > 0 && (
+          <CollapsibleSection title={`Recommendation Chain → ${rec.result}`} icon={ChevronRight}>
+            <div className="space-y-1">
+              {(rec.rulesChecked as any[]).map((rule: any, i: number) => (
+                <div key={i} className={`flex items-start gap-2 py-1.5 text-xs rounded-lg px-2 ${rule.decided ? "bg-primary/10 border border-primary/30" : ""}`}>
+                  {rule.matched
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0 mt-0.5" />
+                    : <XCircle className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 mt-0.5" />}
+                  <span className={rule.decided ? "text-foreground font-bold" : "text-muted-foreground"}>{rule.rule}</span>
+                  {rule.decided && <Badge variant="outline" className="ml-auto text-[9px] shrink-0">DECIDED</Badge>}
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+        )}
+
+        {/* Elite tier gates */}
+        {gates && Object.keys(gates).length > 0 && (
+          <CollapsibleSection title={`Elite Tier Gates — ${eliteTier.isElite ? "✓ ELITE" : "✗ NOT ELITE"}`} icon={Crown}>
+            <div className="space-y-0.5">
+              {gates.dataQuality && (
+                <GateRow label="Data Quality ≥ 55" passed={gates.dataQuality.passed} detail={`actual: ${gates.dataQuality.actual}`} />
+              )}
+              {gates.calibratedMargin && (
+                <GateRow label="Calibrated Margin ≥ 5" passed={gates.calibratedMargin.passed} detail={`actual: ${gates.calibratedMargin.actual?.toFixed(1)}pt`} />
+              )}
+              {gates.allCoreModelsAgree && (
+                <GateRow
+                  label="All Core Models Agree Direction"
+                  passed={gates.allCoreModelsAgree.passed}
+                  detail={`Elo: ${gates.allCoreModelsAgree.surfaceEloFavorsP1 ? "P1" : "P2"}, S&R: ${gates.allCoreModelsAgree.serveReturnFavorsP1 ? "P1" : "P2"}, Form: ${gates.allCoreModelsAgree.recentFormFavorsP1 ? "P1" : "P2"}`}
+                />
+              )}
+              {gates.specialistApplied !== undefined && (
+                <GateRow label="Segment Specialist Applied" passed={gates.specialistApplied.passed} />
+              )}
+              {gates.noModelConflict !== undefined && (
+                <GateRow label="No Model Conflict" passed={gates.noModelConflict.passed} />
+              )}
+              {gates.notHighDisagreement && (
+                <GateRow label="Agreement ≠ High Disagreement" passed={gates.notHighDisagreement.passed} detail={gates.notHighDisagreement.actual} />
+              )}
+              {gates.upsetRiskAcceptable && (
+                <GateRow label="Upset Risk LOW or MODERATE" passed={gates.upsetRiskAcceptable.passed} detail={gates.upsetRiskAcceptable.actual} />
+              )}
+              {gates.consistencyGuard && (
+                <GateRow
+                  label="Final Consistency Guard"
+                  passed={gates.consistencyGuard.passed}
+                  detail={gates.consistencyGuard.violations?.length > 0 ? gates.consistencyGuard.violations.join("; ") : undefined}
+                />
+              )}
+            </div>
+          </CollapsibleSection>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Swords(props: any) {
