@@ -74,6 +74,9 @@ export async function computeAndStoreSpecialistSegments(generalMapping: Calibrat
 }
 
 async function computeOneSegment(segment: SegmentDefinition, generalMapping: CalibrationKnot[]) {
+  // historical_matches.tour stores the generic tour label ('ATP', 'WTA', 'Challenger', 'ITF').
+  // Use eq(col, segment.tour) — 'ATP' / 'WTA' — not inArray with tournament_level values like
+  // 'ATP250'/'Masters1000', which live in the separate tournament_level column.
   const [{ count: historicalMatchCount }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(historicalMatchesTable)
