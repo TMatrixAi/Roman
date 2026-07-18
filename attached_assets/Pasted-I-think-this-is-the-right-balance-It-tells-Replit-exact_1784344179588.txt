@@ -1,0 +1,239 @@
+I think this is the right balance. It tells Replit exactly what to build without asking it to do audits, reports, backups, stress tests, or anything that will burn unnecessary usage.
+
+⸻
+
+Sprint 2 — MatchStat API Integration & Data Layer
+
+Integrate the MatchStat/RapidAPI tennis data source into the existing application. The goal is to improve the data feeding the prediction engine, not to change how the prediction engine works.
+
+Do not modify the existing prediction engine, model weights, calibration, recommendation logic, Elite logic, Tier 1 logic, Monte Carlo calculations, or prediction formulas.
+
+1. MatchStat Integration
+
+Use MatchStat as the primary source for:
+
+* ATP
+* WTA
+* Challenger
+* ITF
+
+Retrieve and update:
+
+* Rankings
+* Player profiles
+* Fixtures
+* Results
+* Tournament information
+* Head-to-head records
+* Match statistics
+
+Cache data where appropriate to reduce unnecessary API calls.
+
+⸻
+
+2. Master Player Database
+
+Build or complete a Master Player Database that maintains:
+
+* Stable player IDs
+* Rankings
+* Player profiles
+* Match history
+* Surface history
+* Head-to-head history
+* Tournament history
+* Tournament level
+* Court surface
+* Serve/Return statistics (when available)
+* Set scores (when available)
+* Opponent information
+* Last updated timestamp
+
+Use this database as the primary source of player information before requesting live API data.
+
+⸻
+
+3. Today’s Fixtures
+
+Populate Today’s Fixtures directly from MatchStat.
+
+Automatically display:
+
+* Tournament
+* Match
+* Round
+* Scheduled match time
+* Court surface
+* Match status
+
+Whenever a match is selected or imported, automatically determine and populate the correct tournament and playing surface whenever the API provides it.
+
+⸻
+
+4. Improve Prediction Inputs
+
+Before the prediction engine runs, automatically load available:
+
+* Rankings
+* Match history
+* Surface history
+* Head-to-head
+* Tournament information
+* Court surface
+* Set scores
+* Serve/Return statistics
+
+If information is unavailable, continue using the current fallback behavior.
+
+Do not invent missing values.
+
+⸻
+
+5. Reduce Missing Data
+
+Use MatchStat data to reduce missing information for:
+
+* Historical match history
+* Rankings
+* Surface history
+* Set scores
+* Opponent information
+* Recent form
+* Tournament verification
+
+Only remove warnings when actual data has been found.
+
+⸻
+
+6. Improve Player Matching
+
+Use stable player IDs whenever possible.
+
+Improve player recognition for:
+
+* Initials
+* Accents
+* Apostrophes
+* Hyphenated names
+* Abbreviations
+* Reversed first and last names
+* Common alternate spellings
+
+If a player cannot be identified confidently, ask for confirmation instead of guessing.
+
+⸻
+
+7. Improve Build Match
+
+Improve the Paste Search feature.
+
+It should accept multiple manually entered matchups.
+
+Support formats such as:
+
+* Player A vs Player B
+* Player A VS Player B
+* Player A v Player B
+* Player A versus Player B
+* Player A - Player B
+* Player A — Player B
+* Tournament names in parentheses
+
+Each matchup should be processed independently.
+
+Never combine players from different rows.
+
+Automatically:
+
+* Verify the fixture
+* Identify the tournament
+* Determine the correct playing surface
+
+Populate the tournament and surface automatically without requiring manual selection.
+
+Preserve pasted matchups if the page refreshes or validation fails.
+
+⸻
+
+8. Improve Screenshot & Bulk Upload
+
+Move Bulk Upload beside:
+
+* Player Search
+* Paste Search
+
+The screenshot parser should correctly recognize multiple matches from one screenshot.
+
+For each match it should extract:
+
+* Player 1
+* Player 2
+* Tournament
+* Date
+* Time
+
+Ignore:
+
+* Betting odds
+* Betting prices
+* Volume
+* Flags
+* Logos
+* Decorative icons
+
+Support:
+
+* Long screenshots
+* Multiple match cards
+* Dark mode
+* Light mode
+* Partial cards
+* Different font sizes
+
+Process every visible matchup independently.
+
+Never stop because one player cannot be identified.
+
+Continue processing all remaining matches.
+
+Automatically:
+
+* Resolve player IDs
+* Verify the fixture
+* Identify the tournament
+* Determine the correct playing surface
+
+Populate tournament and surface automatically.
+
+If one matchup cannot be identified, return only that matchup for correction instead of failing the entire upload.
+
+Apply these same improvements to Screenshot Import.
+
+⸻
+
+9. Match Conditions
+
+Keep the Match Conditions section collapsed by default.
+
+Display only Execute Prediction Engine until expanded.
+
+Keep all current match-condition options inside the collapsible section.
+
+⸻
+
+10. Automatic Result Updates
+
+Use MatchStat results to automatically:
+
+* Update completed matches
+* Grade predictions
+* Update Prediction History
+* Refresh the Accuracy Dashboard
+* Refresh Shadow Replay
+* Refresh Live Paper Trading
+
+Prevent duplicate grading.
+
+⸻
+
+Keep this task focused only on improving the MatchStat integration, Master Player Database, Build Match workflow, screenshot recognition, player matching, tournament detection, automatic surface detection, and automatic result updates. Preserve the existing prediction engine and simply provide it with more complete and accurate data.
