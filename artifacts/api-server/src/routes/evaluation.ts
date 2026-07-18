@@ -55,8 +55,15 @@ import {
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
   GetRankingVerificationResponse,
+  RunOptimizerBody,
+  RunOptimizerResponse,
+  GetLatestPatternAnalysisResponse,
+  GetLatestThresholdEvaluationResponse,
 } from "@workspace/api-zod";
 import { runRankingVerification } from "../services/historicalData/rankingVerification";
+import { runOptimizerRun } from "../services/evaluation/candidateOptimizer";
+import { getLatestPatternAnalysis } from "../services/evaluation/patternAnalysis";
+import { getLatestThresholdEvaluation } from "../services/evaluation/thresholdEvaluation";
 
 const router: IRouter = Router();
 
@@ -392,6 +399,54 @@ router.post("/evaluation/ranking-verification", async (_req, res): Promise<void>
   const provider = getTennisDataProvider();
   const result = await runRankingVerification(provider);
   res.json(GetRankingVerificationResponse.parse(result));
+});
+
+// ── Task #12: Continuous outcome-learning endpoints ───────────────────────────────────────────────
+
+/**
+ * Task #12: Run the optimizer — full training-mode walk-forward + candidate config generation.
+ * Does NOT auto-promote any config. Writes a new candidate_configs row and runs threshold
+ * evaluation. The production calibration/specialist weights ARE updated by this call
+ * (training mode, unlike the evaluation-only walk-forward).
+ */
+router.post("/evaluation/optimizer/run", async (req, res): Promise<void> => {
+  const parsed = RunOptimizerBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const result = await runOptimizerRun(parsed.data);
+  res.json(
+    RunOptimizerResponse.parse({
+      candidateConfigId: result.candidateConfigId,
+      thresholdEvaluationId: result.thresholdEvaluationId,
+      walkForward: {
+        foldsRun: result.walkForwardSummary.foldsRun,
+        foldIds: result.walkForwardSummary.foldIds,
+        skippedNoEligibleMatches: result.walkForwardSummary.skippedNoEligibleMatches,
+        fallbackRate: result.walkForwardSummary.fallbackRate,
+        warnings: result.walkForwardSummary.warnings,
+      },
+    }),
+  );
+});
+
+/**
+ * Task #12: Get the most recent correct-vs-incorrect pattern analysis run.
+ * Returns null when no pattern analysis has run yet (walk-forward must be run first).
+ */
+router.get("/evaluation/pattern-analysis/latest", async (_req, res): Promise<void> => {
+  const result = await getLatestPatternAnalysis();
+  res.json(GetLatestPatternAnalysisResponse.parse(result));
+});
+
+/**
+ * Task #12: Get the most recent threshold evaluation run.
+ * Returns null when no threshold evaluation has run yet (optimizer must be run first).
+ */
+router.get("/evaluation/threshold-evaluation/latest", async (_req, res): Promise<void> => {
+  const result = await getLatestThresholdEvaluation();
+  res.json(GetLatestThresholdEvaluationResponse.parse(result));
 });
 
 router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {

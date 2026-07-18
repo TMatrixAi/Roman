@@ -3,11 +3,16 @@ import {
   useGetEvaluationDashboard,
   useListEvaluationRuns,
   useRunWalkForward,
+  useRunOptimizer,
+  useGetLatestPatternAnalysis,
+  useGetLatestThresholdEvaluation,
   useRunPaperTradingCycle,
   useGetEvaluationSettings,
   useUpdateEvaluationSettings,
   useRunShadowReplay,
   useGetShadowReplayDashboard,
+  getGetLatestPatternAnalysisQueryKey,
+  getGetLatestThresholdEvaluationQueryKey,
   type EvaluationDashboardSegment,
   type SpecialistSegmentSummary,
   type EliteTierBacktest,
@@ -16,6 +21,10 @@ import {
   type UpsetRiskTierMetrics,
   type DisagreementTierMetrics,
   type ShadowReplayDashboard,
+  type PatternAnalysisRun,
+  type PatternSegment,
+  type ThresholdEvaluationRun,
+  type ThresholdEvalEntry,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -28,7 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey, getGetShadowReplayDashboardQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical, ChevronDown, ChevronUp, Beaker, TrendingUp } from "lucide-react"
 
 /** Below this many graded rows, a tier's own numbers are too noisy to trust at face value --
  * mirrors the n<30 minimum-sample convention this dashboard already uses for the Elite tier
@@ -591,18 +600,251 @@ function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDa
   )
 }
 
+// ── Task #12: Correct vs Incorrect Patterns Panel ───────────────────────────────────────────────
+
+const EVIDENCE_BADGE: Record<PatternSegment["evidenceStrength"], { label: string; variant: "success" | "warning" | "destructive" | "outline" | "secondary" }> = {
+  Strong:      { label: "STRONG",       variant: "success" },
+  Moderate:    { label: "MODERATE",     variant: "warning" },
+  Weak:        { label: "WEAK",         variant: "outline" },
+  Insufficient:{ label: "INSUFF.",      variant: "secondary" },
+}
+
+const DIMENSION_LABELS: Record<string, string> = {
+  surface: "Surface",
+  tournamentLevel: "Tour Level",
+  probabilityBand: "Confidence Band",
+  upsetRiskTier: "Upset-Risk Tier",
+  modelAgreement: "Model Agreement",
+  closeMatch: "Close vs Clear",
+  dataQualityTier: "Data Quality",
+  runKind: "Run Kind",
+}
+
+function CorrectVsIncorrectPanel({ data }: { data: PatternAnalysisRun | null | undefined }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!data) {
+    return (
+      <Card className="glass-panel">
+        <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 flex flex-row items-center gap-3">
+          <TrendingUp className="w-5 h-5 text-primary shrink-0" />
+          <CardTitle className="text-lg font-display">Correct vs Incorrect Patterns</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No pattern analysis has run yet. Run a walk-forward to generate this report.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Sort segments by |accuracy - 50| desc (most divergent first), then filter to those with n≥5
+  const diverging = [...data.segments]
+    .filter(s => s.n >= 5 && s.accuracy !== null)
+    .sort((a, b) => Math.abs((b.accuracy ?? 50) - 50) - Math.abs((a.accuracy ?? 50) - 50))
+    .slice(0, expanded ? 60 : 12)
+
+  return (
+    <Card className="glass-panel">
+      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 flex flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <TrendingUp className="w-5 h-5 text-primary shrink-0" />
+          <div>
+            <CardTitle className="text-lg font-display">Correct vs Incorrect Patterns</CardTitle>
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">
+              {data.totalAnalyzed.toLocaleString()} genuinely-unseen graded rows · computed {new Date(data.createdAt).toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+        <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-foreground transition-colors">
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </CardHeader>
+      <CardContent className="p-5 space-y-3">
+        <p className="text-xs text-muted-foreground/80 leading-relaxed">
+          Segments ranked by divergence from 50% accuracy. <span className="font-mono font-bold">Evidence strength</span> is based on sample size and CI width — only Strong/Moderate segments warrant action.
+          Validation-segment and shadow rows are excluded; these are test+paper-trade rows only.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {diverging.map((seg, i) => {
+            const badge = EVIDENCE_BADGE[seg.evidenceStrength]
+            const dimLabel = DIMENSION_LABELS[seg.dimension] ?? seg.dimension
+            const isPositive = (seg.accuracy ?? 50) > 50
+            return (
+              <div key={i} className="bg-background rounded-xl border border-border/50 p-4 space-y-2 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{dimLabel}</div>
+                    <div className="font-bold text-sm mt-0.5 truncate">{seg.value}</div>
+                  </div>
+                  <Badge variant={badge.variant} className="font-mono text-[9px] tracking-widest shrink-0">{badge.label}</Badge>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`text-2xl font-display font-bold tabular-nums ${isPositive ? "text-success" : "text-destructive"}`}>
+                    {seg.accuracy !== null ? `${seg.accuracy}%` : "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground/80 font-mono space-y-0.5">
+                    <div>n={seg.n}</div>
+                    {seg.ciLow !== null && seg.ciHigh !== null && (
+                      <div>CI [{seg.ciLow.toFixed(0)}–{seg.ciHigh.toFixed(0)}]</div>
+                    )}
+                  </div>
+                </div>
+                {seg.logLoss !== null && (
+                  <div className="text-[11px] font-mono text-muted-foreground/70">
+                    LL {seg.logLoss.toFixed(3)} · Brier {seg.brier?.toFixed(3) ?? "—"}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {data.segments.filter(s => s.n >= 5).length > 12 && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2 mt-2"
+          >
+            {expanded ? "Show fewer" : `Show all ${data.segments.filter(s => s.n >= 5).length} segments`}
+          </button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Task #12: Threshold Recommendations Panel ─────────────────────────────────────────────────────
+
+const CLASSIFICATION_BADGE: Record<ThresholdEvalEntry["classification"], { variant: "success" | "warning" | "destructive" | "outline" | "secondary" }> = {
+  "Deploy":           { variant: "success" },
+  "Continue shadow":  { variant: "warning" },
+  "Needs more data":  { variant: "outline" },
+  "Reject":           { variant: "destructive" },
+  "Investigate":      { variant: "secondary" },
+}
+
+function ThresholdRecommendationsPanel({ data }: { data: ThresholdEvaluationRun | null | undefined }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!data) {
+    return (
+      <Card className="glass-panel">
+        <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 flex flex-row items-center gap-3">
+          <Beaker className="w-5 h-5 text-primary shrink-0" />
+          <CardTitle className="text-lg font-display">Threshold Recommendations</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          No threshold evaluation has run yet. Use "Run Optimizer" to generate this report.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const shown = expanded ? data.thresholds : data.thresholds.slice(0, 6)
+
+  return (
+    <Card className="glass-panel">
+      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 flex flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Beaker className="w-5 h-5 text-primary shrink-0" />
+          <div>
+            <CardTitle className="text-lg font-display">Threshold Recommendations</CardTitle>
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">
+              {data.totalGraded.toLocaleString()} graded rows · computed {new Date(data.createdAt).toLocaleDateString()} · read-only
+            </p>
+          </div>
+        </div>
+        <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-foreground transition-colors">
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </CardHeader>
+      <CardContent className="p-5 space-y-3">
+        <p className="text-xs text-muted-foreground/80 leading-relaxed">
+          Candidate threshold values scored against the held-out graded cohort. <span className="font-mono font-bold text-foreground">Nothing is auto-deployed</span> — all changes require a separate manual acceptance step.
+          Widening a gate (admitting more predictions) requires genuine holdout log-loss improvement to avoid Reject.
+        </p>
+        <div className="space-y-3">
+          {shown.map((entry, i) => {
+            const badge = CLASSIFICATION_BADGE[entry.classification]
+            const logLossImproved = entry.logLossDelta !== null && entry.logLossDelta > 0
+            const accImproved = entry.accuracyDelta !== null && entry.accuracyDelta > 0
+            return (
+              <div key={i} className="bg-background rounded-xl border border-border/50 p-4 space-y-2 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{entry.tierId}</div>
+                    <div className="font-bold text-sm mt-0.5">{entry.tierLabel}</div>
+                  </div>
+                  <Badge variant={badge.variant} className="font-mono text-[9px] tracking-widest shrink-0">{entry.classification.toUpperCase()}</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+                  <div className="bg-secondary/30 rounded-lg p-2">
+                    <div className="text-[10px] text-muted-foreground tracking-wider uppercase mb-1">CURRENT</div>
+                    <div className="font-bold">{String(entry.currentValue)}</div>
+                    {entry.currentAccuracy !== null && <div className="text-muted-foreground/70">acc {entry.currentAccuracy}%</div>}
+                  </div>
+                  <div className={`rounded-lg p-2 ${entry.isWidening ? "bg-warning/10 border border-warning/20" : "bg-secondary/30"}`}>
+                    <div className="text-[10px] text-muted-foreground tracking-wider uppercase mb-1">
+                      CANDIDATE{entry.isWidening && <span className="text-warning ml-1">↕ WIDER</span>}
+                    </div>
+                    <div className="font-bold">{String(entry.candidateValue)}</div>
+                    {entry.candidateAccuracy !== null && (
+                      <div className={`${accImproved ? "text-success" : "text-muted-foreground/70"}`}>
+                        acc {entry.candidateAccuracy}%{entry.accuracyDelta !== null && entry.accuracyDelta !== 0 && ` (${entry.accuracyDelta > 0 ? "+" : ""}${entry.accuracyDelta})`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 text-[11px] font-mono">
+                  <span className="text-muted-foreground/70">n={entry.affectedN}</span>
+                  {entry.logLossDelta !== null && (
+                    <span className={logLossImproved ? "text-success font-bold" : "text-muted-foreground/70"}>
+                      LL Δ{entry.logLossDelta > 0 ? "+" : ""}{entry.logLossDelta.toFixed(4)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{entry.note}</p>
+              </div>
+            )
+          })}
+        </div>
+        {data.thresholds.length > 6 && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+          >
+            {expanded ? "Show fewer" : `Show all ${data.thresholds.length} threshold entries`}
+          </button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
   const { data: runs } = useListEvaluationRuns()
   const { data: settings } = useGetEvaluationSettings()
   const { data: shadowDashboard } = useGetShadowReplayDashboard()
+  // Task #12: pattern analysis and threshold evaluation data
+  const { data: patternAnalysis } = useGetLatestPatternAnalysis()
+  const { data: thresholdEvaluation } = useGetLatestThresholdEvaluation()
 
   const runWalkForward = useRunWalkForward({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
         queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
+        // Task #12: pattern analysis auto-runs after walk-forward
+        queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
+      },
+    },
+  })
+  // Task #12: optimizer mutation (training mode)
+  const runOptimizer = useRunOptimizer({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getGetLatestThresholdEvaluationQueryKey() })
       },
     },
   })
@@ -664,13 +906,52 @@ export default function AccuracyDashboardPage() {
             <div>
               <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-1">WALK-FORWARD BACKTEST</div>
               <p className="text-xs text-muted-foreground/80 leading-relaxed">
-                Reruns the prediction engine over all historical match data to compute accuracy, log loss, calibration curves, and specialist segment weights. Takes 8–12 min and resets historical test rows.
+                Evaluation-only mode: scores all historical data against the <span className="font-bold text-foreground">frozen</span> production calibration — never updates any weights. Use "Run Optimizer" below to refit calibration and generate a candidate config.
               </p>
             </div>
-            <Button variant="accent" onClick={() => runWalkForward.mutate({ data: {} })} disabled={runWalkForward.isPending} className="gap-2 shadow-md font-mono h-10 w-full sm:w-auto">
+            <Button variant="accent" onClick={() => runWalkForward.mutate({ data: { evaluationOnly: true } })} disabled={runWalkForward.isPending} className="gap-2 shadow-md font-mono h-10 w-full sm:w-auto">
               {runWalkForward.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
               RUN WALK-FORWARD
             </Button>
+            {runWalkForward.data && (
+              <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
+                <span>FOLDS: <span className="text-foreground">{runWalkForward.data.foldsRun}</span></span>
+                <span className="text-border">•</span>
+                <span className={runWalkForward.data.evaluationOnly ? "text-success" : "text-warning"}>
+                  {runWalkForward.data.evaluationOnly ? "EVAL-ONLY (frozen)" : "TRAINING MODE"}
+                </span>
+              </div>
+            )}
+            {runWalkForward.isError && (
+              <p className="text-xs text-destructive font-mono">
+                {runWalkForward.error instanceof Error ? runWalkForward.error.message : "Walk-forward failed. Check the API server is running."}
+              </p>
+            )}
+          </div>
+
+          <div className="flex-1 border border-border/50 rounded-xl p-4 bg-secondary/20 space-y-3">
+            <div>
+              <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-1">OPTIMIZER</div>
+              <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                Runs the full training walk-forward (refits calibration + specialist weights), writes a versioned candidate config, and scores threshold candidates. Takes 8–12 min. <span className="font-bold text-foreground">Production config is never auto-promoted.</span>
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => runOptimizer.mutate({})} disabled={runOptimizer.isPending} className="gap-2 shadow-sm font-mono h-10 w-full sm:w-auto">
+              {runOptimizer.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Beaker className="w-4 h-4" />}
+              RUN OPTIMIZER
+            </Button>
+            {runOptimizer.data && (
+              <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
+                <span>CANDIDATE: <span className="text-foreground">#{runOptimizer.data.candidateConfigId}</span></span>
+                <span className="text-border">•</span>
+                <span>FOLDS: <span className="text-foreground">{runOptimizer.data.walkForward.foldsRun}</span></span>
+              </div>
+            )}
+            {runOptimizer.isError && (
+              <p className="text-xs text-destructive font-mono">
+                {runOptimizer.error instanceof Error ? runOptimizer.error.message : "Optimizer failed. Check the API server is running."}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -733,6 +1014,10 @@ export default function AccuracyDashboardPage() {
       ) : null}
 
       <ShadowReplayCard shadowDashboard={shadowDashboard} />
+
+      {/* Task #12: Correct vs Incorrect Patterns & Threshold Recommendations */}
+      <CorrectVsIncorrectPanel data={patternAnalysis} />
+      <ThresholdRecommendationsPanel data={thresholdEvaluation} />
 
       {runs && runs.length > 0 && (
         <section className="space-y-6 pt-8 border-t border-border/50">

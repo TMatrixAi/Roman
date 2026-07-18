@@ -17,4 +17,6 @@ export interface RunWalkForwardRequest {
      * @maximum 0.95
      */
   warmupFraction?: number;
+  /** Task #12: when true (default for dashboard), calibration/specialist weights are frozen. */
+  evaluationOnly?: boolean;
 }

@@ -17,6 +17,15 @@ export interface WalkForwardOptions {
   foldCount?: number;
   /** Fraction of the earliest history reserved as train-only warmup, never scored. */
   warmupFraction?: number;
+  /**
+   * Task #12: when true, run all folds and compute metrics using the currently-active
+   * (frozen) calibration without touching calibration_models, specialist_models, or any
+   * threshold value. The "Run Walk-Forward" button on the Accuracy Dashboard always uses
+   * evaluationOnly=true. The separate "Run Optimizer" action uses evaluationOnly=false.
+   *
+   * Defaults to false for backward compatibility, but the dashboard wires it as true.
+   */
+  evaluationOnly?: boolean;
 }
 
 export interface WalkForwardSummary {
@@ -27,6 +36,8 @@ export interface WalkForwardSummary {
   fallbackRate: number;
   /** Data-quality warnings for this run -- e.g. the fallback-rate threshold warning (Task #77) -- surfaced the same way per-prediction module warnings are, never a new UI surface. */
   warnings: string[];
+  /** Task #12: true when this run was evaluation-only (frozen calibration/specialist weights), false when it was a full optimizer/training run. */
+  evaluationOnly: boolean;
 }
 
 function classifyResult(match: { winnerId: string | null; retired: boolean; walkover: boolean; cancelled: boolean }): ResultType {
@@ -41,12 +52,27 @@ function classifyResult(match: { winnerId: string | null; retired: boolean; walk
  * historical store and persists per-fold results. Each run supersedes prior evaluation_runs /
  * evaluation_predictions rows of runKind='historical_test' (deleted up front) so re-running
  * after a model change never mixes stale and fresh fold results together.
+ *
+ * Task #12: when `options.evaluationOnly=true`, folds are scored against the currently-active
+ * (frozen) calibration mapping without touching calibration_models, specialist_models, or any
+ * threshold value. The dashboard "Run Walk-Forward" button always uses evaluation-only mode.
+ * The separate "Run Optimizer" endpoint uses the full training mode (evaluationOnly=false).
  */
 export async function runWalkForwardEvaluation(options: WalkForwardOptions = {}): Promise<WalkForwardSummary> {
   const foldCount = options.foldCount ?? 4;
   const warmupFraction = options.warmupFraction ?? 0.4;
+  const evaluationOnly = options.evaluationOnly ?? false;
   if (foldCount < 1) throw new Error("foldCount must be >= 1");
   if (warmupFraction <= 0 || warmupFraction >= 1) throw new Error("warmupFraction must be between 0 and 1 (exclusive)");
+
+  // Task #12: in evaluation-only mode, load the currently-active calibration once up front.
+  // This mapping is used for ALL folds (instead of per-fold refitting). Never touched/updated.
+  let frozenCalibrationMapping: CalibrationKnot[] | null = null;
+  if (evaluationOnly) {
+    const [activeCalibration] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1);
+    frozenCalibrationMapping = activeCalibration ? (activeCalibration.mapping as CalibrationKnot[]) : null;
+    logger.info({ hasFrozenMapping: frozenCalibrationMapping !== null, knots: frozenCalibrationMapping?.length ?? 0 }, "Task #12: evaluation-only walk-forward — calibration is frozen, no writes to calibration_models or specialist_models");
+  }
 
   const settings = await getPredictionSettings();
 
@@ -58,7 +84,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const eligible = allMatches.filter((m) => !m.cancelled); // cancelled matches never even reach scoring; walkovers/retirements are scored but voided/flagged downstream
   if (eligible.length < 20) {
     logger.warn({ count: eligible.length }, "Not enough historical matches to run a meaningful walk-forward evaluation");
-    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [] };
+    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [], evaluationOnly };
   }
 
   // Wipe prior historical_test evaluation state so a re-run never mixes fold generations.
@@ -94,7 +120,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const scorable = eligible.slice(warmupEndIdx);
   if (scorable.length < foldCount * 6) {
     logger.warn({ scorable: scorable.length, foldCount }, "Not enough post-warmup matches for the requested fold count");
-    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [] };
+    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [], evaluationOnly };
   }
 
   const chunkSize = Math.floor(scorable.length / foldCount);
@@ -119,15 +145,25 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     const trainStart = allMatches[0].scheduledStartAt;
 
     const validationRows = await scoreAndInsert(validationMatches, "validation", null, settings.retirementRule as RetirementRule);
-    // Fit calibration ONLY on this fold's validation-segment, accuracy-eligible points.
-    const foldValidationPoints: CalibrationPoint[] = validationRows
-      .filter((r) => r.includedInAccuracy && r.rawProbability !== null)
-      .map((r) => ({ rawProbability: r.rawProbability as number, outcome: r.player1Won ? 1 : 0 }));
-    const mapping = fitBestCalibration(foldValidationPoints).knots;
-    allValidationPoints.push(...foldValidationPoints);
 
-    // Re-apply the fold's own calibration to its validation rows (in-sample, documented as such)
-    // and to its test rows (out-of-sample -- test data was never touched while fitting `mapping`).
+    let mapping: CalibrationKnot[];
+    if (evaluationOnly) {
+      // Task #12: evaluation-only mode -- use the frozen calibration (never refit).
+      // When no active calibration exists yet (fresh env), fall back to the identity curve so
+      // the run still completes with honest "uncalibrated" metrics rather than crashing.
+      mapping = frozenCalibrationMapping ?? [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+    } else {
+      // Training mode: fit calibration ONLY on this fold's validation-segment, accuracy-eligible
+      // points. Never touches test data.
+      const foldValidationPoints: CalibrationPoint[] = validationRows
+        .filter((r) => r.includedInAccuracy && r.rawProbability !== null)
+        .map((r) => ({ rawProbability: r.rawProbability as number, outcome: r.player1Won ? 1 : 0 }));
+      mapping = fitBestCalibration(foldValidationPoints).knots;
+      allValidationPoints.push(...foldValidationPoints);
+    }
+
+    // Apply calibration to validation rows (in-sample for training mode, against-frozen for eval)
+    // and to test rows (always out-of-sample).
     await recalibrateRows(validationRows.map((r) => r.id), mapping);
     const testRows = await scoreAndInsert(testMatches, "test", null, settings.retirementRule as RetirementRule);
     await recalibrateRows(testRows.map((r) => r.id), mapping);
@@ -166,27 +202,44 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     foldIds.push(insertedFold.id);
   }
 
-  // Refit the single "live" calibration model from every fold's pooled validation data -- this
-  // is what future paper-trade/live predictions will be calibrated with.
-  await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
-  const liveFit = fitBestCalibration(allValidationPoints);
-  const liveMapping = liveFit.knots;
-  const dates = allMatches.map((m) => m.scheduledStartAt.getTime());
-  await db.insert(calibrationModelsTable).values({
-    method: liveFit.method,
-    mapping: liveMapping,
-    validationSampleSize: allValidationPoints.length,
-    validationDateRangeStart: dates.length ? new Date(Math.min(...dates)) : null,
-    validationDateRangeEnd: dates.length ? new Date(Math.max(...dates)) : null,
-    active: true,
-    isotonicHoldoutLogLoss: liveFit.isotonicHoldoutLogLoss,
-    plattHoldoutLogLoss: liveFit.plattHoldoutLogLoss,
-    holdoutSampleSize: liveFit.holdoutSampleSize,
-  });
+  if (evaluationOnly) {
+    // Task #12: evaluation-only -- calibration_models and specialist_models are frozen.
+    // No writes to either table. The run's purpose is purely to produce fresh metrics against
+    // the current deployed calibration without touching it.
+    logger.info({ foldsRun: foldIds.length }, "Task #12: evaluation-only walk-forward complete — skipped calibration refit and specialist recompute");
+  } else {
+    // Training mode: refit the single "live" calibration model from every fold's pooled
+    // validation data -- this is what future paper-trade/live predictions will be calibrated with.
+    await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
+    const liveFit = fitBestCalibration(allValidationPoints);
+    const liveMapping = liveFit.knots;
+    const dates = allMatches.map((m) => m.scheduledStartAt.getTime());
+    await db.insert(calibrationModelsTable).values({
+      method: liveFit.method,
+      mapping: liveMapping,
+      validationSampleSize: allValidationPoints.length,
+      validationDateRangeStart: dates.length ? new Date(Math.min(...dates)) : null,
+      validationDateRangeEnd: dates.length ? new Date(Math.max(...dates)) : null,
+      active: true,
+      isotonicHoldoutLogLoss: liveFit.isotonicHoldoutLogLoss,
+      plattHoldoutLogLoss: liveFit.plattHoldoutLogLoss,
+      holdoutSampleSize: liveFit.holdoutSampleSize,
+    });
 
-  // Phase 6: recompute every tour/surface specialist segment from the fold's freshly-written
-  // validation-segment data, comparing each against this SAME newly-fit general/pooled mapping.
-  await computeAndStoreSpecialistSegments(liveMapping);
+    // Phase 6: recompute every tour/surface specialist segment from the fold's freshly-written
+    // validation-segment data, comparing each against this SAME newly-fit general/pooled mapping.
+    await computeAndStoreSpecialistSegments(liveMapping);
+  }
+
+  // Task #12: run pattern analysis automatically after every walk-forward (both modes).
+  // Import lazily to avoid a circular dep and keep this file focused on fold mechanics.
+  try {
+    const { runPatternAnalysis } = await import("./patternAnalysis");
+    await runPatternAnalysis();
+  } catch (err) {
+    // Pattern analysis failure is non-fatal -- the walk-forward result is still valid.
+    logger.warn({ err }, "Task #12: post-walk-forward pattern analysis failed (non-fatal)");
+  }
 
   // Task #77: surface a data-quality warning through this run's own existing summary output
   // (the same "warnings" shape every per-prediction module already uses) whenever more than 1%
@@ -199,7 +252,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     logger.warn({ fallbackRate: fallbackStats.fallbackRate, fallbackCount: fallbackStats.fallbackCount, totalAttempts: fallbackStats.totalAttempts }, fallbackWarning);
   }
 
-  return { foldsRun: foldIds.length, foldIds, skippedNoEligibleMatches: false, fallbackRate: fallbackStats.fallbackRate, warnings };
+  return { foldsRun: foldIds.length, foldIds, skippedNoEligibleMatches: false, fallbackRate: fallbackStats.fallbackRate, warnings, evaluationOnly };
 
   // --- helpers (closures over allMatches context) ---
 

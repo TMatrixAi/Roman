@@ -71,7 +71,10 @@ import type {
   ShadowReplaySummary,
   SimulatorValidation,
   UpdatePredictionSettingsRequest,
-  WalkForwardSummary
+  WalkForwardSummary,
+  OptimizerRunSummary,
+  PatternAnalysisRun,
+  ThresholdEvaluationRun
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -3379,6 +3382,111 @@ export function useGetHistoricalDataFreshness<TData = Awaited<ReturnType<typeof 
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+// ── Task #12: Continuous outcome-learning system ─────────────────────────────────────────────────
+
+// --- Run Optimizer ---
+
+export const getRunOptimizerUrl = () => `/api/evaluation/optimizer/run`;
+
+export const runOptimizer = async (runOptimizerRequest?: { foldCount?: number; warmupFraction?: number; notes?: string }, options?: RequestInit): Promise<OptimizerRunSummary> => {
+  return customFetch<OptimizerRunSummary>(getRunOptimizerUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runOptimizerRequest ?? {})
+  });
+};
+
+export const getRunOptimizerMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof runOptimizer>>, TError, { data?: { foldCount?: number; warmupFraction?: number; notes?: string } }, TContext>; request?: SecondParameter<typeof customFetch> }
+): UseMutationOptions<Awaited<ReturnType<typeof runOptimizer>>, TError, { data?: { foldCount?: number; warmupFraction?: number; notes?: string } }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationKey = ['runOptimizer'];
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof runOptimizer>>, { data?: { foldCount?: number; warmupFraction?: number; notes?: string } }> = (props) => {
+    const { data } = props ?? {};
+    return runOptimizer(data, requestOptions);
+  };
+  return { mutationKey, mutationFn, ...mutationOptions };
+};
+
+export type RunOptimizerMutationResult = NonNullable<Awaited<ReturnType<typeof runOptimizer>>>;
+export type RunOptimizerMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Task #12: Run the optimizer (training walk-forward + candidate config generation)
+ */
+export const useRunOptimizer = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof runOptimizer>>, TError, { data?: { foldCount?: number; warmupFraction?: number; notes?: string } }, TContext>; request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof runOptimizer>>, TError, { data?: { foldCount?: number; warmupFraction?: number; notes?: string } }, TContext> => {
+  return useMutation(getRunOptimizerMutationOptions(options));
+};
+
+// --- Get Latest Pattern Analysis ---
+
+export const getGetLatestPatternAnalysisUrl = () => `/api/evaluation/pattern-analysis/latest`;
+
+export const getLatestPatternAnalysis = async (options?: RequestInit): Promise<PatternAnalysisRun | null> => {
+  return customFetch<PatternAnalysisRun | null>(getGetLatestPatternAnalysisUrl(), { ...options, method: 'GET' });
+};
+
+export const getGetLatestPatternAnalysisQueryKey = () => [`/api/evaluation/pattern-analysis/latest`] as const;
+
+export const getGetLatestPatternAnalysisQueryOptions = <TData = Awaited<ReturnType<typeof getLatestPatternAnalysis>>, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getLatestPatternAnalysis>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetLatestPatternAnalysisQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLatestPatternAnalysis>>> = ({ signal }) => getLatestPatternAnalysis({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<Awaited<ReturnType<typeof getLatestPatternAnalysis>>, TError, TData> & { queryKey: QueryKey };
+};
+
+export type GetLatestPatternAnalysisQueryResult = NonNullable<Awaited<ReturnType<typeof getLatestPatternAnalysis>>>;
+export type GetLatestPatternAnalysisQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Task #12: Get the most recent correct-vs-incorrect pattern analysis run
+ */
+export function useGetLatestPatternAnalysis<TData = Awaited<ReturnType<typeof getLatestPatternAnalysis>>, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getLatestPatternAnalysis>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLatestPatternAnalysisQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+// --- Get Latest Threshold Evaluation ---
+
+export const getGetLatestThresholdEvaluationUrl = () => `/api/evaluation/threshold-evaluation/latest`;
+
+export const getLatestThresholdEvaluation = async (options?: RequestInit): Promise<ThresholdEvaluationRun | null> => {
+  return customFetch<ThresholdEvaluationRun | null>(getGetLatestThresholdEvaluationUrl(), { ...options, method: 'GET' });
+};
+
+export const getGetLatestThresholdEvaluationQueryKey = () => [`/api/evaluation/threshold-evaluation/latest`] as const;
+
+export const getGetLatestThresholdEvaluationQueryOptions = <TData = Awaited<ReturnType<typeof getLatestThresholdEvaluation>>, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getLatestThresholdEvaluation>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetLatestThresholdEvaluationQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLatestThresholdEvaluation>>> = ({ signal }) => getLatestThresholdEvaluation({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<Awaited<ReturnType<typeof getLatestThresholdEvaluation>>, TError, TData> & { queryKey: QueryKey };
+};
+
+export type GetLatestThresholdEvaluationQueryResult = NonNullable<Awaited<ReturnType<typeof getLatestThresholdEvaluation>>>;
+export type GetLatestThresholdEvaluationQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Task #12: Get the most recent threshold evaluation run
+ */
+export function useGetLatestThresholdEvaluation<TData = Awaited<ReturnType<typeof getLatestThresholdEvaluation>>, TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getLatestThresholdEvaluation>>, TError, TData>; request?: SecondParameter<typeof customFetch> }
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLatestThresholdEvaluationQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
   return withQueryKey(query, queryOptions.queryKey);
 }
 

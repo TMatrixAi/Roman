@@ -10,4 +10,6 @@ export interface WalkForwardSummary {
   foldsRun: number;
   foldIds: number[];
   skippedNoEligibleMatches: boolean;
+  /** Task #12: true when this was evaluation-only (frozen weights), false for training mode. */
+  evaluationOnly: boolean;
 }

@@ -976,12 +976,16 @@ export interface RunWalkForwardRequest {
      * @maximum 0.95
      */
   warmupFraction?: number;
+  /** Task #12: when true (default for dashboard), calibration/specialist weights are frozen. */
+  evaluationOnly?: boolean;
 }
 
 export interface WalkForwardSummary {
   foldsRun: number;
   foldIds: number[];
   skippedNoEligibleMatches: boolean;
+  /** Task #12: true = evaluation-only (frozen weights), false = training mode. */
+  evaluationOnly: boolean;
 }
 
 export interface EvaluationPrediction {
@@ -1521,4 +1525,68 @@ export type ListHistoricalBackfillJobRunsParams = {
  */
 limit?: number;
 };
+
+// ── Task #12: Continuous outcome-learning types ──────────────────────────────────────────────────
+
+export type EvidenceStrength = 'Strong' | 'Moderate' | 'Weak' | 'Insufficient';
+
+export interface PatternSegment {
+  dimension: string;
+  value: string;
+  n: number;
+  correct: number;
+  accuracy: number | null;
+  logLoss: number | null;
+  brier: number | null;
+  ece: number | null;
+  ciLow: number | null;
+  ciHigh: number | null;
+  evidenceStrength: EvidenceStrength;
+}
+
+export interface PatternAnalysisRun {
+  id: number;
+  totalAnalyzed: number;
+  segments: PatternSegment[];
+  runKindsIncluded: string[];
+  createdAt: string;
+}
+
+export type ThresholdClassification = 'Deploy' | 'Continue shadow' | 'Needs more data' | 'Reject' | 'Investigate';
+
+export interface ThresholdEvalEntry {
+  tierId: string;
+  tierLabel: string;
+  currentValue: number | string;
+  candidateValue: number | string;
+  isWidening: boolean;
+  affectedN: number;
+  currentAccuracy: number | null;
+  candidateAccuracy: number | null;
+  currentLogLoss: number | null;
+  candidateLogLoss: number | null;
+  accuracyDelta: number | null;
+  logLossDelta: number | null;
+  classification: ThresholdClassification;
+  note: string;
+}
+
+export interface ThresholdEvaluationRun {
+  id: number;
+  totalGraded: number;
+  thresholds: ThresholdEvalEntry[];
+  createdAt: string;
+}
+
+export interface OptimizerRunSummary {
+  candidateConfigId: number;
+  thresholdEvaluationId: number;
+  walkForward: {
+    foldsRun: number;
+    foldIds: number[];
+    skippedNoEligibleMatches: boolean;
+    fallbackRate: number;
+    warnings: string[];
+  };
+}
 

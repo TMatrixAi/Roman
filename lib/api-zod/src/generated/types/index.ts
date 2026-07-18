@@ -126,3 +126,6 @@ export * from './upsetRiskResultUpsetRisk';
 export * from './upsetRiskTierMetrics';
 export * from './walkForwardSummary';
 export * from './weatherConditions';
+export * from './patternAnalysis';
+export * from './thresholdEvaluation';
+export * from './optimizerRunSummary';

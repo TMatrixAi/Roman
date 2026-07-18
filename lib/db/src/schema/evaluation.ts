@@ -49,6 +49,52 @@ export type InsertEvaluationRun = z.infer<typeof insertEvaluationRunSchema>;
 export type EvaluationRunRow = typeof evaluationRunsTable.$inferSelect;
 
 /**
+ * Task #12: one row per pattern-analysis run. Generated automatically after every
+ * walk-forward (both evaluation-only and optimizer/training modes). Stores per-segment
+ * correct-vs-incorrect breakdowns so the AccuracyDashboard can surface the top diverging
+ * patterns without re-querying the whole evaluation_predictions table on every request.
+ */
+export const patternAnalysisRunsTable = pgTable("pattern_analysis_runs", {
+  id: serial("id").primaryKey(),
+
+  /** Total evaluation_predictions rows included (graded, includedInAccuracy=true, non-shadow) */
+  totalAnalyzed: integer("total_analyzed").notNull(),
+
+  /** Array of per-segment breakdowns. Each element: { dimension, value, n, correct, accuracy,
+   *  logLoss, brier, ece, ciLow, ciHigh, evidenceStrength } */
+  segments: jsonb("segments").notNull(),
+
+  /** Which runKind values were included in this analysis run */
+  runKindsIncluded: jsonb("run_kinds_included").$type<string[]>().notNull(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PatternAnalysisRunRow = typeof patternAnalysisRunsTable.$inferSelect;
+
+/**
+ * Task #12: one row per threshold-evaluation run. Generated automatically after every
+ * optimizer run (training mode). Stores how each tier threshold performs at candidate values
+ * relative to the current deployed value so the dashboard can show Deploy/Reject/Shadow
+ * classifications without re-scoring everything on every request.
+ */
+export const thresholdEvaluationRunsTable = pgTable("threshold_evaluation_runs", {
+  id: serial("id").primaryKey(),
+
+  /** Total graded predictions available in the cohort used for this evaluation */
+  totalGraded: integer("total_graded").notNull(),
+
+  /** Array of threshold evaluation entries. Each element:
+   *  { tierId, tierLabel, currentValue, candidateValue, affectedN, currentAccuracy,
+   *    candidateAccuracy, currentLogLoss, candidateLogLoss, classification } */
+  thresholds: jsonb("thresholds").notNull(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ThresholdEvaluationRunRow = typeof thresholdEvaluationRunsTable.$inferSelect;
+
+/**
  * The immutable prediction ledger for out-of-sample testing AND live paper trading. A row is
  * inserted exactly once, before its result is knowable (a historical-test row uses only
  * pre-cutoff feature snapshots; a paper-trade row is locked before the real match starts), and

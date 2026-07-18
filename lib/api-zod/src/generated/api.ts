@@ -1160,13 +1160,17 @@ export const runWalkForwardBodyWarmupFractionMax = 0.95;
 
 export const RunWalkForwardBody = zod.object({
   "foldCount": zod.number().min(1).max(runWalkForwardBodyFoldCountMax).optional(),
-  "warmupFraction": zod.number().min(runWalkForwardBodyWarmupFractionMin).max(runWalkForwardBodyWarmupFractionMax).optional()
+  "warmupFraction": zod.number().min(runWalkForwardBodyWarmupFractionMin).max(runWalkForwardBodyWarmupFractionMax).optional(),
+  /** Task #12: when true (default for the dashboard Run Walk-Forward button), calibration and specialist weights are frozen. */
+  "evaluationOnly": zod.boolean().optional()
 })
 
 export const RunWalkForwardResponse = zod.object({
   "foldsRun": zod.number(),
   "foldIds": zod.array(zod.number()),
-  "skippedNoEligibleMatches": zod.boolean()
+  "skippedNoEligibleMatches": zod.boolean(),
+  /** Task #12: true when this was an evaluation-only run (frozen weights), false when it was a full optimizer/training run. */
+  "evaluationOnly": zod.boolean()
 })
 
 
@@ -1688,5 +1692,80 @@ export const GetRankingVerificationResponse = zod.object({
     "gapPlaces": zod.number().describe('Absolute difference between stored and provider rank (or providerRank when stored is null).'),
   })).describe('Players with a stored vs. live rank gap exceeding 10 places, sorted largest-gap-first.'),
 })
+
+// ── Task #12: Continuous outcome-learning system ─────────────────────────────────────────────────
+
+/**
+ * @summary Run the optimizer (training-mode walk-forward + candidate config generation)
+ */
+export const RunOptimizerBody = zod.object({
+  "foldCount": zod.number().min(1).max(20).optional(),
+  "warmupFraction": zod.number().min(0.05).max(0.95).optional(),
+  "notes": zod.string().optional()
+})
+
+export const RunOptimizerResponse = zod.object({
+  "candidateConfigId": zod.number(),
+  "thresholdEvaluationId": zod.number(),
+  "walkForward": zod.object({
+    "foldsRun": zod.number(),
+    "foldIds": zod.array(zod.number()),
+    "skippedNoEligibleMatches": zod.boolean(),
+    "fallbackRate": zod.number(),
+    "warnings": zod.array(zod.string())
+  })
+})
+
+/**
+ * One per-segment breakdown row from a pattern analysis run.
+ */
+export const PatternSegmentItem = zod.object({
+  "dimension": zod.string(),
+  "value": zod.string(),
+  "n": zod.number(),
+  "correct": zod.number(),
+  "accuracy": zod.number().nullable(),
+  "logLoss": zod.number().nullable(),
+  "brier": zod.number().nullable(),
+  "ece": zod.number().nullable(),
+  "ciLow": zod.number().nullable(),
+  "ciHigh": zod.number().nullable(),
+  "evidenceStrength": zod.enum(["Strong", "Moderate", "Weak", "Insufficient"])
+})
+
+export const GetLatestPatternAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "totalAnalyzed": zod.number(),
+  "segments": zod.array(PatternSegmentItem),
+  "runKindsIncluded": zod.array(zod.string()),
+  "createdAt": zod.string()
+}).nullable()
+
+/**
+ * One threshold evaluation entry from a threshold evaluation run.
+ */
+export const ThresholdEvalEntryItem = zod.object({
+  "tierId": zod.string(),
+  "tierLabel": zod.string(),
+  "currentValue": zod.union([zod.number(), zod.string()]),
+  "candidateValue": zod.union([zod.number(), zod.string()]),
+  "isWidening": zod.boolean(),
+  "affectedN": zod.number(),
+  "currentAccuracy": zod.number().nullable(),
+  "candidateAccuracy": zod.number().nullable(),
+  "currentLogLoss": zod.number().nullable(),
+  "candidateLogLoss": zod.number().nullable(),
+  "accuracyDelta": zod.number().nullable(),
+  "logLossDelta": zod.number().nullable(),
+  "classification": zod.enum(["Deploy", "Continue shadow", "Needs more data", "Reject", "Investigate"]),
+  "note": zod.string()
+})
+
+export const GetLatestThresholdEvaluationResponse = zod.object({
+  "id": zod.number(),
+  "totalGraded": zod.number(),
+  "thresholds": zod.array(ThresholdEvalEntryItem),
+  "createdAt": zod.string()
+}).nullable()
 
 
