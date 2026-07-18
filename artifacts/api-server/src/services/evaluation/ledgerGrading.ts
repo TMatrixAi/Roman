@@ -18,7 +18,7 @@
 import { db, predictionsTable } from "@workspace/db";
 import { and, eq, isNull } from "drizzle-orm";
 import { getTennisDataProvider, ProviderUnavailableError, type TennisDataProvider } from "../tennisData";
-import { collectPendingPlayerIds, fetchMatchResultsBatch, type MatchResultsBatch } from "./matchStatResultsFetcher";
+import { collectPendingPlayerIds, fetchMatchResultsBatch, type MatchResultsBatch } from "./tennisResultsFetcher";
 import { logger } from "../../lib/logger";
 
 // ─── Time-window constants ──────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export async function gradePendingLedgerPredictionsFromBatch(
         summary.graded += 1;
         logger.info(
           { predictionId: row.id, winnerId, player1Id: row.player1Id, player2Id: row.player2Id },
-          "Ledger prediction graded from MatchStat results batch",
+          "Ledger prediction graded from tennis results batch",
         );
       }
       // updated.length === 0 means another writer already settled it — silent no-op, correct.

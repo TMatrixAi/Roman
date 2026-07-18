@@ -1,0 +1,125 @@
+Yes, you should fix it, because Replit implemented Task 21 under the wrong provider assumption.
+
+You are not using MatchStat. You are using:
+
+tennisapi1.p.rapidapi.com
+
+The good news is the grading architecture it built may still be useful. The provider-specific part needs to be renamed and adapted, not necessarily deleted.
+
+Paste this into Replit:
+
+⸻
+
+Correct Task 21 — Use the Actual RapidAPI Tennis Provider
+
+The automatic result-grading task was implemented under the assumption that the provider was MatchStat. That assumption is incorrect.
+
+The actual provider is:
+
+tennisapi1.p.rapidapi.com
+
+Use:
+
+process.env.RAPIDAPI_KEY
+process.env.RAPIDAPI_HOST
+
+Do not probe or use any other tennis provider.
+
+First, review the files created or changed for Task 21, including:
+
+* matchStatResultsFetcher.ts
+* ledgerGrading.ts
+* runPaperTradingJob.ts
+* Any related tests
+
+Keep the useful provider-independent grading logic, including:
+
+* Batch result processing
+* Matching completed results to pending ledger predictions
+* Exact-once grading
+* Duplicate prevention
+* Leaving ambiguous matches pending
+* Existing immutable-grade protections
+* Incremental downstream refreshes
+
+Replace only the provider-specific MatchStat implementation.
+
+Required changes
+
+1. Rename matchStatResultsFetcher.ts to a provider-neutral name such as:
+
+rapidApiTennisResultsFetcher.ts
+
+or:
+
+tennisResultsFetcher.ts
+
+2. Update imports, function names, comments, logs, tests, and documentation so they no longer refer to MatchStat.
+3. Use the actual endpoints and response format supported by:
+
+tennisapi1.p.rapidapi.com
+
+4. Make one small authenticated API test first.
+
+Confirm:
+
+* The host is correct.
+* The API key is accepted.
+* The selected endpoint returns completed tennis events or results.
+* The response fields needed for grading are available.
+
+Do not continue with further code changes if this test fails.
+
+5. Map the actual provider response into the existing internal result format:
+
+* Provider event ID
+* Player 1
+* Player 2
+* Winner
+* Loser
+* Final score
+* Match status
+* Tournament
+* Start time
+* Completion time, when available
+
+6. Use stable provider player IDs and event IDs where available. Use name matching only as a fallback.
+7. Only grade matches with a confirmed final status and a confidently identified winner.
+8. Do not grade:
+
+* Scheduled matches
+* Live matches
+* Postponed matches
+* Canceled matches
+* Ambiguous matches
+* Unresolved player identities
+
+9. Preserve existing handling for retirements, walkovers, and abandoned matches. Do not invent new grading rules.
+10. Run only the directly relevant TypeScript checks and tests for the files changed. Do not run an unnecessary full-project audit.
+
+Important
+
+Do not modify:
+
+* Prediction formulas
+* Model weights
+* Calibration
+* Monte Carlo
+* Recommendation logic
+* Elite
+* Tier 1
+* Upset Risk
+
+This correction is only for the result-fetching provider used by automatic grading.
+
+At completion, briefly state:
+
+* Which actual endpoint is being used
+* Which files were renamed or updated
+* Whether the authentication test succeeded
+* Whether completed results can now grade pending predictions
+* Any provider fields that are unavailable
+
+⸻
+
+Based on the screenshots, Replit already changed the grading files and passed tests. So I would not throw the whole task away. Correct the provider-specific fetcher and terminology while preserving the exact-once grading work.

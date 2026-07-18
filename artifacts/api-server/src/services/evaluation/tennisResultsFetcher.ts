@@ -1,18 +1,22 @@
 /**
- * MatchStat results-fetcher — deduplicates provider calls across all pending predictions
+ * Tennis results batch fetcher — deduplicates provider calls across all pending predictions
  * so each player's match history is fetched exactly once per grading cycle, regardless of
  * how many pending predictions reference that player.
  *
  * The batch is built by querying both the user-facing ledger (`predictionsTable`) and the
  * live paper-trade table (`evaluationPredictionsTable`) for pending rows, collecting every
- * unique player ID, and issuing one `provider.getPlayerMatches()` call per player. The
- * active provider is typically the composite MatchStat-first / API-Tennis-fallback provider,
- * so both sources contribute automatically.
+ * unique player ID, and issuing one `provider.getPlayerMatches()` call per player.
+ *
+ * The active provider is the composite provider configured in `src/services/tennisData/index.ts`.
+ * Currently this routes to tennisapi1.p.rapidapi.com (RapidAPI Tennis / Sofascore-based) first,
+ * falling back to the API-Tennis provider when the primary is unavailable. The grading code here
+ * is fully provider-neutral — it calls through the `TennisDataProvider` interface and never
+ * assumes which underlying source serves the results.
  *
  * A failure for any individual player is recorded in `fetchErrors` and does not abort the
- * fetch for other players — the batch is always returned, possibly partial.  Predictions
- * whose player fetch failed simply stay pending until the next cycle, which is preferable
- * to grading them incorrectly.
+ * fetch for other players — the batch is always returned, possibly partial. Predictions whose
+ * player fetch failed simply stay pending until the next cycle, which is preferable to grading
+ * them incorrectly.
  */
 import { db, predictionsTable, evaluationPredictionsTable } from "@workspace/db";
 import { isNull, eq } from "drizzle-orm";
@@ -74,6 +78,11 @@ export async function collectPendingPlayerIds(): Promise<string[]> {
  * Never throws — per-player failures are isolated and recorded in `fetchErrors`.
  * Callers should treat a player with an empty result array AND a matching fetchError
  * entry as "temporarily unavailable" rather than "has no matches".
+ *
+ * Only confirmed finished matches returned by the provider are used for grading.
+ * Scheduled, live, postponed, cancelled, and ambiguous matches are excluded by the
+ * provider's own `getPlayerMatches()` mapping (see `matchStatProvider.ts` and
+ * `apiTennisProvider.ts` for the status filtering logic).
  */
 export async function fetchMatchResultsBatch(
   provider: TennisDataProvider,
@@ -95,7 +104,7 @@ export async function fetchMatchResultsBatch(
         // Unexpected errors (malformed response, schema violation) get error.
         logger[isUnavailable ? "warn" : "error"](
           { playerId, providerName: provider.name },
-          `Batch results fetch: could not load match history for player — ${msg}`,
+          `Tennis results batch fetch: could not load match history for player — ${msg}`,
         );
         fetchErrors.push(`Player ${playerId} (${provider.name}): ${msg}`);
         // Set an empty array so callers can distinguish "fetched, no matches" from
@@ -112,7 +121,7 @@ export async function fetchMatchResultsBatch(
       succeeded: unique.length - fetchErrors.length,
       failed: fetchErrors.length,
     },
-    "Batch match-results fetch complete",
+    "Tennis results batch fetch complete",
   );
 
   return { matchesByPlayerId, fetchErrors };

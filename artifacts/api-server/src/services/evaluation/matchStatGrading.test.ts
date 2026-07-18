@@ -1,5 +1,5 @@
 /**
- * Unit tests for the MatchStat results-fetcher and batch-based ledger grading.
+ * Unit tests for the tennis results fetcher and batch-based ledger grading.
  *
  * These tests use a fake TennisDataProvider so no real API calls are made. They verify:
  * - fetchMatchResultsBatch deduplicates player IDs (K calls for K unique players, not N calls for N predictions)
@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { db, predictionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { fetchMatchResultsBatch } from "./matchStatResultsFetcher";
+import { fetchMatchResultsBatch } from "./tennisResultsFetcher";
 import { gradePendingLedgerPredictionsFromBatch } from "./ledgerGrading";
 import type {
   TennisDataProvider,

@@ -26,9 +26,9 @@
  *
  * 1. `runPaperTradingCycle()` — locks fresh predictions for fixtures whose cutoff has arrived,
  *    marks missed windows, and grades pending paper-trade evaluation predictions using per-player
- *    `getPlayerMatches()` calls (composite MatchStat-first / API-Tennis-fallback provider).
+ *    `getPlayerMatches()` calls (composite provider — RapidAPI Tennis primary / API-Tennis fallback).
  *
- * 2. MatchStat results batch — collects every unique player ID from pending ledger predictions,
+ * 2. Tennis results batch — collects every unique player ID from pending ledger predictions,
  *    fetches their match histories in one deduplicated batch (one call per player rather than
  *    one per prediction), then grades pending user-facing ledger predictions from that batch.
  *    A failed fetch for any one player leaves that player's predictions pending; it does not
@@ -52,7 +52,7 @@ import {
   collectPendingPlayerIds,
   fetchMatchResultsBatch,
   type MatchResultsBatch,
-} from "../services/evaluation/matchStatResultsFetcher";
+} from "../services/evaluation/tennisResultsFetcher";
 import { getTennisDataProvider } from "../services/tennisData";
 import { logger } from "../lib/logger";
 import { PAPER_TRADING_JOB_NAME } from "./paperTradingJobName";
@@ -66,7 +66,7 @@ interface CombinedCycleSummary extends PaperTradingCycleSummary {
   /** Ledger (user-facing "Custom Match"/"Predict Now") predictions graded this same cycle. */
   ledgerGrading: LedgerGradingSummary;
   /**
-   * Stats from the shared MatchStat results batch used for ledger grading.
+   * Stats from the shared tennis results batch used for ledger grading.
    * Surfaces fetch failures so operators can spot persistent provider issues without
    * trawling server logs.
    */
@@ -94,7 +94,7 @@ async function runWithRetry(): Promise<
       // are free). Safe to run while the API server is live.
       const cycleResult = await runPaperTradingCycle();
 
-      // Step 2: Build a deduplicated MatchStat results batch for all pending ledger
+      // Step 2: Build a deduplicated tennis results batch for all pending ledger
       // predictions. Collect player IDs AFTER the cycle so any fixtures that were
       // just locked (and may have player overlap) are already committed.
       const provider = getTennisDataProvider();
@@ -121,7 +121,7 @@ async function runWithRetry(): Promise<
       if (batch.fetchErrors.length > 0) {
         logger.warn(
           { count: batch.fetchErrors.length, errors: batch.fetchErrors },
-          "MatchStat results batch: some players could not be fetched — their predictions stay pending",
+          "Tennis results batch: some players could not be fetched — their predictions stay pending",
         );
       }
 
