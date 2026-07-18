@@ -1,13 +1,9 @@
 /**
- * MatchStat provider — wraps the tennisapi1.p.rapidapi.com API (RapidAPI).
+ * RapidAPI tennis provider.
  *
- * Endpoint reference (tennisapi1, Sofascore-based):
- *   GET /api/tennis/rankings/atp           — ATP live rankings
- *   GET /api/tennis/rankings/wta           — WTA live rankings
- *   GET /api/tennis/player/{id}            — player profile
- *   GET /api/tennis/player/{id}/results    — recent match results
- *   GET /api/tennis/schedules/games/{y}/{m}/{d}  — daily schedule
- *   GET /api/tennis/players/h2h/{p1}/{p2} — head-to-head
+ * Host is read at startup from the RAPIDAPI_HOST environment variable so it can be
+ * changed without a code deploy. Set RAPIDAPI_HOST to the x-rapidapi-host value shown
+ * in the RapidAPI dashboard for your subscribed API (e.g. tennis-api-atp-wta-itf.p.rapidapi.com).
  *
  * All responses are cached with conservative TTLs to stay within the API's rate limits.
  * Every method falls back cleanly (throws ProviderUnavailableError) so the composite
@@ -31,8 +27,9 @@ import type {
 } from "./types";
 import { ProviderUnavailableError } from "./types";
 
-const BASE_URL = "https://tennisapi1.p.rapidapi.com";
-const HOST = "tennisapi1.p.rapidapi.com";
+// Read host from env so it can be changed without a code deploy.
+const HOST = process.env.RAPIDAPI_HOST ?? "tennis-api-atp-wta-itf.p.rapidapi.com";
+const BASE_URL = `https://${HOST}`;
 
 // Conservative TTLs — this API is rate-limited; generous caching avoids hitting limits.
 const RANKINGS_TTL_MS = 60 * 60 * 1000; // 1 hour

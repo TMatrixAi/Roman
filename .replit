@@ -46,6 +46,7 @@ channel = "stable-25_05"
 
 [userenv.shared]
 AI_INTEGRATIONS_OPENAI_BASE_URL = "https://api.openai.com/v1"
+RAPIDAPI_HOST = "tennis-api-atp-wta-itf.p.rapidapi.com"
 
 [userenv.development]
 NODE_OPTIONS = "--max-old-space-size=6144"
