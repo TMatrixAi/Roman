@@ -59,7 +59,8 @@ export function getTennisDataProvider(): TennisDataProvider {
   if (cachedProvider) return cachedProvider;
 
   const apiTennisKey = process.env.API_TENNIS_KEY;
-  const rapidApiKey = process.env.X_RAPIDAPI_KEY;
+  // Secret was renamed from X_RAPIDAPI_KEY → x_rapidapi_key; accept both for compatibility.
+  const rapidApiKey = process.env.X_RAPIDAPI_KEY ?? process.env.x_rapidapi_key;
 
   if (!apiTennisKey) {
     cachedProvider = new NotConfiguredProvider();
