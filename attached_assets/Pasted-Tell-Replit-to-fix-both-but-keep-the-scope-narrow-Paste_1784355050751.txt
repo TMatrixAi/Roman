@@ -1,0 +1,38 @@
+Tell Replit to fix both, but keep the scope narrow.
+
+Paste this:
+
+Fix the RapidAPI provider integration so it actually contributes data instead of immediately falling back.
+
+1. Reuse the existing provider layer. Do not create a second provider system.
+2. Replace the old tennisapi1.p.rapidapi.com endpoint paths with the correct endpoints for my subscribed host:
+    tennis-api-atp-wta-itf.p.rapidapi.com
+3. Remap only the provider methods currently used by the app:
+
+* player profiles
+* rankings
+* player results
+* H2H
+* tournaments
+* fixtures/upcoming matches
+* completed results used for grading
+
+4. Add request throttling so the paper-trading job does not send 88 calls simultaneously.
+5. Use a small controlled queue with low concurrency. Start with no more than 2 concurrent requests and a delay between requests.
+6. Respect 429 responses and any Retry-After header. Retry with exponential backoff and a strict retry limit.
+7. Deduplicate player lookups so the same player is not requested multiple times in one grading run.
+8. Cache successful responses for a reasonable period so repeated grading passes do not call RapidAPI again unnecessarily.
+9. Keep the existing API-Tennis fallback in place if RapidAPI fails after retries.
+10. Do not call the paid match-prediction endpoint because the app already has its own prediction engine.
+11. Do not modify prediction formulas, calibration, weights, Monte Carlo, recommendations, or grading rules.
+12. Test one valid endpoint first. After that succeeds, test one small grading batch before enabling the full scheduled job.
+
+At completion, report:
+
+* the exact RapidAPI endpoints now mapped
+* the request concurrency and delay used
+* whether a real RapidAPI request succeeded
+* whether connected now becomes true
+* whether the fallback still works
+
+One correction: 5 calls per second may still be too fast for a cheap plan. Start slower—around 1 request every 2–3 seconds with concurrency 1–2—then increase only after checking the plan’s actual rate-limit headers.

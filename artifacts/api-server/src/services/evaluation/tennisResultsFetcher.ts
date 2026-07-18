@@ -92,27 +92,53 @@ export async function fetchMatchResultsBatch(
   const matchesByPlayerId = new Map<string, MatchRecord[]>();
   const fetchErrors: string[] = [];
 
-  await Promise.all(
-    unique.map(async (playerId) => {
-      try {
-        const matches = await provider.getPlayerMatches(playerId);
-        matchesByPlayerId.set(playerId, matches);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const isUnavailable = err instanceof ProviderUnavailableError;
-        // Rate-limit / network hiccups are expected on some cycles; log at warn.
-        // Unexpected errors (malformed response, schema violation) get error.
-        logger[isUnavailable ? "warn" : "error"](
-          { playerId, providerName: provider.name },
-          `Tennis results batch fetch: could not load match history for player — ${msg}`,
-        );
-        fetchErrors.push(`Player ${playerId} (${provider.name}): ${msg}`);
-        // Set an empty array so callers can distinguish "fetched, no matches" from
-        // "not in this map at all" (which would be a programming error).
-        matchesByPlayerId.set(playerId, []);
+  // Throttle to 2 concurrent requests with a 2.5-second gap between starts.
+  // Firing all 88 players simultaneously saturates any upstream rate limit and degrades
+  // the API-Tennis fallback as well as RapidAPI.  Serial-with-gap is safer.
+  const CONCURRENCY = 2;
+  const INTER_REQUEST_DELAY_MS = 2_500;
+
+  let inFlight = 0;
+  let nextSlotAt = Date.now();
+  const queue = [...unique];
+
+  await new Promise<void>((resolveAll) => {
+    let settled = 0;
+
+    function tryLaunch() {
+      while (inFlight < CONCURRENCY && queue.length > 0) {
+        const playerId = queue.shift()!;
+        inFlight++;
+
+        const waitMs = Math.max(0, nextSlotAt - Date.now());
+        nextSlotAt = Math.max(nextSlotAt, Date.now()) + INTER_REQUEST_DELAY_MS;
+
+        setTimeout(async () => {
+          try {
+            const matches = await provider.getPlayerMatches(playerId);
+            matchesByPlayerId.set(playerId, matches);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const isUnavailable = err instanceof ProviderUnavailableError;
+            logger[isUnavailable ? "warn" : "error"](
+              { playerId, providerName: provider.name },
+              `Tennis results batch fetch: could not load match history for player — ${msg}`,
+            );
+            fetchErrors.push(`Player ${playerId} (${provider.name}): ${msg}`);
+            matchesByPlayerId.set(playerId, []);
+          } finally {
+            inFlight--;
+            settled++;
+            if (settled === unique.length) resolveAll();
+            else tryLaunch();
+          }
+        }, waitMs);
       }
-    }),
-  );
+    }
+
+    if (unique.length === 0) { resolveAll(); return; }
+    tryLaunch();
+  });
 
   logger.info(
     {

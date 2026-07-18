@@ -38,6 +38,14 @@ const SCHEDULE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const H2H_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const RESULTS_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+// Retry config for 429 responses
+const MAX_429_RETRIES = 3;
+const BASE_BACKOFF_MS = 5_000; // 5 s base, doubles each retry
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 // ─── Raw response shapes ────────────────────────────────────────────────────
 
 interface RawRankingEntry {
@@ -241,42 +249,66 @@ export class MatchStatProvider implements TennisDataProvider {
 
   private async call<T>(path: string): Promise<T> {
     const url = `${BASE_URL}${path}`;
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "x-rapidapi-key": this.apiKey,
-          "x-rapidapi-host": HOST,
-        },
-        signal: AbortSignal.timeout(12_000),
-      });
 
-      if (response.status === 429) {
-        throw new ProviderUnavailableError("MatchStat API rate limit exceeded");
-      }
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new ProviderUnavailableError(`MatchStat API responded with HTTP ${response.status}: ${body.slice(0, 200)}`);
-      }
+    for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+      try {
+        const response = await fetch(url, {
+          headers: {
+            "x-rapidapi-key": this.apiKey,
+            "x-rapidapi-host": HOST,
+          },
+          signal: AbortSignal.timeout(12_000),
+        });
 
-      const body = (await response.json()) as Record<string, unknown>;
-      // RapidAPI subscription/routing errors come back as HTTP 200 with {message: "..."}
-      if (typeof body.message === "string") {
-        throw new ProviderUnavailableError(`MatchStat API: ${body.message}`);
-      }
+        if (response.status === 429) {
+          // Honour Retry-After if present; otherwise use exponential backoff.
+          const retryAfterSec = Number(response.headers.get("retry-after") ?? "0");
+          const waitMs = retryAfterSec > 0
+            ? retryAfterSec * 1_000
+            : BASE_BACKOFF_MS * Math.pow(2, attempt);
 
-      this.lastSuccessfulCallAt = new Date().toISOString();
-      this.lastError = null;
-      return body as T;
-    } catch (err) {
-      if (err instanceof ProviderUnavailableError) {
-        this.lastError = err.message;
-        throw err;
+          if (attempt < MAX_429_RETRIES) {
+            logger.warn({ path, attempt, waitMs }, "RapidAPI 429 — backing off before retry");
+            await sleep(waitMs);
+            continue;
+          }
+          // Exhausted retries — let composite provider fall back.
+          throw new ProviderUnavailableError(
+            `RapidAPI rate limit exceeded after ${MAX_429_RETRIES} retries: ${path}`,
+          );
+        }
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          throw new ProviderUnavailableError(
+            `MatchStat API responded with HTTP ${response.status}: ${body.slice(0, 200)}`,
+          );
+        }
+
+        const body = (await response.json()) as Record<string, unknown>;
+        // RapidAPI subscription/routing errors sometimes come back as HTTP 200 with {message: "..."}
+        if (typeof body.message === "string") {
+          throw new ProviderUnavailableError(`MatchStat API: ${body.message}`);
+        }
+
+        this.lastSuccessfulCallAt = new Date().toISOString();
+        this.lastError = null;
+        return body as T;
+
+      } catch (err) {
+        if (err instanceof ProviderUnavailableError) {
+          this.lastError = err.message;
+          throw err;
+        }
+        const message = err instanceof Error ? err.message : "Unknown error calling MatchStat";
+        this.lastError = message;
+        logger.error({ err, path }, "MatchStat API call failed");
+        throw new ProviderUnavailableError(message);
       }
-      const message = err instanceof Error ? err.message : "Unknown error calling MatchStat";
-      this.lastError = message;
-      logger.error({ err, path }, "MatchStat API call failed");
-      throw new ProviderUnavailableError(message);
     }
+
+    // TypeScript exhaustiveness — loop always returns or throws above.
+    throw new ProviderUnavailableError(`MatchStat call failed: ${path}`);
   }
 
   // ── Rankings ────────────────────────────────────────────────────────────
