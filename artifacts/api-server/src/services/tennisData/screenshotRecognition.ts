@@ -210,7 +210,7 @@ async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<
  * Free tier: gemini-1.5-flash supports image input, 15 RPM, 1M tokens/day.
  */
 async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
-  const model = "gemini-1.5-flash";
+  const model = "gemini-2.0-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${resolved.key}`;
 
   const body = {
