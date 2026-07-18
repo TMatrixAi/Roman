@@ -47,7 +47,7 @@ let cachedProvider: TennisDataProvider | null = null;
  * Factory for the active tennis data provider.
  *
  * When both API_TENNIS_KEY and X_RAPIDAPI_KEY are configured, returns a composite provider
- * that tries MatchStat (tennisapi1.p.rapidapi.com) first and falls back to API-Tennis on any
+ * that tries RapidAPI (tennis-api-atp-wta-itf.p.rapidapi.com) first and falls back to API-Tennis on any
  * error. This gives the app access to MatchStat's richer data (H2H, stats, rankings) while
  * preserving the proven API-Tennis path for anything MatchStat can't serve.
  *

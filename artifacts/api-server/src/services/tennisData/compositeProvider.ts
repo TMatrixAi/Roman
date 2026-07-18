@@ -1,7 +1,7 @@
 /**
  * Composite (primary + fallback) TennisDataProvider.
  *
- * Tries the primary provider (MatchStat/tennisapi1) for every request. When the primary
+ * Tries the primary provider (RapidAPI/tennis-api-atp-wta-itf) for every request. When the primary
  * throws ProviderUnavailableError — which covers rate limits, network errors, subscription
  * mismatches, and any HTTP error — the fallback (API-Tennis) is tried instead.
  *

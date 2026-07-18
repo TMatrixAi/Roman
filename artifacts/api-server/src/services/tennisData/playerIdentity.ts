@@ -451,7 +451,7 @@ export function clearCountryCodeCacheForTests(): void {
 
 /**
  * Best-effort rank enrichment via the provider's name-search endpoint (which, for MatchStat /
- * tennisapi1, searches through the live ATP/WTA rankings list).
+ * tennis-api-atp-wta-itf, searches through the live ATP/WTA rankings list).
  *
  * Called when a player's `currentRank` is null after the primary profile resolution — for example,
  * when the player is known to the provider but is not in the current live standings snapshot that

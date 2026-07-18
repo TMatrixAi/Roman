@@ -8,7 +8,7 @@
  * unique player ID, and issuing one `provider.getPlayerMatches()` call per player.
  *
  * The active provider is the composite provider configured in `src/services/tennisData/index.ts`.
- * Currently this routes to tennisapi1.p.rapidapi.com (RapidAPI Tennis / Sofascore-based) first,
+ * Currently this routes to tennis-api-atp-wta-itf.p.rapidapi.com (RapidAPI) first,
  * falling back to the API-Tennis provider when the primary is unavailable. The grading code here
  * is fully provider-neutral — it calls through the `TennisDataProvider` interface and never
  * assumes which underlying source serves the results.

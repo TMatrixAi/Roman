@@ -1,13 +1,23 @@
 /**
- * RapidAPI tennis provider.
+ * RapidAPI tennis provider — wraps tennis-api-atp-wta-itf.p.rapidapi.com.
  *
- * Host is read at startup from the RAPIDAPI_HOST environment variable so it can be
- * changed without a code deploy. Set RAPIDAPI_HOST to the x-rapidapi-host value shown
- * in the RapidAPI dashboard for your subscribed API (e.g. tennis-api-atp-wta-itf.p.rapidapi.com).
+ * Configured endpoint reference (tennis-api-atp-wta-itf):
+ *   GET /tennis/v2/ms-api/rankings/{tour}                — live rankings (atp / wta)
+ *   GET /tennis/v2/ms-api/player/{slug}                  — player profile
+ *   GET /tennis/v2/ms-api/player/{slug}/matches          — recent match results
+ *   GET /tennis/v2/ms-api/schedule/{year}/{month}/{day}  — daily match schedule
+ *   GET /tennis/v2/ms-api/upcoming/{tour}                — upcoming fixtures (atp / wta)
+ *   GET /tennis/v2/ms-api/h2h/{slug1}/{slug2}            — head-to-head record
  *
- * All responses are cached with conservative TTLs to stay within the API's rate limits.
- * Every method falls back cleanly (throws ProviderUnavailableError) so the composite
- * provider can try the next source rather than crashing the request.
+ * Player slugs are CamelCase player names with spaces removed
+ * (e.g. "Francesco Passaro" → "FrancescoPassaro").  Numeric IDs from the
+ * legacy tennisapi1 provider cannot be used as slugs; calls with numeric IDs
+ * will fail and the composite provider will fall back to API-Tennis.
+ *
+ * The host is read at startup from RAPIDAPI_HOST so it can be changed without
+ * a code deploy.  All responses are cached with conservative TTLs.  Every method
+ * throws ProviderUnavailableError on failure so the composite provider can fall
+ * back to API-Tennis rather than surfacing an error to the user.
  */
 import { logger } from "../../lib/logger";
 import { TtlCache } from "./cache";
@@ -46,7 +56,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ─── Raw response shapes ────────────────────────────────────────────────────
+/**
+ * Converts a player name or stored ID to the slug format used by the API.
+ *
+ * The tennis-api-atp-wta-itf API identifies players by a CamelCase slug
+ * derived from their full name (spaces, hyphens, and apostrophes stripped).
+ * Example: "Francesco Passaro" → "FrancescoPassaro"
+ *
+ * Legacy numeric IDs (from the old tennisapi1/Sofascore provider) cannot be
+ * converted; they are returned as-is and the API will reject them, triggering
+ * the API-Tennis fallback in the composite provider.
+ */
+function playerSlug(nameOrId: string): string {
+  // Already looks like a slug or numeric id — return as-is
+  if (!/\s/.test(nameOrId)) return nameOrId;
+  // "First Last" or "First-Last" → "FirstLast"
+  return nameOrId
+    .split(/[\s\-]+/)
+    .map((w) => (w.length > 0 ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
+    .join("");
+}
+
+// ─── Raw response shapes ─────────────────────────────────────────────────────
+// The tennis-api-atp-wta-itf API returns Sofascore-derived event objects that
+// are structurally similar to tennisapi1 responses: rankings wrap an array of
+// entries with player sub-objects; schedule/results wrap an events array.
 
 interface RawRankingEntry {
   ranking?: number;
@@ -124,7 +158,7 @@ interface RawH2HResponse {
   [key: string]: unknown;
 }
 
-// ─── Mapping helpers ────────────────────────────────────────────────────────
+// ─── Mapping helpers ─────────────────────────────────────────────────────────
 
 function str(v: string | number | undefined | null): string {
   return v === undefined || v === null ? "" : String(v);
@@ -176,7 +210,7 @@ function mapEventToFixture(ev: RawEvent): Fixture | null {
     round: ev.roundInfo?.name ?? (ev.roundInfo?.round != null ? `Round ${ev.roundInfo.round}` : null),
     surface,
     indoor: surface === "IndoorHard" ? true : null,
-    matchFormat: null, // not provided by schedule endpoint
+    matchFormat: null,
     player1Id: str(p1.id),
     player1Name: p1.name ?? p1.shortName ?? str(p1.id),
     player2Id: str(p2.id),
@@ -224,7 +258,7 @@ function mapEventToMatchRecord(ev: RawEvent, perspectivePlayerId: string): Match
   };
 }
 
-// ─── Provider class ─────────────────────────────────────────────────────────
+// ─── Provider class ───────────────────────────────────────────────────────────
 
 export class MatchStatProvider implements TennisDataProvider {
   readonly name = "MatchStat";
@@ -272,7 +306,6 @@ export class MatchStatProvider implements TennisDataProvider {
             await sleep(waitMs);
             continue;
           }
-          // Exhausted retries — let composite provider fall back.
           throw new ProviderUnavailableError(
             `RapidAPI rate limit exceeded after ${MAX_429_RETRIES} retries: ${path}`,
           );
@@ -286,7 +319,7 @@ export class MatchStatProvider implements TennisDataProvider {
         }
 
         const body = (await response.json()) as Record<string, unknown>;
-        // RapidAPI subscription/routing errors sometimes come back as HTTP 200 with {message: "..."}
+        // RapidAPI subscription/routing errors sometimes come as HTTP 200 {message: "..."}
         if (typeof body.message === "string") {
           throw new ProviderUnavailableError(`MatchStat API: ${body.message}`);
         }
@@ -307,22 +340,20 @@ export class MatchStatProvider implements TennisDataProvider {
       }
     }
 
-    // TypeScript exhaustiveness — loop always returns or throws above.
     throw new ProviderUnavailableError(`MatchStat call failed: ${path}`);
   }
 
-  // ── Rankings ────────────────────────────────────────────────────────────
+  // ── Rankings ────────────────────────────────────────────────────────────────
 
   private async getRankingsForTour(tour: "atp" | "wta"): Promise<RawRankingEntry[]> {
     const key = `rankings:${tour}`;
     return this.cache.getOrFetch(key, RANKINGS_TTL_MS, async () => {
-      const data = await this.call<RawRankingsResponse>(`/api/tennis/rankings/${tour}`);
+      const data = await this.call<RawRankingsResponse>(`/tennis/v2/ms-api/rankings/${tour}`);
       return data.rankings ?? [];
     });
   }
 
   async searchPlayers(query: string): Promise<PlayerSummary[]> {
-    // Let ProviderUnavailableError propagate — composite provider needs it to trigger fallback.
     const [atpRows, wtaRows] = await Promise.all([
       this.getRankingsForTour("atp"),
       this.getRankingsForTour("wta"),
@@ -346,11 +377,10 @@ export class MatchStatProvider implements TennisDataProvider {
         name,
         countryCode: player.country?.alpha2 ?? player.country?.alpha3 ?? null,
         currentRank: typeof row.ranking === "number" ? row.ranking : null,
-        tour: null, // callers resolve this from the roster context
+        tour: null,
       });
     }
 
-    // Exact-name matches first, then by rank
     results.sort((a, b) => {
       const aExact = a.name.toLowerCase() === lowerQuery;
       const bExact = b.name.toLowerCase() === lowerQuery;
@@ -364,11 +394,14 @@ export class MatchStatProvider implements TennisDataProvider {
     return results.slice(0, 25);
   }
 
+  // ── Player profile ───────────────────────────────────────────────────────────
+
   async getPlayer(playerId: string): Promise<PlayerProfile | null> {
-    const key = `player:${playerId}`;
+    const slug = playerSlug(playerId);
+    const key = `player:${slug}`;
     return this.cache.getOrFetch(key, PLAYER_TTL_MS, async () => {
       try {
-        const data = await this.call<RawPlayerResponse>(`/api/tennis/player/${playerId}`);
+        const data = await this.call<RawPlayerResponse>(`/tennis/v2/ms-api/player/${slug}`);
         const p = data.player;
         if (!p?.id) return null;
 
@@ -400,10 +433,13 @@ export class MatchStatProvider implements TennisDataProvider {
     });
   }
 
+  // ── Player match history ─────────────────────────────────────────────────────
+
   async getPlayerMatches(playerId: string): Promise<MatchRecord[]> {
-    const key = `playerMatches:${playerId}`;
+    const slug = playerSlug(playerId);
+    const key = `playerMatches:${slug}`;
     return this.cache.getOrFetch(key, RESULTS_TTL_MS, async () => {
-      const data = await this.call<RawResultsResponse>(`/api/tennis/player/${playerId}/results`);
+      const data = await this.call<RawResultsResponse>(`/tennis/v2/ms-api/player/${slug}/matches`);
       const events = data.events ?? [];
       const records: MatchRecord[] = [];
       for (const ev of events) {
@@ -414,16 +450,17 @@ export class MatchStatProvider implements TennisDataProvider {
     });
   }
 
-  // ── Fixtures ─────────────────────────────────────────────────────────────
+  // ── Fixtures / schedule ──────────────────────────────────────────────────────
 
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {
-    // Let ProviderUnavailableError propagate — composite provider needs it to trigger fallback.
     return this.getUpcomingFixturesRange(date, date);
   }
 
-  async getUpcomingFixturesRange(dateStart: string, dateStop: string, opts?: { bypassCache?: boolean }): Promise<Fixture[]> {
-    // Collect fixtures for every date in the range.
-    // Let ProviderUnavailableError propagate — composite provider needs it to trigger fallback.
+  async getUpcomingFixturesRange(
+    dateStart: string,
+    dateStop: string,
+    opts?: { bypassCache?: boolean },
+  ): Promise<Fixture[]> {
     const dates: string[] = [];
     const d = new Date(`${dateStart}T00:00:00Z`);
     const stop = new Date(`${dateStop}T00:00:00Z`);
@@ -440,7 +477,9 @@ export class MatchStatProvider implements TennisDataProvider {
         key,
         SCHEDULE_TTL_MS,
         async () => {
-          const data = await this.call<RawScheduleResponse>(`/api/tennis/schedules/games/${year}/${month}/${day}`);
+          const data = await this.call<RawScheduleResponse>(
+            `/tennis/v2/ms-api/schedule/${year}/${month}/${day}`,
+          );
           const events = data.events ?? [];
           const mapped: Fixture[] = [];
           for (const ev of events) {
@@ -456,18 +495,24 @@ export class MatchStatProvider implements TennisDataProvider {
     return allFixtures;
   }
 
-  // ── H2H ──────────────────────────────────────────────────────────────────
+  // ── Head-to-head ─────────────────────────────────────────────────────────────
 
   async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
-    const key = `h2h:${[player1Id, player2Id].sort().join(":")}`;
+    const slug1 = playerSlug(player1Id);
+    const slug2 = playerSlug(player2Id);
+    const key = `h2h:${[slug1, slug2].sort().join(":")}`;
     return this.cache.getOrFetch(key, H2H_TTL_MS, async () => {
-      const data = await this.call<RawH2HResponse>(`/api/tennis/players/h2h/${player1Id}/${player2Id}`);
+      const data = await this.call<RawH2HResponse>(
+        `/tennis/v2/ms-api/h2h/${slug1}/${slug2}`,
+      );
       const events = data.events ?? [];
       const meetings = events
         .filter((ev) => ev.status?.type === "finished" && ev.winnerCode != null)
         .map((ev) => {
           const winnerId = ev.winnerCode === 1 ? str(ev.homeTeam?.id) : str(ev.awayTeam?.id);
-          const scheduledStart = ev.startTimestamp ? new Date(ev.startTimestamp * 1000).toISOString() : null;
+          const scheduledStart = ev.startTimestamp
+            ? new Date(ev.startTimestamp * 1000).toISOString()
+            : null;
           const surface = mapSurface(ev.tournament?.uniqueTournament?.groundType);
           return {
             date: scheduledStart ? scheduledStart.slice(0, 10) : "",
@@ -483,15 +528,15 @@ export class MatchStatProvider implements TennisDataProvider {
     });
   }
 
-  // ── Not supported by this provider ────────────────────────────────────────
+  // ── Not supported by this provider ───────────────────────────────────────────
 
   async getCompletedMatchesByDateRange(): Promise<HistoricalFixture[]> {
-    // Not provided by tennisapi1 — the historical backfill uses API-Tennis exclusively.
+    // Historical backfill uses API-Tennis exclusively.
     return [];
   }
 
   async getLiveScores(_fixtureIds: string[]): Promise<Map<string, LiveScore>> {
-    // tennisapi1 schedule endpoint includes live matches; live-score polling not separately supported.
+    // Live-score polling not separately supported; schedule endpoint includes live matches.
     return new Map();
   }
 }

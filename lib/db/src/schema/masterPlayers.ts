@@ -31,7 +31,7 @@ export const masterPlayersTable = pgTable(
     /** Player key as assigned by the API-Tennis (api.api-tennis.com) provider. Null if not yet linked. */
     apiTennisKey: text("api_tennis_key"),
 
-    /** Player key as assigned by the tennisapi1 (RapidAPI) provider. Null if not yet linked. */
+    /** Player key as assigned by the RapidAPI provider (tennis-api-atp-wta-itf). Null if not yet linked. */
     matchstatKey: text("matchstat_key"),
 
     countryCode: text("country_code"),
