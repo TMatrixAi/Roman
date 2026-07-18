@@ -935,6 +935,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/HistoricalBackfillCycleResult"
 
+  /evaluation/historical-backfill/run-range:
+    post:
+      operationId: runHistoricalBackfillRange
+      tags: [evaluation]
+      summary: Fire a targeted historical backfill for a specific date range in the background and return immediately
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunHistoricalBackfillRangeRequest"
+      responses:
+        "200":
+          description: Backfill started in background
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunHistoricalBackfillRangeResult"
+
   /evaluation/historical-backfill/job-runs:
     get:
       operationId: listHistoricalBackfillJobRuns
@@ -2907,6 +2926,32 @@ components:
         asOf:
           type: string
           format: date-time
+
+    RunHistoricalBackfillRangeRequest:
+      type: object
+      required: [dateStart, dateStop]
+      properties:
+        dateStart:
+          type: string
+          description: First date to backfill, inclusive (YYYY-MM-DD).
+        dateStop:
+          type: string
+          description: Last date to backfill, inclusive (YYYY-MM-DD).
+        chunkDays:
+          type: integer
+          minimum: 1
+          description: Provider chunk window in days. Defaults to 5 (the safe limit for busy periods).
+
+    RunHistoricalBackfillRangeResult:
+      type: object
+      required: [started, dateStart, dateStop]
+      properties:
+        started:
+          type: boolean
+        dateStart:
+          type: string
+        dateStop:
+          type: string
 
     RunAblationAnalysisRequest:
       type: object

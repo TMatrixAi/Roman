@@ -3496,3 +3496,73 @@ export function useGetLatestThresholdEvaluation<TData = Awaited<ReturnType<typeo
 
 
 
+
+
+// ── Task #44: Targeted historical-backfill range ──────────────────────────────
+
+export const getRunHistoricalBackfillRangeUrl = () => `/api/evaluation/historical-backfill/run-range`;
+
+export const runHistoricalBackfillRange = async (
+  runHistoricalBackfillRangeRequest: { dateStart: string; dateStop: string; chunkDays?: number },
+  options?: RequestInit
+): Promise<{ started: boolean; dateStart: string; dateStop: string }> => {
+  return customFetch<{ started: boolean; dateStart: string; dateStop: string }>(
+    getRunHistoricalBackfillRangeUrl(),
+    {
+      ...options,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+      body: JSON.stringify(runHistoricalBackfillRangeRequest),
+    }
+  );
+};
+
+export const getRunHistoricalBackfillRangeMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof runHistoricalBackfillRange>>,
+      TError,
+      { data: BodyType<{ dateStart: string; dateStop: string; chunkDays?: number }> },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }
+): UseMutationOptions<
+  Awaited<ReturnType<typeof runHistoricalBackfillRange>>,
+  TError,
+  { data: BodyType<{ dateStart: string; dateStop: string; chunkDays?: number }> },
+  TContext
+> => {
+  const mutationKey = ['runHistoricalBackfillRange'];
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runHistoricalBackfillRange>>,
+    { data: BodyType<{ dateStart: string; dateStop: string; chunkDays?: number }> }
+  > = (props) => {
+    const { data } = props ?? {};
+    return runHistoricalBackfillRange(data, requestOptions);
+  };
+  return { mutationKey, mutationFn, ...mutationOptions };
+};
+
+export type RunHistoricalBackfillRangeMutationResult = NonNullable<Awaited<ReturnType<typeof runHistoricalBackfillRange>>>;
+export type RunHistoricalBackfillRangeMutationError = ErrorType<unknown>;
+
+export const useRunHistoricalBackfillRange = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof runHistoricalBackfillRange>>,
+      TError,
+      { data: BodyType<{ dateStart: string; dateStop: string; chunkDays?: number }> },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }
+): UseMutationResult<
+  Awaited<ReturnType<typeof runHistoricalBackfillRange>>,
+  TError,
+  { data: BodyType<{ dateStart: string; dateStop: string; chunkDays?: number }> },
+  TContext
+> => {
+  return useMutation(getRunHistoricalBackfillRangeMutationOptions(options));
+};

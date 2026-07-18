@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface WalkForwardSummary {
-  foldsRun: number;
-  foldIds: number[];
-  skippedNoEligibleMatches: boolean;
+export interface RunHistoricalBackfillRangeResult {
+  started: boolean;
+  dateStart: string;
+  dateStop: string;
 }

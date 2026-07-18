@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable, historicalMatchesTable } from "@workspace/db";
+import { logger } from "../lib/logger";
 import {
   ListEvaluationPredictionsQueryParams,
   ListEvaluationPredictionsResponse,
@@ -46,11 +47,13 @@ import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
 import { runShadowPaperTradingReplay, listShadowReplayBatches } from "../services/evaluation/shadowReplay";
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
-import { runIncrementalHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
+import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
   RunHistoricalBackfillCycleResponse,
+  RunHistoricalBackfillRangeBody,
+  RunHistoricalBackfillRangeResponse,
   ListHistoricalBackfillJobRunsQueryParams,
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
@@ -320,6 +323,55 @@ router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Prom
   const provider = getTennisDataProvider();
   const result = await runIncrementalHistoricalBackfill(provider);
   res.json(RunHistoricalBackfillCycleResponse.parse(result));
+});
+
+/**
+ * Targeted range backfill -- fires `runHistoricalBackfill` for an explicit [dateStart, dateStop]
+ * window in the background and returns immediately. Designed for closing known coverage gaps
+ * (e.g. 2020–2025) where the window is too long for a synchronous HTTP response. The outcome
+ * (summary or error) is written to job_runs so it's inspectable via
+ * GET /evaluation/historical-backfill/job-runs when it completes.
+ */
+router.post("/evaluation/historical-backfill/run-range", async (req, res): Promise<void> => {
+  const parsed = RunHistoricalBackfillRangeBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { dateStart, dateStop, chunkDays } = parsed.data;
+
+  // Respond immediately -- the backfill runs fully in the background.
+  res.json(RunHistoricalBackfillRangeResponse.parse({ started: true, dateStart, dateStop }));
+
+  // Fire-and-forget: mirrors the pattern in index.ts where the historical backfill job runs on
+  // an in-process interval. Any error is recorded to job_runs so it's not silently swallowed.
+  const provider = getTennisDataProvider();
+  const startedAt = new Date();
+  runHistoricalBackfill(provider, { dateStart, dateStop, ...(chunkDays ? { chunkDays } : {}) })
+    .then(async (summary) => {
+      await db.insert(jobRunsTable).values({
+        jobName: HISTORICAL_BACKFILL_JOB_NAME,
+        startedAt,
+        finishedAt: new Date(),
+        status: "success",
+        attempts: 1,
+        summary: { skipped: false, summary },
+        errorMessage: null,
+      });
+    })
+    .catch(async (err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ err, dateStart, dateStop }, "Targeted historical-backfill run-range failed");
+      await db.insert(jobRunsTable).values({
+        jobName: HISTORICAL_BACKFILL_JOB_NAME,
+        startedAt,
+        finishedAt: new Date(),
+        status: "failed",
+        attempts: 1,
+        summary: null,
+        errorMessage,
+      });
+    });
 });
 
 router.get("/evaluation/historical-backfill/job-runs", async (req, res): Promise<void> => {

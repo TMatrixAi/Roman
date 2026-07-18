@@ -11,6 +11,8 @@ import {
   useDeleteCandidateConfig,
   getListBacktestsQueryKey,
   useRunRankingVerification,
+  useRunHistoricalBackfillCycle,
+  useRunHistoricalBackfillRange,
   type RankingVerificationResult,
   type BacktestRun,
   type BacktestFilters,
@@ -545,10 +547,14 @@ function CandidateConfigsSection() {
 // ─── Data Health Panel ───────────────────────────────────────────────────────
 
 function DataHealthPanel() {
-  const { data: freshness, isLoading: freshnessLoading } = useGetHistoricalDataFreshness()
+  const { data: freshness, isLoading: freshnessLoading, refetch: refetchFreshness } = useGetHistoricalDataFreshness()
   const rankVerify = useRunRankingVerification()
+  const backfillCycle = useRunHistoricalBackfillCycle()
+  const backfillRange = useRunHistoricalBackfillRange()
   const [verifyResult, setVerifyResult] = useState<RankingVerificationResult | null>(null)
   const [showDiscrepancies, setShowDiscrepancies] = useState(false)
+  const [backfillMessage, setBackfillMessage] = useState<string | null>(null)
+  const [fillingGap, setFillingGap] = useState<string | null>(null)
 
   const missingRank = freshness?.matchesMissingOpponentRank
   const missingSurface = freshness?.matchesMissingSurface
@@ -559,6 +565,38 @@ function DataHealthPanel() {
       onSuccess: (result) => {
         setVerifyResult(result)
         setShowDiscrepancies(false)
+      },
+    })
+  }
+
+  function handleBackfillCycle() {
+    setBackfillMessage(null)
+    backfillCycle.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.skipped) {
+          setBackfillMessage(`Already up to date — ${result.skippedReason ?? "nothing new to fetch."}`)
+        } else {
+          const inserted = result.summary?.matchesInserted ?? 0
+          setBackfillMessage(`Cycle complete — ${inserted.toLocaleString()} match${inserted !== 1 ? "es" : ""} inserted.`)
+          refetchFreshness()
+        }
+      },
+      onError: () => setBackfillMessage("Backfill cycle failed — check logs."),
+    })
+  }
+
+  function handleFillGap(dateStart: string, dateStop: string) {
+    const key = `${dateStart}|${dateStop}`
+    setFillingGap(key)
+    setBackfillMessage(null)
+    backfillRange.mutate({ data: { dateStart, dateStop } }, {
+      onSuccess: () => {
+        setBackfillMessage(`Backfill started for ${dateStart} → ${dateStop}. Runs in background — check Job Runs below when done.`)
+        setFillingGap(null)
+      },
+      onError: () => {
+        setBackfillMessage("Failed to start range backfill — check logs.")
+        setFillingGap(null)
       },
     })
   }
@@ -605,17 +643,33 @@ function DataHealthPanel() {
 
         {/* Date gaps */}
         {gaps.length > 0 && (
-          <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 space-y-1.5">
+          <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 space-y-2">
             <div className="text-[9px] font-mono font-bold text-yellow-500 tracking-widest uppercase flex items-center gap-1.5">
               <AlertTriangle className="w-3 h-3" />
               {gaps.length} Coverage Gap{gaps.length > 1 ? "s" : ""} &gt; 30 Days
             </div>
-            <div className="space-y-0.5">
-              {gaps.slice(0, 5).map((g, i) => (
-                <div key={i} className="text-[10px] font-mono text-muted-foreground">
-                  {g.fromDate} → {g.toDate} <span className="text-yellow-500">({g.dayCount}d)</span>
-                </div>
-              ))}
+            <div className="space-y-1.5">
+              {gaps.slice(0, 5).map((g, i) => {
+                const gapKey = `${g.fromDate}|${g.toDate}`
+                const isFilling = fillingGap === gapKey
+                return (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {g.fromDate} → {g.toDate} <span className="text-yellow-500">({g.dayCount}d)</span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 font-mono text-[9px] tracking-widest border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10 shrink-0"
+                      disabled={isFilling || backfillRange.isPending}
+                      onClick={() => handleFillGap(g.fromDate, g.toDate)}
+                    >
+                      {isFilling ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RefreshCw className="w-2.5 h-2.5" />}
+                      <span className="ml-1">FILL GAP</span>
+                    </Button>
+                  </div>
+                )
+              })}
               {gaps.length > 5 && (
                 <div className="text-[10px] font-mono text-muted-foreground">…and {gaps.length - 5} more</div>
               )}
@@ -623,8 +677,32 @@ function DataHealthPanel() {
           </div>
         )}
 
-        {/* Ranking verification */}
+        {gaps.length === 0 && !freshnessLoading && freshness && (
+          <div className="flex items-center gap-1.5 text-[10px] font-mono text-green-500">
+            <CheckCircle2 className="w-3 h-3" />
+            No gaps &gt; 30 days detected
+          </div>
+        )}
+
+        {/* Backfill status message */}
+        {backfillMessage && (
+          <div className="text-[10px] font-mono text-muted-foreground p-2 bg-secondary/20 rounded border border-border/40">
+            {backfillMessage}
+          </div>
+        )}
+
+        {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/30">
+          <Button
+            size="sm"
+            variant="outline"
+            className="font-mono text-[10px] tracking-widest h-7 px-3"
+            onClick={handleBackfillCycle}
+            disabled={backfillCycle.isPending}
+          >
+            {backfillCycle.isPending ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1.5" />}
+            RUN BACKFILL CYCLE
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -632,7 +710,7 @@ function DataHealthPanel() {
             onClick={handleVerify}
             disabled={rankVerify.isPending}
           >
-            {rankVerify.isPending ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1.5" />}
+            {rankVerify.isPending ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-1.5" />}
             VERIFY RANKINGS
           </Button>
           {verifyResult && (

@@ -5,3 +5,5 @@ export type { AuthTokenGetter } from "./custom-fetch";
 export * from "./backtesting";
 export * from "./playerStats";
 export * from "./rankingVerification";
+export * from './generated/api';
+export * from './generated/api.schemas';
