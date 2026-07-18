@@ -59,7 +59,37 @@ test("margin exactly 8 with MODERATE upset risk and Strong agreement is MODERATE
 });
 
 test("margin just under 8 with Strong agreement (so NOT caught by NO_STRONG_SIGNAL) still falls through to HIGH_RISK -- the new rule must not swallow sub-8 margins", () => {
+  // tieBreakerApplied defaults to false here -- rule only fires when raw ensemble was coin-flip
   const result = computeRecommendation(57.9, 70, "Strong", "LOW", "Strong");
+  assert.equal(result, "HIGH_RISK");
+});
+
+// ─── Task #7: tieBreakerApplied gate ────────────────────────────────────────
+
+test("tieBreakerApplied=true → NO_STRONG_SIGNAL, regardless of margin or model agreement", () => {
+  // Even a high-margin, strong-agreement match should be NO_STRONG_SIGNAL when the raw ensemble
+  // was within TIE_BAND — the cascade was validated to perform at or below coin-flip in that
+  // probability range; a confident-sounding recommendation on top of it is actively misleading.
+  const result = computeRecommendation(57.9, 70, "Strong", "LOW", "Strong", /* tieBreakerApplied */ true);
+  assert.equal(result, "NO_STRONG_SIGNAL");
+});
+
+test("tieBreakerApplied=true → NO_STRONG_SIGNAL even when margin would otherwise qualify for MODERATE_LEAN", () => {
+  const result = computeRecommendation(61, 70, "Strong", "LOW", "Strong", true);
+  assert.equal(result, "NO_STRONG_SIGNAL");
+});
+
+test("tieBreakerApplied=true with Poor DQ → DO_NOT_RECOMMEND still wins (DO_NOT_RECOMMEND takes absolute priority)", () => {
+  // DO_NOT_RECOMMEND means the data is too thin to trust at all; that takes priority even over
+  // a close-matchup disclosure.
+  const result = computeRecommendation(52, 20, "Poor", "LOW", "Strong", true);
+  assert.equal(result, "DO_NOT_RECOMMEND");
+});
+
+test("tieBreakerApplied=false (default) → original logic unchanged: Strong agreement sub-8 margin is HIGH_RISK", () => {
+  // Regression guard: adding the tieBreakerApplied parameter must not affect existing behaviour
+  // when it is false (or omitted).
+  const result = computeRecommendation(53, 70, "Strong", "LOW", "Strong", false);
   assert.equal(result, "HIGH_RISK");
 });
 

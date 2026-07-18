@@ -227,6 +227,7 @@ function buildRecommendationTrace(
   upsetRisk: string,
   modelAgreement: string,
   result: string,
+  tieBreakerApplied: boolean,
 ): DecisionTrace["recommendation"] {
   const margin = Math.abs(calibratedProbability - 50);
   const rules: Array<{ rule: string; matched: boolean; decided: boolean }> = [];
@@ -234,6 +235,10 @@ function buildRecommendationTrace(
   const r1 = dataQualityLabel === "Poor" || dataQuality < 25;
   rules.push({ rule: `DQ < 25 or label "Poor" → DO_NOT_RECOMMEND (DQ=${dataQuality}, label="${dataQualityLabel}")`, matched: r1, decided: r1 });
   if (r1) return { result, margin, rulesChecked: rules };
+
+  const r1b = tieBreakerApplied;
+  rules.push({ rule: `tieBreakerApplied → NO_STRONG_SIGNAL (raw ensemble within TIE_BAND of 50, no validated directional edge)`, matched: r1b, decided: r1b });
+  if (r1b) return { result, margin, rulesChecked: rules };
 
   const r2 = margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement");
   rules.push({ rule: `margin < 8 AND (Mixed|HighDisagreement) → NO_STRONG_SIGNAL (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r2, decided: r2 });
@@ -684,7 +689,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     tournamentLevel: input.tournamentLevel ?? null,
   });
   const upsetRisk = upsetRiskBreakdown.upsetRisk;
-  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement);
+  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, tieBreaker.applied);
 
   const favorsPlayer1 = calibratedProbability >= 50;
   const predictedWinnerId = favorsPlayer1 ? input.player1.id : input.player2.id;
@@ -810,6 +815,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     dataQuality,
     dataQualityLabel,
     simulationPlayer1WinProbability: simulation.player1WinProbability,
+    tieBreakerApplied: tieBreaker.applied,
   });
   const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
   const eliteTierReason =
@@ -922,7 +928,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       afterSimulator: calibratedProbability,
     },
     modules: moduleTraces,
-    recommendation: buildRecommendationTrace(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, recommendation),
+    recommendation: buildRecommendationTrace(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, recommendation, tieBreaker.applied),
     eliteTier: {
       isElite: isEliteTier,
       gates: {

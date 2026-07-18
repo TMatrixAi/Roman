@@ -52,6 +52,13 @@ export interface FinalConsistencyInput {
   /** The same Data Quality label `computeRecommendation` was actually given when `recommendation` was produced. */
   dataQualityLabel: DataQualityLabel;
   /**
+   * Whether the raw ensemble sat within TIE_BAND of 50 when this prediction was made.
+   * Must be forwarded to `computeRecommendation` in Rule 10 so the freshness check produces the
+   * same result as the original call. Absent on pre-Task#7 predictions — default false so those
+   * rows are not retroactively flagged as stale.
+   */
+  tieBreakerApplied?: boolean;
+  /**
    * The Monte Carlo simulator's raw, player-1-relative win probability (0-100) from
    * `EngineBreakdown.simulation.player1WinProbability` -- the same stored field
    * `PredictionResult.tsx`'s `deriveMonteCarloHeadline` mirrors to the predicted winner's side.
@@ -193,7 +200,7 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
   //    older version of `computeRecommendation`'s logic and never recomputed -- is flagged the
   //    moment `checkFinalConsistency` is re-run against it (e.g. via the live-ledger batch scan),
   //    even though nothing about that specific bug's root cause needs to be known in advance.
-  const expectedRecommendation = computeRecommendation(input.calibratedProbability, input.dataQuality, input.dataQualityLabel, input.upsetRisk, input.modelAgreement);
+  const expectedRecommendation = computeRecommendation(input.calibratedProbability, input.dataQuality, input.dataQualityLabel, input.upsetRisk, input.modelAgreement, input.tieBreakerApplied ?? false);
   if (input.recommendation !== expectedRecommendation) {
     violations.push(
       `Rule 10 (recommendation freshness): stored recommendation "${input.recommendation}" does not match what computeRecommendation currently produces ("${expectedRecommendation}") for calibratedProbability=${input.calibratedProbability}, dataQuality=${input.dataQuality}, dataQualityLabel=${input.dataQualityLabel}, upsetRisk=${input.upsetRisk}, modelAgreement=${input.modelAgreement} -- this recommendation is stale and was not recomputed under the current logic.`,

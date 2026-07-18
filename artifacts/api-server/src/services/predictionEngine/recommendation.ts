@@ -17,10 +17,25 @@ export function computeRecommendation(
   dataQualityLabel: DataQualityLabel,
   upsetRisk: UpsetRisk,
   modelAgreement: ModelAgreement,
+  /**
+   * Pass `tieBreaker.applied` from the engine output. When true the raw ensemble sat within
+   * `TIE_BAND` of 50 -- no validated signal provides a reliable directional edge in that
+   * probability range (every cascade step measured at or below coin-flip accuracy on real graded
+   * outcomes; see tieBreakers.ts history block). Routing to NO_STRONG_SIGNAL ensures the stored
+   * recommendation is consistent with the UI's "Too close to call" treatment and prevents a
+   * genuinely ambiguous match from being mislabelled HIGH_RISK by the fallthrough branch.
+   * Defaults to false so old call sites (e.g. finalConsistencyCheck Rule 10 on legacy rows) are
+   * not retroactively changed.
+   */
+  tieBreakerApplied = false,
 ): Recommendation {
   const margin = Math.abs(calibratedProbability - 50);
 
   if (dataQualityLabel === "Poor" || dataQuality < 25) return "DO_NOT_RECOMMEND";
+  // Raw ensemble was coin-flip level — no validated signal exists in this probability range.
+  // Returning NO_STRONG_SIGNAL keeps the recommendation consistent with the UI's "Too close to
+  // call" disclosure and avoids the HIGH_RISK fallthrough mislabelling an ambiguous match.
+  if (tieBreakerApplied) return "NO_STRONG_SIGNAL";
   if (margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement")) return "NO_STRONG_SIGNAL";
   if (upsetRisk === "EXTREME") return "HIGH_RISK";
   // Task #75: the dataQuality>=55 floor here was tuned before Task #68 excluded Head-to-Head from
