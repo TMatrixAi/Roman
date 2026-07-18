@@ -371,12 +371,12 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     db
       .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
       .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`))
+      .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
       .limit(100),
     db
       .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
       .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`))
+      .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
       .limit(100),
   ]);
   const historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
