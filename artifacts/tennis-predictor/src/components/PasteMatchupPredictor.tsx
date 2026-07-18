@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useLocation } from "wouter"
 import { searchPlayers, createPrediction, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
+import { expandNickname, isGrandSlam } from "@/lib/grandSlam"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +34,8 @@ interface PasteLine {
   /** Auto-detected from the tournament name via /api/tournament/surface */
   detectedSurface: Surface | null
   detectedLevel: TournamentLevel | null
+  /** Date annotation extracted from the paste line — display only, not used to gate prediction. */
+  parsedDate: string | null
 }
 
 async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T, index: number) => Promise<void>): Promise<void> {
@@ -52,22 +55,29 @@ function normName(name: string): string {
 
 /**
  * Resolves a pasted player name to a real PlayerSummary by name search.
- * Uses an exact case-insensitive match first, then a word-subset match (so "Alcaraz" →
- * "Carlos Alcaraz"). Returns null (with error message) for ambiguous or not-found cases.
- * Never guesses: two or more confident candidates → ambiguous, not silently resolved.
+ * Expands well-known nicknames ("Rafa" → "Rafael Nadal") before searching so that short names
+ * resolve correctly. Uses an exact case-insensitive match first, then a word-subset match (so
+ * "Alcaraz" → "Carlos Alcaraz"). Returns null (with error message) for ambiguous or not-found
+ * cases. Never guesses: two or more confident candidates → ambiguous, not silently resolved.
  */
 async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummary | null; error: string | null }> {
   try {
     if (name.trim().length < 2) return { player: null, error: `"${name}" is too short to search` }
-    const candidates = await searchPlayers({ query: name })
 
-    // Exact case-insensitive match
-    const exact = candidates.filter((c) => normName(c.name) === normName(name))
+    // Nickname expansion: search with the canonical name if input is a known moniker.
+    // The original `name` is preserved for error messages shown to the user.
+    const searchName = expandNickname(name)
+
+    const candidates = await searchPlayers({ query: searchName })
+
+    // Exact case-insensitive match (against the expanded search name)
+    const exact = candidates.filter((c) => normName(c.name) === normName(searchName))
     if (exact.length === 1) return { player: exact[0], error: null }
     if (exact.length > 1) return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
 
     // Word-subset match: handles "Alcaraz" → "Carlos Alcaraz", surname-only inputs, etc.
-    const words = normName(name).split(" ").filter(Boolean)
+    // Uses the expanded search name for matching so "Rafa" searches as "Rafael Nadal".
+    const words = normName(searchName).split(" ").filter(Boolean)
     const confident = candidates.filter((c) => {
       const cWords = new Set(normName(c.name).split(" ").filter(Boolean))
       return words.length > 0 && words.every((w) => cWords.has(w))
@@ -154,6 +164,7 @@ export function PasteMatchupPredictor() {
       resolvedTournament: p.tournamentName,
       detectedSurface: null,
       detectedLevel: null,
+      parsedDate: p.matchDate ?? null,
     }))
 
     setLines(initialLines)
@@ -221,12 +232,15 @@ export function PasteMatchupPredictor() {
     for (const line of toPredict) {
       if (!line.player1 || !line.player2) continue
       try {
+        // Grand Slam ATP men's matches are Best-of-5; all others are Best-of-3.
+        const isATPMatch = line.player1?.tour === "ATP" || line.player2?.tour === "ATP"
+        const matchFormat = isGrandSlam(line.resolvedTournament) && isATPMatch ? "BestOf5" : "BestOf3"
         const prediction = await createPrediction({
           player1Id: line.player1.id,
           player2Id: line.player2.id,
           // Use auto-detected surface/level when available; fall back to sensible defaults.
           surface: line.detectedSurface ?? "Hard",
-          matchFormat: "BestOf3",
+          matchFormat,
           tournamentLevel: line.detectedLevel ?? "ATP250",
           tournamentName: line.resolvedTournament ?? undefined,
         })
@@ -423,6 +437,9 @@ function PasteLineRow({
           )}
           {!line.detectedSurface && line.resolvedTournament && (
             <span className="ml-1 text-muted-foreground/40">· surface unknown</span>
+          )}
+          {line.parsedDate && (
+            <span className="ml-2 text-muted-foreground/50">· {line.parsedDate}</span>
           )}
         </div>
       )}

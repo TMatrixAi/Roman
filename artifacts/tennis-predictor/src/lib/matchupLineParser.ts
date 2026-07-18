@@ -13,6 +13,12 @@ export interface ParsedMatchupLine {
   playerBName: string | null
   /** Present only when the line had a recognizable trailing tournament segment. */
   tournamentName: string | null
+  /**
+   * Date annotation extracted from anywhere in the raw line -- display only, never used to gate
+   * predictions. Recognises ISO dates ("2026-07-04"), common month-day patterns ("July 4",
+   * "Jul 4th"), and the literal word "tomorrow". Null when no recognisable date is present.
+   */
+  matchDate: string | null
   /** Set when the line could not be split into two player names -- never guessed. */
   parseError: string | null
 }
@@ -116,11 +122,46 @@ function splitTournament(line: string): { matchPart: string; tournamentName: str
   return { matchPart: line.trim(), tournamentName: null }
 }
 
+// ── Date extraction ────────────────────────────────────────────────────────
+//
+// Non-binding annotation only — the extracted date is surfaced alongside the resolved
+// matchup for the user's reference but never used to gate predictions.
+//
+// Patterns recognised (tried in order):
+//   1. ISO date:        2026-07-04
+//   2. Month-day:       July 4 / Jul 4 / July 14th
+//   3. Literal word:    tomorrow
+
+const ISO_DATE_RE = /\b(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\b/
+
+const MONTH_NAMES = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+const MONTH_DAY_RE = new RegExp(
+  `\\b(${MONTH_NAMES})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`,
+  "i",
+)
+
+const TOMORROW_RE = /\btomorrow\b/i
+
+function extractDate(line: string): string | null {
+  const iso = ISO_DATE_RE.exec(line)
+  if (iso) return iso[1]
+
+  const md = MONTH_DAY_RE.exec(line)
+  if (md) return `${md[1]} ${md[2]}`
+
+  if (TOMORROW_RE.test(line)) return "tomorrow"
+
+  return null
+}
+
 export function parseMatchupLine(rawLine: string): ParsedMatchupLine {
   const raw = rawLine.trim()
   if (!raw) {
-    return { raw, playerAName: null, playerBName: null, tournamentName: null, parseError: "Empty line" }
+    return { raw, playerAName: null, playerBName: null, tournamentName: null, matchDate: null, parseError: "Empty line" }
   }
+
+  // Extract a date annotation from the raw line independently of player/tournament splitting.
+  const matchDate = extractDate(raw)
 
   const withoutMarker = stripLeadingListMarker(raw)
 
@@ -138,7 +179,7 @@ export function parseMatchupLine(rawLine: string): ParsedMatchupLine {
 
   const players = splitPlayers(matchPart)
   if (players) {
-    return { raw, playerAName: players[0], playerBName: players[1], tournamentName: finalTournament, parseError: null }
+    return { raw, playerAName: players[0], playerBName: players[1], tournamentName: finalTournament, matchDate, parseError: null }
   }
 
   return {
@@ -146,6 +187,7 @@ export function parseMatchupLine(rawLine: string): ParsedMatchupLine {
     playerAName: null,
     playerBName: null,
     tournamentName: finalTournament,
+    matchDate,
     parseError: 'Could not find a "vs" separator between two player names',
   }
 }

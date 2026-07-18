@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useLocation, useSearch } from "wouter"
 import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import type { PredictionSummary } from "@workspace/api-client-react"
@@ -173,8 +173,14 @@ export default function PredictBuilderPage() {
   const [tournamentName, setTournamentName] = useState(prefillTournamentName ?? '')
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
-  // Match Conditions collapsed by default -- only the Execute button is visible until expanded.
-  const [conditionsExpanded, setConditionsExpanded] = useState(false)
+  // Match Conditions collapsed/expanded state — persisted to localStorage so it survives refreshes.
+  const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem("matchConditionsExpanded") === "true" } catch { return false }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem("matchConditionsExpanded", conditionsExpanded ? "true" : "false") } catch { /* best-effort */ }
+  }, [conditionsExpanded])
 
   const createPrediction = useCreatePrediction()
 

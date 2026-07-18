@@ -42,6 +42,29 @@ const NON_NFD_TRANSLITERATIONS: [RegExp, string][] = [
 ];
 
 /**
+ * Well-known short names and nicknames for top ATP/WTA players, keyed by their normalized form
+ * (output of normalizePlayerName — lowercase, no punctuation except apostrophes, no diacritics).
+ * Values are the canonical full name to use as the expanded search term.
+ *
+ * Limited to unambiguous monikers where exactly one player is universally intended.
+ * "Alex", "carlos" etc. are deliberately excluded — too ambiguous at the circuit level.
+ */
+export const WELL_KNOWN_NICKNAMES: Record<string, string> = {
+  rafa: "Rafael Nadal",
+  nole: "Novak Djokovic",
+  djoker: "Novak Djokovic",
+  muzza: "Andy Murray",
+  delpo: "Juan Martin del Potro",
+  guga: "Gustavo Kuerten",
+  coco: "Cori Gauff",
+  meddy: "Daniil Medvedev",
+  sascha: "Alexander Zverev",
+  serena: "Serena Williams",
+  venus: "Venus Williams",
+  roger: "Roger Federer",
+};
+
+/**
  * Folds accents/diacritics, lowercases, strips punctuation, and collapses whitespace so the same
  * real person spelled two different ways by different provider feeds ("Krumich" vs "Krúmich",
  * "de Lange" vs "De Lange") compares equal. Used only as a real, structural identity signal (an
@@ -50,6 +73,10 @@ const NON_NFD_TRANSLITERATIONS: [RegExp, string][] = [
  * Two-pass: explicit transliteration of characters that don't decompose under NFD (Đ→d, Ł→l,
  * etc.) then the standard NFD + diacritic-strip pass that handles the majority of accented
  * Latin characters (é, ó, ñ, etc.).
+ *
+ * Apostrophes are PRESERVED in the primary pass so that "O'Brien" normalises to "o'brien"
+ * (not "obrien"), enabling a precise primary lookup. `generateNameVariants` adds an apostrophe-
+ * stripped fallback variant so searches without the apostrophe still resolve correctly.
  */
 export function normalizePlayerName(name: string): string {
   let s = name;
@@ -60,7 +87,7 @@ export function normalizePlayerName(name: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/[^a-z0-9\s']/g, "")  // apostrophes preserved — see comment above
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -82,6 +109,8 @@ export function isInitialNamePattern(normalizedName: string): boolean {
  *    last-name-first are matched correctly.
  *  - For initial-pattern names ("r nadal"): expands to check both "r <surname>" AND
  *    "<surname> r" orderings, so reversed-initial forms are caught too.
+ *  - Apostrophe-stripped fallback variants: "o'brien" → "obrien" so cross-system lookups
+ *    (where the apostrophe was stripped before storage) still resolve correctly.
  * Deduplicates variants so callers never check the same normalized string twice.
  */
 export function generateNameVariants(name: string): string[] {
@@ -99,6 +128,17 @@ export function generateNameVariants(name: string): string[] {
   if (words.length >= 2) {
     const reversed = [...words].reverse().join(" ");
     add(reversed);
+  }
+
+  // Apostrophe-stripped fallback — only added when the primary form contains an apostrophe.
+  // This ensures "O'Brien" (primary "o'brien") also matches index entries stored as "obrien".
+  if (direct.includes("'")) {
+    const stripped = direct.replace(/'/g, "");
+    add(stripped);
+    const strippedWords = stripped.split(" ");
+    if (strippedWords.length >= 2) {
+      add([...strippedWords].reverse().join(" "));
+    }
   }
 
   return variants;
@@ -227,6 +267,14 @@ export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
     }
     if (!canonicalId) continue;
     canonicalIdByName.set(normalized, canonicalId);
+    // Apostrophe-stripped fallback: also index "obrien" when primary key is "o'brien" so
+    // callers that normalized without apostrophe preservation still resolve to the right player.
+    // Only set if no OTHER entry (a distinct player stored without the apostrophe) already owns
+    // the stripped key — we never overwrite a more specific existing entry.
+    if (normalized.includes("'")) {
+      const stripped = normalized.replace(/'/g, "");
+      if (!canonicalIdByName.has(stripped)) canonicalIdByName.set(stripped, canonicalId);
+    }
     const aliasIds = Array.from(idMap.keys());
     aliasIdsByCanonicalId.set(canonicalId, aliasIds);
     for (const id of idMap.keys()) canonicalIdById.set(id, canonicalId);
@@ -362,7 +410,25 @@ export async function resolvePlayerProfile(provider: TennisDataProvider, playerI
  * `player_key` + name the provider itself reported on some real match.
  */
 export async function searchKnownPlayers(provider: TennisDataProvider, query: string): Promise<PlayerSummary[]> {
-  const liveResults = await provider.searchPlayers(query);
+  // Nickname expansion: if the query is a well-known moniker (e.g. "Rafa"), also search by the
+  // canonical full name ("Rafael Nadal") so the result set includes the actual player record,
+  // which downstream word-subset matching can then confidently identify.
+  const normalizedQuery = normalizePlayerName(query.trim());
+  const expandedName = WELL_KNOWN_NICKNAMES[normalizedQuery];
+
+  const [primaryResults, expandedResults] = await Promise.all([
+    provider.searchPlayers(query),
+    expandedName ? provider.searchPlayers(expandedName) : Promise.resolve([] as PlayerSummary[]),
+  ]);
+
+  const liveResults = [...primaryResults];
+  if (expandedResults.length > 0) {
+    const existingIds = new Set(primaryResults.map((p) => p.id));
+    for (const p of expandedResults) {
+      if (!existingIds.has(p.id)) { liveResults.push(p); existingIds.add(p.id); }
+    }
+  }
+
   const seenIds = new Set(liveResults.map((p) => p.id));
 
   const lowerQuery = query.toLowerCase().trim();

@@ -163,3 +163,43 @@ test("'A vs B — Tournament' still works (em dash as tournament separator when 
   assert.equal(result.tournamentName, "Cincinnati Open")
   assert.equal(result.parseError, null)
 })
+
+// ── Date extraction (Task #30) ────────────────────────────────────────────────
+
+test("extracts an ISO date from a line", () => {
+  const result = parseMatchupLine("Alcaraz vs Sinner — Wimbledon 2026-07-04")
+  assert.equal(result.matchDate, "2026-07-04")
+  assert.equal(result.playerAName, "Alcaraz")
+  assert.equal(result.playerBName, "Sinner")
+})
+
+test("extracts a month-day pattern from a line", () => {
+  const result = parseMatchupLine("Rafa vs Alcaraz — Roland Garros, July 4")
+  assert.equal(result.matchDate, "July 4")
+  assert.equal(result.playerAName, "Rafa")
+  assert.equal(result.playerBName, "Alcaraz")
+})
+
+test("extracts an abbreviated month-day pattern", () => {
+  const result = parseMatchupLine("Djokovic vs Zverev — Miami Open, Jul 14th")
+  assert.equal(result.matchDate, "Jul 14")
+})
+
+test("extracts 'tomorrow' as a matchDate", () => {
+  const result = parseMatchupLine("Sinner vs Alcaraz tomorrow")
+  assert.equal(result.matchDate, "tomorrow")
+})
+
+test("matchDate is null when no date pattern is present", () => {
+  const result = parseMatchupLine("Djokovic vs Alcaraz — Wimbledon")
+  assert.equal(result.matchDate, null)
+})
+
+test("matchDate does not interfere with player or tournament parsing", () => {
+  const result = parseMatchupLine("Swiatek vs Sabalenka — French Open, June 2")
+  assert.equal(result.playerAName, "Swiatek")
+  assert.equal(result.playerBName, "Sabalenka")
+  assert.equal(result.matchDate, "June 2")
+  // Tournament name may still contain the date text — that's acceptable since it's extracted
+  // independently from the raw line, not from the parsed tournament segment.
+})

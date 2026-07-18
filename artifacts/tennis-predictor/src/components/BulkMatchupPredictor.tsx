@@ -18,6 +18,7 @@ import {
   Layers, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Activity, History, Trash2, X,
   ChevronDown, Settings2, Copy, Bug, FileText, RotateCcw,
 } from "lucide-react"
+import { isGrandSlam } from "@/lib/grandSlam"
 
 const MAX_FILES = 20
 
@@ -368,20 +369,27 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
         if (result.matchups && result.matchups.length > 1) {
           console.log(`[SCREENSHOT] [10/13] Expanding ${result.matchups.length} matchups into separate rows`)
-          const expandedItems: BatchItem[] = result.matchups.map((m, mi) => ({
-            ...makeDefaultItem(`${key}-m${mi}`, mi === 0 ? file.name : `${file.name} (match ${mi + 1} of ${result.matchups!.length})`),
-            status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
-            result: entryToResult(m),
-            errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup from the screenshot."),
-            surface: (m.event.surface ?? "Hard") as Surface,
-            level: (m.event.level ?? "ATP250") as TournamentLevel,
-            tournamentName: m.event.recognizedName ?? null,
-            surfaceDetected: !!m.event.surface,
-            levelDetected: !!m.event.level,
-            tournamentDetected: !!m.event.recognizedName,
-            debugLog,
-            rawText,
-          }))
+          const expandedItems: BatchItem[] = result.matchups.map((m, mi) => {
+            // Grand Slam ATP men's draws are Best-of-5; all others remain Best-of-3.
+            const mTournament = m.event.recognizedName ?? null
+            const mIsATP = m.player1.player?.tour === "ATP" || m.player2.player?.tour === "ATP"
+            const mFormat: MatchFormat = isGrandSlam(mTournament) && mIsATP ? "BestOf5" : "BestOf3"
+            return ({
+              ...makeDefaultItem(`${key}-m${mi}`, mi === 0 ? file.name : `${file.name} (match ${mi + 1} of ${result.matchups!.length})`),
+              status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
+              result: entryToResult(m),
+              errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup from the screenshot."),
+              surface: (m.event.surface ?? "Hard") as Surface,
+              level: (m.event.level ?? "ATP250") as TournamentLevel,
+              matchFormat: mFormat,
+              tournamentName: mTournament,
+              surfaceDetected: !!m.event.surface,
+              levelDetected: !!m.event.level,
+              tournamentDetected: !!m.event.recognizedName,
+              debugLog,
+              rawText,
+            })
+          })
           console.log(`[SCREENSHOT] [12/13] ${expandedItems.filter(e => e.status === "resolved").length}/${expandedItems.length} matchups resolved`)
           setItems((prev) => {
             const idx = prev.findIndex((it) => it.key === key)
@@ -393,7 +401,10 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           const detectedSurface = result.event.surface as Surface | null
           const detectedLevel = result.event.level as TournamentLevel | null
           const detectedTournament = result.event.recognizedName ?? null
-          console.log(`[SCREENSHOT] [10/13] Single match: resolved=${ready} surface=${detectedSurface} tournament=${detectedTournament}`)
+          // Grand Slam ATP men's draws are Best-of-5; all others remain Best-of-3.
+          const singleIsATP = result.player1.player?.tour === "ATP" || result.player2.player?.tour === "ATP"
+          const detectedFormat: MatchFormat = isGrandSlam(detectedTournament) && singleIsATP ? "BestOf5" : "BestOf3"
+          console.log(`[SCREENSHOT] [10/13] Single match: resolved=${ready} surface=${detectedSurface} tournament=${detectedTournament} format=${detectedFormat}`)
           setItems((prev) =>
             prev.map((it) =>
               it.key === key
@@ -404,6 +415,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                     errorMessage: ready ? null : (result.warnings[0] ?? "Couldn't confidently resolve both players from this screenshot."),
                     surface: detectedSurface ?? it.surface,
                     level: detectedLevel ?? it.level,
+                    matchFormat: detectedFormat,
                     tournamentName: detectedTournament,
                     surfaceDetected: !!detectedSurface,
                     levelDetected: !!detectedLevel,
@@ -464,18 +476,24 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
       const result = await resolveFromTextNames(pairs) as ScreenshotResultExtended
 
       if (result.matchups && result.matchups.length > 1) {
-        const expandedItems: BatchItem[] = result.matchups.map((m, mi) => ({
-          ...makeDefaultItem(`${key}-text-m${mi}`, mi === 0 ? "Text import" : `Text import (${mi + 1} of ${result.matchups!.length})`),
-          status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
-          result: entryToResult(m),
-          errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup."),
-          surface: (m.event.surface ?? "Hard") as Surface,
-          level: (m.event.level ?? "ATP250") as TournamentLevel,
-          tournamentName: m.event.recognizedName ?? null,
-          surfaceDetected: !!m.event.surface,
-          levelDetected: !!m.event.level,
-          tournamentDetected: !!m.event.recognizedName,
-        }))
+        const expandedItems: BatchItem[] = result.matchups.map((m, mi) => {
+          const mTournament = m.event.recognizedName ?? null
+          const mIsATP = m.player1.player?.tour === "ATP" || m.player2.player?.tour === "ATP"
+          const mFormat: MatchFormat = isGrandSlam(mTournament) && mIsATP ? "BestOf5" : "BestOf3"
+          return ({
+            ...makeDefaultItem(`${key}-text-m${mi}`, mi === 0 ? "Text import" : `Text import (${mi + 1} of ${result.matchups!.length})`),
+            status: (m.resolved ? "resolved" : "unresolved") as ItemStatus,
+            result: entryToResult(m),
+            errorMessage: m.resolved ? null : (m.warnings[0] ?? "Couldn't resolve this matchup."),
+            surface: (m.event.surface ?? "Hard") as Surface,
+            level: (m.event.level ?? "ATP250") as TournamentLevel,
+            matchFormat: mFormat,
+            tournamentName: mTournament,
+            surfaceDetected: !!m.event.surface,
+            levelDetected: !!m.event.level,
+            tournamentDetected: !!m.event.recognizedName,
+          })
+        })
         setItems((prev) => {
           const idx = prev.findIndex((it) => it.key === key)
           if (idx === -1) return prev
@@ -483,6 +501,9 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         })
       } else {
         const ready = !!result.player1.player && !!result.player2.player
+        const txtTournament = result.event.recognizedName ?? null
+        const txtIsATP = result.player1.player?.tour === "ATP" || result.player2.player?.tour === "ATP"
+        const txtFormat: MatchFormat = isGrandSlam(txtTournament) && txtIsATP ? "BestOf5" : "BestOf3"
         updateItem(key, {
           status: ready ? "resolved" : "unresolved",
           result,
@@ -491,7 +512,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           errorMessage: ready ? null : (result.warnings[0] ?? "Couldn't match these names to known players."),
           surface: (result.event.surface as Surface | null) ?? "Hard",
           level: (result.event.level as TournamentLevel | null) ?? "ATP250",
-          tournamentName: result.event.recognizedName ?? null,
+          matchFormat: txtFormat,
+          tournamentName: txtTournament,
           surfaceDetected: !!result.event.surface,
           levelDetected: !!result.event.level,
           tournamentDetected: !!result.event.recognizedName,

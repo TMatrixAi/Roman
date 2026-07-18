@@ -38,9 +38,13 @@ test("normalizePlayerName: strips accents", () => {
   assert.equal(normalizePlayerName("Nadal Ráfaél"), "nadal rafael");
 });
 
-test("normalizePlayerName: strips dots and apostrophes", () => {
+test("normalizePlayerName: strips dots but PRESERVES apostrophes (primary lookup pass)", () => {
+  // Dots are not in the allowed set and are stripped.
   assert.equal(normalizePlayerName("R. Nadal"), "r nadal");
-  assert.equal(normalizePlayerName("O'Brien"), "obrien");
+  // Apostrophes ARE preserved so "O'Brien" has a precise primary form "o'brien".
+  // Stripped fallback "obrien" is handled by generateNameVariants — not by normalizePlayerName itself.
+  assert.equal(normalizePlayerName("O'Brien"), "o'brien");
+  assert.equal(normalizePlayerName("M'Baye"), "m'baye");
 });
 
 test("normalizePlayerName: collapses whitespace", () => {
@@ -97,6 +101,23 @@ test("generateNameVariants: deduplicates (palindrome-like short names)", () => {
   const variants = generateNameVariants("A A");
   const unique = new Set(variants);
   assert.equal(unique.size, variants.length, "Expected no duplicate variants");
+});
+
+test("generateNameVariants: includes apostrophe-stripped fallback for names with apostrophes", () => {
+  const variants = generateNameVariants("O'Brien");
+  // Primary form preserves apostrophe
+  assert.ok(variants.includes("o'brien"), `Missing primary apostrophe form, got: ${JSON.stringify(variants)}`);
+  // Stripped fallback allows matching "obrien" stored without apostrophe
+  assert.ok(variants.includes("obrien"), `Missing stripped fallback, got: ${JSON.stringify(variants)}`);
+});
+
+test("generateNameVariants: apostrophe-stripped fallback also includes reversed variant", () => {
+  const variants = generateNameVariants("O'Brien Connor");
+  // Should contain stripped reversed variant "connor obrien" in addition to primary forms
+  assert.ok(variants.includes("o'brien connor"), `Missing primary, got: ${JSON.stringify(variants)}`);
+  assert.ok(variants.includes("connor o'brien"), `Missing primary reversed, got: ${JSON.stringify(variants)}`);
+  assert.ok(variants.includes("obrien connor"), `Missing stripped, got: ${JSON.stringify(variants)}`);
+  assert.ok(variants.includes("connor obrien"), `Missing stripped reversed, got: ${JSON.stringify(variants)}`);
 });
 
 test("generateNameVariants: initial form produces reversed variant", () => {
