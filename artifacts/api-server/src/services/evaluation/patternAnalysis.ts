@@ -20,7 +20,7 @@ import { db, evaluationPredictionsTable, patternAnalysisRunsTable } from "@works
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { desc } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { logLoss, brierScore, type CalibrationPoint } from "./calibration";
+import { logLoss, brierScore, isKnownBadCascadeRow, type CalibrationPoint } from "./calibration";
 import { computeECE } from "./metrics";
 import type { EvaluationPredictionRow } from "@workspace/db";
 
@@ -156,7 +156,20 @@ export async function runPatternAnalysis(): Promise<PatternAnalysisResult> {
     );
 
   // Exclude historical_test validation-segment (used for calibration fitting)
-  const unseenRows = rows.filter((r) => !(r.runKind === "historical_test" && r.segment === "validation"));
+  const postValidationFilter = rows.filter((r) => !(r.runKind === "historical_test" && r.segment === "validation"));
+
+  // Exclude known-bad pre-cascade rows: predictions locked before 2026-07-15 with
+  // tieBreakerApplied=true were scored by the old directional cascade (removed Task #5, 2026-07-15)
+  // which achieved only ~30.8% accuracy on close matchups vs a 76.9% baseline. Including them
+  // skews pattern analysis metrics toward incorrectly-scored close-call predictions.
+  const cascadeBadRows = postValidationFilter.filter((r) => isKnownBadCascadeRow(r.lockedAt, r.featureSnapshot));
+  if (cascadeBadRows.length > 0) {
+    logger.warn(
+      { excludedCascadeRows: cascadeBadRows.length, remaining: postValidationFilter.length - cascadeBadRows.length },
+      "Excluded known-bad pre-cascade rows from pattern analysis corpus",
+    );
+  }
+  const unseenRows = postValidationFilter.filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.featureSnapshot));
 
   const runKindsIncluded = [...new Set(unseenRows.map((r) => r.runKind))];
   const totalAnalyzed = unseenRows.length;

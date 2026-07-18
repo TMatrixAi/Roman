@@ -1,5 +1,36 @@
 import type { CalibrationKnot } from "./types";
 
+/**
+ * Rows locked before this date and with `tieBreakerApplied=true` in their engine breakdown were
+ * scored by the old directional tie-break cascade (removed 2026-07-15), which achieved only
+ * ~30.8% accuracy on close matchups vs a 76.9% baseline — far below even a coin flip. Excluding
+ * them from calibration training prevents the fitted curve from learning incorrect patterns.
+ *
+ * The date matches the cascade removal commit (Task #5, 2026-07-15). Any row locked at or after
+ * this date was scored by the current engine, which passes tie-band probabilities through
+ * unchanged and is not affected.
+ */
+export const CASCADE_CUTOFF_DATE = new Date("2026-07-15T00:00:00.000Z");
+
+/**
+ * Returns true when a row should be excluded from calibration training because it was scored by
+ * the old directional tie-break cascade (locked before CASCADE_CUTOFF_DATE) and has
+ * `tieBreakerApplied=true` in its stored `engine` breakdown.
+ *
+ * Accepts either:
+ *  - A raw `featureSnapshot` JSONB object (e.g. from evaluationPredictionsTable) whose
+ *    `engine.tieBreakerApplied` field is inspected, OR
+ *  - A plain `boolean` shorthand when the caller has already extracted the flag directly.
+ */
+export function isKnownBadCascadeRow(lockedAt: Date, featureSnapshotOrFlag: unknown): boolean {
+  if (lockedAt >= CASCADE_CUTOFF_DATE) return false;
+  if (typeof featureSnapshotOrFlag === "boolean") return featureSnapshotOrFlag;
+  if (!featureSnapshotOrFlag || typeof featureSnapshotOrFlag !== "object") return false;
+  const snap = featureSnapshotOrFlag as Record<string, unknown>;
+  const engine = snap["engine"] as Record<string, unknown> | undefined;
+  return engine?.["tieBreakerApplied"] === true;
+}
+
 export interface CalibrationPoint {
   /** Raw predicted probability that player1 wins, 0-1. */
   rawProbability: number;

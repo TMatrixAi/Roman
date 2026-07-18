@@ -1,7 +1,7 @@
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, historicalMatchesTable } from "@workspace/db";
 import { asc, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { fitBestCalibration, applyCalibration, type CalibrationPoint } from "./calibration";
+import { fitBestCalibration, applyCalibration, isKnownBadCascadeRow, type CalibrationPoint } from "./calibration";
 import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
 import { getPredictionSettings } from "./settle";
 import { computeAndStoreSpecialistSegments, getActiveSpecialistSegments } from "./specialistWeights";
@@ -155,8 +155,19 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     } else {
       // Training mode: fit calibration ONLY on this fold's validation-segment, accuracy-eligible
       // points. Never touches test data.
-      const foldValidationPoints: CalibrationPoint[] = validationRows
-        .filter((r) => r.includedInAccuracy && r.rawProbability !== null)
+      // Exclude known-bad pre-cascade rows: predictions locked before 2026-07-15 with
+      // tieBreakerApplied=true were scored by the old directional cascade (removed Task #5)
+      // which achieved only ~30.8% accuracy on close matchups vs a 76.9% baseline.
+      const foldEligible = validationRows.filter((r) => r.includedInAccuracy && r.rawProbability !== null);
+      const foldCascadeBad = foldEligible.filter((r) => isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied));
+      if (foldCascadeBad.length > 0) {
+        logger.warn(
+          { fold, excludedCascadeRows: foldCascadeBad.length, kept: foldEligible.length - foldCascadeBad.length },
+          "Excluded known-bad pre-cascade rows from fold calibration training data",
+        );
+      }
+      const foldValidationPoints: CalibrationPoint[] = foldEligible
+        .filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.tieBreakerApplied))
         .map((r) => ({ rawProbability: r.rawProbability as number, outcome: r.player1Won ? 1 : 0 }));
       mapping = fitBestCalibration(foldValidationPoints).knots;
       allValidationPoints.push(...foldValidationPoints);
@@ -210,6 +221,11 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   } else {
     // Training mode: refit the single "live" calibration model from every fold's pooled
     // validation data -- this is what future paper-trade/live predictions will be calibrated with.
+    // allValidationPoints was already filtered per-fold to exclude known-bad cascade rows.
+    logger.info(
+      { pooledValidationPoints: allValidationPoints.length },
+      "Fitting pooled calibration model (cascade-bad rows already excluded per fold)",
+    );
     await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
     const liveFit = fitBestCalibration(allValidationPoints);
     const liveMapping = liveFit.knots;
@@ -261,8 +277,8 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     segment: "validation" | "test",
     foldId: number | null,
     retirementRule: RetirementRule,
-  ): Promise<Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean }>> {
-    const results: Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean }> = [];
+  ): Promise<Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean; tieBreakerApplied: boolean; lockedAt: Date }>> {
+    const results: Array<{ id: number; rawProbability: number | null; player1Won: boolean; includedInAccuracy: boolean; tieBreakerApplied: boolean; lockedAt: Date }> = [];
 
 
     for (const match of matches) {
@@ -274,6 +290,10 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
       const rawProbability = scored?.rawProbability ?? null;
       const predictedWinnerId = rawProbability !== null ? (rawProbability >= 0.5 ? match.player1Id : match.player2Id) : null;
       const includedInAccuracy = !isVoid && (resultType === "normal" || retirementRule === "included") && rawProbability !== null;
+      // Capture tieBreakerApplied from the engine breakdown so calibration training can exclude
+      // rows that were scored by the old directional cascade (see isKnownBadCascadeRow).
+      const tieBreakerApplied = scored?.snapshot.engine.tieBreakerApplied ?? false;
+      const lockedAt = new Date();
 
       const [inserted] = await db
         .insert(evaluationPredictionsTable)
@@ -292,7 +312,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
           tournamentName: match.tournamentName,
           scheduledStartAt: match.scheduledStartAt,
           cutoffAt: match.cutoffAt,
-          lockedAt: new Date(),
+          lockedAt,
           modelVersion: HISTORICAL_MODEL_VERSION,
           featureSnapshot: scored?.snapshot ?? null,
           modelAgreement: scored?.modelAgreement ?? null,
@@ -314,7 +334,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
         })
         .returning({ id: evaluationPredictionsTable.id });
 
-      results.push({ id: inserted.id, rawProbability, player1Won, includedInAccuracy });
+      results.push({ id: inserted.id, rawProbability, player1Won, includedInAccuracy, tieBreakerApplied, lockedAt });
     }
 
     return results;

@@ -26,7 +26,7 @@ import { db, evaluationPredictionsTable, thresholdEvaluationRunsTable } from "@w
 import { and, eq, ne } from "drizzle-orm";
 import { desc } from "drizzle-orm";
 import { logger } from "../../lib/logger";
-import { logLoss, type CalibrationPoint } from "./calibration";
+import { logLoss, isKnownBadCascadeRow, type CalibrationPoint } from "./calibration";
 import type { EvaluationPredictionRow } from "@workspace/db";
 
 export type ThresholdClassification = "Deploy" | "Continue shadow" | "Needs more data" | "Reject" | "Investigate";
@@ -190,7 +190,21 @@ export async function runThresholdEvaluation(): Promise<ThresholdEvaluationResul
       ),
     );
 
-  const unseenRows = rows.filter((r) => !(r.runKind === "historical_test" && r.segment === "validation"));
+  const postValidationFilter = rows.filter((r) => !(r.runKind === "historical_test" && r.segment === "validation"));
+
+  // Exclude known-bad pre-cascade rows: predictions locked before 2026-07-15 with
+  // tieBreakerApplied=true were scored by the old directional cascade (removed Task #5, 2026-07-15)
+  // which achieved only ~30.8% accuracy on close matchups vs a 76.9% baseline. Including them
+  // distorts threshold evaluation metrics by mixing incorrectly-scored close-call predictions into
+  // the baseline cohort that determines whether a candidate threshold should be deployed.
+  const cascadeBadRows = postValidationFilter.filter((r) => isKnownBadCascadeRow(r.lockedAt, r.featureSnapshot));
+  if (cascadeBadRows.length > 0) {
+    logger.warn(
+      { excludedCascadeRows: cascadeBadRows.length, remaining: postValidationFilter.length - cascadeBadRows.length },
+      "Excluded known-bad pre-cascade rows from threshold evaluation corpus",
+    );
+  }
+  const unseenRows = postValidationFilter.filter((r) => !isKnownBadCascadeRow(r.lockedAt, r.featureSnapshot));
   const totalGraded = unseenRows.length;
   const thresholds: ThresholdEvalEntry[] = [];
 
