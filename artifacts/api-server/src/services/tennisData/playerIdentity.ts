@@ -446,3 +446,64 @@ async function enrichCountryCodes(provider: TennisDataProvider, results: PlayerS
 export function clearCountryCodeCacheForTests(): void {
   countryCodeCache.clear();
 }
+
+// ─── Rank enrichment ─────────────────────────────────────────────────────────
+
+/**
+ * Best-effort rank enrichment via the provider's name-search endpoint (which, for MatchStat /
+ * tennisapi1, searches through the live ATP/WTA rankings list).
+ *
+ * Called when a player's `currentRank` is null after the primary profile resolution — for example,
+ * when the player is known to the provider but is not in the current live standings snapshot that
+ * the regular `getPlayer` path consults. In that case, the rankings-search path (which MatchStat
+ * serves from a different endpoint) may still carry their current rank.
+ *
+ * Matching is exact-normalized-name only — if the search returns multiple results or no result
+ * whose normalized name equals the player's own, the profile is returned unchanged. Never guesses
+ * between ambiguous candidates, and never falls back to a partial/fuzzy match.
+ *
+ * Failures (provider unavailable, rate limit, unexpected response) are silently swallowed — the
+ * caller will proceed with `currentRank: null` and surface honest "missing rank" disclosures.
+ */
+export async function enrichPlayerRankFromSearch(
+  provider: TennisDataProvider,
+  player: PlayerProfile,
+): Promise<PlayerProfile> {
+  if (player.currentRank !== null) return player; // already have a rank
+
+  try {
+    const results = await provider.searchPlayers(player.name);
+    const normalizedTarget = normalizePlayerName(player.name);
+
+    // Collect ALL exact-normalized-name candidates that carry a rank.
+    // "Exactly one" is the safety rule: if multiple players share the same normalized
+    // name and all have a rank, we cannot determine which rank belongs to THIS player
+    // without a reliable cross-provider ID linkage — so we don't guess.
+    const exactMatches = results.filter(
+      (r) => normalizePlayerName(r.name) === normalizedTarget && r.currentRank != null,
+    );
+
+    if (exactMatches.length === 1) {
+      // Exactly one ranked candidate with this exact normalized name → safe to adopt.
+      logger.debug(
+        { playerId: player.id, playerName: player.name, rankFound: exactMatches[0].currentRank },
+        "Enriched missing player rank via search endpoint",
+      );
+      return { ...player, currentRank: exactMatches[0].currentRank! };
+    }
+
+    if (exactMatches.length > 1) {
+      // Multiple candidates share this name — cannot tell which rank belongs here.
+      logger.debug(
+        { playerId: player.id, playerName: player.name, candidateCount: exactMatches.length },
+        "Rank enrichment skipped — multiple exact-name matches, ambiguous identity",
+      );
+    }
+    // Zero matches → rank stays null; the honest "missing rank" disclosure fires downstream.
+  } catch (err) {
+    // Provider unavailable or search failed — leave rank null, never guess.
+    logger.debug({ err, playerName: player.name }, "Rank enrichment via search failed — rank stays null");
+  }
+
+  return player;
+}

@@ -24,7 +24,7 @@ import {
   GetLedgerPlayerPredictionsResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
-import { resolvePlayerProfile } from "../services/tennisData/playerIdentity";
+import { resolvePlayerProfile, enrichPlayerRankFromSearch } from "../services/tennisData/playerIdentity";
 import { runPredictionEngine } from "../services/predictionEngine";
 import { buildPlayerProfileWarnings, usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
@@ -156,6 +156,15 @@ router.post("/predictions", async (req, res): Promise<void> => {
       return;
     }
 
+    // Enrich currentRank from the provider's search/rankings feed when it's null on the primary
+    // profile (common for historical-match-resolved players not in current live standings). Best-
+    // effort: if the provider is unavailable or the name doesn't match exactly, rank stays null and
+    // the honest "missing rank" disclosure fires as before.
+    const [player1Enriched, player2Enriched] = await Promise.all([
+      enrichPlayerRankFromSearch(provider, player1),
+      enrichPlayerRankFromSearch(provider, player2),
+    ]);
+
     const [player1Matches, player2Matches, headToHead] = await Promise.all([
       provider.getPlayerMatches(body.player1Id),
       provider.getPlayerMatches(body.player2Id),
@@ -164,8 +173,8 @@ router.post("/predictions", async (req, res): Promise<void> => {
 
     // Tour isn't part of the request -- it's read off the player profiles themselves (both
     // players are on the same tour for any real fixture; player1's is preferred, player2's used
-    // only if player1's happens to be unknown).
-    const matchTour = player1.tour ?? player2.tour;
+    // only if player1's happens to be unknown). Use enriched profiles consistently.
+    const matchTour = player1Enriched.tour ?? player2Enriched.tour;
 
     const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment, simulatorAdoption] = await Promise.all([
       resolveOpponentStrength(player1Matches),
@@ -176,8 +185,8 @@ router.post("/predictions", async (req, res): Promise<void> => {
     ]);
 
     const output = runPredictionEngine({
-      player1,
-      player2,
+      player1: player1Enriched,
+      player2: player2Enriched,
       player1Matches,
       player2Matches,
       headToHead,
@@ -194,7 +203,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       segment,
       simulatorAdoption,
     });
-    output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
+    output.engine.warnings.push(...buildPlayerProfileWarnings(player1Enriched, player2Enriched));
 
     const matchIdentityKey = computeMatchIdentityKey(player1.id, player2.id, body.tournamentName ?? null, body.surface, body.matchFormat);
     const inputSnapshotHash = computeInputSnapshotHash({

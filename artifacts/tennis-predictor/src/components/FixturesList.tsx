@@ -492,7 +492,7 @@ export const FixturesList = forwardRef<
                 {/* Main content */}
                 <div className="flex-1 flex flex-col sm:flex-row min-w-0">
                   <div className="flex-1 p-4 flex flex-col justify-between gap-2.5 min-w-0">
-                    {/* Meta row: level + tournament + surface */}
+                    {/* Meta row: level + tournament + round + surface */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
                       <Badge
                         variant={levelVariant(fixture.tournamentLevel)}
@@ -505,9 +505,15 @@ export const FixturesList = forwardRef<
                           {fixture.tournamentName}
                         </span>
                       )}
+                      {fixture.round && (
+                        <>
+                          <span className="text-border/60">·</span>
+                          <span className="text-muted-foreground/70">{fixture.round}</span>
+                        </>
+                      )}
                       <span className="text-border/60">·</span>
                       <span className={`font-semibold ${surfaceTextClass(fixture.surface)}`}>
-                        {fixture.surface}{fixture.indoor ? ' (Indoor)' : ''}
+                        {fixture.surface ?? 'Unknown'}{fixture.indoor ? ' (Indoor)' : ''}
                       </span>
                     </div>
 
