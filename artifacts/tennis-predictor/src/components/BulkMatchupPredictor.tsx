@@ -459,10 +459,23 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
               )}
 
               {item.result && (
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2 items-center">
                   <RecognizedChip label="PLAYER 1" name={item.result.player1.recognizedName} matched={!!item.result.player1.player} />
                   <RecognizedChip label="PLAYER 2" name={item.result.player2.recognizedName} matched={!!item.result.player2.player} />
                   <RecognizedChip label="EVENT" name={item.result.event.recognizedName} matched={!!item.result.event.surface} />
+                  {/* Auto-detected surface + level chips */}
+                  {item.surface && item.surface !== "Hard" ? (
+                    <span className={`text-[0.6rem] font-bold uppercase px-1.5 py-0.5 rounded bg-secondary font-mono ${
+                      item.surface === "Clay" ? "text-orange-500" :
+                      item.surface === "Grass" ? "text-green-500" :
+                      item.surface === "IndoorHard" ? "text-purple-400" : "text-blue-400"
+                    }`}>{item.surface}</span>
+                  ) : item.surface === "Hard" ? (
+                    <span className="text-[0.6rem] font-bold uppercase px-1.5 py-0.5 rounded bg-secondary font-mono text-blue-400">Hard</span>
+                  ) : null}
+                  {item.level && item.level !== "ATP250" && (
+                    <span className="text-[0.6rem] text-muted-foreground/70 uppercase font-mono px-1 py-0.5 rounded bg-secondary/60">{item.level}</span>
+                  )}
                 </div>
               )}
 

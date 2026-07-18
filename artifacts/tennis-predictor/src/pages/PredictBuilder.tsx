@@ -30,13 +30,13 @@ function PlayerCard({
   if (!playerId) {
     return (
       <Card className="h-full border-dashed border-2 bg-secondary/30 glass-panel">
-        <CardContent className="p-8 h-full flex flex-col justify-center items-center text-center space-y-4 min-h-[240px]">
-          <div className="w-16 h-16 rounded-full bg-background shadow-sm flex items-center justify-center border border-border">
-            <Swords className="w-6 h-6 text-muted-foreground/50" />
+        <CardContent className="p-4 sm:p-8 h-full flex flex-col justify-center items-center text-center space-y-3 min-h-[140px] sm:min-h-[200px]">
+          <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-full bg-background shadow-sm flex items-center justify-center border border-border">
+            <Swords className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground/50" />
           </div>
           <div>
-            <h3 className="font-display font-bold text-xl">{title}</h3>
-            <p className="text-sm text-muted-foreground font-mono mt-1">Select player from search below</p>
+            <h3 className="font-display font-bold text-base sm:text-xl">{title}</h3>
+            <p className="text-xs text-muted-foreground font-mono mt-1">Select player from search below</p>
           </div>
         </CardContent>
       </Card>
@@ -61,41 +61,41 @@ function PlayerCard({
 
   return (
     <Card className="h-full relative overflow-hidden border border-primary/20 shadow-lg hover-lift group">
-      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary to-accent" />
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-accent" />
       <div className="absolute right-0 bottom-0 opacity-[0.02] mix-blend-overlay pointer-events-none group-hover:scale-110 transition-transform duration-700">
-        <Swords className="w-48 h-48 -mb-10 -mr-10" />
+        <Swords className="w-32 h-32 sm:w-48 sm:h-48 -mb-6 -mr-6 sm:-mb-10 sm:-mr-10" />
       </div>
-      <CardContent className="p-6 sm:p-8 flex flex-col h-full relative z-10">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1">
-            <p className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
-            <h3 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-foreground/90">{player.name}</h3>
+      <CardContent className="p-3 sm:p-6 flex flex-col h-full relative z-10">
+        <div className="flex justify-between items-start gap-2">
+          <div className="space-y-0.5 min-w-0">
+            <p className="text-[9px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
+            <h3 className="text-lg sm:text-2xl font-display font-bold tracking-tight text-foreground/90 truncate">{player.name}</h3>
           </div>
           {player.countryCode && (
-            <Badge variant="secondary" className="font-mono bg-background border shadow-sm">{player.countryCode}</Badge>
+            <Badge variant="secondary" className="font-mono bg-background border shadow-sm shrink-0 text-xs">{player.countryCode}</Badge>
           )}
         </div>
 
-        <div className="grid grid-cols-4 gap-4 mt-8 flex-1">
-          <div className="bg-secondary/50 rounded-lg p-3 text-center border border-border/50">
-            <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1">RANK</p>
-            <p className="font-bold font-mono text-lg tabular-nums">{player.currentRank || '--'}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mt-3 sm:mt-6 flex-1">
+          <div className="bg-secondary/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">RANK</p>
+            <p className="font-bold font-mono text-base sm:text-lg tabular-nums">{player.currentRank || '--'}</p>
           </div>
-          <div className="bg-secondary/50 rounded-lg p-3 text-center border border-border/50">
-            <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1">AGE</p>
-            <p className="font-bold font-mono text-lg tabular-nums">{player.age || '--'}</p>
+          <div className="bg-secondary/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">AGE</p>
+            <p className="font-bold font-mono text-base sm:text-lg tabular-nums">{player.age || '--'}</p>
           </div>
-          <div className="bg-secondary/50 rounded-lg p-3 text-center border border-border/50">
-            <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1">PLAYS</p>
-            <p className="font-bold text-sm uppercase tracking-wide mt-1.5">{player.plays || '--'}</p>
+          <div className="bg-secondary/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">PLAYS</p>
+            <p className="font-bold text-xs uppercase tracking-wide mt-1">{player.plays || '--'}</p>
           </div>
-          <div className="bg-secondary/50 rounded-lg p-3 text-center border border-border/50">
-            <p className="text-[10px] font-mono font-bold text-muted-foreground mb-1">TOUR</p>
-            <p className="font-bold text-sm uppercase tracking-wide mt-1.5">{player.tour || '--'}</p>
+          <div className="bg-secondary/50 rounded-lg p-2 text-center border border-border/50">
+            <p className="text-[9px] font-mono font-bold text-muted-foreground mb-0.5">TOUR</p>
+            <p className="font-bold text-xs uppercase tracking-wide mt-1">{player.tour || '--'}</p>
           </div>
         </div>
 
-        <Button variant="ghost" size="sm" onClick={onRemove} className="w-full mt-6 text-muted-foreground font-mono text-xs hover:text-destructive hover:bg-destructive/10">
+        <Button variant="ghost" size="sm" onClick={onRemove} className="w-full mt-3 text-muted-foreground font-mono text-xs hover:text-destructive hover:bg-destructive/10 h-7">
           CHANGE PLAYER
         </Button>
       </CardContent>
@@ -155,11 +155,11 @@ export default function PredictBuilderPage() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border/50 pb-6">
+    <div className="space-y-4 sm:space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-2 border-b border-border/50 pb-4">
         <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Build Matchup"}</h1>
-          <p className="text-muted-foreground mt-2 text-lg">
+          <h1 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Build Matchup"}</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-lg">
             {wasAutoDetected
               ? "Terrain and tournament auto-detected from the fixture — adjust anything below before running the engine."
               : "Search players, configure parameters, and run the prediction engine."}
@@ -168,7 +168,7 @@ export default function PredictBuilderPage() {
       </div>
 
       {/* Box 1 + Box 2 — Player One and Player Two slots */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-8">
         <PlayerCard 
           title="PLAYER 1" 
           playerId={player1Id} 

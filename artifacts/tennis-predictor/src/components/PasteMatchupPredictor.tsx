@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useLocation } from "wouter"
-import { searchPlayers, createPrediction, type PlayerSummary } from "@workspace/api-client-react"
+import { searchPlayers, createPrediction, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -30,6 +30,9 @@ interface PasteLine {
   errorMessage: string | null
   predictionId: number | null
   resolvedTournament: string | null
+  /** Auto-detected from the tournament name via /api/tournament/surface */
+  detectedSurface: Surface | null
+  detectedLevel: TournamentLevel | null
 }
 
 async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T, index: number) => Promise<void>): Promise<void> {
@@ -79,11 +82,36 @@ async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummar
 }
 
 /**
+ * Calls GET /api/tournament/surface?name=... to detect surface + level from a tournament name.
+ * Returns null on any error so a failed lookup never blocks the rest of the resolve flow.
+ */
+async function lookupTournamentSurface(
+  name: string,
+): Promise<{ surface: Surface | null; level: TournamentLevel | null } | null> {
+  try {
+    const res = await fetch(`/api/tournament/surface?${new URLSearchParams({ name })}`)
+    if (!res.ok) return null
+    return (await res.json()) as { surface: Surface | null; level: TournamentLevel | null }
+  } catch {
+    return null
+  }
+}
+
+/** Label shown per surface type */
+const SURFACE_LABEL: Record<Surface, string> = {
+  Hard: "Hard",
+  Clay: "Clay",
+  Grass: "Grass",
+  IndoorHard: "Indoor",
+}
+
+/**
  * Multi-line paste → prediction batch.
  * Accepts one matchup per line in any of the supported formats (A vs B, A v B, A - B, A — B,
  * A versus B, with optional (Tournament) suffix). Resolves player names against the live player
  * search and shows per-line status. Never fails the whole batch on one bad line.
  * Pasted text is preserved in sessionStorage across page refreshes.
+ * Tournament names are auto-resolved to surface + level via the backend lookup.
  */
 export function PasteMatchupPredictor() {
   const [text, setText] = useState("")
@@ -124,6 +152,8 @@ export function PasteMatchupPredictor() {
       errorMessage: p.parseError,
       predictionId: null,
       resolvedTournament: p.tournamentName,
+      detectedSurface: null,
+      detectedLevel: null,
     }))
 
     setLines(initialLines)
@@ -135,9 +165,11 @@ export function PasteMatchupPredictor() {
       const { parsed: p } = lineItem
       if (!p.playerAName || !p.playerBName) return
 
-      const [resA, resB] = await Promise.all([
+      // Resolve players and tournament surface concurrently
+      const [resA, resB, surfaceResult] = await Promise.all([
         resolvePlayerByName(p.playerAName),
         resolvePlayerByName(p.playerBName),
+        p.tournamentName ? lookupTournamentSurface(p.tournamentName) : Promise.resolve(null),
       ])
 
       let status: LineStatus
@@ -159,7 +191,15 @@ export function PasteMatchupPredictor() {
       setLines((prev) =>
         prev.map((l) =>
           l.key === lineItem.key
-            ? { ...l, status, player1: resA.player, player2: resB.player, errorMessage }
+            ? {
+                ...l,
+                status,
+                player1: resA.player,
+                player2: resB.player,
+                errorMessage,
+                detectedSurface: surfaceResult?.surface ?? null,
+                detectedLevel: surfaceResult?.level ?? null,
+              }
             : l,
         ),
       )
@@ -170,7 +210,6 @@ export function PasteMatchupPredictor() {
 
   const handlePredict = async () => {
     setBatchError(null)
-    // Capture the lines to predict at this moment (resolved lines only).
     const toPredict = lines.filter((l) => l.status === "resolved" && l.player1 && l.player2)
     if (toPredict.length === 0) return
 
@@ -185,9 +224,10 @@ export function PasteMatchupPredictor() {
         const prediction = await createPrediction({
           player1Id: line.player1.id,
           player2Id: line.player2.id,
-          surface: "Hard",
+          // Use auto-detected surface/level when available; fall back to sensible defaults.
+          surface: line.detectedSurface ?? "Hard",
           matchFormat: "BestOf3",
-          tournamentLevel: "ATP250",
+          tournamentLevel: line.detectedLevel ?? "ATP250",
           tournamentName: line.resolvedTournament ?? undefined,
         })
         resultIds.push(prediction.id)
@@ -232,12 +272,13 @@ export function PasteMatchupPredictor() {
         <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">A — B</code>,{" "}
         with optional{" "}
         <code className="bg-secondary/60 px-1 rounded text-[0.6875rem]">(Tournament)</code> suffix.
+        Surface and level are auto-detected from the tournament name.
       </p>
 
       <Textarea
         value={text}
         onChange={(e) => handleTextChange(e.target.value)}
-        placeholder={"Alcaraz vs Sinner\nDjokovic v Zverev (Wimbledon)\nSwiatek — Sabalenka"}
+        placeholder={"Alcaraz vs Sinner\nDjokovic v Zverev (Wimbledon)\nSwiatek — Sabalenka (Prague)"}
         className="min-h-[120px] font-mono text-sm bg-background/50 resize-y"
         disabled={isResolving || isPredicting}
       />
@@ -295,7 +336,7 @@ export function PasteMatchupPredictor() {
       {lines.length > 0 && (
         <div className="space-y-1.5">
           {lines.map((line) => (
-            <PasteLineRow key={line.key} line={line} />
+            <PasteLineRow key={line.key} line={line} surfaceLabel={SURFACE_LABEL} />
           ))}
         </div>
       )}
@@ -337,12 +378,36 @@ const STATUS_BADGE: Record<LineStatus, BadgeVariant> = {
   "predict-error": "destructive",
 }
 
-function PasteLineRow({ line }: { line: PasteLine }) {
+/** Surface colour coding — matches the rest of the app's convention */
+const SURFACE_COLOR: Record<Surface, string> = {
+  Clay: "text-orange-500",
+  Grass: "text-green-500",
+  Hard: "text-blue-400",
+  IndoorHard: "text-purple-400",
+}
+
+function PasteLineRow({
+  line,
+  surfaceLabel,
+}: {
+  line: PasteLine
+  surfaceLabel: Record<Surface, string>
+}) {
   return (
     <div className="p-2.5 border rounded-md bg-secondary/20 text-xs font-mono">
       <div className="flex items-center gap-2 flex-wrap">
         {STATUS_ICON[line.status]}
         <span className="truncate flex-1 min-w-0 text-foreground/80">{line.raw}</span>
+        {/* Auto-detected surface pill */}
+        {line.detectedSurface && (
+          <span className={`text-[0.6rem] font-bold uppercase ${SURFACE_COLOR[line.detectedSurface]}`}>
+            {surfaceLabel[line.detectedSurface]}
+          </span>
+        )}
+        {/* Auto-detected level pill */}
+        {line.detectedLevel && (
+          <span className="text-[0.6rem] text-muted-foreground/70 uppercase">{line.detectedLevel}</span>
+        )}
         <Badge variant={STATUS_BADGE[line.status]} className="text-[0.625rem] px-1.5 py-0 h-4 leading-none shrink-0">
           {STATUS_LABEL[line.status]}
         </Badge>
@@ -355,6 +420,9 @@ function PasteLineRow({ line }: { line: PasteLine }) {
           {line.player2.name}{line.player2.currentRank ? ` #${line.player2.currentRank}` : ""}
           {line.resolvedTournament && (
             <span className="ml-2 text-muted-foreground/50">· {line.resolvedTournament}</span>
+          )}
+          {!line.detectedSurface && line.resolvedTournament && (
+            <span className="ml-1 text-muted-foreground/40">· surface unknown</span>
           )}
         </div>
       )}

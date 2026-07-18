@@ -76,6 +76,53 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
   // already tagged correctly by the provider) -- both editions were played indoors at Lanxess
   // Arena, but this fixes a real, confirmed-live provider tagging gap for the first one.
   { match: /\bcologne\b/i, surface: "IndoorHard", tour: "ATP" },
+
+  // ── WTA clay swing (spring/summer) ─────────────────────────────────────────
+  // Prague: WTA 250 clay (Sparta Prague Academy; runs July)
+  { match: /\bprague\b/i, surface: "Clay", level: "WTA250", tour: "WTA" },
+  // Palermo: WTA 250 clay (oldest WTA clay event on tour)
+  { match: /\bpalermo\b/i, surface: "Clay", level: "WTA250" },
+  // Lausanne: WTA 250 clay (runs summer)
+  { match: /\blausanne\b/i, surface: "Clay", level: "WTA250" },
+  // Warsaw: WTA 250 clay (BNP Paribas Poland Open)
+  { match: /\bwarsaw\b|\bwarsawa\b/i, surface: "Clay", level: "WTA250", tour: "WTA" },
+  // Iasi: already listed above; added for completeness
+  // Rabat: WTA 250 clay (Moroccan Open)
+  { match: /\brabat\b/i, surface: "Clay", level: "WTA250" },
+
+  // ── WTA grass swing (June/July) ─────────────────────────────────────────────
+  // Eastbourne: WTA 250 grass (Rothesay International)
+  { match: /\beastbourne\b/i, surface: "Grass", level: "WTA250" },
+  // Birmingham: WTA 250 grass (Rothesay Classic) -- tour-restricted because Birmingham ATP
+  // (indoor hard) is a different event on a completely different surface.
+  { match: /\bbirmingham\b/i, surface: "Grass", level: "WTA250", tour: "WTA" },
+  // Rosmalen/'s-Hertogenbosch: shared ATP/WTA grass event (Libema Open)
+  { match: /hertogenbosch|rosmalen|libema/i, surface: "Grass" },
+  // Mallorca/Majorca: grass doubles + singles (both tours)
+  { match: /\bmallorca\b|\bmajorca\b/i, surface: "Grass" },
+
+  // ── ATP grass swing (June/July) ─────────────────────────────────────────────
+  // Nottingham: ATP 250 grass (Rothesay Open) -- tour-restricted; Nottingham WTA is
+  // a different tier event and not always held on the same surface.
+  { match: /\bnottingham\b/i, surface: "Grass", level: "ATP250", tour: "ATP" },
+
+  // ── ATP 500 hard-court events ────────────────────────────────────────────────
+  // Washington DC: ATP 500 hard outdoor (Citi Open)
+  { match: /\bwashington\b|\bciti open\b/i, surface: "Hard", level: "ATP500", tour: "ATP" },
+
+  // ── ATP 250 hard-court events ────────────────────────────────────────────────
+  { match: /los cabos/i, surface: "Hard", level: "ATP250" },
+  { match: /\badelaide\b/i, surface: "Hard", level: "ATP250" },
+
+  // ── ATP 250 clay events ──────────────────────────────────────────────────────
+  { match: /buenos aires/i, surface: "Clay", level: "ATP250" },
+  { match: /\bcordoba\b/i, surface: "Clay", level: "ATP250" },
+  { match: /\bsantiago\b/i, surface: "Clay", level: "ATP250" },
+  { match: /\bestoril\b/i, surface: "Clay", level: "ATP250" },
+  { match: /\bmarrakech\b/i, surface: "Clay", level: "ATP250" },
+  { match: /\bgeneva\b|\bgen[eè]ve\b/i, surface: "Clay", level: "ATP250" },
+  // Lyon: ATP clay event (tour-restricted; WTA Lyon if held would need separate confirmation)
+  { match: /\blyon\b/i, surface: "Clay", level: "ATP250", tour: "ATP" },
 ];
 
 // Verified live (2026-07-11): tournament names for lower-tier events routinely contain

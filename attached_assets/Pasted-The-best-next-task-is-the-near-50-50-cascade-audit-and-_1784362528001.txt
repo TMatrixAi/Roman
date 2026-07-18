@@ -1,0 +1,52 @@
+The best next task is the near-50/50 cascade audit, and you can do it without RapidAPI.
+
+It pairs naturally with these items from your roadmap:
+
+1. Too Close to Call handling
+    * Let the normal engine return “Too Close to Call.”
+    * Stop forcing a winner when the calibrated probabilities are nearly even.
+2. Cascade step performance audit
+    * Measure each tie-break step separately.
+    * Compare every step against the simple baseline: choose the player with the higher calibrated probability.
+    * Identify which steps improve results and which ones make them worse.
+3. Weak-module override protection
+    * Prevent weaker modules from silently flipping the winner when the combined calibrated probability favors the other player.
+    * This especially applies to Fatigue, specialist logic, and other low-confidence modules.
+4. Prediction stability testing
+    * Run the same close matchup repeatedly with identical inputs.
+    * Confirm the winner and probability do not change unless the inputs or engine version change.
+5. Forced Override separation
+    * Normal close calls should stay “Too Close to Call.”
+    * “Run Anyway” should create a separate Forced Override result.
+    * Forced results should not count toward normal Elite, Strong Recommendation, Tier 1, or standard production statistics.
+6. Close-call tracking
+    * Track accuracy, Log Loss, Brier Score, and ECE specifically for near-50/50 matches.
+    * Keep normal close calls separate from Forced Overrides.
+
+The right-sized prompt for Replit would be:
+
+Perform a read-only audit of the current near-50/50 winner-selection cascade. Do not change production logic yet.
+
+Compare the current cascade against the baseline of selecting the player with the higher calibrated probability.
+
+For each cascade step, report:
+
+* how often it is used
+* how often it flips the calibrated-probability winner
+* accuracy after the flip
+* accuracy without the flip
+* Log Loss
+* Brier Score
+* sample size
+
+Identify any weak secondary module that overturns the combined probability, including Fatigue and specialist modules.
+
+Test several candidate “Too Close to Call” ranges in shadow mode only. Do not choose or activate a threshold automatically.
+
+Confirm that identical inputs produce the same winner and probability.
+
+Keep normal close-call predictions separate from Forced Overrides.
+
+Do not modify model weights, calibration, recommendation logic, Elite, Tier 1, or production predictions. Return the audit findings and wait for approval before changing anything.
+
+That is the strongest next task because it improves core decision quality without depending on any new data provider.
