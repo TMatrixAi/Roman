@@ -13,9 +13,50 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   computeAndStoreSpecialistSegments,
   resolveSegmentSpecialistInput,
+  computeSpecialistWeight,
   MIN_HISTORICAL_MATCHES_FOR_SEGMENT,
   MIN_VALIDATION_SAMPLES_FOR_SEGMENT,
+  MAX_LOGOSS_DEGRADATION,
 } from "./specialistWeights";
+
+// ── Task #68: computeSpecialistWeight gate — pure unit tests (no DB) ─────────────────────────────
+
+test("Task #68: computeSpecialistWeight returns 0 (reject) when specialist logLoss exceeds general by more than MAX_LOGOSS_DEGRADATION", () => {
+  // Specialist is clearly worse: segment=0.70, general=0.65 → improvement=-0.05, threshold=0.005
+  const w = computeSpecialistWeight(200, 0.70, 0.65);
+  assert.strictEqual(w, 0, `specialist degrading accuracy must be rejected (weight=0), got ${w}`);
+});
+
+test("Task #68: computeSpecialistWeight returns 0 when degradation is exactly at the boundary", () => {
+  // improvement = 0.65 - (0.65 + MAX_LOGOSS_DEGRADATION + 0.001) = -(MAX_LOGOSS_DEGRADATION + 0.001) → reject
+  const segmentLL = 0.65 + MAX_LOGOSS_DEGRADATION + 0.001;
+  const generalLL = 0.65;
+  const w = computeSpecialistWeight(200, segmentLL, generalLL);
+  assert.strictEqual(w, 0, `degradation just past threshold must be rejected, got ${w}`);
+});
+
+test("Task #68: computeSpecialistWeight does NOT reject when degradation is below threshold (measurement noise)", () => {
+  // improvement = 0.65 - (0.65 + MAX_LOGOSS_DEGRADATION - 0.001) = -(MAX_LOGOSS_DEGRADATION - 0.001) → accept
+  const segmentLL = 0.65 + MAX_LOGOSS_DEGRADATION - 0.001;
+  const generalLL = 0.65;
+  const w = computeSpecialistWeight(200, segmentLL, generalLL);
+  assert.ok(w > 0, `marginal noise degradation must not be rejected (weight should be > 0), got ${w}`);
+  assert.ok(w >= 0.1, `marginal noise should still hit at least the 0.1 floor, got ${w}`);
+});
+
+test("Task #68: computeSpecialistWeight returns a value in [0.1, 0.85] when specialist improves the general model", () => {
+  // Specialist clearly better: improvement=+0.05
+  const w = computeSpecialistWeight(200, 0.60, 0.65);
+  assert.ok(w >= 0.1 && w <= 0.85, `weight ${w} out of expected [0.1, 0.85] range when specialist is better`);
+});
+
+test("Task #68: computeSpecialistWeight returns within [0.1, 0.85] when logLoss values are null (no data)", () => {
+  // Null logLoss → falls back to baseWeight clamped to [0.1, 0.85], never 0
+  const w = computeSpecialistWeight(200, null, null);
+  assert.ok(w >= 0.1 && w <= 0.85, `weight ${w} should be in [0.1, 0.85] when logLoss is null`);
+});
+
+// ── DB-dependent tests ────────────────────────────────────────────────────────────────────────────
 
 const PROVIDER = "specialist-weights-test";
 const RICH_TOUR = "ATP";

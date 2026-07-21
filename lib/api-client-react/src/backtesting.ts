@@ -272,6 +272,40 @@ export function useDeleteBacktest(
   });
 }
 
+// ─── Task #64: live backfill progress polling ─────────────────────────────────
+
+export interface BackfillLiveProgress {
+  isRunning: boolean;
+  activeJobId: number | null;
+  activeStartedAt: string | null;
+  activeDateRange: { dateStart: string; dateStop: string } | null;
+  lastCompletedStatus: string | null;
+  lastCompletedAt: string | null;
+}
+
+export const getBackfillLiveProgressQueryKey = () => ["backfill-live-progress"] as const;
+
+/**
+ * Polls the live backfill status every 5 s when `triggeredAt` is set.
+ * Pass the ISO timestamp of when the trigger fired. Stops auto-polling once
+ * `isRunning` transitions to false (server found a completed row after triggeredAt).
+ */
+export function useGetBackfillLiveProgress(options?: { triggeredAt?: string | null }) {
+  const { triggeredAt } = options ?? {};
+  const enabled = !!triggeredAt;
+  const qs = triggeredAt ? `?triggeredAt=${encodeURIComponent(triggeredAt)}` : "";
+  return useQuery<BackfillLiveProgress>({
+    queryKey: [...getBackfillLiveProgressQueryKey(), triggeredAt],
+    queryFn: () =>
+      customFetch<BackfillLiveProgress>(`/api/evaluation/historical-backfill/live-progress${qs}`),
+    enabled,
+    refetchInterval: (query) => {
+      return query.state.data?.isRunning ? 5000 : false;
+    },
+    refetchIntervalInBackground: true,
+  });
+}
+
 // ─── Candidate configs ────────────────────────────────────────────────────────
 
 export function useListCandidateConfigs(options?: UseQueryOptions<CandidateConfig[]>) {

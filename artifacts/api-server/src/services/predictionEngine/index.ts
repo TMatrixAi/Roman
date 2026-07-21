@@ -539,8 +539,19 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // evidence and sizing. Multiplicative when both apply (e.g. an ATP match that's also thin on
   // this surface) rather than additive, so the combined shrink never overshoots past either
   // factor alone.
+  //
+  // Task #33: the tour-reliability discount (e.g. ATP ×0.63) was sized BEFORE the pooled isotonic
+  // calibration existed. The calibration is trained on raw_probability → actual_outcome across the
+  // full corpus (all tours) and already bakes in tour-level accuracy differences through its knots.
+  // Applying the tour discount ON TOP of a real fitted calibration is a double-correction:
+  // calibration maps raw→actual (correctly), then the discount pulls it back below the true rate.
+  // Paper-trade data (n=520 graded) confirms 17-pt underconfidence in the 60-70% tier when the
+  // discount fires. When the real calibration is active, skip the tour discount; keep only the
+  // surface-sample-depth noise discount (which guards against per-match data sparsity, not
+  // systematic accuracy bias, and is not captured by pooled calibration knots).
+  const usingRealCalibration = !generalEnsembleExcluded && (input.activeCalibration?.length ?? 0) > 0;
   const segmentTour = segment?.segmentKey.split("-")[0] ?? null;
-  const tourDiscount = !specialistApplied && segmentTour ? TOUR_RELIABILITY_DISCOUNT[segmentTour] ?? 1 : 1;
+  const tourDiscount = !specialistApplied && !usingRealCalibration && segmentTour ? TOUR_RELIABILITY_DISCOUNT[segmentTour] ?? 1 : 1;
   const surfaceSampleDiscount = !specialistApplied && surfaceSampleDepth.label === "Low" ? LOW_SURFACE_SAMPLE_DISCOUNT : 1;
   const reliabilityDiscount = Math.round(tourDiscount * surfaceSampleDiscount * 1000) / 1000;
   const preSimulatorProbability = reliabilityDiscount < 1

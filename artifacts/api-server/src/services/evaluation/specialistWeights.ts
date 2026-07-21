@@ -209,9 +209,22 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
   const segmentBrier = brierScore(segmentPredictions.map((p) => ({ rawProbability: p.calibrated, outcome: p.outcome })));
   const generalBrier = brierScore(generalPredictions.map((p) => ({ rawProbability: p.calibrated, outcome: p.outcome })));
 
+  const weight = computeSpecialistWeight(points.length, segmentLogLoss, generalLogLoss);
+
+  // Task #68: downgrade `meetsThreshold` when the specialist is rejected by `computeSpecialistWeight`
+  // (weight=0). Storing false here ensures the engine correctly falls back to the general model
+  // and preserves the reliability discounts that would be skipped if a "met" specialist were active
+  // with a no-op 0 weight. The accuracy/logLoss numbers are still stored for diagnostic purposes.
+  if (weight === 0 && segmentLogLoss !== null && generalLogLoss !== null) {
+    logger.warn(
+      { segmentKey: segment.segmentKey, segmentLogLoss, generalLogLoss, degradation: segmentLogLoss - generalLogLoss },
+      "Task #68: specialist rejected — segment logLoss exceeds general model threshold; falling back to general model",
+    );
+  }
+
   return {
     ...base,
-    meetsThreshold: true,
+    meetsThreshold: weight > 0,
     validationSampleSize: points.length,
     accuracy: segmentAccuracy,
     logLoss: segmentLogLoss,
@@ -220,7 +233,7 @@ async function computeOneSegment(segment: SegmentDefinition, generalMapping: Cal
     generalLogLoss,
     generalBrier,
     calibrationMapping: segmentMapping,
-    weight: computeSpecialistWeight(points.length, segmentLogLoss, generalLogLoss),
+    weight,
   };
 }
 
@@ -229,6 +242,17 @@ function accuracyOf(predictions: Array<{ calibrated: number; outcome: 0 | 1 }>):
   const correct = predictions.filter((p) => (p.calibrated >= 0.5 ? 1 : 0) === p.outcome).length;
   return Math.round((correct / predictions.length) * 1000) / 10;
 }
+
+/**
+ * Task #68: a specialist that measurably degrades the general model (segment logLoss exceeds
+ * general logLoss by more than this) is rejected entirely rather than blended in at the 0.1
+ * floor. Sized at 5 milli-nats — half the granularity of `perfAdjustment`'s own adjustment step
+ * — so genuine degradation is caught while measurement noise on a thin holdout slice is not.
+ * Returning 0 causes `computeOneSegment` to mark the segment `meetsThreshold: false`, which
+ * prevents the engine from applying the specialist at all and preserves the fallback discounts
+ * that would otherwise be skipped when a specialist appears to be active.
+ */
+export const MAX_LOGOSS_DEGRADATION = 0.005;
 
 /**
  * Derives the specialist's share (0-1) of the live blend purely from measured validation
@@ -241,12 +265,21 @@ function accuracyOf(predictions: Array<{ calibrated: number; outcome: 0 | 1 }>):
  * can't flip the blend to an extreme. The result is clamped to [0.1, 0.85]: even a strong
  * specialist never fully silences the general model's agreement check, and even a weak one still
  * contributes a signal worth voting on transparency's sake.
+ *
+ * Exception (Task #68): when the specialist is worse than the general model by more than
+ * `MAX_LOGOSS_DEGRADATION`, returns 0 instead of the 0.1 floor. The caller treats 0 as a
+ * rejection signal and downgrades `meetsThreshold` to false so the engine falls back cleanly.
  */
-function computeSpecialistWeight(sampleSize: number, segmentLogLoss: number | null, generalLogLoss: number | null): number {
+/** Exported for unit-testing only — call `computeAndStoreSpecialistSegments` in production code. */
+export function computeSpecialistWeight(sampleSize: number, segmentLogLoss: number | null, generalLogLoss: number | null): number {
   const baseWeight = Math.min(0.7, sampleSize / (sampleSize + 50));
   if (segmentLogLoss === null || generalLogLoss === null) return Math.round(Math.max(0.1, Math.min(0.85, baseWeight)) * 1000) / 1000;
 
   const improvement = generalLogLoss - segmentLogLoss; // positive => segment calibrates better
+
+  // Task #68: reject silently-harmful specialists outright rather than blending them at the floor.
+  if (improvement < -MAX_LOGOSS_DEGRADATION) return 0;
+
   const perfAdjustment = Math.max(-0.2, Math.min(0.2, (improvement / 0.05) * 0.2));
   return Math.round(Math.max(0.1, Math.min(0.85, baseWeight + perfAdjustment)) * 1000) / 1000;
 }

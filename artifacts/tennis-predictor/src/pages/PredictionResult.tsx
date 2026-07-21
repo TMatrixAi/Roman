@@ -179,6 +179,21 @@ export default function PredictionResultPage() {
                   <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
                     The core models are within {engine.tieBreakerApplied ? "3" : "—"}% of a coin flip. No validated signal provides a reliable directional edge in this probability range — previously, forcing a winner here performed at or below chance. The raw ensemble probability is shown for both players; no pick is made.
                   </p>
+                  {/* Task #36: explicit opt-in for a directional pick with a clear disclaimer */}
+                  <div className="mt-5 border-t border-border/40 pt-4">
+                    <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-2">
+                      REQUEST A DIRECTIONAL PICK
+                    </p>
+                    <p className="text-xs text-muted-foreground/80 mb-3 leading-relaxed">
+                      You can ask the engine to name a side anyway. Backtesting shows these calls perform at or below chance — treat it as a coin-flip nudge, not a confident recommendation.
+                    </p>
+                    <a href={`/predictions/${id}?forceSignal=true`}>
+                      <Button variant="outline" size="sm" className="font-mono text-xs shadow-sm gap-1.5">
+                        <Zap className="w-3.5 h-3.5" />
+                        FORCE A DIRECTIONAL PICK
+                      </Button>
+                    </a>
+                  </div>
                 </div>
               ) : (
                 /* ── Normal predicted winner hero ───────────────────────────── */
@@ -296,18 +311,36 @@ export default function PredictionResultPage() {
                 </div>
               </div>
 
-              {(engine.risks?.length || engine.reasons?.length) ? (
-                <div className="space-y-3 bg-secondary/30 p-4 rounded-xl border border-border/50">
-                  {engine.reasons?.slice(0, 2).map((r, i) => (
-                    <div key={i} className="flex gap-3 text-sm text-foreground/80">
-                      <CheckCircle2 className="w-5 h-5 text-success shrink-0" /> <span className="leading-snug">{r}</span>
-                    </div>
-                  ))}
-                  {engine.risks?.slice(0, 1).map((r, i) => (
-                    <div key={i} className="flex gap-3 text-sm text-foreground/80">
-                      <ShieldAlert className="w-5 h-5 text-warning shrink-0" /> <span className="leading-snug">{r}</span>
-                    </div>
-                  ))}
+              {/* Task #35: plain-language pick explanation — show all engine reasons and risks */}
+              {(engine.risks?.length || engine.reasons?.length || engine.disclosures?.length) ? (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+                    WHY THIS PICK?
+                  </p>
+                  <div className="space-y-2.5 bg-secondary/30 p-4 rounded-xl border border-border/50">
+                    {engine.reasons?.map((r, i) => (
+                      <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                        <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+                        <span className="leading-snug">{r}</span>
+                      </div>
+                    ))}
+                    {engine.risks?.map((r, i) => (
+                      <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                        <ShieldAlert className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+                        <span className="leading-snug">{r}</span>
+                      </div>
+                    ))}
+                    {engine.disclosures && engine.disclosures.length > 0 && (
+                      <div className="border-t border-border/30 pt-2.5 mt-2 space-y-1.5">
+                        {engine.disclosures.map((d, i) => (
+                          <div key={i} className="flex gap-3 text-xs text-muted-foreground/80">
+                            <Info className="w-4 h-4 text-muted-foreground/60 shrink-0 mt-0.5" />
+                            <span className="leading-snug">{d}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : null}
 

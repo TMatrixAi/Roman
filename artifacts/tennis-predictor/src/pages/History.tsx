@@ -50,6 +50,7 @@ import {
   UserSearch,
   ClipboardPaste,
   History as HistoryIcon,
+  Scale,
 } from "lucide-react"
 
 /** Task #30: real disclosure -- shown when this saved prediction involved a player resolved via
@@ -199,7 +200,7 @@ function PredictionRow({
       case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
       case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
       case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
-      case 'NO_STRONG_SIGNAL': return <Badge variant="outline">NO SIGNAL</Badge>
+      case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="gap-1 text-muted-foreground border-muted-foreground/30" title="Task #37: prediction was within ±3% of a coin flip — backtesting shows these picks perform at or below chance. Flagged separately so you can track your borderline pick accuracy."><Scale className="w-3 h-3" /> COIN FLIP</Badge>
       case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">NO REC</Badge>
       default: return null
     }
@@ -307,7 +308,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
       case 'STRONG_RECOMMENDATION': return <Badge variant="success" className="shadow-sm" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
       case 'MODERATE_LEAN': return <Badge variant="secondary" className="shadow-sm">LEAN</Badge>
       case 'HIGH_RISK': return <Badge variant="warning" className="shadow-sm">RISK</Badge>
-      case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="shadow-sm bg-background">NO SIGNAL</Badge>
+      case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="shadow-sm bg-background gap-1 text-muted-foreground border-muted-foreground/30" title="Prediction was within ±3% of a coin flip — these picks perform at or below chance in backtesting."><Scale className="w-3 h-3" /> COIN FLIP</Badge>
       case 'DO_NOT_RECOMMEND': return <Badge variant="destructive" className="shadow-sm">NO REC</Badge>
       default: return null
     }
@@ -604,6 +605,15 @@ export default function HistoryPage() {
             subtext="Highest-confidence tier -- not yet proven better than other tiers"
             icon={AlertTriangle} 
           />
+          {/* Task #37: coin-flip predictions flagged separately so users can track their borderline picks */}
+          {(stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count ?? 0) > 0 && (
+            <StatCard
+              title="COIN FLIP"
+              value={stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count || 0}
+              subtext="Within ±3% of 50/50 — backtesting shows these perform at or below chance"
+              icon={Scale}
+            />
+          )}
         </div>
         <SavedPredictionsLookup />
         </>

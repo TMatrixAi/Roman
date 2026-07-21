@@ -9,11 +9,14 @@ import {
   GetPlayerStatsParams,
   GetPlayerStatsResponse,
 } from "@workspace/api-zod";
-import { db, playerStatsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, playerStatsTable, historicalMatchesTable } from "@workspace/db";
+import { eq, notInArray, sql } from "drizzle-orm";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
 import { resolvePlayerProfile, searchKnownPlayers, canonicalizePlayerId, getCachedPlayerIdentityIndex } from "../services/tennisData/playerIdentity";
-import { PLAYER_STATS_FRESH_MS } from "../services/playerStats/compute";
+import { PLAYER_STATS_FRESH_MS, refreshPlayerStats } from "../services/playerStats/compute";
+import pino from "pino";
+
+const logger = pino({ level: "info" });
 
 const router: IRouter = Router();
 
@@ -98,6 +101,52 @@ router.get("/players/:playerId/stats", async (req, res): Promise<void> => {
     res.setHeader("X-Stats-Stale", "true");
   }
   res.json(GetPlayerStatsResponse.parse(row));
+});
+
+/**
+ * POST /players/stats/seed
+ *
+ * Task #38: seeds the player_stats cache from existing historical match data for every player
+ * that doesn't already have a stats row. Runs in the background so the HTTP response is
+ * immediate. Useful after the first historical backfill — newly backfilled players won't have
+ * stats until this fires or they appear in a graded Ledger prediction.
+ *
+ * Returns { queued: number } — the number of distinct canonical player IDs dispatched.
+ * Re-triggering while a previous seed is still running is safe (idempotent upserts).
+ */
+router.post("/players/stats/seed", async (req, res): Promise<void> => {
+  // Collect all distinct player IDs from historical_matches that have no stats row yet.
+  const allMatchPlayerIds = await db
+    .selectDistinct({ id: historicalMatchesTable.player1Id })
+    .from(historicalMatchesTable)
+    .union(
+      db.selectDistinct({ id: historicalMatchesTable.player2Id }).from(historicalMatchesTable),
+    );
+
+  const seededIds = (
+    await db.select({ id: playerStatsTable.playerId }).from(playerStatsTable)
+  ).map((r) => r.id);
+
+  const seededSet = new Set(seededIds);
+  const unseeded = allMatchPlayerIds.map((r) => r.id).filter((id) => !seededSet.has(id));
+
+  const queued = unseeded.length;
+
+  if (queued === 0) {
+    res.json({ queued: 0, message: "All players in historical_matches already have stats rows." });
+    return;
+  }
+
+  logger.info({ queued }, "Task #38: seeding player_stats from historical match data");
+
+  // Fire-and-forget — caller gets the count immediately.
+  setImmediate(() => {
+    refreshPlayerStats(unseeded).catch((err) => {
+      logger.error({ err }, "Task #38: player stats seed job failed");
+    });
+  });
+
+  res.json({ queued, message: `Seeding stats for ${queued} players in the background. Check GET /players/:id/stats once complete.` });
 });
 
 router.get("/players/:playerId/matches", async (req, res): Promise<void> => {

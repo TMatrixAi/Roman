@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -11,13 +11,22 @@ const NAV_LINKS = [
   { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
+  { href: "/shadow-replay", label: "Shadow Trading", icon: Ghost, exact: false },
 ]
+
+const MOBILE_LABELS: Record<string, string> = {
+  "Dashboard": "Home",
+  "Prediction Log": "Log",
+  "Backtesting": "Backtest",
+  "Shadow Trading": "Shadow",
+}
 
 function isActive(href: string, location: string, exact: boolean) {
   if (exact) return location === href
   if (href === "/history") return location.startsWith("/history") || location.startsWith("/predictions")
   if (href === "/predict") return location.startsWith("/predict") && !location.startsWith("/predictions")
   if (href === "/backtesting") return location.startsWith("/backtesting")
+  if (href === "/shadow-replay") return location.startsWith("/shadow-replay")
   return location.startsWith(href)
 }
 
@@ -161,7 +170,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[0.6rem] font-mono font-bold tracking-wider uppercase transition-colors min-h-[3.25rem] ${active ? "text-primary" : "text-muted-foreground"}`}
               >
                 <Icon className={`w-4.5 h-4.5 ${active ? "text-primary" : "text-muted-foreground/70"}`} style={{ width: "1.125rem", height: "1.125rem" }} />
-                <span className="leading-tight">{label === "Prediction Log" ? "Log" : label === "Dashboard" ? "Home" : label}</span>
+                <span className="leading-tight">{MOBILE_LABELS[label] ?? label}</span>
                 {active && <span className="absolute top-0 w-full max-w-[2.5rem] h-[2px] bg-primary rounded-b-full" />}
               </Link>
             )

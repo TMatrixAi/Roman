@@ -285,7 +285,11 @@ async function resolvePlayerMatch(
       .sort((a, b) => b.score - a.score);
 
     if (scored[0].score > scored[1].score) {
-      // Unambiguous best candidate — auto-select
+      // Auto-selected by word-count disambiguation — add a visible notice so the user can
+      // verify the choice rather than silently predicting the wrong person (Task #24).
+      warnings.push(
+        `Read "${recognizedName}" for ${label} — matched to ${scored[0].c.name} (best fit from ${confident.length} candidates). If this is the wrong player, use Search Players to correct it.`,
+      );
       return { recognizedName, player: scored[0].c };
     }
 

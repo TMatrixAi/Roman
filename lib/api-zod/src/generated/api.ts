@@ -1693,100 +1693,10 @@ export const GetRankingVerificationResponse = zod.object({
   })).describe('Players with a stored vs. live rank gap exceeding 10 places, sorted largest-gap-first.'),
 })
 
-// ── Task #12: Continuous outcome-learning system ─────────────────────────────────────────────────
-
-/**
- * @summary Run the optimizer (training-mode walk-forward + candidate config generation)
- */
-export const RunOptimizerBody = zod.object({
-  "foldCount": zod.number().min(1).max(20).optional(),
-  "warmupFraction": zod.number().min(0.05).max(0.95).optional(),
-  "notes": zod.string().optional()
-})
-
-export const RunOptimizerResponse = zod.object({
-  "candidateConfigId": zod.number(),
-  "thresholdEvaluationId": zod.number(),
-  "walkForward": zod.object({
-    "foldsRun": zod.number(),
-    "foldIds": zod.array(zod.number()),
-    "skippedNoEligibleMatches": zod.boolean(),
-    "fallbackRate": zod.number(),
-    "warnings": zod.array(zod.string())
-  })
-})
-
-/**
- * One per-segment breakdown row from a pattern analysis run.
- */
-export const PatternSegmentItem = zod.object({
-  "dimension": zod.string(),
-  "value": zod.string(),
-  "n": zod.number(),
-  "correct": zod.number(),
-  "accuracy": zod.number().nullable(),
-  "logLoss": zod.number().nullable(),
-  "brier": zod.number().nullable(),
-  "ece": zod.number().nullable(),
-  "ciLow": zod.number().nullable(),
-  "ciHigh": zod.number().nullable(),
-  "evidenceStrength": zod.enum(["Strong", "Moderate", "Weak", "Insufficient"])
-})
-
-export const GetLatestPatternAnalysisResponse = zod.object({
-  "id": zod.number(),
-  "totalAnalyzed": zod.number(),
-  "segments": zod.array(PatternSegmentItem),
-  "runKindsIncluded": zod.array(zod.string()),
-  "createdAt": zod.string()
-}).nullable()
-
-/**
- * One threshold evaluation entry from a threshold evaluation run.
- */
-export const ThresholdEvalEntryItem = zod.object({
-  "tierId": zod.string(),
-  "tierLabel": zod.string(),
-  "currentValue": zod.union([zod.number(), zod.string()]),
-  "candidateValue": zod.union([zod.number(), zod.string()]),
-  "isWidening": zod.boolean(),
-  "affectedN": zod.number(),
-  "currentAccuracy": zod.number().nullable(),
-  "candidateAccuracy": zod.number().nullable(),
-  "currentLogLoss": zod.number().nullable(),
-  "candidateLogLoss": zod.number().nullable(),
-  "accuracyDelta": zod.number().nullable(),
-  "logLossDelta": zod.number().nullable(),
-  "classification": zod.enum(["Deploy", "Continue shadow", "Needs more data", "Reject", "Investigate"]),
-  "note": zod.string()
-})
-
-export const GetLatestThresholdEvaluationResponse = zod.object({
-  "id": zod.number(),
-  "totalGraded": zod.number(),
-  "thresholds": zod.array(ThresholdEvalEntryItem),
-  "createdAt": zod.string()
-}).nullable()
-
-
-
-
-// ── Task #44: Targeted historical-backfill range ──────────────────────────────
-
-/**
- * Request body for POST /evaluation/historical-backfill/run-range.
- * Fires runHistoricalBackfill for the explicit [dateStart, dateStop] window in the background
- * and returns immediately -- designed for closing known coverage gaps (e.g. 2020–2025) where
- * the window is too long for a synchronous HTTP response.
- */
-export const RunHistoricalBackfillRangeBody = zod.object({
-  "dateStart": zod.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('First date to backfill, inclusive (YYYY-MM-DD).'),
-  "dateStop": zod.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Last date to backfill, inclusive (YYYY-MM-DD).'),
-  "chunkDays": zod.number().int().min(1).optional().describe('Provider chunk window in days. Defaults to 5 (the safe limit for busy periods).')
-})
-
-export const RunHistoricalBackfillRangeResponse = zod.object({
-  "started": zod.boolean(),
-  "dateStart": zod.string(),
-  "dateStop": zod.string()
-})
+// ── Hand-written schemas moved to lib/api-zod/src/manual.ts (Task #66) ───────────────────────────
+//
+// RunOptimizerBody, RunOptimizerResponse, PatternSegmentItem, GetLatestPatternAnalysisResponse,
+// ThresholdEvalEntryItem, GetLatestThresholdEvaluationResponse, RunHistoricalBackfillRangeBody,
+// RunHistoricalBackfillRangeResponse are now defined in ../manual.ts and re-exported from
+// index.ts. They were removed from here because `clean: true` in orval.config.ts wipes this
+// entire file on every codegen run, silently deleting any hand-written additions.

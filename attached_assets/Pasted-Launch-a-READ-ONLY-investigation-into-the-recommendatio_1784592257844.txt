@@ -1,0 +1,429 @@
+Launch a READ-ONLY investigation into the recommendation engine. Do not modify any code, thresholds, weights, calibration, database records, or prediction logic until the investigation is complete.
+
+==================================================
+PHASE 1 — TRACE THE DECISION
+==================================================
+
+For the selected prediction, output every value that contributed to both the Elite Tier badge and the High Risk badge.
+
+Include:
+
+• Final Win Probability
+• Calibrated Win Probability
+• Raw Win Probability
+• Upset Risk Score (numeric)
+• Risk Category
+• Data Quality Score
+• Evidence Reliability Score (if one exists)
+• Model Agreement Score
+• Surface Elo vote
+• Serve & Return vote
+• Recent Form vote
+• Monte Carlo vote
+• Segment Specialist vote
+• Fatigue vote
+• Head-to-Head vote
+• Style Matchup vote
+• Travel adjustments
+• Fatigue adjustments
+• Any uncertainty penalties
+• Any missing-data penalties
+• Every module weight
+• Every module contribution
+
+==================================================
+PHASE 2 — EXPLAIN THE HIGH RISK BADGE
+==================================================
+
+Print the exact breakdown that produced High Risk.
+
+Example format:
+
+High Risk Breakdown
+
+Volatility ............. +18
+Head-to-Head uncertainty +12
+Surface uncertainty ..... +0
+Recent Form conflict .... +6
+Style mismatch .......... +10
+Fatigue ................ +0
+Travel ................. +0
+Missing data ........... +0
+
+Final Upset Risk Score: XX
+
+Print the ACTUAL production thresholds from the code. Do not assume example thresholds.
+
+==================================================
+PHASE 3 — EXPLAIN THE ELITE BADGE
+==================================================
+
+Print every Elite requirement.
+
+Example:
+
+Elite Checklist
+
+✓ High Data Quality
+✓ Surface Elo agrees
+✓ Serve & Return agrees
+✓ Recent Form agrees
+✓ Monte Carlo agrees
+✓ No major model conflict
+✓ Margin exceeds minimum
+✓ Calibration passed
+✓ Segment Specialist supports
+✓ Recommendation engine approved
+
+Elite Result:
+PASS or FAIL
+
+==================================================
+PHASE 4 — LOOK FOR CONTRADICTIONS
+==================================================
+
+Determine whether the engine currently allows:
+
+• Elite + High Risk
+• Elite + Extreme Risk
+• Elite + High Disagreement
+• Elite + Low Data Quality
+• Elite + Missing Critical Data
+
+If any are possible:
+
+• Show the exact code path.
+• Explain why they are allowed.
+• Explain whether this is intentional or accidental.
+
+==================================================
+PHASE 5 — COMPARE TO INTENDED PRODUCTION RULES
+==================================================
+
+Compare the current implementation against the intended production architecture.
+
+Determine:
+
+• Should High Risk automatically block Elite?
+• If not, under exactly what conditions is Elite still allowed?
+• Is this prediction behaving exactly as designed?
+• Is this exposing a logic inconsistency?
+
+Do not change any logic.
+
+==================================================
+PHASE 6 — CODE AUDIT
+==================================================
+
+Show:
+
+• Function assigning Elite
+• Function assigning Upset Risk
+• Execution order
+• Whether either function overwrites the other
+• Whether both are evaluated independently
+• Whether they share the same recommendation engine
+• Every file involved
+• Relevant line numbers
+
+==================================================
+PHASE 7 — FINAL CONCLUSION
+==================================================
+
+Return only one conclusion:
+
+1. ✅ Working as intended
+2. ⚠️ Logic inconsistency found
+3. ❌ Confirmed bug
+
+If #2 or #3:
+
+• Identify file names
+• Functions
+• Line numbers
+• Root cause
+• Safest fix
+
+Do not implement any changes.
+
+==================================================
+BONUS AUDIT
+==================================================
+
+Verify whether "Elite Tier" represents:
+
+• Prediction quality
+• Recommendation status
+• Subscription tier
+• Model tier
+• UI display label
+
+Confirm the UI is not displaying a different field as the Elite badge.
+
+Design a production-ready Recommendation Architecture for the tennis prediction engine. This is a READ-ONLY architecture proposal. Do not modify any code. Analyze the existing implementation first, compare it against this proposed architecture, identify conflicts, and recommend the safest migration path that preserves historical prediction compatibility.
+
+==================================================
+DESIGN GOAL
+==================================================
+
+Separate these into independent systems:
+
+1. Win Probability
+2. Prediction Strength
+3. Upset Risk
+4. Evidence Reliability
+5. Recommendation Level
+6. Elite Certification
+
+These must not be derived from one another.
+
+==================================================
+1. WIN PROBABILITY
+==================================================
+
+The calibrated probability should represent only the estimated chance of winning.
+
+It should NOT be directly modified by:
+
+• Elite status
+• Upset Risk
+• Data Quality
+• Recommendation labels
+
+Suggested display bands:
+
+50–54%
+Too Close to Call
+
+55–59%
+Slight Lean
+
+60–64%
+Moderate Lean
+
+65–69%
+Clear Lean
+
+70–79%
+Strong Favorite
+
+80%+
+Heavy Favorite
+
+These labels describe matchup strength only.
+
+==================================================
+2. UPSET RISK
+==================================================
+
+Upset Risk measures instability.
+
+Possible inputs:
+
+• Model disagreement
+• Form volatility
+• Surface mismatch
+• Style mismatch
+• Missing data
+• Small samples
+• Injury uncertainty
+• Retirement risk
+• Travel
+• Fatigue
+• Match format
+• Lower-tour uncertainty
+
+Suggested bands:
+
+0–24
+Low
+
+25–44
+Moderate
+
+45–64
+High
+
+65+
+Extreme
+
+Upset Risk should explain uncertainty.
+
+It should NOT rewrite the probability.
+
+==================================================
+3. EVIDENCE RELIABILITY
+==================================================
+
+Evidence Reliability measures how trustworthy the prediction is.
+
+Possible inputs:
+
+• Data completeness
+• Data freshness
+• Sample size
+• Surface-specific data
+• Tour relevance
+• Serve/Return sample
+• Ranking coverage
+• Injury information
+• Independent model coverage
+• Calibration confidence
+
+Suggested labels:
+
+85–100
+Excellent
+
+70–84
+Good
+
+50–69
+Limited
+
+Below 50
+Weak
+
+Evidence Reliability should influence Recommendation eligibility—not probability.
+
+==================================================
+4. RECOMMENDATION LEVEL
+==================================================
+
+Recommendation should combine:
+
+• Win Probability
+• Upset Risk
+• Evidence Reliability
+• Calibration
+• Model Agreement
+
+Suggested levels:
+
+No Strong Signal
+
+Requirements may include:
+
+• Probability below 60%
+OR
+• Extreme Risk
+OR
+• Weak Evidence
+OR
+• Severe model disagreement
+
+Standard Pick
+
+Requirements may include:
+
+• 60%+
+• Moderate Risk or lower
+• Sufficient Evidence
+
+Strong Pick
+
+Requirements may include:
+
+• 65%+
+• Good/Excellent Evidence
+• Low or Moderate Risk
+• Strong model agreement
+• Validated segment
+
+==================================================
+5. ELITE CERTIFICATION
+==================================================
+
+Elite should become a certification—not another confidence label.
+
+Suggested requirements:
+
+• 70%+ calibrated probability
+• Excellent Evidence Reliability
+• Low Risk
+(or tightly controlled Moderate Risk)
+• Strong independent model agreement
+• Surface Elo supports
+• Serve & Return supports
+• Calibration passes
+• Specialist supports
+• No major injury uncertainty
+• No forced prediction
+• No fallback prediction
+• No tie-break prediction
+• Historically validated segment
+
+Elite should never simply mean:
+
+"The engine predicts this player."
+
+Elite should mean:
+
+"This prediction passed every quality-control gate."
+
+==================================================
+DISALLOWED COMBINATIONS
+==================================================
+
+Investigate whether the following should be prevented:
+
+• Elite + High Risk
+• Elite + Extreme Risk
+• Elite + Weak Evidence
+• Elite + Low Data Quality
+• Elite + Severe Model Disagreement
+• Elite + Forced Signal
+• Elite + Missing Critical Data
+
+If the current architecture intentionally allows any of these, explain why.
+
+==================================================
+DISPLAY DESIGN
+==================================================
+
+Recommended UI:
+
+Predicted Winner:
+Player A
+
+Win Probability:
+68%
+
+Prediction Strength:
+Clear Lean
+
+Upset Risk:
+Moderate
+
+Evidence Reliability:
+Excellent
+
+Recommendation:
+Strong Pick
+
+Elite Badge
+(optional certification)
+
+==================================================
+MIGRATION ANALYSIS
+==================================================
+
+Without modifying code:
+
+1. Compare the current implementation to this proposed architecture.
+
+2. Identify every conflict.
+
+3. Estimate implementation complexity.
+
+4. Identify affected files.
+
+5. Recommend the safest migration path.
+
+6. Preserve historical prediction records.
+
+7. Preserve walk-forward, calibration, paper trading, shadow replay, historical accuracy metrics, and ledger compatibility.
+
+Do not implement any code.
+
+Return only the analysis and migration plan.

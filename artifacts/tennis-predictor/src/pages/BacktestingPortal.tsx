@@ -13,6 +13,7 @@ import {
   useRunRankingVerification,
   useRunHistoricalBackfillCycle,
   useRunHistoricalBackfillRange,
+  useGetBackfillLiveProgress,
   type RankingVerificationResult,
   type BacktestRun,
   type BacktestFilters,
@@ -555,6 +556,9 @@ function DataHealthPanel() {
   const [showDiscrepancies, setShowDiscrepancies] = useState(false)
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null)
   const [fillingGap, setFillingGap] = useState<string | null>(null)
+  // Task #64: live status polling — set to the ISO trigger timestamp after a range backfill fires.
+  const [backfillTriggeredAt, setBackfillTriggeredAt] = useState<string | null>(null)
+  const liveProgress = useGetBackfillLiveProgress({ triggeredAt: backfillTriggeredAt })
 
   const missingRank = freshness?.matchesMissingOpponentRank
   const missingSurface = freshness?.matchesMissingSurface
@@ -591,7 +595,9 @@ function DataHealthPanel() {
     setBackfillMessage(null)
     backfillRange.mutate({ data: { dateStart, dateStop } }, {
       onSuccess: () => {
-        setBackfillMessage(`Backfill started for ${dateStart} → ${dateStop}. Runs in background — check Job Runs below when done.`)
+        // Task #64: record trigger time so live-progress polling can detect completion.
+        setBackfillTriggeredAt(new Date().toISOString())
+        setBackfillMessage(null)
         setFillingGap(null)
       },
       onError: () => {
@@ -681,6 +687,38 @@ function DataHealthPanel() {
           <div className="flex items-center gap-1.5 text-[10px] font-mono text-green-500">
             <CheckCircle2 className="w-3 h-3" />
             No gaps &gt; 30 days detected
+          </div>
+        )}
+
+        {/* Task #64: live status when a range backfill is running */}
+        {backfillTriggeredAt && liveProgress.data?.isRunning && (
+          <div className="flex items-start gap-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-[10px] font-mono text-blue-400">
+            <Loader2 className="w-3 h-3 mt-0.5 animate-spin shrink-0" />
+            <div className="space-y-0.5">
+              <div className="font-bold tracking-widest uppercase">BACKFILL RUNNING</div>
+              {liveProgress.data.activeDateRange && (
+                <div className="text-muted-foreground">
+                  Range: {liveProgress.data.activeDateRange.dateStart} → {liveProgress.data.activeDateRange.dateStop}
+                </div>
+              )}
+              {liveProgress.data.activeStartedAt && (
+                <div className="text-muted-foreground">
+                  Started: {new Date(liveProgress.data.activeStartedAt).toLocaleTimeString()} — polling every 5 s
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {backfillTriggeredAt && !liveProgress.data?.isRunning && liveProgress.data !== undefined && (
+          <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded text-[10px] font-mono text-green-400">
+            <CheckCircle2 className="w-3 h-3 shrink-0" />
+            <span>
+              Backfill complete (status: {liveProgress.data.lastCompletedStatus ?? "—"}
+              {liveProgress.data.lastCompletedAt
+                ? ` at ${new Date(liveProgress.data.lastCompletedAt).toLocaleTimeString()}`
+                : ""}
+              ). Refresh freshness to see the updated coverage.
+            </span>
           </div>
         )}
 

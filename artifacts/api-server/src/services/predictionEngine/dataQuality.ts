@@ -191,6 +191,13 @@ export const CONFIDENCE_SHRINK = {
  * measures that tour's accuracy gap on the matches where NO specialist actually voted (not the
  * tour's pooled accuracy across corrected and uncorrected matches together), and cite that
  * report/data inline the way this ATP entry does.
+ *
+ * Task #33: this discount is skipped in `predictionEngine/index.ts` when a real pooled isotonic
+ * calibration model is active. The calibration is fitted on raw_probability → actual_outcome
+ * across the full corpus and already bakes in per-tour accuracy differences through its knots;
+ * applying this discount on top double-corrects and causes systematic underconfidence (~17 pts in
+ * the 60-70% tier per paper-trade data, n=520 graded). This entry is preserved for the
+ * calibration-fallback path (no fitted model yet) and for future reference.
  */
 export const TOUR_RELIABILITY_DISCOUNT: Partial<Record<string, number>> = {
   ATP: 0.63,

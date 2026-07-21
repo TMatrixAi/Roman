@@ -345,6 +345,8 @@ router.post("/evaluation/historical-backfill/run-range", async (req, res): Promi
 
   // Fire-and-forget: mirrors the pattern in index.ts where the historical backfill job runs on
   // an in-process interval. Any error is recorded to job_runs so it's not silently swallowed.
+  // Task #64: the live-progress endpoint detects "running" via `triggeredAt` from the client —
+  // no in-progress row needed (finishedAt column is NOT NULL in the schema).
   const provider = getTennisDataProvider();
   const startedAt = new Date();
   runHistoricalBackfill(provider, { dateStart, dateStop, ...(chunkDays ? { chunkDays } : {}) })
@@ -372,6 +374,41 @@ router.post("/evaluation/historical-backfill/run-range", async (req, res): Promi
         errorMessage,
       });
     });
+});
+
+/**
+ * GET /evaluation/historical-backfill/live-progress?triggeredAt=<ISO>
+ *
+ * Task #64: after the frontend triggers a run-range backfill it polls this every 5 s, passing
+ * the ISO timestamp of when it fired the trigger. We look for a job_runs completion row with
+ * finishedAt > triggeredAt. If none exists yet → still running. If one does → done.
+ * The `triggeredAt` param is required; without it the endpoint returns the most-recent row only.
+ */
+router.get("/evaluation/historical-backfill/live-progress", async (req, res): Promise<void> => {
+  const triggeredAtRaw = typeof req.query["triggeredAt"] === "string" ? req.query["triggeredAt"] : null;
+  const triggeredAt = triggeredAtRaw ? new Date(triggeredAtRaw) : null;
+
+  const [lastCompleted] = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, HISTORICAL_BACKFILL_JOB_NAME))
+    .orderBy(desc(jobRunsTable.finishedAt))
+    .limit(1);
+
+  // isRunning = triggered after known last completion, so no completion exists for this trigger yet
+  const lastCompletedAt = lastCompleted?.finishedAt ?? null;
+  const isRunning = triggeredAt != null
+    ? (lastCompletedAt == null || lastCompletedAt < triggeredAt)
+    : false;
+
+  res.json({
+    isRunning,
+    lastCompletedStatus: lastCompleted?.status ?? null,
+    lastCompletedAt: lastCompletedAt?.toISOString() ?? null,
+    activeJobId: null,
+    activeStartedAt: null,
+    activeDateRange: null,
+  });
 });
 
 router.get("/evaluation/historical-backfill/job-runs", async (req, res): Promise<void> => {

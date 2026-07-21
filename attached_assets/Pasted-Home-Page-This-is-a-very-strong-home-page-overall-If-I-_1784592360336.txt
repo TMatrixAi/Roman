@@ -1,0 +1,1010 @@
+Home Page
+
+This is a very strong home page overall. If I were QA’ing this for launch, I’d probably give it an 8.8–9.2/10. It looks much more like a commercial app than it did a week ago. Here are the biggest things I’d change before launch.
+👍 What’s working well
+	•	The hero statement “PROBABILITY NOT SENTIMENT.” is excellent. It immediately tells users what makes your app different.
+	•	The dark theme with blue/orange accents is clean and modern.
+	•	The Upcoming Fixtures cards are easy to scan.
+	•	The Predict button stands out well.
+	•	The tournament, surface, and start time are all visible at a glance.
+	•	The app feels professional rather than like a hobby project.
+ 
+⸻
+ 
+Highest-priority improvements
+1. Make the hero section shorter ⭐⭐⭐⭐⭐
+Right now it takes almost an entire screen.
+I’d compress it to something like:
+PROBABILITY. NOT SENTIMENT.
+AI-powered tennis predictions using:
+• Surface Elo • Serve & Return • Recent Form • Fatigue • Head-to-Head
+Then put one large button:
+Predict Today’s Matches
+Most users are coming for predictions, not to read.
+ 
+⸻
+ 
+2. Show today’s best picks ⭐⭐⭐⭐⭐
+This is probably the biggest feature I’d add.
+Right under the hero:
+🏆 Today’s Top AI Picks
+	0.	Paula Badosa — 78%
+	0.	Patrik Niklas-Salminen — 70%
+	0.	Maria Sakkari — 69%
+With a View All button.
+This immediately shows your engine at work.
+ 
+⸻
+ 
+3. Add prediction counts ⭐⭐⭐⭐☆
+For example:
+	•	Today’s Matches: 146
+	•	Ready to Predict: 146
+	•	Live Matches: 12
+	•	Accuracy (Last 30 Days): 64.5%
+Those numbers make the app feel alive.
+ 
+⸻
+ 
+4. Improve the fixture cards ⭐⭐⭐⭐⭐
+They’re good already, but could be even better.
+Instead of:
+V. Lepchenko
+vs
+E. Avanesyan
+Show:
+🇺🇸 V. Lepchenko
+🇦🇲 E. Avanesyan
+
+Clay
+4:00 AM ET
+Flags help users identify players faster.
+ 
+⸻
+ 
+5. Color-code tour levels ⭐⭐⭐⭐☆
+Right now ATP500 and WTA250 look similar.
+For example:
+	•	ATP → Blue
+	•	WTA → Purple
+	•	Challenger → Green
+	•	ITF → Orange
+Makes scanning much faster.
+ 
+⸻
+ 
+6. Add confidence preview ⭐⭐⭐⭐⭐
+Instead of only showing players:
+V. Lepchenko
+vs
+E. Avanesyan
+Show a subtle preview like:
+AI Confidence:
+Moderate
+or
+High Confidence Match
+without revealing the winner.
+ 
+⸻
+ 
+7. Make the filters sticky ⭐⭐⭐⭐☆
+Once the user scrolls, the Level/Event filters disappear.
+Keeping them pinned would improve usability.
+ 
+⸻
+ 
+8. Polish the hero buttons ⭐⭐⭐⭐☆
+Currently:
+	•	View Ledger
+	•	Build Matchup
+	•	Shadow Trading
+I’d rename them:
+	•	Prediction History
+	•	Build Custom Match
+	•	Paper Trading
+These names are a bit clearer to new users.
+ 
+⸻
+ 
+Minor UI issues
+	•	The hero card has a lot of empty blue space at the bottom.
+	•	“Live Data” could be slightly larger.
+	•	The orange border on fixture cards is a little heavy; a thinner accent line would look more refined.
+	•	The “vs” text could be brighter for readability.
+ 
+⸻
+ 
+Feature I’d add before launch
+A small “Engine Status” chip near the top:
+🟢 Engine Online
+	•	Live API Connected
+	•	64.5% Walk-Forward Accuracy
+	•	Updated 2 min ago
+It builds trust immediately.
+Overall
+If you keep the current design and add:
+	•	Top AI Picks
+	•	Better fixture cards
+	•	Color-coded tours
+	•	Confidence previews
+	•	Slightly smaller hero section
+I think the home page would be around a 9.6/10 and look very close to a polished commercial sports analytics app. The overall direction is excellent—the remaining improvements are mostly about making the most important information easier to see at a glance.
+
+Remove the entire "Player Lookup" section from the bottom of the Home page.
+
+Specifically remove:
+- The "Player Lookup" heading.
+- The search input field.
+- The "Enter 2+ chars to search" placeholder panel.
+- Any associated spacing, containers, or empty margins.
+
+Do not delete the Player Lookup feature from the application. Only remove it from the Home page.
+
+Move the Player Lookup functionality into the "Run Model" page (or its own dedicated page if it already exists or fits better with the app architecture).
+
+After removal:
+- Pull the footer/navigation bar up naturally so there is no large empty space.
+- Ensure the Home page ends cleanly after the "Load More Matches" button (or the final fixture card if all matches are loaded).
+- Maintain consistent spacing and padding with the rest of the Home page.
+- Verify there are no broken references, imports, or unused components after the section is removed.
+
+
+Build Match Up
+
+I looked through your Build Matchup page, and overall it’s much cleaner than it was before. The Search/Paste/Bulk layout is intuitive, but there are still several things I’d improve before launch.
+High Priority
+1. Player 1 / Player 2 cards are too tall
+They’re taking almost half the screen when no player is selected.
+I’d reduce their height by 30–40% and make the selected player info expand only after a player is chosen.
+ 
+⸻
+ 
+2. Too much empty space
+There is a lot of dead space between:
+	•	Title
+	•	Player cards
+	•	Search tabs
+	•	Search box
+Compress the vertical spacing about 15–20%.
+You’ll fit far more content on one screen.
+ 
+⸻
+ 
+3. Search / Paste / Bulk
+These look good.
+I’d only make the active tab glow a little stronger so it’s obvious which mode you’re in.
+ 
+⸻
+ 
+4. Search placeholder
+Current:
+Search player name (e.g. Alcaraz)
+I’d shorten it to:
+Search player…
+or
+Search ATP / WTA player
+Cleaner.
+ 
+⸻
+ 
+5. Empty player cards
+Instead of
+Select player from search below
+I’d display something more visual.
+Example:
+👤 No player selected
+Tap Search, Paste or Bulk below
+Looks more polished.
+ 
+⸻
+ 
+Paste Tab
+This is much better than before.
+I’d still:
+	•	make the instructions 10–15% smaller
+	•	slightly enlarge the text area
+	•	increase the Resolve Players button height a little
+ 
+⸻
+ 
+Bulk Tab
+This page looks excellent.
+I’d only add:
+Supported:
+✓ ATP
+✓ WTA
+✓ Challenger
+✓ ITF
+right underneath the instructions.
+ 
+⸻
+ 
+Small UI improvements
+I’d also:
+	•	animate player cards when selected
+	•	animate Search/Paste/Bulk transitions
+	•	slightly round the Resolve Players button more
+	•	make the selected tab slightly brighter
+ 
+⸻
+ 
+One thing I’d add
+At the top of Build Matchup I’d add a quick status strip:
+✓ Database Connected
+✓ Rankings Loaded
+✓ Live API Connected
+or
+Data Quality: Excellent
+Users immediately know the engine is ready.
+ 
+⸻
+ 
+Overall rating
+Before: 8.3/10
+Now: 9.1/10
+This page is getting close to production quality. Most of what remains is polish—reducing wasted space, improving visual hierarchy, and adding subtle animations to make the app feel more premium.
+
+
+
+View history
+
+Make the following naming changes exactly as written. Do not choose alternative wording.
+
+1. Bottom navigation
+- Change “LEDGER” to “HISTORY”
+
+2. Page title
+- Change “Ledger” to “Prediction History”
+
+3. Page description
+Replace:
+“Historical prediction performance and raw results.”
+
+With:
+“Browse, search, and manage past predictions and outcomes.”
+
+4. Search section
+Replace:
+“FIND A PLAYER’S SAVED MATCHES”
+
+With:
+“SEARCH PREDICTION HISTORY”
+
+5. Search placeholder
+Replace the current placeholder with:
+“Search players with saved predictions”
+
+6. Action buttons
+- Change “REFRESH OUTCOMES” to “UPDATE RESULTS”
+- Change “REMOVE DUPLICATE TRADES” to “REMOVE DUPLICATES”
+
+7. Recent section
+- Change “RECENT PREDICTIONS” to “PREDICTION HISTORY”
+
+8. Keep unchanged
+- Total Runs
+- Resolved
+- Accuracy
+- High Conf
+- Select All
+- Prediction cards
+- Delete controls
+- All historical records and data
+
+Do not modify any logic, routes, database fields, prediction records, filters, or functionality. This is a text-label and UI naming update only.
+
+I actually like the concept of the FS (Force Signal) page, but I would redesign it. Right now it feels like a completely separate prediction page even though it’s really just a different output mode of the same engine.
+
+Here’s exactly what I’d tell Replit:
+
+⸻
+
+Force Signal UX Redesign (Required)
+
+The current Force Signal page is confusing because it duplicates the Build Matchup page. Users should not feel like they’re using a different prediction engine.
+
+1. Keep the same Build Matchup page
+
+Do not create a separate Force Signal prediction workflow.
+
+Force Signal uses the same engine and same player selection as Build Matchup.
+
+⸻
+
+2. Repurpose the FS button
+
+Instead of opening another prediction page, the FS button should simply toggle Force Signal Mode ON/OFF globally.
+
+Behavior:
+
+	•	⚡ Gray = OFF
+	•	⚡ Gold = ON
+
+When ON, every prediction runs in Force Signal mode until turned off.
+
+No page change.
+
+No duplicate UI.
+
+⸻
+
+3. Show a small banner
+
+When Force Signal is enabled, show a compact banner at the top of Build Matchup:
+
+⚡ Force Signal Enabled
+
+Close matches will receive a forced directional pick instead of “No Signal.”
+
+Results are tracked separately and excluded from normal accuracy metrics.
+
+This should replace the giant warning box.
+
+⸻
+
+4. Add a Help page
+
+If users tap the ⚡ icon again or tap an info icon, open the current explanation page as an information screen only.
+
+Move all of the educational content there.
+
+⸻
+
+5. Track separately
+
+Every Force Signal prediction must automatically receive:
+
+	•	Force Signal badge
+	•	Separate ledger
+	•	Separate accuracy
+	•	Excluded from production accuracy
+
+⸻
+
+6. Prediction results
+
+When Force Signal is ON:
+
+Instead of
+
+Recommendation: No Signal
+
+show
+
+⚡ Forced Pick
+
+and display:
+
+	•	Forced Winner
+	•	Raw Probability
+	•	Reason it was forced
+	•	Close Match Warning
+
+⸻
+
+7. Never duplicate pages
+
+There should only be one place where users:
+
+	•	Search players
+	•	Paste matches
+	•	Upload screenshots
+	•	Run bulk predictions
+
+Force Signal changes only the output, never the workflow.
+
+⸻
+
+I think this is a cleaner experience. Users stay on the Build Matchup page, flip the FS switch when they want a forced pick, and flip it off when they want the engine’s normal behavior. It removes duplicate screens while making Force Signal feel like an advanced feature rather than a separate product.
+
+
+Yes. In fact, this is exactly how I would write the entire Design Bible. It won’t be “make the homepage better.” It will tell Replit exactly what to do, what not to do, and how to verify it.
+
+This is the level of detail I’d use.
+
+⸻
+
+TENNIS MATRIX AI — HOMEPAGE REDESIGN SPECIFICATION (Version 2.0)
+
+Objective
+
+Redesign the Home page to achieve a premium, commercial-quality appearance comparable to leading sports analytics platforms while preserving all existing functionality.
+
+This is a UI/UX redesign only.
+
+Do not modify:
+
+	•	Prediction engine
+	•	API endpoints
+	•	Database
+	•	Prediction logic
+	•	Navigation routes
+	•	Authentication
+	•	Subscription logic
+	•	Feature flags
+
+Only redesign the presentation and organization.
+
+⸻
+
+SECTION 1 — Overall Layout
+
+The Home page must contain these sections in this exact order:
+
+	0.	App Header
+	0.	Hero Banner
+	0.	Today’s AI Picks (NEW)
+	0.	Quick Action Buttons
+	0.	Live Engine Status (NEW)
+	0.	Today’s Fixtures
+	0.	Footer Navigation
+
+Do not change this order.
+
+⸻
+
+SECTION 2 — Header
+
+Current:
+
+Logo
+
+Tennis Matrix AI
+
+Developer Badge
+
+Theme Toggle
+
+Notifications
+
+Required Layout
+
+Top Left
+
+Tennis Matrix AI logo
+
+Center
+
+Tennis Matrix AI
+
+Top Right
+
+Notifications
+
+Theme Toggle
+
+Profile
+
+Remove unnecessary empty spacing.
+
+Maximum header height:
+
+72px
+
+⸻
+
+SECTION 3 — Hero Banner
+
+Current Issue
+
+The hero card is too tall.
+
+It consumes nearly an entire screen.
+
+Redesign
+
+Reduce height by approximately 35%.
+
+Maintain the Matrix theme.
+
+Keep the glowing border.
+
+Keep:
+
+PROBABILITY
+
+NOT SENTIMENT
+
+Replace the body text with:
+
+AI-powered ATP, WTA, Challenger & ITF match analysis using Surface Elo, Serve & Return, Recent Form, Fatigue, Head-to-Head, and advanced statistical modeling.
+
+Center align everything.
+
+⸻
+
+SECTION 4 — Hero Buttons
+
+Current
+
+View Ledger
+
+Build Matchup
+
+Shadow Trading
+
+Replace with
+
+Prediction History
+
+Run Model
+
+Paper Trading
+
+Button Requirements
+
+Equal widths
+
+Equal heights
+
+16px rounded corners
+
+48px minimum height
+
+Consistent spacing
+
+Icons aligned left
+
+Text centered vertically
+
+⸻
+
+SECTION 5 — Today’s AI Picks (NEW)
+
+Insert directly below Hero Banner.
+
+Title
+
+Today’s Top AI Picks
+
+Display top 3 predictions only.
+
+Each card contains
+
+Player
+
+Opponent
+
+Win Probability
+
+Recommendation
+
+Upset Risk
+
+Surface
+
+Tournament
+
+Predict Button
+
+View Details Button
+
+Sort by
+
+Highest Recommendation
+
+Then Highest Probability
+
+Then Lowest Upset Risk
+
+⸻
+
+SECTION 6 — Engine Status (NEW)
+
+Insert below Today’s AI Picks.
+
+Display
+
+Engine Status
+
+API Status
+
+Database Status
+
+Calibration Status
+
+Prediction Version
+
+Last Updated
+
+Example
+
+Engine Online
+
+Live APIs Connected
+
+Calibration Healthy
+
+Prediction Version 3.2.1
+
+Updated 2 min ago
+
+Use green status chips.
+
+⸻
+
+SECTION 7 — Quick Stats
+
+Display four cards.
+
+Total Matches Today
+
+Live Matches
+
+Predictions Available
+
+Historical Accuracy
+
+Each card
+
+equal height
+
+equal width
+
+large number
+
+small label
+
+⸻
+
+SECTION 8 — Upcoming Fixtures
+
+Keep this section.
+
+Improve cards.
+
+Each card should display
+
+Tournament
+
+Surface
+
+Time
+
+Player 1
+
+Player 2
+
+Tournament badge
+
+Surface badge
+
+Predict button
+
+Favorite button
+
+No card should exceed 140px height.
+
+⸻
+
+SECTION 9 — Fixture Cards
+
+Increase spacing between cards.
+
+Use
+
+16px corner radius
+
+1px border
+
+Subtle glow
+
+No heavy borders.
+
+Player names
+
+Maximum 2 lines.
+
+Tournament
+
+Single line.
+
+Surface badge
+
+Upper right.
+
+Time
+
+Upper left.
+
+⸻
+
+SECTION 10 — Tournament Colors
+
+Use consistent colors.
+
+ATP
+
+Blue
+
+WTA
+
+Purple
+
+Challenger
+
+Green
+
+ITF
+
+Orange
+
+Never reuse colors across tours.
+
+⸻
+
+SECTION 11 — Surface Colors
+
+Clay
+
+Orange
+
+Hard
+
+Blue
+
+Grass
+
+Green
+
+Indoor
+
+Gray
+
+Outdoor
+
+Teal
+
+Apply consistently throughout the app.
+
+⸻
+
+SECTION 12 — Buttons
+
+All buttons
+
+48px minimum height.
+
+16px corner radius.
+
+Consistent font.
+
+Equal padding.
+
+Pressed animation.
+
+Hover animation (desktop).
+
+Haptic feedback (mobile).
+
+⸻
+
+SECTION 13 — Typography
+
+Page Title
+
+32px
+
+Section Headers
+
+24px
+
+Card Titles
+
+18px
+
+Player Names
+
+18px Bold
+
+Secondary Text
+
+14px
+
+Badges
+
+12px
+
+Never mix font weights randomly.
+
+⸻
+
+SECTION 14 — Spacing
+
+Outer page padding
+
+16px
+
+Between cards
+
+12px
+
+Between sections
+
+24px
+
+Between title and content
+
+12px
+
+Use an 8-point spacing grid.
+
+⸻
+
+SECTION 15 — Animations
+
+Hero fade-in
+
+300ms
+
+Cards
+
+Slide upward
+
+200ms stagger
+
+Buttons
+
+Scale to 0.97 on tap
+
+Prediction cards
+
+Subtle glow on press
+
+Do not use excessive animations.
+
+⸻
+
+SECTION 16 — Loading State
+
+Replace spinning loader.
+
+Use skeleton cards.
+
+Hero skeleton.
+
+Quick stat skeletons.
+
+Fixture skeletons.
+
+No layout shift.
+
+⸻
+
+SECTION 17 — Empty States
+
+If no fixtures
+
+Display
+
+“No matches scheduled today.”
+
+Show
+
+Browse Tomorrow’s Fixtures
+
+instead of empty space.
+
+⸻
+
+SECTION 18 — Error States
+
+Never show raw API errors.
+
+Instead
+
+Unable to load today’s fixtures.
+
+Retry
+
+Refresh
+
+Technical Details
+
+(collapsed)
+
+⸻
+
+SECTION 19 — Mobile Optimization
+
+Must fit perfectly on
+
+320px
+
+360px
+
+375px
+
+390px
+
+430px
+
+No horizontal scrolling.
+
+No clipped buttons.
+
+No clipped badges.
+
+No overflowing text.
+
+⸻
+
+SECTION 20 — Accessibility
+
+Contrast ratio
+
+WCAG AA minimum
+
+Buttons
+
+Minimum 48x48 touch targets
+
+Screen reader labels
+
+Every button
+
+Every badge
+
+Every card
+
+⸻
+
+SECTION 21 — Performance
+
+Hero render
+
+<100ms
+
+Cards
+
+Virtualized if needed
+
+Images
+
+Lazy loaded
+
+No unnecessary re-renders
+
+⸻
+
+SECTION 22 — Remove
+
+Remove the Developer Status section from the Home page.
+
+Remove large empty spacing.
+
+Remove duplicated buttons.
+
+Remove unnecessary technical wording.
+
+Keep developer information inside the dedicated Backtesting or Developer pages.
+
+⸻
+
+SECTION 23 — Acceptance Criteria
+
+The redesign is not complete until all of the following pass:
+
+✅ No horizontal scrolling
+
+✅ No clipped text
+
+✅ Consistent spacing
+
+✅ Equal card heights
+
+✅ Equal button sizes
+
+✅ Responsive on all supported phone widths
+
+✅ Hero fits within one screen without dominating it
+
+✅ Upcoming Fixtures are visible without excessive scrolling
+
+✅ Home page loads smoothly
+
+✅ No functionality changed
+
+⸻
+
+This is the level of detail I’d use for every page. If the full Design Bible is 60–70 pages, every page will read like this—with exact layouts, priorities, constraints, and acceptance criteria so Replit isn’t left guessing. I want your developer to be able to implement the design from the document alone, with minimal interpretation.
