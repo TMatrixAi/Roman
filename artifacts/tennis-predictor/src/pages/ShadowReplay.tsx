@@ -61,7 +61,9 @@ export default function ShadowReplayPage() {
     )
   }
 
-  const { overall, calibrationBuckets, batches } = data
+  const overall = data.overall ?? { n: 0, accuracy: 0, logLoss: null, brier: null, eceRaw: null, eceCalibrated: null, retiredCount: 0, retiredAccuracy: null, voidCount: 0, missedCount: 0, dateRangeStart: null, dateRangeEnd: null }
+  const calibrationBuckets = data.calibrationBuckets ?? []
+  const batches = data.batches ?? []
 
   const calibData = calibrationBuckets.map((b) => ({
     label: b.label,

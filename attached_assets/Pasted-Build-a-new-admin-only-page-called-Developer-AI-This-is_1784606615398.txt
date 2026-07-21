@@ -1,0 +1,457 @@
+Build a new admin-only page called "Developer AI". This is NOT a chatbot for users. It is my private AI software engineer dedicated exclusively to Tennis Matrix AI.
+
+GOAL
+
+Create an AI development assistant that understands my entire application, prediction engine, database, APIs, architecture, and codebase. It should behave like a senior software engineer who has worked on this project since day one.
+
+==================================================
+ACCESS
+==================================================
+
+Developer AI must have secure READ access to:
+
+• Entire source code
+• Prediction engine
+• Reliability Engine
+• Database schema
+• Historical prediction tables
+• Calibration tables
+• Walk-forward testing
+• Shadow Replay
+• Paper Trading
+• Logs
+• Error logs
+• API status
+• Environment configuration (hide secrets)
+• Feature flags
+• Scheduled jobs
+• Background workers
+• Build configuration
+
+Only Owner/Admin can access this page.
+
+==================================================
+AI MODES
+==================================================
+
+Add quick action buttons:
+
+Investigate Bug
+
+Explain Code
+
+Improve Accuracy
+
+Optimize Performance
+
+Audit Prediction Engine
+
+Find Dead Code
+
+Database Audit
+
+API Health
+
+Security Audit
+
+Create Feature
+
+Refactor Code
+
+Generate Tests
+
+Explain Prediction
+
+Deployment Check
+
+Code Review
+
+Build Report
+
+==================================================
+INVESTIGATE BUG
+==================================================
+
+The AI should automatically:
+
+Search logs
+
+Search recent commits
+
+Find related files
+
+Find stack traces
+
+Identify probable root causes
+
+Rank possible fixes
+
+Estimate confidence
+
+Show exactly where the bug exists.
+
+==================================================
+IMPROVE ACCURACY
+==================================================
+
+The AI understands every model inside Tennis Matrix AI.
+
+It analyzes:
+
+Surface Elo
+
+Serve & Return
+
+Recent Form
+
+Reliability Engine
+
+Monte Carlo
+
+Calibration
+
+Specialist Models
+
+Fatigue
+
+Travel
+
+Head-to-head
+
+Data Quality
+
+Model Agreement
+
+Confidence Engine
+
+Shadow Replay
+
+Walk Forward
+
+Paper Trading
+
+It should suggest ONLY improvements backed by historical evidence.
+
+Never invent changes.
+
+Never recommend changes without proving they improve historical accuracy.
+
+==================================================
+CODE REVIEW
+==================================================
+
+Analyze entire project.
+
+Look for:
+
+duplicate code
+
+slow code
+
+unsafe code
+
+missing null checks
+
+race conditions
+
+memory leaks
+
+API abuse
+
+security risks
+
+broken imports
+
+unused files
+
+dead code
+
+duplicate calculations
+
+bad SQL
+
+bad indexing
+
+poor architecture
+
+==================================================
+CREATE FEATURE
+==================================================
+
+I can type:
+
+Build this feature...
+
+The AI should:
+
+determine affected files
+
+generate implementation plan
+
+list risks
+
+estimate complexity
+
+estimate development time
+
+write production-ready code
+
+generate tests
+
+==================================================
+PERFORMANCE AUDIT
+==================================================
+
+Analyze:
+
+API latency
+
+database speed
+
+large queries
+
+slow pages
+
+React rendering
+
+background workers
+
+memory usage
+
+CPU usage
+
+prediction runtime
+
+Suggest optimizations.
+
+==================================================
+ENGINE AUDIT
+==================================================
+
+Analyze prediction engine.
+
+Check:
+
+weights
+
+confidence
+
+calibration
+
+probabilities
+
+recommendation logic
+
+Elite logic
+
+Strong Recommendation
+
+Reliability Engine
+
+Model Agreement
+
+Monte Carlo
+
+specialist routing
+
+data quality
+
+Look for inconsistencies.
+
+==================================================
+DATABASE AUDIT
+==================================================
+
+Check:
+
+missing indexes
+
+slow queries
+
+duplicate rows
+
+orphan rows
+
+bad foreign keys
+
+null issues
+
+large tables
+
+storage growth
+
+unused tables
+
+==================================================
+API HEALTH
+==================================================
+
+Monitor every API.
+
+Show:
+
+online/offline
+
+latency
+
+error rate
+
+quota usage
+
+daily usage
+
+remaining requests
+
+last failure
+
+last success
+
+retry status
+
+==================================================
+SECURITY AUDIT
+==================================================
+
+Look for:
+
+hardcoded secrets
+
+unsafe endpoints
+
+missing authentication
+
+SQL injection
+
+XSS
+
+CSRF
+
+unsafe uploads
+
+permission leaks
+
+==================================================
+CODE EXPLANATION
+==================================================
+
+Click any file.
+
+Developer AI explains:
+
+what it does
+
+why it exists
+
+how it connects
+
+possible improvements
+
+risk level
+
+==================================================
+BUILD REPORT
+==================================================
+
+Generate a complete report.
+
+Application health score
+
+Prediction engine score
+
+Database score
+
+Performance score
+
+Security score
+
+API score
+
+Code quality score
+
+Technical debt score
+
+Maintainability score
+
+Overall readiness score
+
+==================================================
+SAFEGUARDS
+==================================================
+
+Developer AI MUST NEVER automatically modify code.
+
+Every suggestion must first produce:
+
+Implementation plan
+
+Files affected
+
+Risk assessment
+
+Rollback plan
+
+Expected benefits
+
+Only after approval may code be generated.
+
+==================================================
+SPECIAL KNOWLEDGE
+==================================================
+
+Developer AI must fully understand Tennis Matrix AI including:
+
+Prediction Engine
+
+Reliability Engine
+
+Monte Carlo simulations
+
+Calibration
+
+Walk Forward Validation
+
+Shadow Replay
+
+Paper Trading
+
+Prediction Ledger
+
+Historical Database
+
+Feature Flags
+
+Developer Dashboard
+
+Prediction Confidence
+
+Recommendation Engine
+
+Elite Predictions
+
+Strong Recommendations
+
+API integrations
+
+Historical rankings
+
+ATP
+
+WTA
+
+ITF
+
+Challenger
+
+Tournament parsing
+
+Court surfaces
+
+Live scoring
+
+Background jobs
+
+==================================================
+GOAL
+==================================================
+
+The result should feel like I have my own private version of Replit AI that specializes ONLY in Tennis Matrix AI. It should deeply understand the project, investigate problems intelligently, recommend evidence-backed improvements, and help build production-ready features while never making silent changes or risking prediction accuracy.

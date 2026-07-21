@@ -70,7 +70,7 @@ export function ProviderStatusIndicator() {
     <div className="flex items-center gap-2 text-[0.6875rem] font-mono">
       {/* Provider name — only on wide screens */}
       <span className="hidden lg:inline text-muted-foreground font-bold tracking-tight">
-        {status.provider.toUpperCase()}
+        {status.provider?.toUpperCase() ?? "PROVIDER"}
       </span>
 
       {/* Status badge — always visible */}
@@ -89,7 +89,7 @@ export function ProviderStatusIndicator() {
           )}
         </TooltipTrigger>
         <TooltipContent side="bottom" className="font-mono text-xs">
-          {status.provider.toUpperCase()} — {status.connected ? "connected" : "disconnected"}
+          {status.provider?.toUpperCase() ?? "PROVIDER"} — {status.connected ? "connected" : "disconnected"}
           {status.lastSuccessfulCallAt && ` · last sync ${formatEasternClock(status.lastSuccessfulCallAt)}`}
         </TooltipContent>
       </Tooltip>
