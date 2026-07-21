@@ -34,7 +34,9 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
   { match: /\bhalle\b/i, surface: "Grass", level: "ATP500" },
   { match: /queen'?s club|\bqueens\b/i, surface: "Grass", level: "ATP500" },
   { match: /\bbarcelona\b/i, surface: "Clay", level: "ATP500" },
-  { match: /\bhamburg\b/i, surface: "Clay", level: "ATP500" },
+  // Hamburg: ATP500 clay for men (Hamburg European Open); WTA Hamburg is a separate WTA250 event.
+  // Tour-restricted so WTA Hamburg falls through to inferLevelFromEventType (WTA250 default).
+  { match: /\bhamburg\b/i, surface: "Clay", level: "ATP500", tour: "ATP" },
   { match: /\bdubai\b/i, surface: "Hard", level: "ATP500" },
   { match: /\bacapulco\b/i, surface: "Hard", level: "ATP500" },
   { match: /\brotterdam\b/i, surface: "IndoorHard", level: "ATP500" },

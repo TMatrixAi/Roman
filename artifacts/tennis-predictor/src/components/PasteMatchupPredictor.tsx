@@ -49,41 +49,93 @@ async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext))
 }
 
+/**
+ * Normalize a player name for fuzzy comparison:
+ * - NFD decompose + strip combining diacritical marks (ñ→n, é→e, ø→o, etc.)
+ * - Collapse whitespace
+ * - Lowercase
+ * This lets "Carreño Busta" match against "Carreno Busta", "García" match "Garcia", etc.
+ */
 function normName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ")
+  return name
+    .normalize("NFD")
+    .replace(/\p{Mn}/gu, "")  // strip combining diacritical marks
+    .replace(/[''ʼ\u2019]/g, "") // strip apostrophes (O'Brien → OBrien)
+    .replace(/-/g, " ")          // expand hyphens to spaces (Haddad-Maia → Haddad Maia)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
 }
 
 /**
  * Resolves a pasted player name to a real PlayerSummary by name search.
- * Expands well-known nicknames ("Rafa" → "Rafael Nadal") before searching so that short names
- * resolve correctly. Uses an exact case-insensitive match first, then a word-subset match (so
- * "Alcaraz" → "Carlos Alcaraz"). Returns null (with error message) for ambiguous or not-found
- * cases. Never guesses: two or more confident candidates → ambiguous, not silently resolved.
+ *
+ * Resolution pipeline (tried in order):
+ * 1. Exact case+diacritic-insensitive match on the full normalized name.
+ * 2. Word-subset match: all query words appear in the candidate name (handles surname-only, etc.).
+ * 3. Initial-aware match: strips leading initials from the query ("A. Shevchenko" → "Shevchenko"),
+ *    checks word-subset, then verifies the initial matches the candidate's first name letter.
+ * 4. Nickname expansion ("Rafa" → "Rafael Nadal") before retrying steps 1–3.
+ *
+ * Returns null (with a user-readable error) for ambiguous or not-found cases. Never guesses.
  */
 async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummary | null; error: string | null }> {
   try {
     if (name.trim().length < 2) return { player: null, error: `"${name}" is too short to search` }
 
-    // Nickname expansion: search with the canonical name if input is a known moniker.
-    // The original `name` is preserved for error messages shown to the user.
-    const searchName = expandNickname(name)
+    // Run the full resolution pipeline with a given query string.
+    async function attempt(searchName: string): Promise<PlayerSummary | null | "ambiguous"> {
+      const candidates = await searchPlayers({ query: searchName })
 
-    const candidates = await searchPlayers({ query: searchName })
+      const qNorm = normName(searchName)
 
-    // Exact case-insensitive match (against the expanded search name)
-    const exact = candidates.filter((c) => normName(c.name) === normName(searchName))
-    if (exact.length === 1) return { player: exact[0], error: null }
-    if (exact.length > 1) return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+      // 1. Exact normalized match
+      const exact = candidates.filter((c) => normName(c.name) === qNorm)
+      if (exact.length === 1) return exact[0]
+      if (exact.length > 1) return "ambiguous"
 
-    // Word-subset match: handles "Alcaraz" → "Carlos Alcaraz", surname-only inputs, etc.
-    // Uses the expanded search name for matching so "Rafa" searches as "Rafael Nadal".
-    const words = normName(searchName).split(" ").filter(Boolean)
-    const confident = candidates.filter((c) => {
-      const cWords = new Set(normName(c.name).split(" ").filter(Boolean))
-      return words.length > 0 && words.every((w) => cWords.has(w))
-    })
-    if (confident.length === 1) return { player: confident[0], error: null }
-    if (confident.length > 1) return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+      // 2. Word-subset match (all query words must appear in candidate)
+      const words = qNorm.split(" ").filter(Boolean)
+      const confident = candidates.filter((c) => {
+        const cWords = new Set(normName(c.name).split(" ").filter(Boolean))
+        return words.length > 0 && words.every((w) => cWords.has(w))
+      })
+      if (confident.length === 1) return confident[0]
+      if (confident.length > 1) return "ambiguous"
+
+      // 3. Initial-aware match: split off leading "X." tokens, match on remaining words,
+      //    then verify any initials match the candidate's first name letter.
+      const initialPattern = /^[a-z]\.?$/
+      const initials = words.filter((w) => initialPattern.test(w)).map((w) => w.replace(".", ""))
+      const substantive = words.filter((w) => !initialPattern.test(w))
+      if (substantive.length > 0 && substantive.length < words.length) {
+        const bySubstantive = candidates.filter((c) => {
+          const cWords = normName(c.name).split(" ").filter(Boolean)
+          const cWordSet = new Set(cWords)
+          if (!substantive.every((w) => cWordSet.has(w))) return false
+          // Check each initial against the first character of a non-substantive candidate word
+          if (initials.length === 0) return true
+          const firstLetter = cWords[0]?.[0] ?? ""
+          return initials.every((ini) => ini === firstLetter)
+        })
+        if (bySubstantive.length === 1) return bySubstantive[0]
+        if (bySubstantive.length > 1) return "ambiguous"
+      }
+
+      return null
+    }
+
+    // Try with original name first, then with nickname expansion.
+    const direct = await attempt(name)
+    if (direct === "ambiguous") return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+    if (direct) return { player: direct, error: null }
+
+    const expandedName = expandNickname(name)
+    if (expandedName !== name) {
+      const expanded = await attempt(expandedName)
+      if (expanded === "ambiguous") return { player: null, error: `"${name}" matches multiple players — use Player Search to select` }
+      if (expanded) return { player: expanded, error: null }
+    }
 
     return { player: null, error: `"${name}" not found — check spelling or use Player Search` }
   } catch {
@@ -274,6 +326,9 @@ export function PasteMatchupPredictor() {
   }
 
   const pendingPredictCount = lines.filter((l) => l.status === "resolved").length
+  const resolvingCount = lines.filter((l) => l.status === "resolving").length
+  const notFoundCount = lines.filter((l) => l.status === "not-found" || l.status === "ambiguous").length
+  const parseErrorCount = lines.filter((l) => l.status === "parse-error").length
 
   return (
     <div className="space-y-4">
@@ -296,6 +351,31 @@ export function PasteMatchupPredictor() {
         className="min-h-[120px] font-mono text-sm bg-background/50 resize-y"
         disabled={isResolving || isPredicting}
       />
+
+      {lines.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-muted-foreground">
+          {pendingPredictCount > 0 && (
+            <span className="flex items-center gap-1 text-success">
+              <CheckCircle2 className="w-3 h-3" /> {pendingPredictCount} ready
+            </span>
+          )}
+          {resolvingCount > 0 && (
+            <span className="flex items-center gap-1 animate-pulse">
+              <RefreshCw className="w-3 h-3" /> {resolvingCount} resolving
+            </span>
+          )}
+          {notFoundCount > 0 && (
+            <span className="flex items-center gap-1 text-destructive">
+              <XCircle className="w-3 h-3" /> {notFoundCount} not found
+            </span>
+          )}
+          {parseErrorCount > 0 && (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <AlertTriangle className="w-3 h-3" /> {parseErrorCount} parse error
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {lines.length === 0 ? (

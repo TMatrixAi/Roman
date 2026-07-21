@@ -99,7 +99,7 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
         }}
       >
         <Copy className={`w-4 h-4 mr-2 ${previewDuplicates.isPending ? "animate-pulse" : ""}`} />
-        REMOVE DUPLICATE TRADES
+        REMOVE DUPLICATES
       </Button>
 
       {lastRemovedCount !== null && (
@@ -119,7 +119,7 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
                     <p>
                       Found {preview.removableCount} duplicate prediction{preview.removableCount === 1 ? "" : "s"} across{" "}
                       {preview.groups.length} match{preview.groups.length === 1 ? "" : "es"}. The earliest prediction for each match
-                      will be kept; the rest will be permanently deleted from the Ledger.
+                      will be kept; the rest will be permanently deleted from Prediction History.
                     </p>
                     <ul className="max-h-48 overflow-y-auto space-y-1 text-xs font-mono border rounded-md p-2 bg-muted/30">
                       {preview.groups.map((g) => (
@@ -134,7 +134,7 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
                     </ul>
                   </>
                 ) : (
-                  <p>No duplicate predictions were found in the Ledger.</p>
+                  <p>No duplicate predictions were found in Prediction History.</p>
                 )}
               </div>
             </AlertDialogDescription>
@@ -552,8 +552,8 @@ export default function HistoryPage() {
     <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/50 pb-6">
         <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">Ledger</h1>
-          <p className="text-muted-foreground mt-2 text-lg">Historical prediction performance and raw results.</p>
+          <h1 className="text-4xl font-display font-bold tracking-tight">Prediction History</h1>
+          <p className="text-muted-foreground mt-2 text-lg">Browse, search, and manage past predictions and outcomes.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -564,7 +564,7 @@ export default function HistoryPage() {
             onClick={() => gradePending.mutate()}
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${gradePending.isPending ? "animate-spin" : ""}`} />
-            REFRESH OUTCOMES
+            UPDATE RESULTS
           </Button>
           <RemoveDuplicateTradesButton onRemoved={invalidateLedger} />
         </div>
@@ -671,7 +671,7 @@ export default function HistoryPage() {
 
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            RECENT PREDICTIONS
+            PREDICTION HISTORY
           </h2>
           {predictions && predictions.length > 0 && (
             <div className="flex items-center gap-3">

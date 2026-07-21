@@ -1,9 +1,7 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   useGetEvaluationDashboard,
   useListEvaluationRuns,
-  useRunWalkForward,
-  useRunOptimizer,
   useGetLatestPatternAnalysis,
   useGetLatestThresholdEvaluation,
   useRunPaperTradingCycle,
@@ -28,6 +26,7 @@ import {
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { UPSET_RISK_DOT_CLASS, UPSET_RISK_SHORT } from "@/lib/upsetRiskColors"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
@@ -38,6 +37,107 @@ import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey, getGetShadowReplayDashboardQueryKey } from "@workspace/api-client-react"
 import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical, ChevronDown, ChevronUp, Beaker, TrendingUp } from "lucide-react"
+
+// ── Stage A2: Async job polling for walk-forward and optimizer ────────────────────────────────────
+
+type AsyncJobState<T> =
+  | { phase: "idle" }
+  | { phase: "starting" }
+  | { phase: "running"; startedAt: string; detail?: string; matchesScored?: number }
+  | { phase: "done"; result: T }
+  | { phase: "error"; message: string }
+
+function getBaseUrl(): string {
+  return import.meta.env.BASE_URL?.replace(/\/$/, "") ?? ""
+}
+
+/**
+ * Generic hook for fire-and-poll jobs.
+ * POST the start endpoint, then poll the status endpoint every 5 s until done.
+ * Calls `onDone` when the job finishes successfully so callers can invalidate queries.
+ */
+function useAsyncJob<T>(opts: {
+  startPath: string
+  statusPath: string
+  onDone?: (result: T) => void
+}) {
+  const [state, setState] = useState<AsyncJobState<T>>({ phase: "idle" })
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  const poll = useCallback(async () => {
+    try {
+      const res = await fetch(`${getBaseUrl()}${opts.statusPath}`)
+      if (!res.ok) return
+      const data = await res.json() as { state: string; result?: T; error?: string; startedAt?: string; phase?: string; matchesScored?: number }
+      if (data.state === "done") {
+        stopPolling()
+        setState({ phase: "done", result: data.result as T })
+        opts.onDone?.(data.result as T)
+      } else if (data.state === "error") {
+        stopPolling()
+        setState({ phase: "error", message: data.error ?? "Unknown error" })
+      } else if (data.state === "running") {
+        setState({ phase: "running", startedAt: data.startedAt ?? "", detail: data.phase ?? undefined, matchesScored: data.matchesScored ?? undefined })
+      }
+    } catch {
+      // Network error — keep polling, don't surface until repeated
+    }
+  }, [opts, stopPolling])
+
+  const start = useCallback(async (body: Record<string, unknown> = {}) => {
+    if (state.phase === "starting" || state.phase === "running") return
+    setState({ phase: "starting" })
+    try {
+      const res = await fetch(`${getBaseUrl()}${opts.startPath}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json() as { started: boolean; reason?: string }
+      if (!res.ok || !data.started) {
+        setState({ phase: "error", message: data.reason ?? `HTTP ${res.status}` })
+        return
+      }
+      setState({ phase: "running", startedAt: new Date().toISOString() })
+      // Start polling immediately, then every 5 s
+      void poll()
+      pollRef.current = setInterval(() => { void poll() }, 5000)
+    } catch (err) {
+      setState({ phase: "error", message: err instanceof Error ? err.message : "Network error" })
+    }
+  }, [state.phase, opts.startPath, poll])
+
+  // On mount, check if a job is already running (e.g. after page refresh)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${getBaseUrl()}${opts.statusPath}`)
+        if (!res.ok) return
+        const data = await res.json() as { state: string; startedAt?: string; phase?: string; matchesScored?: number }
+        if (data.state === "running") {
+          setState({ phase: "running", startedAt: data.startedAt ?? "", detail: data.phase ?? undefined, matchesScored: data.matchesScored ?? undefined })
+          void poll()
+          pollRef.current = setInterval(() => { void poll() }, 5000)
+        }
+      } catch { /* ignore */ }
+    })()
+    return stopPolling
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reset = useCallback(() => {
+    stopPolling()
+    setState({ phase: "idle" })
+  }, [stopPolling])
+
+  return { state, start, reset }
+}
 
 /** Below this many graded rows, a tier's own numbers are too noisy to trust at face value --
  * mirrors the n<30 minimum-sample convention this dashboard already uses for the Elite tier
@@ -289,7 +389,7 @@ function EliteTierBacktestCard({ backtest }: { backtest: EliteTierBacktest }) {
   )
 }
 
-const UPSET_RISK_TIER_LABEL: Record<string, string> = { LOW: "Low", MODERATE: "Moderate", HIGH: "High", EXTREME: "Extreme" }
+const UPSET_RISK_TIER_LABEL = UPSET_RISK_SHORT
 const DISAGREEMENT_TIER_LABEL: Record<string, string> = { Strong: "Strong", Moderate: "Moderate", Mixed: "Mixed", HighDisagreement: "High Disagreement" }
 
 function UpsetRiskTierCard({ tiers }: { tiers: UpsetRiskTierMetrics[] }) {
@@ -324,7 +424,12 @@ function UpsetRiskTierCard({ tiers }: { tiers: UpsetRiskTierMetrics[] }) {
                 const lowConfidence = t.n < LOW_CONFIDENCE_TIER_SAMPLE
                 return (
                   <tr key={t.tier} className="hover:bg-secondary/30 transition-colors">
-                    <td className="py-4 px-6 font-mono font-bold text-foreground whitespace-nowrap text-base">{UPSET_RISK_TIER_LABEL[t.tier] ?? t.tier}</td>
+                    <td className="py-4 px-6 font-mono font-bold text-foreground whitespace-nowrap text-base">
+                      <span className="flex items-center gap-2">
+                        <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${UPSET_RISK_DOT_CLASS[t.tier] ?? "bg-muted-foreground"}`} />
+                        {UPSET_RISK_TIER_LABEL[t.tier] ?? t.tier}
+                      </span>
+                    </td>
                     <td className="py-4 px-6 font-mono tabular-nums text-right text-muted-foreground">n={t.n}</td>
                     <td className="py-4 px-6 font-mono font-bold tabular-nums text-right">
                       <div className="flex items-center justify-end gap-3">
@@ -827,27 +932,28 @@ export default function AccuracyDashboardPage() {
   const { data: patternAnalysis } = useGetLatestPatternAnalysis()
   const { data: thresholdEvaluation } = useGetLatestThresholdEvaluation()
 
-  const runWalkForward = useRunWalkForward({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
-        // Task #12: pattern analysis auto-runs after walk-forward
-        queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
-      },
+  // Stage A2: async job hooks — respond immediately, poll for status
+  const walkForwardJob = useAsyncJob<{ foldsRun: number; evaluationOnly: boolean; skippedNoEligibleMatches: boolean }>({
+    startPath: "/api/evaluation/walk-forward/run",
+    statusPath: "/api/evaluation/walk-forward/status",
+    onDone: () => {
+      queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
+      queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
+      queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
     },
   })
-  // Task #12: optimizer mutation (training mode)
-  const runOptimizer = useRunOptimizer({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getGetLatestThresholdEvaluationQueryKey() })
-      },
+
+  const optimizerJob = useAsyncJob<{ candidateConfigId: number; walkForward: { foldsRun: number } }>({
+    startPath: "/api/evaluation/optimizer/run",
+    statusPath: "/api/evaluation/optimizer/status",
+    onDone: () => {
+      queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
+      queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
+      queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
+      queryClient.invalidateQueries({ queryKey: getGetLatestThresholdEvaluationQueryKey() })
     },
   })
+
   const runPaperTrading = useRunPaperTradingCycle({
     mutation: {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() }),
@@ -906,26 +1012,38 @@ export default function AccuracyDashboardPage() {
             <div>
               <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase mb-1">WALK-FORWARD BACKTEST</div>
               <p className="text-xs text-muted-foreground/80 leading-relaxed">
-                Evaluation-only mode: scores all historical data against the <span className="font-bold text-foreground">frozen</span> production calibration — never updates any weights. Use "Run Optimizer" below to refit calibration and generate a candidate config.
+                Evaluation-only mode: scores all historical data against the <span className="font-bold text-foreground">frozen</span> production calibration — never updates any weights. Progress is shown live. Use "Run Optimizer" below to refit calibration and generate a candidate config.
               </p>
             </div>
-            <Button variant="accent" onClick={() => runWalkForward.mutate({ data: { evaluationOnly: true } })} disabled={runWalkForward.isPending} className="gap-2 shadow-md font-mono h-10 w-full sm:w-auto">
-              {runWalkForward.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-              RUN WALK-FORWARD
+            <Button
+              variant="accent"
+              onClick={() => { void walkForwardJob.start({ evaluationOnly: true }) }}
+              disabled={walkForwardJob.state.phase === "starting" || walkForwardJob.state.phase === "running"}
+              className="gap-2 shadow-md font-mono h-10 w-full sm:w-auto"
+            >
+              {(walkForwardJob.state.phase === "starting" || walkForwardJob.state.phase === "running")
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <PlayCircle className="w-4 h-4" />}
+              {walkForwardJob.state.phase === "starting" ? "QUEUING…" : walkForwardJob.state.phase === "running" ? "RUNNING…" : "RUN WALK-FORWARD"}
             </Button>
-            {runWalkForward.data && (
+            {walkForwardJob.state.phase === "running" && (
+              <p className="text-xs text-muted-foreground font-mono animate-pulse">
+                Walk-forward in progress — typically 20–60 min depending on corpus size.{walkForwardJob.state.matchesScored ? ` ${walkForwardJob.state.matchesScored.toLocaleString()} matches scored so far.` : ""} Results appear automatically when done.
+              </p>
+            )}
+            {walkForwardJob.state.phase === "done" && (
               <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
-                <span>FOLDS: <span className="text-foreground">{runWalkForward.data.foldsRun}</span></span>
+                <span>FOLDS: <span className="text-foreground">{walkForwardJob.state.result.foldsRun}</span></span>
                 <span className="text-border">•</span>
-                <span className={runWalkForward.data.evaluationOnly ? "text-success" : "text-warning"}>
-                  {runWalkForward.data.evaluationOnly ? "EVAL-ONLY (frozen)" : "TRAINING MODE"}
-                </span>
+                <span className="text-success">EVAL-ONLY (frozen)</span>
+                <button onClick={() => walkForwardJob.reset()} className="text-muted-foreground hover:text-foreground underline underline-offset-2 text-[10px]">dismiss</button>
               </div>
             )}
-            {runWalkForward.isError && (
-              <p className="text-xs text-destructive font-mono">
-                {runWalkForward.error instanceof Error ? runWalkForward.error.message : "Walk-forward failed. Check the API server is running."}
-              </p>
+            {walkForwardJob.state.phase === "error" && (
+              <div className="flex items-start gap-2">
+                <p className="text-xs text-destructive font-mono flex-1">{walkForwardJob.state.message}</p>
+                <button onClick={() => walkForwardJob.reset()} className="text-[10px] font-mono text-muted-foreground hover:text-foreground underline shrink-0">retry</button>
+              </div>
             )}
           </div>
 
@@ -936,27 +1054,41 @@ export default function AccuracyDashboardPage() {
                 Runs the full training walk-forward (refits calibration + specialist weights), writes a versioned candidate config, and scores threshold candidates. Takes 8–12 min. <span className="font-bold text-foreground">Production config is never auto-promoted.</span>
               </p>
             </div>
-            <Button variant="outline" onClick={() => runOptimizer.mutate({})} disabled={runOptimizer.isPending} className="gap-2 shadow-sm font-mono h-10 w-full sm:w-auto">
-              {runOptimizer.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Beaker className="w-4 h-4" />}
-              RUN OPTIMIZER
+            <Button
+              variant="outline"
+              onClick={() => { void optimizerJob.start({}) }}
+              disabled={optimizerJob.state.phase === "starting" || optimizerJob.state.phase === "running"}
+              className="gap-2 shadow-sm font-mono h-10 w-full sm:w-auto"
+            >
+              {(optimizerJob.state.phase === "starting" || optimizerJob.state.phase === "running")
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Beaker className="w-4 h-4" />}
+              {optimizerJob.state.phase === "starting" ? "QUEUING…" : optimizerJob.state.phase === "running" ? "OPTIMIZING…" : "RUN OPTIMIZER"}
             </Button>
-            {runOptimizer.data && (
+            {optimizerJob.state.phase === "running" && (
+              <p className="text-xs text-muted-foreground font-mono animate-pulse">
+                Optimizer running — refitting calibration + specialist weights. Takes 20–40 min.
+              </p>
+            )}
+            {optimizerJob.state.phase === "done" && (
               <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
-                <span>CANDIDATE: <span className="text-foreground">#{runOptimizer.data.candidateConfigId}</span></span>
+                <span>CANDIDATE: <span className="text-foreground">#{optimizerJob.state.result.candidateConfigId}</span></span>
                 <span className="text-border">•</span>
-                <span>FOLDS: <span className="text-foreground">{runOptimizer.data.walkForward.foldsRun}</span></span>
+                <span>FOLDS: <span className="text-foreground">{optimizerJob.state.result.walkForward.foldsRun}</span></span>
+                <button onClick={() => optimizerJob.reset()} className="text-muted-foreground hover:text-foreground underline underline-offset-2 text-[10px]">dismiss</button>
               </div>
             )}
-            {runOptimizer.isError && (
-              <p className="text-xs text-destructive font-mono">
-                {runOptimizer.error instanceof Error ? runOptimizer.error.message : "Optimizer failed. Check the API server is running."}
-              </p>
+            {optimizerJob.state.phase === "error" && (
+              <div className="flex items-start gap-2">
+                <p className="text-xs text-destructive font-mono flex-1">{optimizerJob.state.message}</p>
+                <button onClick={() => optimizerJob.reset()} className="text-[10px] font-mono text-muted-foreground hover:text-foreground underline shrink-0">retry</button>
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {runWalkForward.data?.skippedNoEligibleMatches && (
+      {walkForwardJob.state.phase === "done" && walkForwardJob.state.result.skippedNoEligibleMatches && (
         <Card className="border-warning bg-warning/5 shadow-sm">
           <CardContent className="p-5 text-sm font-medium text-warning-foreground flex items-center gap-3">
             <ShieldAlert className="w-5 h-5 text-warning shrink-0" />

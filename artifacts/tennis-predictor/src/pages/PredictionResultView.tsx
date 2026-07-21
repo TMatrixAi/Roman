@@ -69,7 +69,7 @@ export default function PredictionResultView() {
           onClick={() => setLocation(fromLedger ? "/history" : "/predict")}
         >
           <ChevronLeft className="w-4 h-4" />
-          {fromLedger ? "BACK TO LEDGER" : "BACK TO BUILD MATCH"}
+          {fromLedger ? "BACK TO HISTORY" : "BACK TO BUILD MATCH"}
         </Button>
       </div>
 

@@ -42,7 +42,7 @@ export function LedgerPlayerSearch({
       <div className="relative">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search players with recorded predictions..."
+          placeholder="Search players with saved predictions"
           className="pl-9 font-mono bg-card h-9 text-sm"
           value={query}
           onChange={(e) => {

@@ -18,7 +18,7 @@ export function SavedPredictionsLookup() {
     <div className="rounded-xl border border-border/60 bg-card/50 px-4 py-3 space-y-2.5">
       <div className="flex items-center gap-2 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
         <UserSearch className="w-3.5 h-3.5 shrink-0" />
-        Find a Player's Saved Matches
+        Search Prediction History
       </div>
       <LedgerPlayerSearch onSelect={goToPlayer} slim />
     </div>

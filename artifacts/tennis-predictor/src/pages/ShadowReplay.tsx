@@ -78,7 +78,7 @@ export default function ShadowReplayPage() {
       <div className="flex items-start justify-between gap-4 border-b border-border/50 pb-6">
         <div>
           <h1 className="text-4xl font-display font-bold tracking-tight flex items-center gap-3">
-            Shadow Trading
+            Paper Trading
             <Badge variant="outline" className="font-mono text-xs normal-case">Simulated</Badge>
           </h1>
           <p className="text-muted-foreground mt-2 text-lg">
@@ -100,7 +100,7 @@ export default function ShadowReplayPage() {
 
       {isEmpty ? (
         <div className="py-16 text-center border border-dashed rounded-xl text-muted-foreground font-mono text-xs tracking-widest uppercase">
-          No shadow trading data yet
+          No paper trading data yet
         </div>
       ) : (
         <>

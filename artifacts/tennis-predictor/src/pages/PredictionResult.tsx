@@ -11,6 +11,9 @@ import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type 
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown } from "lucide-react"
 import { useState } from "react"
+import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
+
+const UPSET_RISK_SHORT_LABEL = UPSET_RISK_SHORT
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 
 const AGREEMENT_STYLES: Record<string, string> = {
@@ -304,7 +307,12 @@ export default function PredictionResultPage() {
                 </div>
                 <div className="p-5 bg-background rounded-2xl border border-border shadow-sm">
                   <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2 tracking-widest uppercase">UPSET RISK</p>
-                  <p className="text-3xl font-display font-bold text-accent tabular-nums">{prediction.upsetRisk}</p>
+                  <div className={`text-2xl font-display font-bold tabular-nums mb-1 ${UPSET_RISK_TEXT_CLASS[prediction.upsetRisk] ?? "text-accent"}`}>
+                    {UPSET_RISK_SHORT_LABEL[prediction.upsetRisk] ?? prediction.upsetRisk}
+                  </div>
+                  <span className={upsetRiskBadgeClasses(prediction.upsetRisk)}>
+                    {UPSET_RISK_LABEL[prediction.upsetRisk] ?? prediction.upsetRisk}
+                  </span>
                   <p className="text-xs mt-2 text-muted-foreground/80 leading-snug">
                     {engine.upsetRiskBreakdown?.note ?? "Not available for predictions made before this breakdown existed."}
                   </p>

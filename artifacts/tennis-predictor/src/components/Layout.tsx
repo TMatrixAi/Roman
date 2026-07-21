@@ -7,18 +7,18 @@ import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X,
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/predict", label: "Run Model", icon: PlaySquare, exact: false },
-  { href: "/history", label: "Ledger", icon: History, exact: false },
+  { href: "/history", label: "History", icon: History, exact: false },
   { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
-  { href: "/shadow-replay", label: "Shadow Trading", icon: Ghost, exact: false },
+  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
 ]
 
 const MOBILE_LABELS: Record<string, string> = {
   "Dashboard": "Home",
   "Prediction Log": "Log",
   "Backtesting": "Backtest",
-  "Shadow Trading": "Shadow",
+  "Paper Trading": "Paper",
 }
 
 function isActive(href: string, location: string, exact: boolean) {

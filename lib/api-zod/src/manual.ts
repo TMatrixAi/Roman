@@ -137,6 +137,90 @@ export const SeedPlayerStatsResponse = zod.object({
   message: zod.string(),
 });
 
+// ── Stage A2: Async job wrappers for walk-forward and optimizer ───────────────────────────────────
+
+/**
+ * Response from POST /evaluation/walk-forward/run (now fires the job in the background).
+ * Returns immediately so the browser never hits a proxy timeout.
+ */
+export const StartWalkForwardResponse = zod.object({
+  started: zod.boolean(),
+  reason: zod.string().optional(),
+});
+
+/**
+ * Response from GET /evaluation/walk-forward/status.
+ * Mirrors the ablation job pattern (startAblationJob / getAblationJobStatus).
+ */
+export const WalkForwardJobStatusResponse = zod.discriminatedUnion("state", [
+  zod.object({ state: zod.literal("idle") }),
+  zod.object({
+    state: zod.literal("running"),
+    startedAt: zod.string(),
+    evaluationOnly: zod.boolean(),
+    matchesScored: zod.number(),
+  }),
+  zod.object({
+    state: zod.literal("done"),
+    startedAt: zod.string(),
+    finishedAt: zod.string(),
+    evaluationOnly: zod.boolean(),
+    result: zod.object({
+      foldsRun: zod.number(),
+      foldIds: zod.array(zod.number()),
+      skippedNoEligibleMatches: zod.boolean(),
+      fallbackRate: zod.number(),
+      warnings: zod.array(zod.string()),
+      evaluationOnly: zod.boolean(),
+    }),
+  }),
+  zod.object({
+    state: zod.literal("error"),
+    startedAt: zod.string(),
+    finishedAt: zod.string(),
+    evaluationOnly: zod.boolean(),
+    error: zod.string(),
+  }),
+]);
+
+/** Response from POST /evaluation/optimizer/run (fires in background). */
+export const StartOptimizerResponse = zod.object({
+  started: zod.boolean(),
+  reason: zod.string().optional(),
+});
+
+/** Response from GET /evaluation/optimizer/status. */
+export const OptimizerJobStatusResponse = zod.discriminatedUnion("state", [
+  zod.object({ state: zod.literal("idle") }),
+  zod.object({
+    state: zod.literal("running"),
+    startedAt: zod.string(),
+    phase: zod.string(),
+  }),
+  zod.object({
+    state: zod.literal("done"),
+    startedAt: zod.string(),
+    finishedAt: zod.string(),
+    result: zod.object({
+      candidateConfigId: zod.number(),
+      thresholdEvaluationId: zod.number(),
+      walkForward: zod.object({
+        foldsRun: zod.number(),
+        foldIds: zod.array(zod.number()),
+        skippedNoEligibleMatches: zod.boolean(),
+        fallbackRate: zod.number(),
+        warnings: zod.array(zod.string()),
+      }),
+    }),
+  }),
+  zod.object({
+    state: zod.literal("error"),
+    startedAt: zod.string(),
+    finishedAt: zod.string(),
+    error: zod.string(),
+  }),
+]);
+
 // ── Task #64: live backfill status polling ────────────────────────────────────────────────────────
 
 /**

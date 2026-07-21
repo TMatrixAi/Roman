@@ -59,12 +59,16 @@ import {
   GetHistoricalDataFreshnessResponse,
   GetRankingVerificationResponse,
   RunOptimizerBody,
-  RunOptimizerResponse,
   GetLatestPatternAnalysisResponse,
   GetLatestThresholdEvaluationResponse,
+  StartWalkForwardResponse,
+  WalkForwardJobStatusResponse,
+  StartOptimizerResponse,
+  OptimizerJobStatusResponse,
 } from "@workspace/api-zod";
 import { runRankingVerification } from "../services/historicalData/rankingVerification";
-import { runOptimizerRun } from "../services/evaluation/candidateOptimizer";
+import { startWalkForwardJob, getWalkForwardJobStatus } from "../services/evaluation/walkForwardJob";
+import { startOptimizerJob, getOptimizerJobStatus } from "../services/evaluation/optimizerJob";
 import { getLatestPatternAnalysis } from "../services/evaluation/patternAnalysis";
 import { getLatestThresholdEvaluation } from "../services/evaluation/thresholdEvaluation";
 
@@ -88,14 +92,33 @@ router.get("/evaluation/runs", async (_req, res): Promise<void> => {
   res.json(ListEvaluationRunsResponse.parse(rows));
 });
 
+/**
+ * Stage A2: Fire walk-forward in the background, respond immediately so the browser
+ * never hits the Replit proxy timeout. Poll GET /evaluation/walk-forward/status.
+ */
 router.post("/evaluation/walk-forward/run", async (req, res): Promise<void> => {
   const parsed = RunWalkForwardBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const summary = await runWalkForwardEvaluation(parsed.data);
-  res.json(RunWalkForwardResponse.parse(summary));
+  const result = startWalkForwardJob(parsed.data);
+  res.json(StartWalkForwardResponse.parse(result));
+});
+
+router.get("/evaluation/walk-forward/status", async (_req, res): Promise<void> => {
+  const status = getWalkForwardJobStatus();
+  if (status.state === "running") {
+    // Pull a live DB count so the UI can show real progress without requiring a progress callback
+    // wired through the entire walk-forward stack.
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(evaluationPredictionsTable)
+      .where(eq(evaluationPredictionsTable.runKind, "historical_test"));
+    res.json(WalkForwardJobStatusResponse.parse({ ...status, matchesScored: count ?? 0 }));
+    return;
+  }
+  res.json(WalkForwardJobStatusResponse.parse(status));
 });
 
 router.get("/evaluation/predictions", async (req, res): Promise<void> => {
@@ -498,26 +521,22 @@ router.post("/evaluation/ranking-verification", async (_req, res): Promise<void>
  * evaluation. The production calibration/specialist weights ARE updated by this call
  * (training mode, unlike the evaluation-only walk-forward).
  */
+/**
+ * Stage A2: Fire optimizer in the background, respond immediately.
+ * Poll GET /evaluation/optimizer/status for progress and result.
+ */
 router.post("/evaluation/optimizer/run", async (req, res): Promise<void> => {
   const parsed = RunOptimizerBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const result = await runOptimizerRun(parsed.data);
-  res.json(
-    RunOptimizerResponse.parse({
-      candidateConfigId: result.candidateConfigId,
-      thresholdEvaluationId: result.thresholdEvaluationId,
-      walkForward: {
-        foldsRun: result.walkForwardSummary.foldsRun,
-        foldIds: result.walkForwardSummary.foldIds,
-        skippedNoEligibleMatches: result.walkForwardSummary.skippedNoEligibleMatches,
-        fallbackRate: result.walkForwardSummary.fallbackRate,
-        warnings: result.walkForwardSummary.warnings,
-      },
-    }),
-  );
+  const result = startOptimizerJob(parsed.data);
+  res.json(StartOptimizerResponse.parse(result));
+});
+
+router.get("/evaluation/optimizer/status", (_req, res): void => {
+  res.json(OptimizerJobStatusResponse.parse(getOptimizerJobStatus()));
 });
 
 /**

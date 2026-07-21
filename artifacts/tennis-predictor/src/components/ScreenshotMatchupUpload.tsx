@@ -1,9 +1,9 @@
 import { useRef, useState } from "react"
-import { useRecognizeMatchupScreenshot, type ScreenshotMatchupResult, type Surface, type TournamentLevel } from "@workspace/api-client-react"
+import { type ScreenshotMatchupResult, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { ImagePlus, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { ImagePlus, RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react"
 
 function fileToBase64DataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -12,6 +12,19 @@ function fileToBase64DataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
+}
+
+function getBaseUrl(): string {
+  return import.meta.env.BASE_URL?.replace(/\/$/, "") ?? ""
+}
+
+interface ScreenshotError {
+  /** User-facing summary (one line) */
+  message: string
+  /** Specific reason from the backend (e.g. which provider failed, quota exhaustion) */
+  detail?: string
+  /** Stage-by-stage pipeline trace — shown in expandable log */
+  debugLog?: string[]
 }
 
 export function ScreenshotMatchupUpload({
@@ -33,37 +46,65 @@ export function ScreenshotMatchupUpload({
   onMultipleFiles?: (files: File[]) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [error, setError] = useState<string | null>(null)
+  const lastFileRef = useRef<File | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<ScreenshotError | null>(null)
+  const [showDebugLog, setShowDebugLog] = useState(false)
   const [lastResult, setLastResult] = useState<ScreenshotMatchupResult | null>(null)
-  const recognize = useRecognizeMatchupScreenshot()
 
   const handleFile = async (file: File) => {
     setError(null)
     setLastResult(null)
+    setShowDebugLog(false)
+    lastFileRef.current = file
+    setIsLoading(true)
     try {
       const imageBase64 = await fileToBase64DataUrl(file)
-      recognize.mutate(
-        { data: { imageBase64 } },
-        {
-          onSuccess: (result) => {
-            setLastResult(result)
-            onResolved({
-              player1: result.player1,
-              player2: result.player2,
-              surface: result.event.surface ?? null,
-              level: result.event.level ?? null,
-              eventName: result.event.recognizedName,
-              warnings: result.warnings,
-            })
-          },
-          onError: () => {
-            setError("Couldn't read that screenshot. Try a clearer image, or use Search Players below.")
-          },
-        },
-      )
-    } catch {
-      setError("Couldn't load that file. Try a different image.")
+      const res = await fetch(`${getBaseUrl()}/api/matchups/from-screenshot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      })
+      if (!res.ok) {
+        let detail: string | undefined
+        let debugLog: string[] | undefined
+        try {
+          const body = await res.json() as { error?: string; detail?: string; debugLog?: string[] }
+          detail = body.detail ?? body.error
+          debugLog = body.debugLog
+        } catch { /* body not JSON */ }
+        setError({
+          message: res.status === 502
+            ? "Screenshot AI is unavailable — all configured AI providers failed."
+            : `Screenshot processing failed (HTTP ${res.status}).`,
+          detail,
+          debugLog,
+        })
+        return
+      }
+      const result = await res.json() as ScreenshotMatchupResult & { debugLog?: string[]; rawText?: string }
+      setLastResult(result)
+      onResolved({
+        player1: result.player1,
+        player2: result.player2,
+        surface: result.event.surface ?? null,
+        level: result.event.level ?? null,
+        eventName: result.event.recognizedName,
+        warnings: result.warnings,
+      })
+    } catch (err) {
+      setError({
+        message: err instanceof TypeError && err.message.includes("fetch")
+          ? "Network error — check your connection and try again."
+          : "Couldn't load that file. Try a different image.",
+      })
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  const handleRetry = () => {
+    if (lastFileRef.current) void handleFile(lastFileRef.current)
   }
 
   return (
@@ -102,10 +143,10 @@ export function ScreenshotMatchupUpload({
             variant="outline"
             size="sm"
             className="font-mono"
-            disabled={recognize.isPending}
+            disabled={isLoading}
             onClick={() => inputRef.current?.click()}
           >
-            {recognize.isPending ? (
+            {isLoading ? (
               <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> READING...</>
             ) : (
               <><ImagePlus className="w-4 h-4 mr-2" /> UPLOAD SCREENSHOT</>
@@ -114,9 +155,43 @@ export function ScreenshotMatchupUpload({
         </div>
 
         {error && (
-          <div className="mt-4 p-3 border border-destructive/30 bg-destructive/10 text-destructive text-sm rounded-md font-mono flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>{error}</div>
+          <div className="mt-4 space-y-2">
+            <div className="p-3 border border-destructive/30 bg-destructive/10 text-destructive text-sm rounded-md font-mono">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold">{error.message}</p>
+                  {error.detail && <p className="text-xs mt-1 opacity-80">{error.detail}</p>}
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {lastFileRef.current && (
+                  <button
+                    onClick={handleRetry}
+                    disabled={isLoading}
+                    className="flex items-center gap-1 text-xs font-mono px-2 py-1 rounded border border-destructive/30 hover:bg-destructive/10 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Retry
+                  </button>
+                )}
+                {error.debugLog && error.debugLog.length > 0 && (
+                  <button
+                    onClick={() => setShowDebugLog((v) => !v)}
+                    className="flex items-center gap-1 text-xs font-mono px-2 py-1 rounded border border-destructive/30 hover:bg-destructive/10 transition-colors"
+                  >
+                    {showDebugLog ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    {showDebugLog ? "Hide" : "Show"} diagnostic log ({error.debugLog.length} entries)
+                  </button>
+                )}
+              </div>
+            </div>
+            {showDebugLog && error.debugLog && (
+              <div className="rounded-md border border-border bg-muted/40 p-3 max-h-48 overflow-y-auto space-y-1">
+                {error.debugLog.map((line, i) => (
+                  <p key={i} className="text-[10px] font-mono text-muted-foreground leading-relaxed">{line}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

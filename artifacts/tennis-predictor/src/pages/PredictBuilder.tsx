@@ -209,7 +209,7 @@ export default function PredictBuilderPage() {
     <div className="space-y-4 sm:space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-2 border-b border-border/50 pb-4">
         <div>
-          <h1 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Build Matchup"}</h1>
+          <h1 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">{wasAutoDetected ? "Custom Match" : "Run Model"}</h1>
           <p className="text-muted-foreground mt-1 text-sm sm:text-lg">
             {wasAutoDetected
               ? "Terrain and tournament auto-detected from the fixture — adjust anything below before running the engine."

@@ -1,9 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { useLocation } from "wouter"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { FixturesList, type FixturesListHandle, type TourFilter } from "@/components/FixturesList"
-import { PlayerSearch } from "@/components/PlayerSearch"
 import { Select } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { ActivitySquare, ArrowRight, BarChart2, PlaySquare, Swords } from "lucide-react"
@@ -79,21 +77,21 @@ export default function Home() {
               onClick={() => setLocation("/history")}
               className="bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground hover:bg-primary-foreground/20 border border-primary-foreground/10 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all hover:-translate-y-1"
             >
-              VIEW LEDGER
+              PREDICTION HISTORY
             </button>
             <button
               onClick={() => setLocation("/predict")}
               className="bg-accent text-accent-foreground px-8 py-4 rounded-xl font-bold font-mono text-sm hover:brightness-110 shadow-lg shadow-accent/20 transition-all flex items-center gap-2 hover:-translate-y-1"
             >
               <PlaySquare className="w-4 h-4" />
-              BUILD MATCHUP
+              RUN MODEL
             </button>
             <button
               onClick={() => setLocation("/shadow-replay")}
               className="bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground hover:bg-primary-foreground/20 border border-primary-foreground/10 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all flex items-center gap-2 hover:-translate-y-1"
             >
               <BarChart2 className="w-4 h-4" />
-              SHADOW TRADING
+              PAPER TRADING
             </button>
           </div>
           <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-primary-foreground/10 mt-8">
@@ -155,39 +153,23 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-8">
-        <section className="space-y-6">
-          <div className="flex items-center justify-between border-b border-border/50 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Swords className="w-5 h-5 text-primary" />
-              </div>
-              <h2 className="text-2xl font-bold font-display">Upcoming Fixtures</h2>
+      <section className="space-y-6">
+        <div className="flex items-center justify-between border-b border-border/50 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Swords className="w-5 h-5 text-primary" />
             </div>
-            <Badge variant="outline" className="font-mono text-[10px]">LIVE DATA</Badge>
+            <h2 className="text-2xl font-bold font-display">Upcoming Fixtures</h2>
           </div>
-          <FixturesList
-            ref={fixturesRef}
-            tourFilter={appliedTourFilter}
-            tournamentFilter={appliedTournamentFilter}
-            onTournamentsChange={setAllTournamentEntries}
-          />
-        </section>
-
-        <section className="space-y-6">
-          <div className="flex items-center gap-3 border-b border-border/50 pb-4">
-            <div className="p-2 bg-secondary rounded-lg">
-              <ActivitySquare className="w-5 h-5 text-secondary-foreground" />
-            </div>
-            <h2 className="text-2xl font-bold font-display">Player Lookup</h2>
-          </div>
-          <Card className="border-border shadow-md glass-panel">
-            <CardContent className="pt-6">
-              <PlayerSearch onSelect={(player) => setLocation(`/predict?p1=${player.id}`)} />
-            </CardContent>
-          </Card>
-        </section>
-      </div>
+          <Badge variant="outline" className="font-mono text-[10px]">LIVE DATA</Badge>
+        </div>
+        <FixturesList
+          ref={fixturesRef}
+          tourFilter={appliedTourFilter}
+          tournamentFilter={appliedTournamentFilter}
+          onTournamentsChange={setAllTournamentEntries}
+        />
+      </section>
     </div>
   )
 }
