@@ -1,0 +1,726 @@
+Task — Build a Dedicated Launch Audit & Live API Monitoring Page
+
+What & Why
+
+Create a completely separate in-app page called:
+
+Launch Audit
+
+This page should act as the central control center for checking whether the entire application is ready for production.
+
+It must not be placed inside another dashboard, hidden under an existing panel, or mixed into the Accuracy Dashboard.
+
+The page should provide two things:
+
+1. A full on-demand Launch Readiness Audit when I press one button.
+2. Continuous live monitoring of all connected APIs, showing which providers are currently active, healthy, failing, unused, or serving as fallbacks.
+
+Do not change prediction formulas, weights, calibration, recommendation logic, or model behavior as part of this task.
+
+This task is operational monitoring, auditing, reporting, and production readiness only.
+
+PAGE LOCATION
+
+Add a dedicated page named:
+
+Launch Audit
+
+It should be accessible from the Developer/Admin area of the app.
+
+Do not place it in the public user navigation.
+
+Do not add it to the normal prediction workflow.
+
+Restrict access to Owner/Admin accounts.
+
+PAGE HEADER
+
+Display:
+
+Launch Audit
+
+Subtitle:
+
+Run a complete production-readiness check and monitor all active data providers.
+
+At the top of the page include:
+
+- Overall System Status
+- Last Full Audit timestamp
+- Current production engine version
+- Current calibration version
+- Current active configuration version
+- Latest deployment timestamp
+- Current environment: Development / Staging / Production
+- Number of unresolved Critical findings
+- Number of unresolved High findings
+
+MAIN ACTION BUTTON
+
+Add one primary button:
+
+Run Full Launch Audit
+
+When pressed, it should execute a complete read-only audit across the entire application.
+
+The audit must not change production data, weights, calibration, thresholds, engine settings, subscriptions, or provider priorities.
+
+Display progress while the audit runs.
+
+Example progress stages:
+
+1. Checking prediction engine
+2. Checking database
+3. Checking APIs and providers
+4. Checking background jobs
+5. Checking grading
+6. Checking Walk-Forward
+7. Checking Shadow Replay
+8. Checking calibration
+9. Checking subscriptions and payments
+10. Checking security
+11. Checking mobile UI and routes
+12. Checking monitoring and rollback readiness
+13. Generating final report
+
+FULL AUDIT CATEGORIES
+
+The audit should check all of the following.
+
+1. Prediction Engine
+
+Verify:
+
+- Engine loads successfully
+- Current engine version is recorded
+- Current calibration version is recorded
+- Current configuration version is recorded
+- Identical inputs return identical outputs
+- Recommendation logic does not produce invalid combinations
+- Tie-break matches cannot receive a strong recommendation
+- Missing-data rules are active
+- Stale-data rules are active
+- Force Signal predictions remain isolated
+- Production prediction path is using the expected active configuration
+- No inactive or deprecated module is unexpectedly being called
+
+2. Database
+
+Verify:
+
+- Database connection is healthy
+- All required tables exist
+- All expected migrations completed
+- No failed migrations
+- No missing required indexes
+- No obvious duplicate prediction rows
+- No orphaned records
+- No broken foreign-key relationships
+- Candidate configurations are versioned
+- Active production config is identifiable
+- Specialist model rows exist where expected
+- Player stats cache is populated
+- Latest backup timestamp is available
+- Storage growth is within acceptable limits
+
+3. Live APIs and Data Providers
+
+Create a permanent live API monitoring section.
+
+For every configured provider display:
+
+- Provider name
+- Provider type
+- Purpose
+- Currently enabled: Yes / No
+- Currently in use: Yes / No
+- Primary or fallback
+- Last successful request
+- Last failed request
+- Current health
+- Average latency
+- Error rate
+- Requests today
+- Missing-field rate
+- Rate-limit status
+- Remaining quota if available
+- Last response status
+- Last schema-change warning
+- Current active endpoints
+- Which app features depend on it
+
+Provider health statuses:
+
+- Healthy
+- Degraded
+- Warning
+- Critical
+- Disabled
+- Unused
+- Rate Limited
+- Authentication Failed
+- Schema Changed
+- No Recent Traffic
+
+The page must clearly identify:
+
+- Which provider is supplying live fixtures
+- Which provider supplies historical matches
+- Which provider supplies rankings
+- Which provider supplies H2H
+- Which provider supplies match statistics
+- Which provider supplies results
+- Which provider supplies odds, if enabled
+- Which provider supplies locations or coordinates
+- Which fallback provider would be used if the primary fails
+
+Do not mark a provider as “in use” merely because an API key exists.
+
+“In use” means the application has successfully called it recently or an active service is configured to route requests through it.
+
+Add a button:
+
+Test All Providers
+
+This should make safe, lightweight health-check calls without consuming large quotas.
+
+Add a button beside each provider:
+
+Test Provider
+
+Display the exact result without exposing secret keys.
+
+4. Background Jobs
+
+Verify:
+
+- Outcome grading job
+- Historical import job
+- Player stats refresh
+- Ranking refresh
+- Calibration job
+- Drift monitoring
+- Provider health checks
+- Backup jobs
+- Scheduled reports
+- Queue workers
+
+For each job display:
+
+- Last run
+- Last successful run
+- Last failure
+- Current status
+- Next scheduled run
+- Average duration
+- Error count
+- Retry count
+- Whether it is currently stuck
+
+5. Outcome Grading
+
+Verify:
+
+- Completed matches are being graded
+- Pending matches remain pending
+- Cancelled matches are not graded as losses
+- Walkovers follow the configured rule
+- Retirements follow the configured rule
+- No prediction is graded twice
+- Missed outcomes are separated
+- Force Signal predictions are excluded from normal learning
+- Only locked pre-match predictions enter evaluation datasets
+
+6. Walk-Forward
+
+Verify:
+
+- Evaluation-only mode works
+- Evaluation-only runs do not change production calibration
+- Full historical folds are accessible
+- Latest run completed
+- Latest metrics are available
+- No data leakage detected
+- Known-bad pre-cascade rows are excluded when required
+- Candidate runs write new candidate records
+- Production configuration remains unchanged
+
+Display latest:
+
+- Accuracy
+- Log loss
+- Brier score
+- ECE
+- Fold count
+- Test sample size
+- Extreme disagreement rate
+- 50–55% bucket accuracy
+- 80%+ bucket calibration gap
+
+7. Shadow Replay
+
+Verify:
+
+- Shadow Replay loads
+- Latest run completed
+- Predictions are stored separately from production
+- Results can be compared with the Champion model
+- No shadow candidate affects production
+- Replay uses historically correct data snapshots when available
+
+Display:
+
+- Latest batch
+- Sample size
+- Accuracy
+- Log loss
+- Brier
+- ECE
+- P&L if odds are available
+- Candidate vs Champion comparison
+
+8. Calibration
+
+Verify:
+
+- Active calibration exists
+- Calibration version is recorded
+- Training rows are valid
+- Exclusion rules are applied
+- No evaluation rows entered training
+- Bucket sample sizes are available
+- No bucket exceeds the configured gap threshold without a warning
+
+Display calibration by bucket:
+
+- 50–55
+- 55–60
+- 60–65
+- 65–70
+- 70–75
+- 75–80
+- 80+
+
+For each show:
+
+- Average predicted probability
+- Observed accuracy
+- Gap
+- Sample size
+- Status
+
+9. Accuracy and Model Health
+
+Display:
+
+- Overall accuracy
+- Recent 30-day accuracy
+- Accuracy by ATP
+- Accuracy by WTA
+- Accuracy by Challenger
+- Accuracy by ITF
+- Accuracy by Hard
+- Accuracy by Clay
+- Accuracy by Grass
+- Accuracy by Indoor Hard
+- Elite performance
+- Strong Recommendation performance
+- Tier 1 performance
+- No Strong Signal performance
+- Extreme disagreement performance
+- Drift warnings
+- Prediction distribution by probability bucket
+
+10. Subscription and Payment Readiness
+
+Verify:
+
+- Free plan limits
+- Pro plan permissions
+- Elite plan permissions
+- Team plan permissions
+- Owner/Admin bypass
+- Trial expiration behavior
+- Failed-payment downgrade behavior
+- Cancellation behavior
+- Upgrade behavior
+- Webhook processing
+- Billing provider health
+- Direct-route protection
+- API-level permission enforcement
+
+Do not make test charges during the audit.
+
+Use safe test or configuration checks only.
+
+11. Security
+
+Verify:
+
+- Authentication is enabled
+- Authorization is enforced server-side
+- Admin pages are restricted
+- Secrets are not exposed to the client
+- Environment variables exist
+- API endpoints are protected
+- Rate limiting exists where needed
+- Input validation exists
+- Search and paste inputs are sanitized
+- SQL injection defenses
+- XSS defenses
+- CSRF protections where applicable
+- Secure cookies/session settings
+- Dependency vulnerability scan status
+
+Do not display actual secret values.
+
+12. UI, Routes and Mobile
+
+Verify:
+
+- All expected routes load
+- No broken navigation
+- No blank pages
+- No missing components
+- No overflow on common phone widths
+- Buttons are usable on mobile
+- Loading states exist
+- Error states exist
+- Dark mode works
+- Light mode works
+- Force Signal Ledger remains separate
+- Build Matchup tabs work
+- Player Search works
+- Paste Search works
+- Bulk Upload works
+- Screenshot import works
+- Accuracy Dashboard works
+- Developer tools load correctly
+
+13. Performance
+
+Measure:
+
+- Average prediction runtime
+- Average Monte Carlo runtime
+- API latency
+- Database query latency
+- Player profile loading time
+- Search response time
+- Paste Search processing time
+- Bulk Upload processing time
+- Memory usage
+- CPU usage
+- Queue delay
+- Mobile page-load performance
+
+Flag any measurement that exceeds configured thresholds.
+
+14. Logging, Monitoring and Rollbacks
+
+Verify:
+
+- Prediction logs exist
+- Deployment logs exist
+- Calibration-change logs exist
+- Candidate-promotion logs exist
+- Provider failure logs exist
+- Admin action logs exist
+- Rollback version exists
+- Previous production config is recoverable
+- Database backup is available
+- Monitoring alerts are configured
+- Critical failures generate alerts
+
+15. Documentation
+
+Verify expected documentation exists for:
+
+- Prediction engine
+- Recommendation rules
+- Database schema
+- APIs
+- Providers
+- Background jobs
+- Calibration
+- Walk-Forward
+- Shadow Replay
+- Candidate configs
+- Subscriptions
+- Security
+- Deployment
+- Rollback
+- Backup and restore
+
+AUDIT FINDING FORMAT
+
+Every finding must include:
+
+- Category
+- Check name
+- Status
+- Severity
+- Evidence
+- Expected result
+- Actual result
+- Recommended action
+- Related service or file
+- Timestamp
+
+Severity levels:
+
+- Critical
+- High
+- Medium
+- Low
+- Informational
+
+Status values:
+
+- Pass
+- Warning
+- Fail
+- Not Configured
+- Not Applicable
+- Unable to Verify
+
+Do not label something as passing unless it was actually checked.
+
+LIVE DASHBOARD
+
+The page should continue showing live operational information even when a full audit is not running.
+
+Add cards for:
+
+- Engine status
+- Database status
+- API/provider status
+- Background-job status
+- Grading status
+- Queue status
+- Latest Walk-Forward
+- Latest Shadow Replay
+- Calibration status
+- Security warnings
+- Backup status
+- Current deployment
+
+Refresh behavior:
+
+- Auto-refresh lightweight health information every 60 seconds
+- Manual Refresh button
+- Do not automatically run the full audit every 60 seconds
+- Full audit runs only when manually requested or through an approved scheduled audit
+
+API MONITORING TABLE
+
+Create a mobile-friendly API monitoring section with expandable provider cards.
+
+Collapsed card should show:
+
+- Provider name
+- Health status
+- Primary/fallback
+- In use or unused
+- Last successful call
+- Latency
+- Error rate
+
+Expanded card should show:
+
+- Services using it
+- Endpoints being called
+- Request volume
+- Quota
+- Recent errors
+- Missing fields
+- Last schema warning
+- Last authentication failure
+- Fallback routing
+- Recent response codes
+
+Add filters:
+
+- All
+- In Use
+- Primary
+- Fallback
+- Healthy
+- Warning
+- Critical
+- Disabled
+
+AUDIT HISTORY
+
+Store every completed audit in a launch_audit_runs table or equivalent.
+
+Store:
+
+- Audit ID
+- Started at
+- Completed at
+- Requested by
+- Engine version
+- Calibration version
+- Config version
+- Overall status
+- Pass count
+- Warning count
+- Fail count
+- Critical count
+- High count
+- Full results JSON
+- Report file location if generated
+
+Add an Audit History section.
+
+Allow:
+
+- View previous audit
+- Compare two audits
+- Download or open report
+- Filter by date
+- Filter by overall status
+
+FINAL SCORECARD
+
+At the top of each completed audit display:
+
+Overall Launch Readiness
+
+Possible statuses:
+
+- Ready
+- Ready With Warnings
+- Not Ready
+- Audit Incomplete
+
+Also display category scores:
+
+- Prediction Engine
+- Data
+- APIs
+- Validation
+- Grading
+- Security
+- Payments
+- Performance
+- UI
+- Operations
+
+Do not use one simple average to hide Critical failures.
+
+Any unresolved Critical finding must force:
+
+Not Ready
+
+Any unresolved High finding should normally force:
+
+Not Ready
+
+unless it is explicitly marked as an accepted launch exception by the Owner with a written reason.
+
+REPORT
+
+Generate a report after every full audit.
+
+Preferred file:
+
+docs/launch-audit/latest-launch-audit.md
+
+Also preserve timestamped reports, for example:
+
+docs/launch-audit/launch-audit-2026-07-18-143000.md
+
+The report must include:
+
+1. Executive summary
+2. Overall readiness
+3. Version information
+4. Critical findings
+5. High findings
+6. API/provider status
+7. Prediction-engine checks
+8. Validation checks
+9. Data and database checks
+10. Subscription and payment checks
+11. Security checks
+12. Performance checks
+13. UI/mobile checks
+14. Monitoring and rollback checks
+15. Recommended actions
+16. Final launch decision
+
+ACCESS CONTROL
+
+Only Owner/Admin accounts may:
+
+- Open the Launch Audit page
+- Run a full audit
+- Test providers
+- View detailed infrastructure failures
+- View audit history
+- Accept a launch exception
+
+Never expose:
+
+- API secrets
+- Tokens
+- Database credentials
+- Private environment variables
+- Payment secrets
+
+ACCEPTANCE TESTS
+
+✓ Launch Audit exists as its own dedicated page.
+
+✓ It is accessible only to Owner/Admin accounts.
+
+✓ Run Full Launch Audit executes a read-only audit.
+
+✓ The audit checks all required categories.
+
+✓ Live API monitoring shows every configured provider.
+
+✓ Providers are correctly labeled as primary, fallback, active, unused, disabled, healthy, degraded, or failing.
+
+✓ The page shows which providers are currently being used by the app.
+
+✓ Test Provider works without exposing credentials.
+
+✓ Test All Providers uses lightweight health checks.
+
+✓ Live health cards refresh without rerunning the full audit.
+
+✓ Audit results are saved historically.
+
+✓ Previous audits can be opened.
+
+✓ Critical findings force Not Ready status.
+
+✓ The audit never changes production model settings.
+
+✓ The audit never deploys a candidate.
+
+✓ The audit never changes calibration.
+
+✓ The audit never makes a real payment.
+
+✓ The page works cleanly on a phone.
+
+FINAL DELIVERY
+
+At completion, return:
+
+- Files changed
+- Database migrations added
+- New routes and endpoints
+- New background health checks
+- New tests
+- Commands run
+- Screenshot or summary of the Launch Audit page
+- List of all providers detected
+- Which providers are currently active
+- Which providers are fallbacks
+- Which providers are configured but unused
+- Any audit checks that could not be implemented and why

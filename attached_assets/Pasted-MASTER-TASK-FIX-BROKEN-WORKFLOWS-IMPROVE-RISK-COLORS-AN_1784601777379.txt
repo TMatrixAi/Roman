@@ -1,0 +1,938 @@
+MASTER TASK — FIX BROKEN WORKFLOWS, IMPROVE RISK COLORS, AND AUDIT PREDICTION CONSISTENCY
+
+Work in two clearly separated stages:
+
+STAGE A — IMPLEMENT AND VERIFY UI/WORKFLOW BUG FIXES
+STAGE B — READ-ONLY PREDICTION-ENGINE INVESTIGATIONS
+
+Do not modify prediction weights, calibration, probability logic, Elite rules, recommendation thresholds, historical predictions, or production model configuration during Stage A.
+
+Do not begin any engine-logic changes during Stage B. Return an investigation report first and wait for approval.
+
+Create a backup/snapshot before making changes.
+
+==================================================
+STAGE A1 — UPSET-RISK COLORS AND MOBILE FIT
+==================================================
+
+Update the Upset Risk display everywhere in the app, including:
+
+• Prediction results
+• Ledger
+• Paper Trading
+• Live Search
+• Bulk predictions
+• Screenshot predictions
+• Accuracy pages
+• Historical prediction cards
+• Any modal or detail page showing Upset Risk
+
+Use these categories and colors:
+
+LOW UPSET RISK
+• Green
+• Use a strong readable green background or green text/border combination.
+• The complete words “LOW UPSET RISK” must fit inside the mobile screen.
+
+MODERATE UPSET RISK
+• Yellow
+• Use dark text when displayed on a yellow background.
+• The complete words “MODERATE UPSET RISK” must fit inside the mobile screen.
+
+HIGH UPSET RISK
+• Orange
+• Use dark or high-contrast text.
+• The complete words “HIGH UPSET RISK” must fit inside the mobile screen.
+
+EXTREME UPSET RISK
+• Cherry-red / bright danger red
+• Use high-contrast white text.
+• The complete words “EXTREME UPSET RISK” must fit inside the mobile screen.
+
+Mobile requirements:
+
+• Never allow the label to extend beyond the viewport.
+• Never clip or truncate the category.
+• Never display only part of the word.
+• Do not reduce it to “LOW,” “MODERATE,” “HIGH,” or “EXTREME.”
+• Permit responsive font-size reduction on narrow screens.
+• Permit wrapping to two lines only when necessary.
+• Use max-width: 100%.
+• Use box-sizing: border-box.
+• Use responsive horizontal padding.
+• Test on approximately 320px, 375px, 390px, and 430px widths.
+• Confirm the label remains readable in every prediction card.
+
+Use one centralized risk-color mapping so different pages cannot display different colors for the same category.
+
+Do not change the underlying numeric Upset Risk calculation in this stage.
+
+==================================================
+STAGE A2 — FIX OPTIMIZER AND WALK-FORWARD HTTP 502
+==================================================
+
+Current failure:
+
+Both “Run Optimizer” and “Run Walk-Forward” return:
+
+HTTP 502 Bad Gateway
+
+The UI then prints an entire HTML gateway error page beginning with:
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Hmm... We couldn’t reach this app</title>
+
+Investigate and fix the actual backend availability problem.
+
+Audit:
+
+• Frontend request URL
+• API route
+• HTTP method
+• Request body
+• Route registration
+• Replit deployment URL
+• Internal server port
+• Proxy configuration
+• Long-running request timeout
+• Server crash
+• Memory exhaustion
+• Database timeout
+• Authentication
+• Environment variables
+• Worker process availability
+• Whether the process exceeds Replit’s gateway timeout
+• Whether the endpoint is accidentally calling the public frontend URL
+• Whether the development-domain URL differs from the deployment URL
+
+The Optimizer may take 8–12 minutes. It must not rely on one synchronous browser request remaining open for the entire job.
+
+Preferred safe architecture:
+
+1. User starts the job.
+2. Backend creates a versioned job record.
+3. Backend immediately returns a job ID.
+4. Worker runs the optimizer or walk-forward task.
+5. Frontend polls a status endpoint.
+6. UI shows:
+   • Queued
+   • Running
+   • Current phase
+   • Progress
+   • Started time
+   • Elapsed time
+   • Completed
+   • Failed
+7. Results are stored and can be reopened after refreshing the page.
+
+Production configuration must never be automatically promoted.
+
+The Optimizer must create only a candidate configuration until manually approved.
+
+Error-display requirements:
+
+• Never print a full HTML gateway document in the UI.
+• Detect non-JSON responses.
+• Show a compact message such as:
+  “Optimizer service could not be reached. HTTP 502.”
+• Include an expandable technical-details area.
+• Log status code, endpoint, request ID, response content type, and a shortened response body.
+• Do not expose secrets.
+
+Verify both buttons separately:
+
+• Run Optimizer
+• Run Walk-Forward
+
+Provide proof showing:
+
+• Endpoint reached
+• Job ID created
+• Status polling works
+• Job completes or fails with a useful structured error
+• Candidate configuration is not auto-promoted
+
+==================================================
+STAGE A3 — FIX SCREENSHOT AI UNAVAILABLE
+==================================================
+
+Current error:
+
+“Screenshot AI is unavailable right now — try again later. This item will be skipped.”
+
+This generic message is not enough.
+
+Investigate:
+
+• Missing API key
+• Incorrect environment variable
+• Expired key
+• 401
+• 403
+• 404
+• 429 quota/rate limit
+• Provider outage
+• Unsupported image format
+• Image-size limit
+• Request timeout
+• Incorrect endpoint
+• Invalid model name
+• Malformed payload
+• Server route unavailable
+• Replit proxy failure
+• Internal parsing exception
+
+Required behavior:
+
+1. Attempt the primary Screenshot AI provider.
+2. If unavailable, use the configured OCR/parser fallback where supported.
+3. If both fail, return a structured error.
+4. Do not silently skip the screenshot.
+5. Preserve the screenshot entry so the user can retry it.
+6. Add a “Retry” button.
+7. Add “Edit Raw Text.”
+8. Add an expandable diagnostic log.
+9. Show a user-friendly reason:
+   • Quota reached
+   • Authentication failed
+   • Provider unavailable
+   • Timeout
+   • Unsupported image
+   • Parsing failed
+10. Log provider, endpoint, status code, response code, request ID, elapsed time, and fallback result.
+
+Never expose API keys.
+
+==================================================
+STAGE A4 — FIX PLAYER NAME RESOLUTION
+==================================================
+
+The app is failing to match obvious known players, including examples such as:
+
+• Aleksandr Shevchenko
+• Georgina Garcia Perez
+• Pablo Carreno Busta
+• Oskar Brostrom Poulsen
+• Chris Rodesch
+• Ilya Ivashka
+• Bernard Tomic
+• Mark Lajal
+• Aleksandar Vukic
+• Arthur Gea
+• Jan-Lennard Struff
+• Eva Vedder
+• Vilius Gaubas
+• Maxime Janvier
+
+The Paste workflow sometimes displays “PREDICT 0 MATCHUPS” even though multiple valid matchups were pasted.
+
+Perform a complete investigation of player resolution.
+
+Audit:
+
+• Canonical player table
+• Player alias table
+• Accent normalization
+• Hyphen normalization
+• Apostrophe normalization
+• Middle names
+• Initials
+• Reversed first/last names
+• Double surnames
+• Alternate transliterations
+• ATP/WTA source naming differences
+• Duplicate profiles
+• Gender/tour filtering
+• Active/inactive filtering
+• Exact-match logic
+• Fuzzy-match logic
+• Confidence threshold
+• Database refresh status
+• Search index
+• Cached player records
+• Player-ID mapping
+• API player IDs versus internal player IDs
+
+Name normalization must safely handle examples such as:
+
+• Carreno Busta / Carreño Busta
+• Garcia Perez / García Pérez
+• Brostrom Poulsen / Brostrøm Poulsen
+• Jan Lennard Struff / Jan-Lennard Struff
+• Aleksandar / Alexander / Aleksandr where a verified alias exists
+• First-name initials
+• Surname-first formatting
+• Diacritics
+• Multiple spaces
+• Commas
+• Apostrophes
+• Jr. and Jr
+• Birth-year suffixes
+
+Do not guess when multiple legitimate players match.
+
+Resolution order:
+
+1. Exact canonical-name match
+2. Exact verified alias match
+3. Accent-insensitive exact match
+4. Normalized punctuation/hyphen match
+5. Verified source-ID match
+6. High-confidence fuzzy match
+7. Manual selection when ambiguous
+
+When one strong match exists:
+
+• Resolve automatically.
+• Save the verified alias for future use when appropriate.
+• Use a stable internal player ID.
+
+When multiple matches exist:
+
+• Show every candidate.
+• Include tour, nationality, age or birth year, ranking, and source.
+• Require the user to select the correct player.
+• Do not skip immediately.
+
+When no player exists locally:
+
+• Attempt the permitted player-source lookup.
+• Offer to import or map the player.
+• Clearly show which source was searched.
+• Do not falsely report that a major known player does not exist merely because the local alias table is incomplete.
+
+==================================================
+STAGE A5 — FIX PASTE MATCHUP COUNT AND CONFIRMATION
+==================================================
+
+Current issue:
+
+Several valid matchups are pasted, but the button says:
+
+“PREDICT 0 MATCHUPS”
+
+Required behavior:
+
+• Count every successfully parsed matchup.
+• Show separate totals:
+  • Parsed
+  • Ready
+  • Needs Review
+  • Not Found
+  • Duplicate
+  • Invalid
+• The main button should display the number of READY matchups.
+• Fix the count reactively whenever a player is resolved or edited.
+• Do not require the text box to be re-pasted.
+• Preserve all valid rows when one row fails.
+• Allow prediction of ready rows while unresolved rows remain for review.
+• Never silently discard a row.
+
+Supported separators must include:
+
+• A vs B
+• A VS B
+• A v B
+• A versus B
+• A - B
+• A – B
+• A — B
+
+Support optional tournament names.
+
+Before prediction, show a confirmation screen containing:
+
+• Player 1
+• Player 2
+• Resolved player IDs
+• Tournament
+• Surface
+• Level
+• Match format
+• Scheduled date/time when available
+• Any unresolved or ambiguous fields
+
+==================================================
+STAGE A6 — EVENT AND TOUR-LEVEL VALIDATION
+==================================================
+
+Some screenshots appear to show incorrect tour-level labels, including examples such as:
+
+• WTA Hamburg appearing with ATP500
+• ATP Challenger Tampere appearing as ITF
+• Potential tournament spelling or level mismatches
+
+Audit tournament mapping.
+
+Verify:
+
+• ATP/WTA gender
+• ATP/WTA/Challenger/ITF tour
+• Event level
+• Surface
+• Best-of-three/best-of-five
+• Tournament aliases
+• Historical tournament naming
+• Current fixture source
+• Event ID mapping
+
+Do not infer event level solely from a partial tournament-name string when a verified event ID is available.
+
+Return a report of every tournament mapping corrected.
+
+==================================================
+STAGE A7 — IMPLEMENTATION SAFETY
+==================================================
+
+During Stage A:
+
+• Do not modify prediction weights.
+• Do not modify calibration.
+• Do not modify probability thresholds.
+• Do not modify Elite qualification.
+• Do not rewrite historical predictions.
+• Do not auto-promote optimizer candidates.
+• Do not delete failed screenshot or paste records.
+• Preserve stable player IDs.
+• Add tests before declaring completion.
+
+Add automated tests for:
+
+• Risk-label colors
+• Mobile label fitting
+• Player alias normalization
+• Ambiguous-name handling
+• Paste matchup counts
+• Tournament-level mapping
+• Non-JSON HTTP error handling
+• Background optimizer jobs
+• Screenshot AI fallback
+• Stable player-ID assignment
+
+==================================================
+STAGE B1 — READ-ONLY ELITE + HIGH-RISK AUDIT
+==================================================
+
+After Stage A is complete, perform a READ-ONLY investigation of predictions that receive:
+
+• Elite Tier + High Risk
+• Elite Tier + Extreme Risk
+• Elite Tier below 60% probability
+• Elite Tier with High Disagreement
+• Elite Tier with Low Data Quality
+• Elite Tier with missing critical data
+
+Do not change the engine yet.
+
+For every affected prediction, output:
+
+• Prediction ID
+• Player IDs
+• Player names
+• Match
+• Prediction timestamp
+• Model version
+• Raw probability
+• Calibrated probability
+• Final displayed probability
+• Prediction-strength label
+• Upset Risk numeric score
+• Upset Risk category
+• Data Quality
+• Evidence Reliability, if it currently exists
+• Model Agreement
+• Every Elite gate
+• Every passed gate
+• Every failed gate
+• Why Elite was still awarded
+• Exact function and code path
+• File names and line numbers
+
+Specifically investigate examples resembling:
+
+• Stefan Kozlov around 56% + High Risk + Elite
+• K. Isomura around 58% + High Risk + Elite
+• Patrik Niklas-Salminen around 70% + Moderate Risk + Elite
+• E. Aguiard around 62% + Low Risk without Elite
+
+Do not assume the displayed examples still exist. Locate the stored records using names, timestamps, and ledger data.
+
+Determine whether “Elite Tier” means:
+
+• Elite prediction certification
+• Subscription access
+• Model tier
+• Recommendation level
+• UI badge
+• Another internal field
+
+Confirm the UI is not displaying membership access as prediction quality.
+
+Return exactly one conclusion:
+
+1. ✅ Working as intended
+2. ⚠️ Logic inconsistency found
+3. ❌ Confirmed bug
+
+Do not implement the fix until approved.
+
+==================================================
+STAGE B2 — READ-ONLY LIVE SEARCH VS PAPER TRADING AUDIT
+==================================================
+
+Investigate why identical pre-match matches may produce materially different predictions between Paper Trading and Live Search.
+
+Example:
+
+Stefanos Tsitsipas vs Raphael Collignon
+
+Possible Paper Trading output:
+• 51.3% vs 48.7%
+• Too Close to Call
+• No Strong Signal
+
+Possible Live Search output:
+• Raphael Collignon 70%
+• Elite Tier
+• Moderate Lean
+• 2-0
+
+Locate the actual stored records before relying on the example values.
+
+Compare side by side:
+
+• Stable player IDs
+• Fixture ID
+• Tournament ID
+• Surface
+• Match format
+• Prediction timestamp
+• Data snapshot
+• Rankings
+• Surface Elo
+• Overall Elo
+• Serve/Return
+• Hold %
+• Break %
+• Surface win rate
+• Recent Form
+• Opponent-adjusted form
+• Injury
+• Fatigue
+• Travel
+• H2H
+• Common opponents
+• Momentum
+• Monte Carlo
+• Specialist model
+• Calibration
+• Ensemble weights
+• Thresholds
+• Engine version
+• Calibration version
+• Feature version
+• Git commit
+• Cache key
+• Cache age
+
+Reconstruct both predictions step by step.
+
+Verify:
+
+• No player slots were reversed.
+• Probabilities remained attached to stable IDs.
+• No stale prediction was displayed.
+• No live-score data contaminated a pre-match prediction.
+• Both systems call the same canonical prediction service.
+• Both systems use the same calibration and recommendation logic.
+• No route uses deprecated cascade or fallback logic.
+• No page independently recreates prediction logic.
+
+For an unstarted match, every interface should produce the same frozen result when given the same input snapshot.
+
+Do not modify code during this audit.
+
+Return the exact divergence point, severity, affected files, functions, rows, and safest proposed fix.
+
+==================================================
+STAGE B3 — READ-ONLY RANKING-GATE AUDIT
+==================================================
+
+Do not immediately replace ranking logic.
+
+First identify every place where ranking, event level, qualifier status, Challenger status, ITF status, or players being outside the Top 300/500 directly:
+
+• Reduces probability
+• Caps probability
+• Reduces confidence
+• Blocks Elite
+• Changes recommendation
+• Adds uncertainty
+• Alters calibration
+
+For every rule, report:
+
+• File
+• Function
+• Line number
+• Original reason
+• Current effect
+• Number of affected predictions
+• Historical accuracy of affected predictions
+• Calibration effect
+• Whether walk-forward evidence supports keeping or removing it
+
+Do not assume Evidence Reliability Gating is automatically superior.
+
+Produce candidate designs only:
+
+Candidate A:
+Current production behavior
+
+Candidate B:
+Remove direct ranking-based probability caps, but retain rankings as a predictive feature
+
+Candidate C:
+Use Evidence Reliability only for recommendation and Elite eligibility, without modifying probability
+
+Candidate D:
+Permit a small probability adjustment for weak evidence only if walk-forward testing proves it improves calibration
+
+Evidence Reliability may consider:
+
+• Completeness
+• Freshness
+• Surface sample
+• Tour-level relevance
+• Serve/Return sample
+• Recent-opponent quality
+• Independent model coverage
+• Calibration sample
+• Injury/availability certainty
+• Missing-data severity
+
+Important:
+
+Model agreement must account for correlated modules. Do not count multiple modules as independent confirmation when they use substantially overlapping data.
+
+Run evaluation-only walk-forward and shadow comparisons.
+
+Do not promote any candidate.
+
+==================================================
+FINAL DELIVERABLES
+==================================================
+
+Return:
+
+1. Stage A implementation summary
+2. Files changed
+3. Tests added
+4. Screenshots or UI verification at mobile widths
+5. Optimizer/Walk-Forward job evidence
+6. Screenshot AI diagnostic evidence
+7. Player-matching before/after results
+8. Paste-count before/after results
+9. Tournament-mapping corrections
+10. Elite + High-Risk audit
+11. Live Search vs Paper Trading audit
+12. Ranking-gate audit
+13. Proposed fixes requiring approval
+14. Explicit confirmation that:
+    • Historical prediction records were not rewritten
+    • Production configuration was not auto-promoted
+    • Prediction weights and calibration were not changed
+    • No investigation-only recommendation was implemented without approval
+
+Investigate why Paper Trading is logging:
+
+"Cutoff passed before a prediction could be locked. Never backfilled."
+
+Do not change any code until the investigation is complete.
+
+Audit the following:
+
+1. Scheduler
+- Verify the paper-trading scheduler is running at the expected intervals.
+- Check for missed, delayed, or failed jobs.
+- Confirm the worker is not sleeping, crashing, or timing out.
+
+2. Cutoff Logic
+- Show exactly how the cutoff time is calculated.
+- Verify timezone handling.
+- Compare:
+  - Fixture start time
+  - Cutoff time
+  - Prediction lock time
+  - Actual job execution time
+
+3. Fixture Discovery
+- Confirm when each fixture was first discovered.
+- Determine whether the fixture was discovered after the cutoff or before it.
+- Verify API delays or late fixture updates.
+
+4. Prediction Pipeline
+- Determine whether prediction generation failed because of:
+  - Player resolution
+  - API timeout
+  - Missing data
+  - Database write failure
+  - Queue backlog
+  - Worker crash
+  - Rate limiting
+
+5. Logging
+For every skipped fixture, output:
+- Match
+- Tournament
+- Scheduled start time
+- Cutoff time
+- First discovery time
+- Prediction attempt time(s)
+- Failure reason
+- Whether the prediction was ever attempted
+
+6. Recommendation
+Identify the root cause and recommend the safest fix.
+
+Suggested improvements:
+- Discover fixtures several hours before start.
+- Retry failed predictions until cutoff.
+- Alert if the scheduler misses a run.
+- Log timezone mismatches.
+- Continue to prohibit backfilling after cutoff to preserve prediction integrity.
+
+Do not modify prediction history or enable backfilling. Return only the investigation report and recommended fixes.
+
+Yes. I actually think this is a feature your app should have. It makes the History page much more useful because users instantly understand how each prediction source is performing.
+
+I’d make one improvement though:
+
+The dashboard should change dynamically based on the selected tab.
+
+All
+
+	•	Total Predictions (Historical + Paper Trades)
+	•	Resolved
+	•	Overall Accuracy
+	•	Pending
+	•	Win Rate by Confidence (optional later)
+
+Historical Tests
+
+	•	Historical Predictions
+	•	Historical Resolved
+	•	Historical Accuracy
+	•	Historical Pending (usually 0)
+
+Paper Trades
+
+	•	Paper Trade Predictions
+	•	Paper Trade Resolved
+	•	Paper Trade Accuracy
+	•	Pending Paper Trades
+
+Force Signal (when added)
+
+	•	Forced Predictions
+	•	Forced Accuracy
+	•	Pending Forced Picks
+	•	Excluded from Production Stats
+
+⸻
+
+I’d also change the metrics slightly. Instead of High Conf: 17, I’d use something users immediately understand:
+
+	•	Total Predictions
+	•	Accuracy
+	•	Wins
+	•	Losses
+	•	Pending
+	•	ROI (if you ever support betting units)
+
+The High Confidence card isn’t very informative to most users. It would be better on the Accuracy page where you break down confidence tiers.
+
+My recommendation (9.8/10 UI)
+
+Prediction History
+
+📊 Dynamic Dashboard (changes with the selected tab)
+
+All | Historical Tests | Paper Trades | Force Signal
+
+⬜ Total Predictions
+⬜ Accuracy
+⬜ Wins–Losses
+⬜ Pending
+
+Then show the prediction cards underneath.
+
+This gives users an immediate snapshot before they scroll through individual predictions, and it makes each filter feel like its own analytics view rather than just a different list.
+
+
+
+Yes—taken together, Part 1 + Part 2 + these final Shadow Replay sections are the complete Accuracy Dashboard page.
+
+The full page currently contains:
+
+	0.	Paper-Trade Cycle
+	0.	Walk-Forward Backtest
+	0.	Optimizer
+	0.	Evaluation Settings
+	0.	Elite Tier Backtest
+	0.	Real Elite Tier
+	0.	Near-Elite Comparison
+	0.	Upset-Risk Track Record
+	0.	Model Agreement / Disagreement Performance
+	0.	Market Edge
+	0.	Performance Segments
+	0.	Historical Validation
+	0.	Historical Unseen Test
+	0.	Live Paper Trading
+	0.	Calibration Buckets
+	0.	Current/Longest Win and Loss Streaks
+	0.	Self-Learning Specialist Segments
+	0.	Shadow / Simulated Replay
+	0.	Shadow Replay date and batch controls
+	0.	Shadow Replay accuracy, log loss, Brier score, ECE
+	0.	Saved Shadow Replay batches
+	0.	Correct vs Incorrect Patterns
+	0.	Threshold Recommendations
+
+That is a huge amount of useful information, but it is too much for one uninterrupted mobile page. The problem is no longer missing features. The problem is organization.
+
+Exact structure I would use
+
+Accuracy page — user-facing
+
+At the top:
+
+Accuracy Dashboard
+
+Tabs:
+
+	•	Overview
+	•	Historical Tests
+	•	Paper Trades
+	•	Elite
+	•	Risk & Agreement
+	•	Calibration
+	•	Segments
+
+The page should show only results and explanations. No controls for launching jobs.
+
+Backtesting page — developer/testing tools
+
+Move these existing controls to the Backtesting tab:
+
+	•	Run Paper Trade
+	•	Run Walk-Forward
+	•	Run Optimizer
+	•	Evaluation Settings
+	•	Retirement toggle
+	•	Shadow Replay date inputs
+	•	Batch label
+	•	Overwrite checkbox
+	•	Run Shadow Replay
+	•	Correct vs Incorrect Patterns
+	•	Threshold Recommendations
+
+That split is clean because your bottom navigation already has a separate Backtesting section.
+
+Keep on Accuracy
+
+Overview
+
+	•	Overall unseen accuracy
+	•	Historical test accuracy
+	•	Paper-trade accuracy
+	•	Elite accuracy
+	•	Sample sizes
+	•	Calibration status
+	•	Last updated
+
+Historical Tests
+
+	•	Validation segment
+	•	Genuine unseen test
+	•	Accuracy
+	•	Log loss
+	•	Brier score
+	•	Calibration buckets
+	•	Streaks
+
+Paper Trades
+
+	•	Accuracy
+	•	Resolved sample
+	•	Pending
+	•	Missed cutoff
+	•	Calibration
+	•	Market edge
+
+Elite
+
+	•	Real Elite Tier
+	•	Near-Elite comparison
+	•	Sample-size warning
+	•	Accuracy, log loss, Brier and ECE
+
+Risk & Agreement
+
+	•	Upset-risk track record
+	•	Model-agreement performance
+	•	Favorite-loss rate
+	•	Strong, Moderate, Mixed and High Disagreement
+
+Calibration
+
+	•	Raw ECE
+	•	Calibrated ECE
+	•	Confidence buckets
+	•	Status and explanation
+
+Segments
+
+	•	ATP/WTA by surface
+	•	Active/insufficient specialist segments
+	•	Performance by tour and surface
+
+Important mobile problems visible now
+
+These need correction:
+
+	•	The “Miscalibrated” badge overflows the ECE cards.
+	•	Several tables require horizontal scrolling and hide important columns.
+	•	Long explanations dominate the screen.
+	•	The Shadow Replay batch table is cut off.
+	•	Some headings and metric values collide.
+	•	The page is so long that users cannot quickly find a section.
+
+Use collapsible explanations, stack table rows as cards on mobile, and keep every badge inside its parent card.
+
+Final decision
+
+Do not remove any of this data.
+
+Do not hide Historical Tests or Paper Trades from users.
+
+Move only the execution controls and developer settings into Backtesting. Keep all verified results accessible through a reorganized Accuracy Dashboard.
+
+Absolutely. On mobile, users should never have to horizontally scroll to read a performance table.
+I’d change it to something like this:
+￼
+If it’s still too tight on smaller phones:
+	•	Shorten Sample → N
+	•	Shorten Accuracy → Acc
+	•	Shorten Error Rate → Error
+Result:
+￼
+I’d also make one improvement:
+Color-code the Accuracy column:
+	•	🟢 65%+ (green)
+	•	🟡 60–64.9% (yellow)
+	•	🔴 Under 60% (red)
+That lets users instantly recognize that High Disagreement is the weakest-performing tier without reading every number.
+I would apply this same responsive layout to every table in the app (Upset Risk, Elite tiers, Market Edge, Specialist Segments, etc.) so the entire app has a consistent mobile experience with no horizontal scrolling anywhere.
