@@ -35,6 +35,13 @@ import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrad
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
 import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evaluation/ledgerPlayers";
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
+import { enforceEntitlement } from "../lib/entitlements";
+import {
+  canUseCompetitiveBalance,
+  canUseEliteRecommendations,
+  canUseEvidenceReliability,
+  canUsePredictionHistory,
+} from "../services/payments/entitlementService";
 
 const router: IRouter = Router();
 
@@ -51,6 +58,8 @@ function withHistoricalMatchFallbackFlag<T extends { engine: unknown }>(row: T):
 }
 
 router.get("/predictions", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const parsed = ListPredictionsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -67,6 +76,8 @@ router.get("/predictions", async (req, res): Promise<void> => {
 });
 
 router.get("/predictions/stats", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   // Aggregated in SQL rather than loading every row into Node -- same output shape as before,
   // but the endpoint no longer scales linearly with total prediction count.
   const [totals] = await db
@@ -109,6 +120,8 @@ router.get("/predictions/stats", async (_req, res): Promise<void> => {
 // "/predictions/players/search" resolves as this literal route rather than being swallowed by
 // the :playerId param route below.
 router.get("/predictions/players/search", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const parsed = SearchLedgerPlayersQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -120,6 +133,8 @@ router.get("/predictions/players/search", async (req, res): Promise<void> => {
 });
 
 router.get("/predictions/players/:playerId", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const params = GetLedgerPlayerPredictionsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -131,6 +146,10 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
 });
 
 router.post("/predictions", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
+  if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
+  if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
+
   const parsed = CreatePredictionBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -251,6 +270,8 @@ router.post("/predictions", async (req, res): Promise<void> => {
 });
 
 router.get("/predictions/:predictionId", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const params = GetPredictionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -268,6 +289,8 @@ router.get("/predictions/:predictionId", async (req, res): Promise<void> => {
 });
 
 router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const params = DeletePredictionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -288,6 +311,8 @@ router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {
 });
 
 router.post("/predictions/bulk-delete", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const parsed = BulkDeletePredictionsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -303,17 +328,23 @@ router.post("/predictions/bulk-delete", async (req, res): Promise<void> => {
 });
 
 router.post("/predictions/duplicates/preview", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const groups = await findDuplicatePredictionGroups();
   const removableCount = groups.reduce((sum, g) => sum + g.removeIds.length, 0);
   res.json(PreviewDuplicatePredictionsResponse.parse({ removableCount, groups }));
 });
 
 router.post("/predictions/duplicates/remove", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const { removedCount, groups } = await removeDuplicatePredictions();
   res.json(RemoveDuplicatePredictionsResponse.parse({ removedCount, groups }));
 });
 
 router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   try {
     const summary = await gradePendingLedgerPredictions();
     res.json(GradePendingLedgerPredictionsResponse.parse(summary));
@@ -327,6 +358,8 @@ router.post("/predictions/grade-pending", async (_req, res): Promise<void> => {
 });
 
 router.patch("/predictions/:predictionId/outcome", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const params = RecordPredictionOutcomeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

@@ -18,6 +18,7 @@
 
 import { db, candidateConfigsTable, specialistModelsTable } from "@workspace/db";
 import { logger } from "../../lib/logger";
+import { deriveStrategyIdentity } from "./strategyIdentity";
 
 // ─── Production baseline constants (from current dataQuality.ts) ──────────────
 const PROD_ENSEMBLE_WEIGHT = {
@@ -85,6 +86,16 @@ const CALIBRATION_SNAPSHOT = {
   plattHoldoutLogLoss: 0.63802,
   holdoutSampleSize: 4605,
 };
+
+function stage2Identity(name: string, family: string, createdAt = new Date()): { strategyId: string; strategyVersion: string } {
+  return deriveStrategyIdentity({
+    strategyName: name,
+    strategyFamily: family,
+    strategyFingerprint: `${family}:${name}`,
+    creationMethod: "stage2-candidate",
+    createdAt,
+  });
+}
 
 // ─── Track 1: Recent Form candidates B–G ────────────────────────────────────
 
@@ -359,6 +370,38 @@ async function insertRecentFormCandidates(): Promise<number[]> {
     const [row] = await db
       .insert(candidateConfigsTable)
       .values({
+        ...(() => {
+          const identity = stage2Identity(c.name, "recentForm");
+          return {
+            strategyId: identity.strategyId,
+            strategyVersion: identity.strategyVersion,
+            strategyName: c.name,
+            strategyFamily: "recentForm",
+            strategyFingerprint: `${"recentForm"}:${c.name}`,
+            parentStrategyId: null,
+            parentStrategyVersion: null,
+            creationMethod: "stage2-candidate",
+            optimizerRunId: null,
+            lastTestedAt: null,
+            productionStatus: "candidate",
+            lifecycleStatus: "generated",
+            validationStatus: "pending",
+            walkForwardStatus: "pending",
+            shadowStatus: "pending",
+            featureSet: { track: "recentForm" },
+            weights: c.weightDiff,
+            thresholds: {},
+            calibrationMethod: c.proposedConfig?.baseProductionConfig?.calibration?.method ?? null,
+            specialistRouting: null,
+            competitiveBalanceBehavior: null,
+            evidenceReliabilityBehavior: null,
+            abstentionRules: null,
+            recommendationGates: null,
+            promotedAt: null,
+            promotedBy: null,
+            rollbackStrategyId: null,
+          };
+        })(),
         name: c.name,
         notes: c.notes,
         status: "pending",
@@ -480,6 +523,38 @@ async function insertSpecialistCandidates(): Promise<number[]> {
     const [row] = await db
       .insert(candidateConfigsTable)
       .values({
+        ...(() => {
+          const identity = stage2Identity(name, "specialist");
+          return {
+            strategyId: identity.strategyId,
+            strategyVersion: identity.strategyVersion,
+            strategyName: name,
+            strategyFamily: "specialist",
+            strategyFingerprint: `specialist:${seg.segmentKey}`,
+            parentStrategyId: null,
+            parentStrategyVersion: null,
+            creationMethod: "stage2-candidate",
+            optimizerRunId: null,
+            lastTestedAt: null,
+            productionStatus: isActive ? "production-adjacent" : "candidate",
+            lifecycleStatus: isActive ? "active" : "generated",
+            validationStatus: needsMoreData ? "pending" : "passed",
+            walkForwardStatus: needsMoreData ? "pending" : "passed",
+            shadowStatus: needsMoreData ? "pending" : "passed",
+            featureSet: { segmentKey: seg.segmentKey, tour: seg.tour, surface: seg.surface },
+            weights: { weight: seg.weight },
+            thresholds: { minHistoricalMatches: 150, minValidationSamples: 30 },
+            calibrationMethod: CALIBRATION_SNAPSHOT.method,
+            specialistRouting: seg.segmentKey,
+            competitiveBalanceBehavior: null,
+            evidenceReliabilityBehavior: null,
+            abstentionRules: null,
+            recommendationGates: null,
+            promotedAt: null,
+            promotedBy: null,
+            rollbackStrategyId: null,
+          };
+        })(),
         name,
         notes,
         status: "pending",
@@ -584,6 +659,39 @@ async function insertServeReturnCandidates(): Promise<number[]> {
     const [row] = await db
       .insert(candidateConfigsTable)
       .values({
+        ...(() => {
+          const strategyName = `SR-${v.id} — ${v.description.split(" — ")[0]}`;
+          const identity = stage2Identity(strategyName, "serveReturn");
+          return {
+            strategyId: identity.strategyId,
+            strategyVersion: identity.strategyVersion,
+            strategyName,
+            strategyFamily: "serveReturn",
+            strategyFingerprint: `serveReturn:SR-${v.id}`,
+            parentStrategyId: null,
+            parentStrategyVersion: null,
+            creationMethod: "stage2-candidate",
+            optimizerRunId: null,
+            lastTestedAt: null,
+            productionStatus: "candidate",
+            lifecycleStatus: "generated",
+            validationStatus: "pending",
+            walkForwardStatus: "pending",
+            shadowStatus: "pending",
+            featureSet: { track: "serveReturn", variant: `SR-${v.id}` },
+            weights: {},
+            thresholds: {},
+            calibrationMethod: CALIBRATION_SNAPSHOT.method,
+            specialistRouting: null,
+            competitiveBalanceBehavior: null,
+            evidenceReliabilityBehavior: null,
+            abstentionRules: null,
+            recommendationGates: null,
+            promotedAt: null,
+            promotedBy: null,
+            rollbackStrategyId: null,
+          };
+        })(),
         name: `SR-${v.id} — ${v.description.split(" — ")[0]} (${now})`,
         notes: `Serve & Return Candidate ${v.id}: ${v.description}.\n\nHypothesis: ${v.hypothesis}\n\nStage 1 finding: ${v.finding}\n\nStatus: Needs More Data — Stage 1 audit found no evidence-based hypothesis for this variant. No code implementation. Stored for documentation per Sprint Stage 2 spec.`,
         status: "pending",

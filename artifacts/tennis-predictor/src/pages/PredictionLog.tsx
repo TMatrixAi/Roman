@@ -1,11 +1,12 @@
 import { useState } from "react"
-import { useListEvaluationPredictions, type EvaluationPrediction } from "@workspace/api-client-react"
+import { useListEvaluationPredictions, useGetEvaluationPredictionStats, type EvaluationPrediction } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
+import { PredictionStatsCards } from "@/components/PredictionStatsCards"
 import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon } from "lucide-react"
 
 /** Task #30: mirrors the Ledger's `HistoricalMatchFallbackBadge` (see `History.tsx`) -- real
@@ -145,23 +146,30 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
 export default function PredictionLogPage() {
   const [runKind, setRunKind] = useState<"all" | "historical_test" | "paper_trade">("all")
 
+  const statsRunKind = runKind === "all" ? undefined : runKind
   const { data: predictions, isLoading } = useListEvaluationPredictions({
     limit: 100,
     ...(runKind !== "all" ? { runKind } : {}),
   })
+  const { data: stats, isLoading: statsLoading } = useGetEvaluationPredictionStats(statsRunKind)
 
   const preMatch = (predictions ?? []).filter((p) => p.status === "pending")
   const postMatch = (predictions ?? []).filter((p) => p.status !== "pending")
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/50 pb-6">
-        <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">Prediction Log</h1>
-          <p className="text-muted-foreground mt-2 text-lg">
-            Every locked evaluation prediction — historical walk-forward tests and live paper trades. Locked at cutoff, never edited or backfilled.
-          </p>
+      <div className="space-y-6 border-b border-border/50 pb-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-4xl font-display font-bold tracking-tight">Prediction Log</h1>
+            <p className="text-muted-foreground mt-2 text-lg">
+              Every locked evaluation prediction — historical walk-forward tests and live paper trades. Locked at cutoff, never edited or backfilled.
+            </p>
+          </div>
         </div>
+
+        <PredictionStatsCards stats={stats} isLoading={statsLoading} />
+
         <Tabs value={runKind} onValueChange={(v) => setRunKind(v as typeof runKind)} className="w-full md:w-auto">
           <TabsList className="w-full h-11 bg-secondary/50 border border-border/50 p-1">
             <TabsTrigger value="all" className="flex-1 font-mono text-xs uppercase tracking-widest">All</TabsTrigger>

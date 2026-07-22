@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
+import { PredictionStatsCards, PredictionStatCard } from "@/components/PredictionStatsCards"
 import { readAndClearPasteSearchHandoff } from "@/lib/pasteSearchHandoff"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
 import {
@@ -35,12 +36,10 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Link, useLocation, useSearch } from "wouter"
 import {
-  Target,
   CheckCircle2,
   XCircle,
   Clock,
   AlertTriangle,
-  TrendingUp,
   ChevronRight,
   ChevronLeft,
   Trash2,
@@ -150,25 +149,6 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
-  )
-}
-
-function StatCard({ title, value, subtext, icon: Icon }: { title: string, value: string | number, subtext?: string, icon: any }) {
-  return (
-    <Card className="bg-card shadow-sm glass-panel hover-lift">
-      <CardContent className="p-6">
-        <div className="flex justify-between items-start">
-          <div className="space-y-3">
-            <p className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
-            <p className="text-4xl font-display font-bold tracking-tight text-primary tabular-nums">{value}</p>
-            {subtext && <p className="text-xs text-muted-foreground/80 font-medium">{subtext}</p>}
-          </div>
-          <div className="p-3 bg-secondary/50 rounded-xl border border-border/50">
-            <Icon className="w-5 h-5 text-primary" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -577,37 +557,13 @@ export default function HistoryPage() {
       )}
 
       {statsLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
-        </div>
+        <PredictionStatsCards isLoading={true} />
       ) : stats ? (
         <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard 
-            title="TOTAL RUNS" 
-            value={stats.totalPredictions} 
-            icon={Target} 
-          />
-          <StatCard 
-            title="RESOLVED" 
-            value={stats.resolvedPredictions} 
-            icon={Clock} 
-          />
-          <StatCard 
-            title="ACCURACY" 
-            value={stats.accuracy !== null ? `${stats.accuracy.toFixed(1)}%` : '--'} 
-            subtext={`${stats.correctPredictions} correct`}
-            icon={TrendingUp} 
-          />
-          <StatCard 
-            title="HIGH CONF" 
-            value={stats.byRecommendation?.find(r => r.recommendation === 'STRONG_RECOMMENDATION')?.count || 0} 
-            subtext="Highest-confidence tier -- not yet proven better than other tiers"
-            icon={AlertTriangle} 
-          />
+        <PredictionStatsCards stats={stats} isLoading={false} />
           {/* Task #37: coin-flip predictions flagged separately so users can track their borderline picks */}
           {(stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count ?? 0) > 0 && (
-            <StatCard
+            <PredictionStatCard
               title="COIN FLIP"
               value={stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count || 0}
               subtext="Within ±3% of 50/50 — backtesting shows these perform at or below chance"

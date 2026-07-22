@@ -8,6 +8,7 @@ import { computeAndStoreSpecialistSegments, getActiveSpecialistSegments } from "
 import { buildMatchHistoryIndex } from "../historicalData/matchRecordReconstruction";
 import { buildEloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { buildPlayerIdentityIndex } from "../tennisData/playerIdentity";
+import { defaultPredictionMode, derivePredictionStrategyIdentity } from "./strategyIdentity";
 import { eloFallbackTracker, fallbackRateWarning } from "../predictionEngine/fallbackTracking";
 import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "./types";
 import type { CalibrationKnot } from "./types";
@@ -17,6 +18,8 @@ export interface WalkForwardOptions {
   foldCount?: number;
   /** Fraction of the earliest history reserved as train-only warmup, never scored. */
   warmupFraction?: number;
+  /** Optional optimizer run identifier when this walk-forward is executed as part of optimizer training. */
+  optimizerRunId?: string | null;
   /**
    * Task #12: when true, run all folds and compute metrics using the currently-active
    * (frozen) calibration without touching calibration_models, specialist_models, or any
@@ -62,6 +65,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const foldCount = options.foldCount ?? 4;
   const warmupFraction = options.warmupFraction ?? 0.4;
   const evaluationOnly = options.evaluationOnly ?? false;
+  const optimizerRunId = options.optimizerRunId ?? null;
   if (foldCount < 1) throw new Error("foldCount must be >= 1");
   if (warmupFraction <= 0 || warmupFraction >= 1) throw new Error("warmupFraction must be between 0 and 1 (exclusive)");
 
@@ -297,6 +301,14 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
 
       // Sanitize and validate the persistence object to avoid fatal DB errors
       const toInsert = {
+        predictionMode: defaultPredictionMode("historical_test"),
+        strategyId: derivePredictionStrategyIdentity({ predictionMode: defaultPredictionMode("historical_test"), modelVersion: HISTORICAL_MODEL_VERSION, createdAt: lockedAt }).strategyId,
+        strategyVersion: derivePredictionStrategyIdentity({ predictionMode: defaultPredictionMode("historical_test"), modelVersion: HISTORICAL_MODEL_VERSION, createdAt: lockedAt }).strategyVersion,
+        strategyFingerprint: HISTORICAL_MODEL_VERSION,
+        optimizerRunId,
+        calibrationVersion: null,
+        competitiveBalanceVersion: null,
+        evidenceReliabilityVersion: null,
         runKind: "historical_test",
         foldId,
         segment,

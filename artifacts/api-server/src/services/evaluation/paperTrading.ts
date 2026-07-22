@@ -13,6 +13,7 @@ import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import { fetchMarketOdds } from "../oddsData";
 import { computeVigAdjustedImpliedProbability } from "../oddsData/impliedProbability";
 import { logger } from "../../lib/logger";
+import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "./strategyIdentity";
 
 /**
  * How long after a fixture's cutoff instant the cycle will still lock a fresh prediction for it.
@@ -54,6 +55,17 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
   const summary: PaperTradingCycleSummary = { locked: 0, missed: 0, graded: 0, errors: [] };
   const settings = await getPredictionSettings();
   const provider = providerOverride ?? getTennisDataProvider();
+  const currentProductionIdentity = await getCurrentProductionStrategyIdentity();
+  const fallbackProductionIdentity = derivePredictionStrategyIdentity({
+    predictionMode: defaultPredictionMode("paper_trade"),
+    modelVersion: LIVE_MODEL_VERSION,
+    createdAt: new Date(),
+  });
+  const effectiveProductionIdentity = {
+    strategyId: currentProductionIdentity.strategyId ?? fallbackProductionIdentity.strategyId,
+    strategyVersion: currentProductionIdentity.strategyVersion ?? fallbackProductionIdentity.strategyVersion,
+    strategyFingerprint: currentProductionIdentity.strategyFingerprint ?? LIVE_MODEL_VERSION,
+  };
 
   let fixtures;
   try {
@@ -99,6 +111,14 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
       // elapsed with nothing locked. Either way this is a miss -- we never generate a prediction
       // after the cutoff has meaningfully passed, and we never backfill.
       await db.insert(evaluationPredictionsTable).values({
+        predictionMode: defaultPredictionMode("paper_trade"),
+        strategyId: effectiveProductionIdentity.strategyId,
+        strategyVersion: effectiveProductionIdentity.strategyVersion,
+        strategyFingerprint: effectiveProductionIdentity.strategyFingerprint,
+        optimizerRunId: null,
+        calibrationVersion: null,
+        competitiveBalanceVersion: null,
+        evidenceReliabilityVersion: null,
         runKind: "paper_trade",
         provider: provider.name,
         externalFixtureId: fixture.id,
@@ -204,6 +224,14 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
       const marketEdge = impliedProbabilityForPick === null ? null : output.predictedWinnerProbability - impliedProbabilityForPick;
 
       await db.insert(evaluationPredictionsTable).values({
+        predictionMode: defaultPredictionMode("paper_trade"),
+        strategyId: effectiveProductionIdentity.strategyId,
+        strategyVersion: effectiveProductionIdentity.strategyVersion,
+        strategyFingerprint: effectiveProductionIdentity.strategyFingerprint,
+        optimizerRunId: null,
+        calibrationVersion: activeCalibration?.id ? String(activeCalibration.id) : null,
+        competitiveBalanceVersion: null,
+        evidenceReliabilityVersion: null,
         runKind: "paper_trade",
         provider: provider.name,
         externalFixtureId: fixture.id,

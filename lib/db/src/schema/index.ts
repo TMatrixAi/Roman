@@ -23,3 +23,4 @@ export * from "./evaluation";
 export * from "./backtesting";
 export * from "./masterPlayers";
 export * from "./playerStats";
+export * from "./payments";

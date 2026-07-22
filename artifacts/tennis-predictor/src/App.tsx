@@ -22,6 +22,7 @@ const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
+const PaymentsPage = lazy(() => import('@/pages/Payments'));
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,10 @@ function Router() {
           <Route path="/backtesting/:id" component={BacktestResultsPage} />
           <Route path="/backtesting" component={BacktestingPortalPage} />
           <Route path="/launch-audit" component={LaunchAuditPage} />
+          <Route path="/payments" component={PaymentsPage} />
+          <Route path="/payments/pricing" component={PaymentsPage} />
+          <Route path="/payments/billing" component={PaymentsPage} />
+          <Route path="/payments/admin" component={PaymentsPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>

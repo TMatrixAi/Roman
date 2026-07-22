@@ -10,6 +10,20 @@ import { runOptimizerRun } from "./candidateOptimizer";
 
 type OptimizerResult = {
   candidateConfigId: number;
+  candidateConfigIds: number[];
+  generatedCount: number;
+  duplicateRejectedCount: number;
+  nearDuplicateRejectedCount: number;
+  retestCount: number;
+  diversity: {
+    requiredFamilies: string[];
+    presentFamilies: string[];
+    minimumFamilyCount: number;
+    familyCoveragePassed: boolean;
+    noveltyFloor: number;
+    noveltyRate: number;
+    noveltyPassed: boolean;
+  };
   thresholdEvaluationId: number;
   walkForward: {
     foldsRun: number;
@@ -56,7 +70,12 @@ async function runJob(
 ): Promise<void> {
   try {
     currentJob = { state: "running", startedAt, phase: "walk-forward" };
-    const result = await runOptimizerRun(opts);
+    const result = await runOptimizerRun({
+      ...opts,
+      onPhase: (phase) => {
+        currentJob = { state: "running", startedAt, phase };
+      },
+    });
 
     currentJob = {
       state: "done",
@@ -64,6 +83,12 @@ async function runJob(
       finishedAt: new Date().toISOString(),
       result: {
         candidateConfigId: result.candidateConfigId,
+        candidateConfigIds: result.candidateConfigIds,
+        generatedCount: result.generatedCount,
+        duplicateRejectedCount: result.duplicateRejectedCount,
+        nearDuplicateRejectedCount: result.nearDuplicateRejectedCount,
+        retestCount: result.retestCount,
+        diversity: result.diversity,
         thresholdEvaluationId: result.thresholdEvaluationId,
         walkForward: {
           foldsRun: result.walkForwardSummary.foldsRun,

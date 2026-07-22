@@ -163,6 +163,36 @@ export const candidateConfigsTable = pgTable(
   {
     id: serial("id").primaryKey(),
 
+    strategyId: text("strategy_id"),
+    strategyVersion: text("strategy_version"),
+    strategyName: text("strategy_name"),
+    strategyFamily: text("strategy_family"),
+    strategyFingerprint: text("strategy_fingerprint"),
+    parentStrategyId: text("parent_strategy_id"),
+    parentStrategyVersion: text("parent_strategy_version"),
+    creationMethod: text("creation_method"),
+    optimizerRunId: text("optimizer_run_id"),
+    lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
+    productionStatus: text("production_status"),
+    lifecycleStatus: text("lifecycle_status"),
+    validationStatus: text("validation_status"),
+    walkForwardStatus: text("walk_forward_status"),
+    shadowStatus: text("shadow_status"),
+
+    featureSet: jsonb("feature_set").$type<Record<string, unknown>>(),
+    weights: jsonb("weights").$type<Record<string, unknown>>(),
+    thresholds: jsonb("thresholds").$type<Record<string, unknown>>(),
+    calibrationMethod: text("calibration_method"),
+    specialistRouting: text("specialist_routing"),
+    competitiveBalanceBehavior: jsonb("competitive_balance_behavior").$type<Record<string, unknown>>(),
+    evidenceReliabilityBehavior: jsonb("evidence_reliability_behavior").$type<Record<string, unknown>>(),
+    abstentionRules: jsonb("abstention_rules").$type<Record<string, unknown>>(),
+    recommendationGates: jsonb("recommendation_gates").$type<Record<string, unknown>>(),
+
+    promotedAt: timestamp("promoted_at", { withTimezone: true }),
+    promotedBy: text("promoted_by"),
+    rollbackStrategyId: text("rollback_strategy_id"),
+
     name: text("name").notNull(),
     notes: text("notes"),
 
@@ -214,11 +244,15 @@ export type CandidateConfigRow = typeof candidateConfigsTable.$inferSelect;
 export const configPromotionsTable = pgTable("config_promotions", {
   id: serial("id").primaryKey(),
   candidateConfigId: integer("candidate_config_id").notNull(),
+  strategyId: text("strategy_id"),
+  strategyVersion: text("strategy_version"),
+  strategyFingerprint: text("strategy_fingerprint"),
   oldConfig: jsonb("old_config").$type<Record<string, unknown>>(),
   newConfig: jsonb("new_config").$type<Record<string, unknown>>(),
   reason: text("reason"),
   validationPeriod: text("validation_period"),
   metrics: jsonb("metrics").$type<Record<string, unknown>>(),
+  promotedBy: text("promoted_by"),
   approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

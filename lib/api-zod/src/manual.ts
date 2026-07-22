@@ -34,6 +34,22 @@ export const RunOptimizerBody = zod.object({
 
 export const RunOptimizerResponse = zod.object({
   candidateConfigId: zod.number(),
+  candidateConfigIds: zod.array(zod.number()).optional(),
+  generatedCount: zod.number().optional(),
+  duplicateRejectedCount: zod.number().optional(),
+  nearDuplicateRejectedCount: zod.number().optional(),
+  retestCount: zod.number().optional(),
+  diversity: zod
+    .object({
+      requiredFamilies: zod.array(zod.string()),
+      presentFamilies: zod.array(zod.string()),
+      minimumFamilyCount: zod.number(),
+      familyCoveragePassed: zod.boolean(),
+      noveltyFloor: zod.number(),
+      noveltyRate: zod.number(),
+      noveltyPassed: zod.boolean(),
+    })
+    .optional(),
   thresholdEvaluationId: zod.number(),
   walkForward: zod.object({
     foldsRun: zod.number(),
@@ -203,6 +219,20 @@ export const OptimizerJobStatusResponse = zod.discriminatedUnion("state", [
     finishedAt: zod.string(),
     result: zod.object({
       candidateConfigId: zod.number(),
+      candidateConfigIds: zod.array(zod.number()),
+      generatedCount: zod.number(),
+      duplicateRejectedCount: zod.number(),
+      nearDuplicateRejectedCount: zod.number(),
+      retestCount: zod.number(),
+      diversity: zod.object({
+        requiredFamilies: zod.array(zod.string()),
+        presentFamilies: zod.array(zod.string()),
+        minimumFamilyCount: zod.number(),
+        familyCoveragePassed: zod.boolean(),
+        noveltyFloor: zod.number(),
+        noveltyRate: zod.number(),
+        noveltyPassed: zod.boolean(),
+      }),
       thresholdEvaluationId: zod.number(),
       walkForward: zod.object({
         foldsRun: zod.number(),
@@ -220,6 +250,79 @@ export const OptimizerJobStatusResponse = zod.discriminatedUnion("state", [
     error: zod.string(),
   }),
 ]);
+
+// ── Task #9 + Stage 3: optimizer/accuracy integrated summary ─────────────────────────────────────
+
+const OptimizerStrategyPick = zod.object({
+  id: zod.number().nullable(),
+  name: zod.string().nullable(),
+  status: zod.string().nullable(),
+  accuracy: zod.number().nullable(),
+  brier: zod.number().nullable(),
+  logLoss: zod.number().nullable(),
+  calibrationError: zod.number().nullable(),
+  createdAt: zod.string().nullable(),
+});
+
+export const GetOptimizerAccuracySummaryResponse = zod.object({
+  production: zod.object({
+    strategyName: zod.string().nullable(),
+    strategyVersion: zod.string().nullable(),
+    dateImplemented: zod.string().nullable(),
+    lastValidationDate: zod.string().nullable(),
+    overallAccuracy: zod.number().nullable(),
+    walkForwardAccuracy: zod.number().nullable(),
+    shadowReplayAccuracy: zod.number().nullable(),
+    paperTradingAccuracy: zod.number().nullable(),
+    liveGradedAccuracy: zod.number().nullable(),
+    brierScore: zod.number().nullable(),
+    logLoss: zod.number().nullable(),
+    ece: zod.number().nullable(),
+    calibrationError: zod.number().nullable(),
+    coverage: zod.number().nullable(),
+    abstentionRate: zod.number().nullable(),
+    totalPredictions: zod.number(),
+    totalGradedPredictions: zod.number(),
+  }),
+  optimizer: zod.object({
+    status: zod.enum(["idle", "running", "completed"]),
+    lastRunAt: zod.string().nullable(),
+    currentStage: zod.string().nullable(),
+    strategiesGenerated: zod.number(),
+    strategiesTested: zod.number(),
+    uniqueStrategies: zod.number(),
+    duplicateStrategiesRejected: zod.number(),
+    strategiesAwaitingValidation: zod.number(),
+    strategiesInShadowMode: zod.number(),
+    challengers: zod.number(),
+    archivedStrategies: zod.number(),
+    failedStrategies: zod.number(),
+    bestNewStrategy: OptimizerStrategyPick,
+    bestHistoricalStrategy: OptimizerStrategyPick,
+    largestAccuracyImprovement: zod.number().nullable(),
+    largestBrierImprovement: zod.number().nullable(),
+    largestLogLossImprovement: zod.number().nullable(),
+    nextScheduledOptimizerRun: zod.string().nullable(),
+  }),
+  comparison: zod.object({
+    production: OptimizerStrategyPick,
+    challenger: OptimizerStrategyPick,
+  }),
+  bestByCategory: zod.object({
+    currentProductionStrategy: OptimizerStrategyPick,
+    currentChallengerStrategy: OptimizerStrategyPick,
+    bestHistoricalStrategy: OptimizerStrategyPick,
+    bestNewlyGeneratedStrategy: OptimizerStrategyPick,
+    bestBySurface: OptimizerStrategyPick,
+    bestByTourLevel: OptimizerStrategyPick,
+    bestByCompetitiveBalanceTier: OptimizerStrategyPick,
+    bestByEvidenceReliabilityTier: OptimizerStrategyPick,
+    bestByRecommendationType: OptimizerStrategyPick,
+    bestByCalibrationQuality: OptimizerStrategyPick,
+    bestByRawWinnerAccuracy: OptimizerStrategyPick,
+  }),
+  updatedAt: zod.string(),
+});
 
 // ── Task #64: live backfill status polling ────────────────────────────────────────────────────────
 
@@ -239,4 +342,101 @@ export const GetBackfillLiveProgressResponse = zod.object({
   activeDateRange: zod.object({ dateStart: zod.string(), dateStop: zod.string() }).nullable(),
   lastCompletedStatus: zod.string().nullable(),
   lastCompletedAt: zod.string().nullable(),
+});
+
+// ── Task #? Payments v2 ───────────────────────────────────────────────────────
+
+export const PaymentEntitlements = zod.object({
+  predictionHistory: zod.boolean(),
+  walkForward: zod.boolean(),
+  shadowReplay: zod.boolean(),
+  optimizer: zod.boolean(),
+  competitiveBalance: zod.boolean(),
+  evidenceReliability: zod.boolean(),
+  developerAnalytics: zod.boolean(),
+  eliteRecommendations: zod.boolean(),
+  alerts: zod.boolean(),
+  teamWorkspace: zod.boolean(),
+});
+
+export const PaymentWebhookEventSummary = zod.object({
+  id: zod.number(),
+  stripeEventId: zod.string(),
+  eventType: zod.string(),
+  livemode: zod.boolean(),
+  processingStatus: zod.string(),
+  stripeCustomerId: zod.string().nullable(),
+  stripeSubscriptionId: zod.string().nullable(),
+  errorMessage: zod.string().nullable(),
+  receivedAt: zod.coerce.date(),
+  processedAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+});
+
+export const PaymentsStatusAccount = zod.object({
+  id: zod.number(),
+  accountKey: zod.string(),
+  displayName: zod.string(),
+  stripeCustomerId: zod.string().nullable(),
+  stripeSubscriptionId: zod.string().nullable(),
+  stripePriceId: zod.string().nullable(),
+  planKey: zod.string().nullable(),
+  planName: zod.string().nullable(),
+  subscriptionStatus: zod.string().nullable(),
+  accessGrantedAt: zod.coerce.date().nullable(),
+  currentPeriodStartAt: zod.coerce.date().nullable(),
+  currentPeriodEndAt: zod.coerce.date().nullable(),
+  trialEndAt: zod.coerce.date().nullable(),
+  canceledAt: zod.coerce.date().nullable(),
+  cancelAtPeriodEnd: zod.boolean(),
+  entitlementSnapshot: zod.record(zod.boolean()),
+  metadata: zod.record(zod.string(), zod.unknown()),
+  lastWebhookEventId: zod.string().nullable(),
+  lastCheckoutSessionId: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const GetPaymentsStatusResponse = zod.object({
+  featureFlagEnabled: zod.boolean(),
+  configured: zod.boolean(),
+  active: zod.boolean(),
+  account: PaymentsStatusAccount.nullable(),
+  entitlements: PaymentEntitlements,
+  stripe: zod.object({
+    priceId: zod.string().nullable(),
+    webhookSecretConfigured: zod.boolean(),
+    secretKeyConfigured: zod.boolean(),
+    planKey: zod.string(),
+    planName: zod.string(),
+  }),
+  recentWebhookEvents: zod.array(PaymentWebhookEventSummary),
+});
+
+export const CreatePaymentsCheckoutSessionBody = zod.object({
+  returnPath: zod.string().optional(),
+  customerEmail: zod.string().email().optional(),
+});
+
+export const CreatePaymentsCheckoutSessionResponse = zod.object({
+  sessionId: zod.string(),
+  url: zod.string().nullable(),
+});
+
+export const CreateBillingPortalSessionBody = zod.object({
+  returnPath: zod.string().optional(),
+});
+
+export const CreateBillingPortalSessionResponse = zod.object({
+  url: zod.string(),
+});
+
+export const PaymentsWebhookResponse = zod.object({
+  received: zod.boolean(),
+  processed: zod.boolean(),
+  duplicate: zod.boolean().optional(),
+});
+
+export const GetEvaluationPredictionStatsQueryParams = zod.object({
+  runKind: zod.enum(["historical_test", "paper_trade", "live"]).optional(),
 });

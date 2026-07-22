@@ -65,12 +65,15 @@ import {
   WalkForwardJobStatusResponse,
   StartOptimizerResponse,
   OptimizerJobStatusResponse,
+  GetOptimizerAccuracySummaryResponse,
+  GetEvaluationPredictionStatsQueryParams,
 } from "@workspace/api-zod";
 import { runRankingVerification } from "../services/historicalData/rankingVerification";
 import { startWalkForwardJob, getWalkForwardJobStatus } from "../services/evaluation/walkForwardJob";
 import { startOptimizerJob, getOptimizerJobStatus } from "../services/evaluation/optimizerJob";
 import { getLatestPatternAnalysis } from "../services/evaluation/patternAnalysis";
 import { getLatestThresholdEvaluation } from "../services/evaluation/thresholdEvaluation";
+import { getOptimizerAccuracySummary } from "../services/evaluation/optimizerSummary";
 
 const router: IRouter = Router();
 
@@ -142,6 +145,52 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     .limit(limit);
 
   res.json(ListEvaluationPredictionsResponse.parse(rows.map(withEvaluationHistoricalMatchFallbackFlag)));
+});
+
+router.get("/evaluation/predictions/stats", async (req, res): Promise<void> => {
+  const parsed = GetEvaluationPredictionStatsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const conditions = [];
+  if (parsed.data.runKind) conditions.push(eq(evaluationPredictionsTable.runKind, parsed.data.runKind));
+
+  const [totals] = await db
+    .select({
+      totalPredictions: sql<number>`count(*)`.mapWith(Number),
+      resolvedPredictions: sql<number>`count(*) filter (where ${evaluationPredictionsTable.actualWinnerId} is not null)`.mapWith(Number),
+      correctPredictions: sql<number>`count(*) filter (where ${evaluationPredictionsTable.actualWinnerId} = ${evaluationPredictionsTable.predictedWinnerId})`.mapWith(Number),
+    })
+    .from(evaluationPredictionsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+  const byRecommendationRows = await db
+    .select({
+      recommendation: evaluationPredictionsTable.recommendation,
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(evaluationPredictionsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(evaluationPredictionsTable.recommendation);
+
+  const { totalPredictions, resolvedPredictions, correctPredictions } = totals ?? {
+    totalPredictions: 0,
+    resolvedPredictions: 0,
+    correctPredictions: 0,
+  };
+  const accuracy = resolvedPredictions > 0 ? Math.round((correctPredictions / resolvedPredictions) * 1000) / 10 : null;
+
+  res.json(
+    GetPredictionStatsResponse.parse({
+      totalPredictions,
+      resolvedPredictions,
+      correctPredictions,
+      accuracy,
+      byRecommendation: byRecommendationRows,
+    }),
+  );
 });
 
 router.get("/evaluation/predictions/:predictionId", async (req, res): Promise<void> => {
@@ -239,14 +288,27 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
       activeCalibrationIsotonicHoldoutLogLoss: activeCalibration?.isotonicHoldoutLogLoss ?? null,
       activeCalibrationPlattHoldoutLogLoss: activeCalibration?.plattHoldoutLogLoss ?? null,
       specialistSegments,
+      import { enforceEntitlement } from "../lib/entitlements";
+      import {
+        canUseCompetitiveBalance,
+        canUseDeveloperAnalytics,
+        canUseEliteRecommendations,
+        canUseEvidenceReliability,
+        canUseOptimizer,
+        canUsePredictionHistory,
+        canUseShadowReplay,
+        canUseWalkForward,
+      } from "../services/payments/entitlementService";
       eliteTierBacktest,
       upsetRiskTierMetrics,
+        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
       disagreementTierMetrics,
       marketEdge,
     }),
   );
 });
 
+        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
 router.get("/evaluation/settings", async (_req, res): Promise<void> => {
   const settings = await getPredictionSettings();
   res.json(GetEvaluationSettingsResponse.parse(settings));
@@ -258,6 +320,7 @@ router.patch("/evaluation/settings", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
 
   const current = await getPredictionSettings();
   const [updated] = await db
@@ -272,6 +335,7 @@ router.patch("/evaluation/settings", async (req, res): Promise<void> => {
 router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
   const [row] = await db.select().from(simulatorValidationTable).limit(1);
   if (!row) {
+        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
     res.json(
       GetSimulatorValidationResponse.parse({
         sampleSize: 0,
@@ -296,6 +360,7 @@ router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
 router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> => {
   const summary = await validateAndStoreSimulator();
   res.json(
+        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
     GetSimulatorValidationResponse.parse({
       ...summary,
       computedAt: new Date().toISOString(),
@@ -343,6 +408,7 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
 });
 
 router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Promise<void> => {
+        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
   const provider = getTennisDataProvider();
   const result = await runIncrementalHistoricalBackfill(provider);
   res.json(RunHistoricalBackfillCycleResponse.parse(result));
@@ -359,6 +425,10 @@ router.post("/evaluation/historical-backfill/run-range", async (req, res): Promi
   const parsed = RunHistoricalBackfillRangeBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+        if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
+        if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
+        if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
+        if (!(await enforceEntitlement(res, canUseDeveloperAnalytics, "developerAnalytics"))) return;
     return;
   }
   const { dateStart, dateStop, chunkDays } = parsed.data;
@@ -526,6 +596,8 @@ router.post("/evaluation/ranking-verification", async (_req, res): Promise<void>
  * Poll GET /evaluation/optimizer/status for progress and result.
  */
 router.post("/evaluation/optimizer/run", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const parsed = RunOptimizerBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -536,7 +608,17 @@ router.post("/evaluation/optimizer/run", async (req, res): Promise<void> => {
 });
 
 router.get("/evaluation/optimizer/status", (_req, res): void => {
-  res.json(OptimizerJobStatusResponse.parse(getOptimizerJobStatus()));
+  void (async () => {
+    if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+    res.json(OptimizerJobStatusResponse.parse(getOptimizerJobStatus()));
+  })();
+});
+
+router.get("/evaluation/optimizer/summary", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
+  const summary = await getOptimizerAccuracySummary();
+  res.json(GetOptimizerAccuracySummaryResponse.parse(summary));
 });
 
 /**
@@ -544,6 +626,8 @@ router.get("/evaluation/optimizer/status", (_req, res): void => {
  * Returns null when no pattern analysis has run yet (walk-forward must be run first).
  */
 router.get("/evaluation/pattern-analysis/latest", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const result = await getLatestPatternAnalysis();
   res.json(GetLatestPatternAnalysisResponse.parse(result));
 });
@@ -553,11 +637,15 @@ router.get("/evaluation/pattern-analysis/latest", async (_req, res): Promise<voi
  * Returns null when no threshold evaluation has run yet (optimizer must be run first).
  */
 router.get("/evaluation/threshold-evaluation/latest", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const result = await getLatestThresholdEvaluation();
   res.json(GetLatestThresholdEvaluationResponse.parse(result));
 });
 
 router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const parsed = RunAblationAnalysisBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -568,10 +656,14 @@ router.post("/evaluation/ablation/run", async (req, res): Promise<void> => {
 });
 
 router.get("/evaluation/ablation/status", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   res.json(GetAblationStatusResponse.parse(getAblationJobStatus()));
 });
 
 router.post("/evaluation/shadow-replay/run", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseShadowReplay, "shadowReplay"))) return;
+
   const parsed = RunShadowReplayBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -586,6 +678,8 @@ router.post("/evaluation/shadow-replay/run", async (req, res): Promise<void> => 
 });
 
 router.get("/evaluation/shadow-replay/dashboard", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseShadowReplay, "shadowReplay"))) return;
+
   // Deliberately its own endpoint, never folded into GET /evaluation/dashboard: shadow-replay
   // evidence must never be mixed into the "genuinely unseen" segments/Elite-tier/upset-risk/
   // disagreement/market-edge aggregates that endpoint computes from historical_test/paper_trade

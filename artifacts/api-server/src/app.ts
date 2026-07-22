@@ -30,7 +30,12 @@ app.use(cors());
 // Default express.json() limit (100kb) is too small for a base64-encoded screenshot upload
 // (POST /matchups/from-screenshot) -- raised globally rather than per-route since Express body
 // parsing happens before routing.
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  verify: (req, _res, buffer) => {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Task #143: signs the admin-session cookie set by POST /api/auth/login so `req.signedCookies`
 // is available to `requireAdmin`. Reuses SESSION_SECRET rather than introducing a second secret.

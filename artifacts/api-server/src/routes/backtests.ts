@@ -3,6 +3,8 @@ import { db, backtestRunsTable, backtestPredictionsTable, candidateConfigsTable,
 import { desc, eq, isNull, and, asc, sql } from "drizzle-orm";
 import { runEvaluationBacktest, previewBacktest, type BacktestFilters, type BacktestDateRange } from "../services/evaluation/backtestService";
 import { logger } from "../lib/logger";
+import { enforceEntitlement } from "../lib/entitlements";
+import { canUseOptimizer } from "../services/payments/entitlementService";
 
 const router: IRouter = Router();
 
@@ -47,6 +49,8 @@ function parseIntQ(val: unknown, defaultVal: number, min = 0, max = Infinity): n
 
 /** Preview: how many rows would a set of filters capture? */
 router.post("/backtests/preview", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const body = req.body ?? {};
   const dateRangeResult = validateDateRange(body.dateRange);
   if (!dateRangeResult.ok) { res.status(400).json({ error: dateRangeResult.error }); return; }
@@ -61,6 +65,8 @@ router.post("/backtests/preview", async (req, res): Promise<void> => {
 
 /** Create a new backtest run and start it in the background */
 router.post("/backtests", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const body = req.body ?? {};
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -122,6 +128,8 @@ router.post("/backtests", async (req, res): Promise<void> => {
 
 /** List all runs (non-deleted), newest first */
 router.get("/backtests", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const limit = parseIntQ(req.query.limit, 50, 1, 100);
   const offset = parseIntQ(req.query.offset, 0, 0);
 
@@ -138,6 +146,8 @@ router.get("/backtests", async (req, res): Promise<void> => {
 
 /** Get a single run by ID */
 router.get("/backtests/:id", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -149,6 +159,8 @@ router.get("/backtests/:id", async (req, res): Promise<void> => {
 
 /** Cancel a running backtest */
 router.post("/backtests/:id/cancel", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -169,6 +181,8 @@ router.post("/backtests/:id/cancel", async (req, res): Promise<void> => {
  * Safety invariant: backtest_predictions are kept even after the run is deleted.
  */
 router.delete("/backtests/:id", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -182,6 +196,8 @@ router.delete("/backtests/:id", async (req, res): Promise<void> => {
 
 /** Get individual predictions for a run (paginated, filterable) */
 router.get("/backtests/:id/predictions", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -217,6 +233,8 @@ router.get("/backtests/:id/predictions", async (req, res): Promise<void> => {
 
 /** Export a backtest as CSV or JSON */
 router.get("/backtests/:id/export", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -281,11 +299,15 @@ router.get("/backtests/:id/export", async (req, res): Promise<void> => {
 // ─── Candidate Configs ───────────────────────────────────────────────────────
 
 router.get("/candidate-configs", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const rows = await db.select().from(candidateConfigsTable).orderBy(desc(candidateConfigsTable.createdAt));
   res.json(rows);
 });
 
 router.get("/candidate-configs/:id", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
   const [row] = await db.select().from(candidateConfigsTable).where(eq(candidateConfigsTable.id, id));
@@ -294,6 +316,8 @@ router.get("/candidate-configs/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/candidate-configs/:id", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -318,6 +342,8 @@ router.patch("/candidate-configs/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/candidate-configs/:id", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -331,6 +357,8 @@ router.delete("/candidate-configs/:id", async (req, res): Promise<void> => {
 
 /** Promote a candidate config to production (requires all acceptance checks to pass) */
 router.post("/candidate-configs/:id/promote", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -344,19 +372,34 @@ router.post("/candidate-configs/:id/promote", async (req, res): Promise<void> =>
 
   const body = req.body ?? {};
   const reason = typeof body.reason === "string" ? body.reason : "Manual promotion via Backtesting Portal";
+  const promotedBy = typeof body.promotedBy === "string" ? body.promotedBy : null;
 
   const [promotion] = await db
     .insert(configPromotionsTable)
     .values({
       candidateConfigId: id,
+      strategyId: config.strategyId,
+      strategyVersion: config.strategyVersion,
+      strategyFingerprint: config.strategyFingerprint,
       oldConfig: {},
       newConfig: config.proposedConfig ?? {},
       reason,
       metrics: config.holdoutMetrics ?? {},
+      promotedBy,
     })
     .returning();
 
-  await db.update(candidateConfigsTable).set({ status: "promoted", updatedAt: new Date() }).where(eq(candidateConfigsTable.id, id));
+  await db
+    .update(candidateConfigsTable)
+    .set({
+      status: "promoted",
+      productionStatus: "production",
+      lifecycleStatus: "promoted",
+      promotedAt: new Date(),
+      promotedBy,
+      updatedAt: new Date(),
+    })
+    .where(eq(candidateConfigsTable.id, id));
 
   res.json({ ok: true, promotion });
 });

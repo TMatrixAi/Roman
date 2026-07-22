@@ -8,6 +8,7 @@ import { buildMatchHistoryIndex } from "../historicalData/matchRecordReconstruct
 import { buildEloHistoryIndex } from "../predictionEngine/opponentStrength";
 import { buildPlayerIdentityIndex } from "../tennisData/playerIdentity";
 import { HISTORICAL_MODEL_VERSION, type ResultType, type RetirementRule } from "./types";
+import { defaultPredictionMode, derivePredictionStrategyIdentity } from "./strategyIdentity";
 
 /**
  * Shadow-mode replay (see the task spec): a faster-but-honestly-labeled alternative to waiting
@@ -284,6 +285,14 @@ export async function runShadowPaperTradingReplay(options: ShadowReplayOptions):
       const inserted = await db
         .insert(evaluationPredictionsTable)
         .values({
+          predictionMode: defaultPredictionMode("paper_trade_shadow"),
+          strategyId: derivePredictionStrategyIdentity({ predictionMode: defaultPredictionMode("paper_trade_shadow"), modelVersion: HISTORICAL_MODEL_VERSION, createdAt: new Date() }).strategyId,
+          strategyVersion: derivePredictionStrategyIdentity({ predictionMode: defaultPredictionMode("paper_trade_shadow"), modelVersion: HISTORICAL_MODEL_VERSION, createdAt: new Date() }).strategyVersion,
+          strategyFingerprint: HISTORICAL_MODEL_VERSION,
+          optimizerRunId: null,
+          calibrationVersion: null,
+          competitiveBalanceVersion: null,
+          evidenceReliabilityVersion: null,
           runKind: "paper_trade_shadow",
           shadowBatchLabel: batchLabel,
           historicalMatchId: match.id,
