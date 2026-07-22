@@ -295,44 +295,76 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
       const tieBreakerApplied = scored?.snapshot.engine.tieBreakerApplied ?? false;
       const lockedAt = new Date();
 
-      const [inserted] = await db
-        .insert(evaluationPredictionsTable)
-        .values({
-          runKind: "historical_test",
-          foldId,
-          segment,
-          historicalMatchId: match.id,
-          player1Id: match.player1Id,
-          player1Name: match.player1Name,
-          player2Id: match.player2Id,
-          player2Name: match.player2Name,
-          surface: match.surface,
-          matchFormat: match.matchFormat,
-          tournamentLevel: match.tournamentLevel,
-          tournamentName: match.tournamentName,
-          scheduledStartAt: match.scheduledStartAt,
-          cutoffAt: match.cutoffAt,
-          lockedAt,
-          modelVersion: HISTORICAL_MODEL_VERSION,
-          featureSnapshot: scored?.snapshot ?? null,
-          modelAgreement: scored?.modelAgreement ?? null,
-          upsetRiskTier: scored?.upsetRiskTier ?? null,
-          rawProbability: rawProbability !== null ? rawProbability * 100 : null,
-          calibratedProbability: rawProbability !== null ? rawProbability * 100 : null,
-          predictedWinnerId,
-          predictedWinnerName: predictedWinnerId ? (predictedWinnerId === match.player1Id ? match.player1Name : match.player2Name) : null,
-          status: rawProbability === null ? "void" : isVoid ? "void" : "graded",
-          actualWinnerId: match.winnerId,
-          actualWinnerName: match.winnerId
+      // Sanitize and validate the persistence object to avoid fatal DB errors
+      const toInsert = {
+        runKind: "historical_test",
+        foldId,
+        segment,
+        historicalMatchId: typeof match.id === "number" ? match.id : null,
+        player1Id: typeof match.player1Id === "string" ? match.player1Id : null,
+        player1Name: typeof match.player1Name === "string" ? match.player1Name : null,
+        player2Id: typeof match.player2Id === "string" ? match.player2Id : null,
+        player2Name: typeof match.player2Name === "string" ? match.player2Name : null,
+        surface: typeof match.surface === "string" ? match.surface : null,
+        matchFormat: typeof match.matchFormat === "string" ? match.matchFormat : null,
+        tournamentLevel: typeof match.tournamentLevel === "string" ? match.tournamentLevel : null,
+        tournamentName: typeof match.tournamentName === "string" ? match.tournamentName : null,
+        scheduledStartAt: match.scheduledStartAt instanceof Date ? match.scheduledStartAt : new Date(match.scheduledStartAt),
+        cutoffAt: match.cutoffAt instanceof Date ? match.cutoffAt : new Date(match.cutoffAt),
+        lockedAt,
+        modelVersion: HISTORICAL_MODEL_VERSION,
+        // featureSnapshot may be large; keep it but avoid logging it on error
+        featureSnapshot: scored?.snapshot ?? null,
+        modelAgreement: typeof scored?.modelAgreement === "string" ? scored.modelAgreement : null,
+        upsetRiskTier: typeof scored?.upsetRiskTier === "string" ? scored.upsetRiskTier : null,
+        rawProbability: rawProbability !== null && Number.isFinite(rawProbability) ? rawProbability * 100 : null,
+        calibratedProbability: rawProbability !== null && Number.isFinite(rawProbability) ? rawProbability * 100 : null,
+        predictedWinnerId: predictedWinnerId ?? null,
+        predictedWinnerName: predictedWinnerId ? (predictedWinnerId === match.player1Id ? match.player1Name : match.player2Name) : null,
+        status: rawProbability === null ? "void" : isVoid ? "void" : "graded",
+        actualWinnerId: typeof match.winnerId === "string" ? match.winnerId : null,
+        actualWinnerName:
+          match.winnerId && typeof match.winnerId === "string"
             ? match.winnerId === match.player1Id
               ? match.player1Name
               : match.player2Name
             : null,
-          resultType: rawProbability === null ? null : resultType,
-          includedInAccuracy,
-          gradedAt: new Date(),
-        })
-        .returning({ id: evaluationPredictionsTable.id });
+        resultType: rawProbability === null ? null : resultType,
+        includedInAccuracy: typeof includedInAccuracy === "boolean" ? includedInAccuracy : false,
+        gradedAt: new Date(),
+      };
+
+      try {
+        const [inserted] = await db.insert(evaluationPredictionsTable).values(toInsert).returning({ id: evaluationPredictionsTable.id });
+        results.push({ id: inserted.id, rawProbability, player1Won, includedInAccuracy, tieBreakerApplied, lockedAt });
+      } catch (err: any) {
+        // Capture concise DB error metadata without logging the full feature snapshot or payload
+        const errInfo: Record<string, any> = {
+          message: err?.message ?? String(err),
+          code: err?.code ?? null,
+          constraint: err?.constraint ?? null,
+          runKind: toInsert.runKind,
+          historicalMatchId: toInsert.historicalMatchId,
+          scheduledStartAt: toInsert.scheduledStartAt,
+          fieldChecks: {
+            rawProbabilityFinite: Number.isFinite(toInsert.rawProbability),
+            scheduledStartAtValid: toInsert.scheduledStartAt instanceof Date && !isNaN((toInsert.scheduledStartAt as Date).getTime()),
+            cutoffAtValid: toInsert.cutoffAt instanceof Date && !isNaN((toInsert.cutoffAt as Date).getTime()),
+          },
+        };
+        logger.error(errInfo, "evaluation_predictions insert failed (concise)");
+        // Try a smallest-safe repair: drop `featureSnapshot` (common cause for JSON/serialization issues)
+        try {
+          const repair = { ...toInsert, featureSnapshot: null };
+          const [recovered] = await db.insert(evaluationPredictionsTable).values(repair).returning({ id: evaluationPredictionsTable.id });
+          logger.warn({ recoveredId: recovered.id, historicalMatchId: toInsert.historicalMatchId }, "evaluation_predictions insert recovered by dropping featureSnapshot");
+          results.push({ id: recovered.id, rawProbability, player1Won, includedInAccuracy, tieBreakerApplied, lockedAt });
+        } catch (repairErr: any) {
+          // If repair also fails, surface the original concise error and re-throw the repair error
+          logger.error({ repairMessage: repairErr?.message ?? String(repairErr) }, "evaluation_predictions repair attempt failed");
+          throw err;
+        }
+      }
 
       results.push({ id: inserted.id, rawProbability, player1Won, includedInAccuracy, tieBreakerApplied, lockedAt });
     }
