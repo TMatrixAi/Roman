@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost } from "lucide-react"
+import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
   { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
+  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
 ]
 
 const MOBILE_LABELS: Record<string, string> = {

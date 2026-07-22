@@ -22,7 +22,7 @@ catalogs:
       specifier: ^5.90.21
       version: 5.101.2
     '@types/node':
-      specifier: ^25.3.3
+      specifier: ^25.9.4
       version: 25.9.4
     '@types/react':
       specifier: ^19.2.0

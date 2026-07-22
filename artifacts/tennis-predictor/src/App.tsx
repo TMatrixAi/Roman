@@ -21,6 +21,7 @@ const ShadowReplayPage = lazy(() => import('@/pages/ShadowReplay'));
 const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
+const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ function Router() {
           <Route path="/shadow-replay" component={ShadowReplayPage} />
           <Route path="/backtesting/:id" component={BacktestResultsPage} />
           <Route path="/backtesting" component={BacktestingPortalPage} />
+          <Route path="/launch-audit" component={LaunchAuditPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>

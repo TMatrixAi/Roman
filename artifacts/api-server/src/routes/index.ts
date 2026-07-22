@@ -9,6 +9,7 @@ import predictionsRouter from "./predictions";
 import evaluationRouter from "./evaluation";
 import authRouter from "./auth";
 import backtestsRouter from "./backtests";
+import launchAuditRouter from "./launchAudit";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(matchupsRouter);
 router.use(predictionsRouter);
 router.use(evaluationRouter);
 router.use(backtestsRouter);
+router.use(launchAuditRouter);
 
 export default router;
