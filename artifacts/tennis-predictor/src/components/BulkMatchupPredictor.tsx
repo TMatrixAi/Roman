@@ -172,10 +172,10 @@ function makeDefaultItem(key: string, fileName: string): BatchItem {
 // Surface colour helper
 // ---------------------------------------------------------------------------
 function surfaceColour(s: Surface) {
-  if (s === "Clay") return "text-orange-500"
-  if (s === "Grass") return "text-green-500"
-  if (s === "IndoorHard") return "text-purple-400"
-  return "text-blue-400"
+  if (s === "Clay") return "text-[hsl(var(--surface-clay))]"
+  if (s === "Grass") return "text-[hsl(var(--surface-grass))]"
+  if (s === "IndoorHard") return "text-[hsl(var(--surface-indoor))]"
+  return "text-[hsl(var(--surface-hard))]"
 }
 
 // ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ function PlayerSlot({ playerId, title, onRemove }: { playerId: string | null; ti
 
   if (!playerId) {
     return (
-      <div className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[120px] bg-secondary/20">
+      <div className="border-2 border-dashed border-primary/55 rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[120px] bg-secondary/20">
         <Swords className="w-8 h-8 text-muted-foreground/30 mb-2" />
         <p className="text-sm font-bold text-muted-foreground font-display">{title}</p>
         <p className="text-xs text-muted-foreground/60 font-mono mt-1">Search below to select</p>
@@ -29,7 +29,7 @@ function PlayerSlot({ playerId, title, onRemove }: { playerId: string | null; ti
   if (isLoading) return <div className="h-[120px] rounded-xl bg-muted animate-pulse" />
 
   return (
-    <div className="border border-primary/20 rounded-xl p-4 bg-background relative overflow-hidden">
+    <div className="border border-primary/30 rounded-xl p-4 bg-card relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-warning to-warning/60" />
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -124,7 +124,7 @@ export default function ForceSignalPage() {
       </div>
 
       {/* Player search */}
-      <Card className="border-border shadow-md">
+      <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4">
           <PlayerSearch
             onSelect={(player) => {
@@ -137,7 +137,7 @@ export default function ForceSignalPage() {
 
       {/* Match conditions (collapsible) */}
       {bothSelected && (
-        <Card className="border-border shadow-md overflow-hidden">
+        <Card className="border-border shadow-md overflow-hidden glass-panel">
           <button
             type="button"
             className="w-full text-left bg-secondary/30 border-b border-border/50 p-4 hover:bg-secondary/50 transition-colors focus-visible:outline-none"

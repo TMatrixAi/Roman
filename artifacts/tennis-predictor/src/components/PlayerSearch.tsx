@@ -22,18 +22,19 @@ export function PlayerSearch({ onSelect }: { onSelect: (player: PlayerSummary) =
   return (
     <div className="space-y-4">
       <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-3 h-4 w-4 text-primary/80" />
         <Input
           placeholder="Search player name (e.g. Alcaraz)..."
-          className="pl-9 font-mono bg-card"
+          className="pl-9 pr-8 font-mono bg-card border-primary/35 focus-visible:ring-primary/35"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <span className="matrix-caret absolute right-3 top-2.5">▮</span>
       </div>
 
       <div className="min-h-[80px]">
         {debouncedQuery.length < 2 && !players && (
-          <div className="h-full flex items-center justify-center text-sm font-mono text-muted-foreground border border-dashed rounded-lg p-8">
+          <div className="h-full flex items-center justify-center text-sm font-mono text-muted-foreground border border-dashed border-primary/45 rounded-lg p-8 bg-secondary/20">
             ENTER 2+ CHARS TO SEARCH
           </div>
         )}

@@ -41,14 +41,21 @@ interface LaunchAuditSummary {
 function statusTone(status: string) {
   switch (status) {
     case 'Pass':
-      return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20';
+      return 'bg-primary/10 text-primary border-primary/35';
     case 'Warning':
-      return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+      return 'bg-warning/10 text-warning border-warning/40';
     case 'Fail':
-      return 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20';
+      return 'bg-destructive/10 text-destructive border-destructive/40';
     default:
-      return 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/20';
+      return 'bg-secondary text-secondary-foreground border-border/50';
   }
+}
+
+function overallStatusClass(status: LaunchAuditSummary['overallStatus'] | undefined) {
+  if (status === 'Ready') return 'text-primary drop-shadow-[0_0_10px_hsl(var(--primary)/0.45)]'
+  if (status === 'Ready With Warnings') return 'text-warning'
+  if (status === 'Not Ready') return 'text-destructive'
+  return 'text-foreground'
 }
 
 export default function LaunchAuditPage() {
@@ -120,7 +127,7 @@ export default function LaunchAuditPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => void runAudit()} disabled={running} className="gap-2">
+          <Button onClick={() => void runAudit()} disabled={running} className="gap-2" variant="default">
             <Activity className="w-4 h-4" />
             {running ? 'Running...' : 'Run Full Launch Audit'}
           </Button>
@@ -133,7 +140,7 @@ export default function LaunchAuditPage() {
             <CardTitle className="text-sm font-mono uppercase tracking-[0.2em] text-muted-foreground">Overall Status</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-8 w-24" /> : <div className="flex items-center gap-2 text-xl font-semibold">{summary?.overallStatus ?? 'Audit Incomplete'}</div>}
+            {loading ? <Skeleton className="h-8 w-24" /> : <div className={`flex items-center gap-2 text-xl font-semibold ${overallStatusClass(summary?.overallStatus)}`}>{summary?.overallStatus ?? 'Audit Incomplete'}</div>}
           </CardContent>
         </Card>
         <Card>
@@ -180,6 +187,7 @@ export default function LaunchAuditPage() {
                       <div className="font-semibold">{finding.checkName}</div>
                       <div className="text-xs text-muted-foreground">{finding.relatedService}</div>
                     </div>
+                    {finding.status === 'Pass' && <span className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />}
                     <Badge variant="outline" className={statusTone(finding.status)}>{finding.status}</Badge>
                   </div>
                   <div className="mt-2 text-sm text-muted-foreground">{finding.evidence}</div>

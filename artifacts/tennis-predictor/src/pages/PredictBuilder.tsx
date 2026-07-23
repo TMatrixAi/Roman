@@ -34,10 +34,10 @@ function PlayerCard({
 
   if (!playerId) {
     return (
-      <Card className="h-full border-dashed border-2 bg-secondary/30 glass-panel">
+      <Card className="h-full border-dashed border-2 border-primary/60 bg-secondary/30 glass-panel">
         <CardContent className="p-4 sm:p-8 h-full flex flex-col justify-center items-center text-center space-y-3 min-h-[140px] sm:min-h-[200px]">
           <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-full bg-background shadow-sm flex items-center justify-center border border-border">
-            <Swords className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground/50" />
+            <Swords className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground" />
           </div>
           <div>
             <h3 className="font-display font-bold text-base sm:text-xl">{title}</h3>
@@ -120,19 +120,19 @@ function PlayerCard({
               </div>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloHard != null ? 'bg-sky-500/10 border-sky-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloHard != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">H.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloHard ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloClay != null ? 'bg-orange-500/10 border-orange-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloClay != null ? 'bg-accent/10 border-accent/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">C.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloClay ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloGrass != null ? 'bg-green-500/10 border-green-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloGrass != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">G.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloGrass ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.serveRatingProxy != null ? 'bg-violet-500/10 border-violet-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.serveRatingProxy != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">MARGIN</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.serveRatingProxy ?? '--'}</p>
               </div>
@@ -236,7 +236,7 @@ export default function PredictBuilderPage() {
       <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
-            <TabsList className="mb-3 w-full">
+            <TabsList className="mb-3 w-full h-11 bg-secondary/60 border border-border/60">
               <TabsTrigger value="search" className="font-mono gap-1.5 flex-1">
                 <Search className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">PLAYER </span>SEARCH
@@ -379,7 +379,7 @@ export default function PredictBuilderPage() {
             <Button 
               size="lg" 
               className="w-full font-bold font-mono text-lg h-16 rounded-xl relative overflow-hidden group" 
-              variant="accent"
+              variant="default"
               disabled={createPrediction.isPending || player1Id === player2Id}
               onClick={handleRunModel}
             >

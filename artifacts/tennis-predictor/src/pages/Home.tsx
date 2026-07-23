@@ -60,47 +60,47 @@ export default function Home() {
 
   return (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <section className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-xl border border-primary/20">
-        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-white/5 rounded-full blur-3xl -mr-64 -mt-64 pointer-events-none" />
+      <section className="bg-[linear-gradient(145deg,#060A07_0%,#0C1A10_60%,#102214_100%)] text-foreground rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-xl border border-primary/20">
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-primary/8 rounded-full blur-3xl -mr-64 -mt-64 pointer-events-none" />
         <div className="absolute bottom-0 right-10 opacity-[0.03] pointer-events-none mix-blend-overlay">
           <ActivitySquare className="w-[400px] h-[400px]" />
         </div>
         <div className="relative z-10 max-w-3xl space-y-6">
-          <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05] break-words">
-            PROBABILITY <br /> <span className="text-primary-foreground/70">NOT SENTIMENT.</span>
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05] break-words text-foreground">
+            PROBABILITY <br /> <span className="text-muted-foreground">NOT SENTIMENT.</span>
           </h1>
-          <p className="text-primary-foreground/90 text-lg md:text-xl font-medium max-w-2xl leading-relaxed">
+          <p className="text-muted-foreground text-lg md:text-xl font-medium max-w-2xl leading-relaxed">
             Multi-model prediction engine based on real ATP/WTA data. Surface Elo, serve/return strength, fatigue, and head-to-head.
           </p>
           <div className="pt-6 flex flex-wrap items-center gap-4">
             <button
               onClick={() => setLocation("/history")}
-              className="bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground hover:bg-primary-foreground/20 border border-primary-foreground/10 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all hover:-translate-y-1"
+              className="bg-background/10 backdrop-blur-sm text-foreground hover:bg-background/20 border border-border/30 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all hover:-translate-y-1"
             >
               PREDICTION HISTORY
             </button>
             <button
               onClick={() => setLocation("/predict")}
-              className="bg-accent text-accent-foreground px-8 py-4 rounded-xl font-bold font-mono text-sm hover:brightness-110 shadow-lg shadow-accent/20 transition-all flex items-center gap-2 hover:-translate-y-1"
+              className="bg-primary text-primary-foreground px-8 py-4 rounded-xl font-bold font-mono text-sm hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center gap-2 hover:-translate-y-1"
             >
               <PlaySquare className="w-4 h-4" />
               RUN MODEL
             </button>
             <button
               onClick={() => setLocation("/shadow-replay")}
-              className="bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground hover:bg-primary-foreground/20 border border-primary-foreground/10 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all flex items-center gap-2 hover:-translate-y-1"
+              className="bg-background/10 backdrop-blur-sm text-foreground hover:bg-background/20 border border-border/30 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all flex items-center gap-2 hover:-translate-y-1"
             >
               <BarChart2 className="w-4 h-4" />
               PAPER TRADING
             </button>
           </div>
-          <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-primary-foreground/10 mt-8">
+          <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-border/40 mt-8">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-mono font-bold text-primary-foreground/60 tracking-widest uppercase">LEVEL</label>
+              <label className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">LEVEL</label>
               <Select
                 value={tourFilter}
                 onChange={(e) => handleTourFilterChange(e.target.value as TourFilter)}
-                className="w-auto bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground border-primary-foreground/20 font-mono text-sm rounded-lg"
+                className="w-auto bg-background/20 backdrop-blur-sm text-foreground border-border/40 font-mono text-sm rounded-lg"
                 aria-label="Filter upcoming fixtures by level"
               >
                 <option value="all" className="text-foreground">All Matches</option>
@@ -127,11 +127,11 @@ export default function Home() {
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-mono font-bold text-primary-foreground/60 tracking-widest uppercase">EVENT</label>
+              <label className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">EVENT</label>
               <Select
                 value={tournamentFilter}
                 onChange={(e) => setTournamentFilter(e.target.value)}
-                className="w-auto bg-primary-foreground/10 backdrop-blur-sm text-primary-foreground border-primary-foreground/20 font-mono text-sm rounded-lg max-w-[200px] truncate"
+                className="w-auto bg-background/20 backdrop-blur-sm text-foreground border-border/40 font-mono text-sm rounded-lg max-w-[200px] truncate"
                 aria-label="Filter upcoming fixtures by tournament"
               >
                 <option value={ALL_TOURNAMENTS} className="text-foreground">All Tournaments</option>
@@ -161,7 +161,13 @@ export default function Home() {
             </div>
             <h2 className="text-2xl font-bold font-display">Upcoming Fixtures</h2>
           </div>
-          <Badge variant="outline" className="font-mono text-[10px]">LIVE DATA</Badge>
+          <Badge variant="outline" className="font-mono text-[10px] border-primary/50 text-primary bg-primary/10 gap-1.5">
+            <span className="relative inline-flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            LIVE DATA
+          </Badge>
         </div>
         <FixturesList
           ref={fixturesRef}

@@ -31,25 +31,25 @@ export const UPSET_RISK_SHORT: Record<string, string> = {
  * EXTREME  → cherry-red with white text
  */
 export const UPSET_RISK_BADGE_CLASS: Record<string, string> = {
-  LOW: "bg-green-500/15 text-green-700 dark:text-green-400 border border-green-500/40",
-  MODERATE: "bg-yellow-400/20 text-yellow-800 dark:text-yellow-300 border border-yellow-500/40",
-  HIGH: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/40",
+  LOW: "bg-primary/10 text-primary border border-primary/30",
+  MODERATE: "bg-warning/15 text-warning border border-warning/35",
+  HIGH: "bg-warning/20 text-warning border border-warning/45",
   EXTREME: "bg-red-600/20 text-red-700 dark:text-red-400 border border-red-600/40",
 }
 
 /** Solid color dot, for use in tables and compact rows. */
 export const UPSET_RISK_DOT_CLASS: Record<string, string> = {
-  LOW: "bg-green-500",
-  MODERATE: "bg-yellow-400",
-  HIGH: "bg-orange-500",
+  LOW: "bg-primary",
+  MODERATE: "bg-warning",
+  HIGH: "bg-warning",
   EXTREME: "bg-red-600",
 }
 
 /** Text-only color, for large numeric/label displays. */
 export const UPSET_RISK_TEXT_CLASS: Record<string, string> = {
-  LOW: "text-green-600 dark:text-green-400",
-  MODERATE: "text-yellow-600 dark:text-yellow-400",
-  HIGH: "text-orange-600 dark:text-orange-400",
+  LOW: "text-primary",
+  MODERATE: "text-warning",
+  HIGH: "text-warning",
   EXTREME: "text-red-600 dark:text-red-400",
 }
 

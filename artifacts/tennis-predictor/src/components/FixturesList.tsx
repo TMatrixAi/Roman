@@ -496,7 +496,7 @@ export const FixturesList = forwardRef<
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] font-mono text-muted-foreground">
                       <Badge
                         variant={levelVariant(fixture.tournamentLevel)}
-                        className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none"
+                        className="rounded-sm font-mono text-[0.625rem] px-1.5 py-0 h-4 leading-none border-primary/40 bg-secondary/80 text-secondary-foreground"
                       >
                         {fixture.tournamentLevel || 'TOURNAMENT'}
                       </Badge>
@@ -520,10 +520,10 @@ export const FixturesList = forwardRef<
                     {/* Time row — dedicated, always visible, larger than meta text */}
                     <div className="flex items-center gap-1.5">
                       {fixture.isLive ? (
-                        <span className="inline-flex items-center gap-1.5 font-bold text-destructive text-[0.75rem] font-mono">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-primary text-[0.75rem] font-mono">
                           <span className="relative flex h-1.5 w-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
-                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-destructive" />
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
                           </span>
                           LIVE NOW
                         </span>

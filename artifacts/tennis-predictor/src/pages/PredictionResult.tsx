@@ -225,7 +225,7 @@ export default function PredictionResultPage() {
                     {engine.isEliteTier && (
                       <Badge
                         variant="success"
-                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30"
+                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md bg-primary/10 text-primary border-primary/30"
                         title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
                       >
                         <Crown className="w-4 h-4" /> ELITE TIER
@@ -817,13 +817,13 @@ export default function PredictionResultPage() {
                   </span>
                 </div>
                 {engine.availability.player1.recentRetirementOrWithdrawal && (
-                  <p className="text-amber-600 dark:text-amber-500">
+                  <p className="text-warning">
                     {prediction.player1Name} retired mid-match recently
                     {engine.availability.player1.recentRetirementTournament ? ` (${engine.availability.player1.recentRetirementTournament})` : ""}.
                   </p>
                 )}
                 {engine.availability.player2.recentRetirementOrWithdrawal && (
-                  <p className="text-amber-600 dark:text-amber-500">
+                  <p className="text-warning">
                     {prediction.player2Name} retired mid-match recently
                     {engine.availability.player2.recentRetirementTournament ? ` (${engine.availability.player2.recentRetirementTournament})` : ""}.
                   </p>

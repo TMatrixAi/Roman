@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   useGetEvaluationDashboard,
   useListEvaluationRuns,
@@ -9,12 +9,8 @@ import {
   useUpdateEvaluationSettings,
   useRunShadowReplay,
   useGetShadowReplayDashboard,
-  useGetOptimizerAccuracySummary,
-  useGetCandidateConfigs,
   getGetLatestPatternAnalysisQueryKey,
   getGetLatestThresholdEvaluationQueryKey,
-  getGetOptimizerAccuracySummaryQueryKey,
-  getCandidateConfigsQueryKey,
   type EvaluationDashboardSegment,
   type SpecialistSegmentSummary,
   type EliteTierBacktest,
@@ -27,9 +23,6 @@ import {
   type PatternSegment,
   type ThresholdEvaluationRun,
   type ThresholdEvalEntry,
-  type OptimizerStrategyPick,
-  type CandidateConfigRecord,
-  type OptimizerAccuracySummaryResponse,
 } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -153,9 +146,9 @@ const LOW_CONFIDENCE_TIER_SAMPLE = 30
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1.5 p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center">
+    <div className="space-y-1.5 p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center matrix-stat-card">
       <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
-      <div className="text-3xl font-display font-bold tracking-tight text-primary tabular-nums">{value}</div>
+      <div className="text-3xl font-display font-bold tracking-tight matrix-number tabular-nums">{value}</div>
     </div>
   )
 }
@@ -445,7 +438,7 @@ function UpsetRiskTierCard({ tiers }: { tiers: UpsetRiskTierMetrics[] }) {
                             LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
                           </Badge>
                         )}
-                        <span className="text-primary text-lg">{t.favoriteLossRate !== null ? `${t.favoriteLossRate}%` : "—"}</span>
+                        <span className="matrix-number text-lg">{t.favoriteLossRate !== null ? `${t.favoriteLossRate}%` : "—"}</span>
                       </div>
                     </td>
                   </tr>
@@ -511,7 +504,7 @@ function DisagreementTierCard({ tiers }: { tiers: DisagreementTierMetrics[] }) {
                             LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
                           </Badge>
                         )}
-                        <span className="text-primary text-lg">{t.accuracy !== null ? `${t.accuracy}%` : "—"}</span>
+                        <span className="matrix-number text-lg">{t.accuracy !== null ? `${t.accuracy}%` : "—"}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 font-mono font-bold tabular-nums text-right text-muted-foreground">{t.errorRate !== null ? `${t.errorRate}%` : "—"}</td>
@@ -575,11 +568,7 @@ function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDa
 
   const runShadowReplay = useRunShadowReplay({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetShadowReplayDashboardQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getGetOptimizerAccuracySummaryQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getCandidateConfigsQueryKey() })
-      },
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetShadowReplayDashboardQueryKey() }),
     },
   })
 
@@ -591,11 +580,11 @@ function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDa
     <Card className="glass-panel border-accent/40">
       <CardHeader className="border-b border-border/50 bg-secondary/20 p-6 md:p-8">
         <CardTitle className="text-xl font-display flex items-center gap-3">
-          <div className="p-2 bg-accent/10 rounded-lg">
-            <FlaskConical className="w-5 h-5 text-accent" />
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <FlaskConical className="w-5 h-5 text-primary" />
           </div>
           Shadow / Simulated Replay
-          <Badge variant="outline" className="font-mono text-[10px] tracking-widest uppercase border-accent/50 text-accent">
+          <Badge variant="outline" className="font-mono text-[10px] tracking-widest uppercase border-primary/50 text-primary">
             SIMULATED — NOT LIVE EVIDENCE
           </Badge>
         </CardTitle>
@@ -933,313 +922,12 @@ function ThresholdRecommendationsPanel({ data }: { data: ThresholdEvaluationRun 
   )
 }
 
-function metricPct(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : `${value}%`
-}
-
-function metricNum(value: number | null | undefined, digits = 3): string {
-  return value === null || value === undefined ? "—" : value.toFixed(digits)
-}
-
-type StrategySortKey =
-  | "accuracy"
-  | "brier"
-  | "logLoss"
-  | "ece"
-  | "coverage"
-  | "surface"
-  | "tour"
-  | "competitiveBalance"
-  | "evidenceReliability"
-  | "recommendation"
-  | "elite"
-  | "family"
-  | "lastTested"
-  | "version"
-
-function numMetric(record: CandidateConfigRecord, key: string): number | null {
-  const source = record.holdoutMetrics ?? record.validationMetrics ?? {}
-  const value = source[key]
-  return typeof value === "number" && Number.isFinite(value) ? value : null
-}
-
-function recordCoverage(record: CandidateConfigRecord): number | null {
-  const source = record.validationMetrics ?? record.holdoutMetrics ?? {}
-  const coverage = source.coverage
-  if (typeof coverage === "number" && Number.isFinite(coverage)) return coverage
-  const total = source.totalPredictions
-  const graded = source.totalGradedPredictions
-  if (typeof total === "number" && typeof graded === "number" && total > 0) return Math.round((graded / total) * 1000) / 10
-  return null
-}
-
-function recordSortValue(record: CandidateConfigRecord, sortBy: StrategySortKey): number | string {
-  switch (sortBy) {
-    case "accuracy": return numMetric(record, "accuracy") ?? -Infinity
-    case "brier": return -(numMetric(record, "brier") ?? Infinity)
-    case "logLoss": return -(numMetric(record, "logLoss") ?? Infinity)
-    case "ece": return -(numMetric(record, "ece") ?? Infinity)
-    case "coverage": return recordCoverage(record) ?? -Infinity
-    case "surface": return (record.strategyFamily ?? "") + (record.specialistRouting ?? "")
-    case "tour": return (record.proposedConfig?.tour ?? record.specialistRouting ?? "") as string
-    case "competitiveBalance": return (record.competitiveBalanceBehavior?.useCompetitiveBalanceShrink ? 1 : 0)
-    case "evidenceReliability": return (record.evidenceReliabilityBehavior?.useReliabilityGates ? 1 : 0)
-    case "recommendation": return (record.recommendationGates ? 1 : 0)
-    case "elite": return (record.validationStatus === "passed" ? 1 : 0)
-    case "family": return record.strategyFamily ?? record.creationMethod ?? ""
-    case "lastTested": return record.lastTestedAt ?? record.updatedAt ?? record.createdAt
-    case "version": return record.strategyVersion ?? ""
-  }
-}
-
-function sortDirectionFor(sortBy: StrategySortKey): 1 | -1 {
-  return sortBy === "brier" || sortBy === "logLoss" || sortBy === "ece" ? -1 : 1
-}
-
-function StrategyMiniCard({ label, pick }: { label: string; pick: OptimizerStrategyPick }) {
-  return (
-    <div className="bg-background border border-border/50 rounded-xl p-4 space-y-2 shadow-sm">
-      <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
-      <div className="font-display font-bold text-base text-foreground truncate">{pick.name ?? "—"}</div>
-      <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-wider">{pick.status ?? "unknown"}</div>
-      <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-        <div>Acc: <span className="text-foreground font-bold">{metricPct(pick.accuracy)}</span></div>
-        <div>Brier: <span className="text-foreground font-bold">{metricNum(pick.brier)}</span></div>
-        <div>LL: <span className="text-foreground font-bold">{metricNum(pick.logLoss)}</span></div>
-        <div>ECE: <span className="text-foreground font-bold">{metricNum(pick.calibrationError)}</span></div>
-      </div>
-    </div>
-  )
-}
-
-function ProductionPerformanceCard({ data }: {
-  data: {
-    strategyName: string | null
-    strategyVersion: string | null
-    dateImplemented: string | null
-    lastValidationDate: string | null
-    overallAccuracy: number | null
-    walkForwardAccuracy: number | null
-    shadowReplayAccuracy: number | null
-    paperTradingAccuracy: number | null
-    liveGradedAccuracy: number | null
-    brierScore: number | null
-    logLoss: number | null
-    ece: number | null
-    calibrationError: number | null
-    coverage: number | null
-    abstentionRate: number | null
-    totalPredictions: number
-    totalGradedPredictions: number
-  }
-}) {
-  return (
-    <Card className="glass-panel">
-      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-        <CardTitle className="text-lg font-display flex items-center gap-3">
-          <ShieldAlert className="w-5 h-5 text-primary" />
-          Current Production Performance
-        </CardTitle>
-        <p className="text-xs text-muted-foreground font-mono mt-2">
-          Strict scope: metrics only include rows locked after the currently deployed strategy implementation timestamp.
-        </p>
-      </CardHeader>
-      <CardContent className="p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-mono">
-          <div className="bg-background p-4 rounded-xl border border-border/50">Strategy: <span className="text-foreground font-bold">{data.strategyName ?? "—"}</span></div>
-          <div className="bg-background p-4 rounded-xl border border-border/50">Version: <span className="text-foreground font-bold">{data.strategyVersion ?? "—"}</span></div>
-          <div className="bg-background p-4 rounded-xl border border-border/50">Implemented: <span className="text-foreground font-bold">{data.dateImplemented ? formatDate(data.dateImplemented) : "—"}</span></div>
-          <div className="bg-background p-4 rounded-xl border border-border/50">Last Validation: <span className="text-foreground font-bold">{data.lastValidationDate ? formatDate(data.lastValidationDate) : "—"}</span></div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricStat label="OVERALL ACC" value={metricPct(data.overallAccuracy)} />
-          <MetricStat label="WALK-FWD ACC" value={metricPct(data.walkForwardAccuracy)} />
-          <MetricStat label="SHADOW ACC" value={metricPct(data.shadowReplayAccuracy)} />
-          <MetricStat label="PAPER ACC" value={metricPct(data.paperTradingAccuracy)} />
-          <MetricStat label="LIVE ACC" value={metricPct(data.liveGradedAccuracy)} />
-          <MetricStat label="COVERAGE" value={metricPct(data.coverage)} />
-          <MetricStat label="ABSTENTION" value={metricPct(data.abstentionRate)} />
-          <MetricStat label="GRADED N" value={data.totalGradedPredictions.toLocaleString()} />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <MetricStat label="BRIER" value={metricNum(data.brierScore)} />
-          <MetricStat label="LOG LOSS" value={metricNum(data.logLoss)} />
-          <ECEStat label="ECE" ece={data.ece ?? data.calibrationError} />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function OptimizerSummaryCard({ data }: {
-  data: {
-    status: "idle" | "running" | "completed"
-    lastRunAt: string | null
-    currentStage: string | null
-    strategiesGenerated: number
-    strategiesTested: number
-    uniqueStrategies: number
-    duplicateStrategiesRejected: number
-    strategiesAwaitingValidation: number
-    strategiesInShadowMode: number
-    challengers: number
-    archivedStrategies: number
-    failedStrategies: number
-    largestAccuracyImprovement: number | null
-    largestBrierImprovement: number | null
-    largestLogLossImprovement: number | null
-  }
-}) {
-  return (
-    <Card className="glass-panel">
-      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-        <CardTitle className="text-lg font-display flex items-center gap-3">
-          <FlaskConical className="w-5 h-5 text-primary" />
-          Optimizer Summary
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-6 space-y-4">
-        <div className="flex flex-wrap gap-3 text-xs font-mono uppercase tracking-widest">
-          <Badge variant={data.status === "completed" ? "success" : data.status === "running" ? "warning" : "secondary"}>{data.status}</Badge>
-          {data.currentStage && <Badge variant="outline">{data.currentStage}</Badge>}
-          {data.lastRunAt && <span className="text-muted-foreground">last run {formatDate(data.lastRunAt)}</span>}
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <MetricStat label="GENERATED" value={String(data.strategiesGenerated)} />
-          <MetricStat label="TESTED" value={String(data.strategiesTested)} />
-          <MetricStat label="UNIQUE" value={String(data.uniqueStrategies)} />
-          <MetricStat label="DUP REJECT" value={String(data.duplicateStrategiesRejected)} />
-          <MetricStat label="AWAITING" value={String(data.strategiesAwaitingValidation)} />
-          <MetricStat label="SHADOW" value={String(data.strategiesInShadowMode)} />
-          <MetricStat label="CHALLENGERS" value={String(data.challengers)} />
-          <MetricStat label="ARCHIVED" value={String(data.archivedStrategies)} />
-          <MetricStat label="FAILED" value={String(data.failedStrategies)} />
-          <MetricStat label="Δ ACC BEST" value={data.largestAccuracyImprovement === null ? "—" : `${data.largestAccuracyImprovement > 0 ? "+" : ""}${data.largestAccuracyImprovement}%`} />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono text-muted-foreground">
-          <div>Best Brier improvement: <span className="text-foreground font-bold">{data.largestBrierImprovement === null ? "—" : data.largestBrierImprovement.toFixed(3)}</span></div>
-          <div>Best LogLoss improvement: <span className="text-foreground font-bold">{data.largestLogLossImprovement === null ? "—" : data.largestLogLossImprovement.toFixed(3)}</span></div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function StrategyLeaderboard({ strategies, onPromote, onArchive }: { strategies: CandidateConfigRecord[]; onPromote?: (strategy: CandidateConfigRecord) => void; onArchive?: (strategy: CandidateConfigRecord) => void }) {
-  const [sortBy, setSortBy] = useState<StrategySortKey>("accuracy")
-  const sorted = useMemo(() => {
-    const dir = sortDirectionFor(sortBy)
-    return [...strategies].sort((a, b) => {
-      const va = recordSortValue(a, sortBy)
-      const vb = recordSortValue(b, sortBy)
-      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir
-      return String(vb).localeCompare(String(va)) * dir
-    })
-  }, [strategies, sortBy])
-
-  return (
-    <Card className="glass-panel">
-      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-        <CardTitle className="text-lg font-display flex items-center gap-3">
-          <Crown className="w-5 h-5 text-primary" />
-          Strategy Leaderboard
-        </CardTitle>
-        <div className="flex flex-wrap gap-2 mt-3 text-[10px] font-mono uppercase tracking-widest">
-          {(["accuracy","brier","logLoss","ece","coverage","surface","tour","competitiveBalance","evidenceReliability","recommendation","elite","family","lastTested","version"] as StrategySortKey[]).map((key) => (
-            <Button key={key} size="sm" variant={sortBy === key ? "accent" : "outline"} onClick={() => setSortBy(key)} className="h-8 px-3 text-[10px]">
-              {key}
-            </Button>
-          ))}
-        </div>
-      </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-secondary/10">
-            <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
-              <th className="py-4 px-5">Strategy</th>
-              <th className="py-4 px-5">Identity</th>
-              <th className="py-4 px-5">Last Tested</th>
-              <th className="py-4 px-5 text-right">Acc</th>
-              <th className="py-4 px-5 text-right">Brier</th>
-              <th className="py-4 px-5 text-right">LL</th>
-              <th className="py-4 px-5 text-right">ECE</th>
-              <th className="py-4 px-5 text-right">Coverage</th>
-              <th className="py-4 px-5">Family</th>
-              <th className="py-4 px-5">Status</th>
-              <th className="py-4 px-5">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {sorted.map((strategy) => (
-              <tr key={strategy.id} className="hover:bg-secondary/20 transition-colors">
-                <td className="py-3 px-5 font-display font-bold">{strategy.strategyName ?? strategy.name}</td>
-                <td className="py-3 px-5 font-mono text-[11px] text-muted-foreground">
-                  <div>{strategy.strategyId ?? "—"}</div>
-                  <div>{strategy.strategyVersion ?? "—"}</div>
-                </td>
-                <td className="py-3 px-5 font-mono text-[11px] text-muted-foreground">{strategy.lastTestedAt ? formatDate(strategy.lastTestedAt) : "—"}</td>
-                <td className="py-3 px-5 text-right font-mono">{metricPct(numMetric(strategy, "accuracy"))}</td>
-                <td className="py-3 px-5 text-right font-mono">{metricNum(numMetric(strategy, "brier"))}</td>
-                <td className="py-3 px-5 text-right font-mono">{metricNum(numMetric(strategy, "logLoss"))}</td>
-                <td className="py-3 px-5 text-right font-mono">{metricNum(numMetric(strategy, "ece"))}</td>
-                <td className="py-3 px-5 text-right font-mono">{metricPct(recordCoverage(strategy))}</td>
-                <td className="py-3 px-5 font-mono text-[11px]">{strategy.strategyFamily ?? strategy.creationMethod ?? "—"}</td>
-                <td className="py-3 px-5"><Badge variant={strategy.status === "promoted" ? "success" : strategy.status === "archived" ? "secondary" : "outline"}>{strategy.status}</Badge></td>
-                <td className="py-3 px-5">
-                  <div className="flex gap-2">
-                    {onPromote && <Button size="sm" variant="outline" onClick={() => onPromote(strategy)} className="h-8">Promote</Button>}
-                    {onArchive && <Button size="sm" variant="ghost" onClick={() => onArchive(strategy)} className="h-8">Archive</Button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </CardContent>
-    </Card>
-  )
-}
-
-function OptimizerRecommendationsPanel({ summary, strategies }: { summary: OptimizerAccuracySummaryResponse; strategies: CandidateConfigRecord[] }) {
-  const recommended = strategies.filter((s) => s.acceptanceChecksPassed)
-  return (
-    <Card className="glass-panel">
-      <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-        <CardTitle className="text-lg font-display flex items-center gap-3">
-          <Beaker className="w-5 h-5 text-primary" />
-          Optimizer Recommendations
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <MetricStat label="PRODUCTION CANDIDATE" value={summary.comparison.production.name ?? "—"} />
-          <MetricStat label="BEST NEW STRATEGY" value={summary.optimizer.bestNewStrategy.name ?? "—"} />
-          <MetricStat label="READY TO PROMOTE" value={String(recommended.length)} />
-        </div>
-        <div className="text-xs font-mono text-muted-foreground">Uses acceptance checks, diversity floors, novelty, and current production/challenger comparisons to rank promotion candidates.</div>
-      </CardContent>
-    </Card>
-  )
-}
-
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
   const { data: runs } = useListEvaluationRuns()
   const { data: settings } = useGetEvaluationSettings()
   const { data: shadowDashboard } = useGetShadowReplayDashboard()
-  const { data: optimizerSummary } = useGetOptimizerAccuracySummary({
-    query: {
-      queryKey: getGetOptimizerAccuracySummaryQueryKey(),
-      refetchInterval: 10000,
-    },
-  })
-  const { data: candidateConfigs } = useGetCandidateConfigs({
-    query: {
-      queryKey: getCandidateConfigsQueryKey(),
-      refetchInterval: 10000,
-    },
-  })
   // Task #12: pattern analysis and threshold evaluation data
   const { data: patternAnalysis } = useGetLatestPatternAnalysis()
   const { data: thresholdEvaluation } = useGetLatestThresholdEvaluation()
@@ -1252,8 +940,6 @@ export default function AccuracyDashboardPage() {
       queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
       queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
       queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
-      queryClient.invalidateQueries({ queryKey: getGetOptimizerAccuracySummaryQueryKey() })
-      queryClient.invalidateQueries({ queryKey: getCandidateConfigsQueryKey() })
     },
   })
 
@@ -1265,18 +951,12 @@ export default function AccuracyDashboardPage() {
       queryClient.invalidateQueries({ queryKey: getListEvaluationRunsQueryKey() })
       queryClient.invalidateQueries({ queryKey: getGetLatestPatternAnalysisQueryKey() })
       queryClient.invalidateQueries({ queryKey: getGetLatestThresholdEvaluationQueryKey() })
-      queryClient.invalidateQueries({ queryKey: getGetOptimizerAccuracySummaryQueryKey() })
-      queryClient.invalidateQueries({ queryKey: getCandidateConfigsQueryKey() })
     },
   })
 
   const runPaperTrading = useRunPaperTradingCycle({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getGetOptimizerAccuracySummaryQueryKey() })
-        queryClient.invalidateQueries({ queryKey: getCandidateConfigsQueryKey() })
-      },
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetEvaluationDashboardQueryKey() }),
     },
   })
   const updateSettings = useUpdateEvaluationSettings({
@@ -1443,48 +1123,6 @@ export default function AccuracyDashboardPage() {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {optimizerSummary && (
-        <section className="space-y-6">
-          <ProductionPerformanceCard data={optimizerSummary.production} />
-          <OptimizerSummaryCard data={optimizerSummary.optimizer} />
-
-          <Card className="glass-panel">
-            <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-              <CardTitle className="text-lg font-display flex items-center gap-3">
-                <Swords className="w-5 h-5 text-primary" />
-                Production vs Challenger
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <StrategyMiniCard label="Current Production" pick={optimizerSummary.comparison.production} />
-              <StrategyMiniCard label="Current Challenger" pick={optimizerSummary.comparison.challenger} />
-            </CardContent>
-          </Card>
-
-          <Card className="glass-panel">
-            <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
-              <CardTitle className="text-lg font-display">Best Strategies By Segment / Objective</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              <StrategyMiniCard label="Current Production Strategy" pick={optimizerSummary.bestByCategory.currentProductionStrategy} />
-              <StrategyMiniCard label="Current Challenger Strategy" pick={optimizerSummary.bestByCategory.currentChallengerStrategy} />
-              <StrategyMiniCard label="Best Historical Strategy" pick={optimizerSummary.bestByCategory.bestHistoricalStrategy} />
-              <StrategyMiniCard label="Best Newly Generated Strategy" pick={optimizerSummary.bestByCategory.bestNewlyGeneratedStrategy} />
-              <StrategyMiniCard label="Best By Surface" pick={optimizerSummary.bestByCategory.bestBySurface} />
-              <StrategyMiniCard label="Best By Tour Level" pick={optimizerSummary.bestByCategory.bestByTourLevel} />
-              <StrategyMiniCard label="Best Competitive Balance Tier" pick={optimizerSummary.bestByCategory.bestByCompetitiveBalanceTier} />
-              <StrategyMiniCard label="Best Evidence Reliability Tier" pick={optimizerSummary.bestByCategory.bestByEvidenceReliabilityTier} />
-              <StrategyMiniCard label="Best Recommendation Type" pick={optimizerSummary.bestByCategory.bestByRecommendationType} />
-              <StrategyMiniCard label="Best Calibration Quality" pick={optimizerSummary.bestByCategory.bestByCalibrationQuality} />
-              <StrategyMiniCard label="Best Raw Winner Accuracy" pick={optimizerSummary.bestByCategory.bestByRawWinnerAccuracy} />
-            </CardContent>
-          </Card>
-
-          <StrategyLeaderboard strategies={candidateConfigs ?? []} />
-          <OptimizerRecommendationsPanel summary={optimizerSummary} strategies={candidateConfigs ?? []} />
-        </section>
       )}
 
       {isLoading ? (

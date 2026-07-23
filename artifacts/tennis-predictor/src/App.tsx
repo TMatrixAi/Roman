@@ -22,7 +22,6 @@ const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
-const PaymentsPage = lazy(() => import('@/pages/Payments'));
 
 const queryClient = new QueryClient();
 
@@ -51,10 +50,6 @@ function Router() {
           <Route path="/backtesting/:id" component={BacktestResultsPage} />
           <Route path="/backtesting" component={BacktestingPortalPage} />
           <Route path="/launch-audit" component={LaunchAuditPage} />
-          <Route path="/payments" component={PaymentsPage} />
-          <Route path="/payments/pricing" component={PaymentsPage} />
-          <Route path="/payments/billing" component={PaymentsPage} />
-          <Route path="/payments/admin" component={PaymentsPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
@@ -64,7 +59,12 @@ function Router() {
 
 function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem={false}
+      themes={["light", "dark"]}
+    >
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>

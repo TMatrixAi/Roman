@@ -641,16 +641,16 @@ function DataHealthPanel() {
             },
           ].map(({ label, value, warn }) => (
             <div key={label} className="space-y-1">
-              <div className="text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
-              <div className={`text-sm font-mono font-bold ${warn ? "text-yellow-500" : "text-foreground"}`}>{value}</div>
+              <div className="text-[9px] font-mono font-bold text-primary/75 tracking-widest uppercase">{label}</div>
+              <div className={`text-sm font-mono font-bold ${warn ? "text-warning" : "text-foreground"}`}>{value}</div>
             </div>
           ))}
         </div>
 
         {/* Date gaps */}
         {gaps.length > 0 && (
-          <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 space-y-2">
-            <div className="text-[9px] font-mono font-bold text-yellow-500 tracking-widest uppercase flex items-center gap-1.5">
+          <div className="p-3 rounded-lg border border-warning/40 bg-warning/10 space-y-2">
+            <div className="text-[9px] font-mono font-bold text-warning tracking-widest uppercase flex items-center gap-1.5">
               <AlertTriangle className="w-3 h-3" />
               {gaps.length} Coverage Gap{gaps.length > 1 ? "s" : ""} &gt; 30 Days
             </div>
@@ -661,12 +661,12 @@ function DataHealthPanel() {
                 return (
                   <div key={i} className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-mono text-muted-foreground">
-                      {g.fromDate} → {g.toDate} <span className="text-yellow-500">({g.dayCount}d)</span>
+                      {g.fromDate} → {g.toDate} <span className="text-warning">({g.dayCount}d)</span>
                     </span>
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 px-2 font-mono text-[9px] tracking-widest border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10 shrink-0"
+                      className="h-6 px-2 font-mono text-[9px] tracking-widest border-warning/50 text-warning hover:bg-warning/10 shrink-0"
                       disabled={isFilling || backfillRange.isPending}
                       onClick={() => handleFillGap(g.fromDate, g.toDate)}
                     >
@@ -684,7 +684,7 @@ function DataHealthPanel() {
         )}
 
         {gaps.length === 0 && !freshnessLoading && freshness && (
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-green-500">
+          <div className="flex items-center gap-1.5 text-[10px] font-mono text-primary">
             <CheckCircle2 className="w-3 h-3" />
             No gaps &gt; 30 days detected
           </div>
@@ -692,7 +692,7 @@ function DataHealthPanel() {
 
         {/* Task #64: live status when a range backfill is running */}
         {backfillTriggeredAt && liveProgress.data?.isRunning && (
-          <div className="flex items-start gap-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-[10px] font-mono text-blue-400">
+          <div className="flex items-start gap-2 p-2 bg-primary/10 border border-primary/35 rounded text-[10px] font-mono text-primary">
             <Loader2 className="w-3 h-3 mt-0.5 animate-spin shrink-0" />
             <div className="space-y-0.5">
               <div className="font-bold tracking-widest uppercase">BACKFILL RUNNING</div>
@@ -710,7 +710,7 @@ function DataHealthPanel() {
           </div>
         )}
         {backfillTriggeredAt && !liveProgress.data?.isRunning && liveProgress.data !== undefined && (
-          <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded text-[10px] font-mono text-green-400">
+          <div className="flex items-center gap-2 p-2 bg-primary/10 border border-primary/35 rounded text-[10px] font-mono text-primary">
             <CheckCircle2 className="w-3 h-3 shrink-0" />
             <span>
               Backfill complete (status: {liveProgress.data.lastCompletedStatus ?? "—"}
@@ -754,10 +754,10 @@ function DataHealthPanel() {
           {verifyResult && (
             <span className="text-[10px] font-mono text-muted-foreground">
               {verifyResult.discrepancies.length === 0
-                ? <span className="text-green-500">✓ All rankings match (checked {verifyResult.totalProviderRankings} players)</span>
+                ? <span className="text-primary">✓ All rankings match (checked {verifyResult.totalProviderRankings} players)</span>
                 : (
                   <button
-                    className="text-yellow-500 underline underline-offset-2 cursor-pointer"
+                    className="text-warning underline underline-offset-2 cursor-pointer"
                     onClick={() => setShowDiscrepancies((p) => !p)}
                   >
                     {verifyResult.discrepancies.length} discrepan{verifyResult.discrepancies.length === 1 ? "cy" : "cies"} &gt;10 places
@@ -782,7 +782,7 @@ function DataHealthPanel() {
                   {" → "}
                   live <span className="text-foreground">{d.providerRank}</span>
                   {" "}
-                  <span className="text-yellow-500">({d.gapPlaces > 0 ? "+" : ""}{(d.providerRank - (d.storedRank ?? 0))})</span>
+                  <span className="text-warning">({d.gapPlaces > 0 ? "+" : ""}{(d.providerRank - (d.storedRank ?? 0))})</span>
                 </span>
               </div>
             ))}
@@ -842,7 +842,7 @@ export default function BacktestingPortalPage() {
       </div>
 
       {/* Safety banner */}
-      <div className="flex items-start gap-3 p-4 border border-primary/20 bg-primary/5 rounded-xl">
+      <div className="flex items-start gap-3 p-4 border border-primary/20 bg-card rounded-xl border-l-[3px]">
         <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
         <div className="text-xs font-mono text-muted-foreground leading-relaxed space-y-1">
           <p><strong className="text-foreground">Evaluation-only runs</strong> — no production changes, ever. The frozen model and current calibration are applied; nothing is refit.</p>
@@ -890,8 +890,8 @@ export default function BacktestingPortalPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2.5 text-xs font-mono font-bold tracking-widest uppercase transition-colors border-b-2 -mb-px ${
-                activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+              className={`px-4 py-2.5 text-xs font-mono font-bold tracking-widest uppercase transition-colors border-b-2 -mb-px rounded-t-md ${
+                activeTab === tab ? "border-primary bg-primary text-primary-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {tab === "runs" ? `Completed Runs (${completedRuns.length})` : "Candidate Configs"}
