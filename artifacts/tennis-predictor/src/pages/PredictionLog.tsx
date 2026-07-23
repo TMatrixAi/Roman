@@ -1,12 +1,15 @@
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { useListEvaluationPredictions, type EvaluationPrediction } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
-import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon } from "lucide-react"
+import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon, ChevronDown, Loader2 } from "lucide-react"
+
+const PAGE_SIZE = 50
 
 /** Task #30: mirrors the Ledger's `HistoricalMatchFallbackBadge` (see `History.tsx`) -- real
  * disclosure that at least one player in this prediction was resolved via the historical-match
@@ -144,14 +147,42 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
 
 export default function PredictionLogPage() {
   const [runKind, setRunKind] = useState<"all" | "historical_test" | "paper_trade">("all")
+  const [page, setPage] = useState(0)
+  const [allPredictions, setAllPredictions] = useState<EvaluationPrediction[]>([])
+  const [hasMore, setHasMore] = useState(true)
 
-  const { data: predictions, isLoading } = useListEvaluationPredictions({
-    limit: 100,
+  const { data: predictions, isLoading, isFetching } = useListEvaluationPredictions({
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
     ...(runKind !== "all" ? { runKind } : {}),
+  }, {
+    query: {
+      keepPreviousData: true,
+      onSuccess: (data: EvaluationPrediction[]) => {
+        if (page === 0) {
+          setAllPredictions(data)
+        } else {
+          setAllPredictions(prev => [...prev, ...data])
+        }
+        setHasMore(data.length === PAGE_SIZE)
+      },
+    },
   })
 
-  const preMatch = (predictions ?? []).filter((p) => p.status === "pending")
-  const postMatch = (predictions ?? []).filter((p) => p.status !== "pending")
+  const handleTabChange = useCallback((v: string) => {
+    setRunKind(v as typeof runKind)
+    setPage(0)
+    setAllPredictions([])
+    setHasMore(true)
+  }, [])
+
+  const loadMore = useCallback(() => {
+    setPage(p => p + 1)
+  }, [])
+
+  const displayed = allPredictions.length > 0 ? allPredictions : (predictions ?? [])
+  const preMatch = displayed.filter((p) => p.status === "pending")
+  const postMatch = displayed.filter((p) => p.status !== "pending")
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
@@ -162,7 +193,7 @@ export default function PredictionLogPage() {
             Every locked evaluation prediction — historical walk-forward tests and live paper trades. Locked at cutoff, never edited or backfilled.
           </p>
         </div>
-        <Tabs value={runKind} onValueChange={(v) => setRunKind(v as typeof runKind)} className="w-full md:w-auto">
+        <Tabs value={runKind} onValueChange={handleTabChange} className="w-full md:w-auto">
           <TabsList className="w-full h-11 bg-secondary/50 border border-border/50 p-1">
             <TabsTrigger value="all" className="flex-1 font-mono text-xs uppercase tracking-widest">All</TabsTrigger>
             <TabsTrigger value="historical_test" className="flex-1 font-mono text-xs uppercase tracking-widest">Historical Test</TabsTrigger>
@@ -214,6 +245,20 @@ export default function PredictionLogPage() {
               </CardContent></Card>
             )}
           </section>
+        </div>
+      )}
+
+      {!isLoading && hasMore && (
+        <div className="flex justify-center pt-4">
+          <Button
+            variant="outline"
+            onClick={loadMore}
+            disabled={isFetching}
+            className="gap-2 font-mono"
+          >
+            {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
+            {isFetching ? "Loading…" : `Load more (showing ${displayed.length})`}
+          </Button>
         </div>
       )}
     </div>

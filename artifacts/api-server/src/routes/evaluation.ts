@@ -105,19 +105,18 @@ function withEvaluationHistoricalMatchFallbackFlag<T extends { featureSnapshot: 
 
 function deriveRecommendationFromEvaluationRow(row: {
   calibratedProbability: number | null;
-  featureSnapshot: unknown;
+  dataQuality: number | null;
+  tieBreakerApplied: boolean | null;
   modelAgreement: string | null;
   upsetRiskTier: string | null;
 }): Recommendation | null {
   if (typeof row.calibratedProbability !== "number" || !Number.isFinite(row.calibratedProbability)) return null;
   if (typeof row.modelAgreement !== "string" || typeof row.upsetRiskTier !== "string") return null;
+  if (typeof row.dataQuality !== "number" || !Number.isFinite(row.dataQuality)) return null;
 
-  const snapshot = row.featureSnapshot as { dataQuality?: unknown; engine?: { tieBreakerApplied?: unknown } } | null;
-  const dataQuality = typeof snapshot?.dataQuality === "number" && Number.isFinite(snapshot.dataQuality) ? snapshot.dataQuality : null;
-  if (dataQuality === null) return null;
-
+  const dataQuality = row.dataQuality;
   const dataQualityLabel = dataQuality >= 85 ? "Excellent" : dataQuality >= 65 ? "Strong" : dataQuality >= 45 ? "Acceptable" : dataQuality >= 25 ? "Limited" : "Poor";
-  const tieBreakerApplied = typeof snapshot?.engine?.tieBreakerApplied === "boolean" ? snapshot.engine.tieBreakerApplied : false;
+  const tieBreakerApplied = row.tieBreakerApplied === true;
   return computeRecommendation(row.calibratedProbability, dataQuality, dataQualityLabel, row.upsetRiskTier as Parameters<typeof computeRecommendation>[3], row.modelAgreement as Parameters<typeof computeRecommendation>[4], tieBreakerApplied);
 }
 
@@ -161,7 +160,7 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { runKind, segment, status, limit } = parsed.data;
+  const { runKind, segment, status, limit, offset } = parsed.data;
 
   const conditions = [];
   if (runKind) conditions.push(eq(evaluationPredictionsTable.runKind, runKind));
@@ -173,7 +172,8 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     .from(evaluationPredictionsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(evaluationPredictionsTable.scheduledStartAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(offset ?? 0);
 
   res.json(ListEvaluationPredictionsResponse.parse(rows.map(withEvaluationHistoricalMatchFallbackFlag)));
 });
@@ -197,10 +197,14 @@ router.get("/evaluation/predictions/stats", async (req, res): Promise<void> => {
     .from(evaluationPredictionsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined);
 
+  // Phase 9 perf fix: extract only the two scalar fields we need from featureSnapshot via
+  // PostgreSQL JSONB operators instead of loading the entire blob for all 40k+ rows into Node.
+  // This avoids the previous O(n) full-table JSONB load that caused ~19s page load times.
   const recommendationInputs = await db
     .select({
       calibratedProbability: evaluationPredictionsTable.calibratedProbability,
-      featureSnapshot: evaluationPredictionsTable.featureSnapshot,
+      dataQuality: sql<number | null>`(${evaluationPredictionsTable.featureSnapshot}->>'dataQuality')::real`,
+      tieBreakerApplied: sql<boolean | null>`((${evaluationPredictionsTable.featureSnapshot}->'engine'->>'tieBreakerApplied'))::boolean`,
       modelAgreement: evaluationPredictionsTable.modelAgreement,
       upsetRiskTier: evaluationPredictionsTable.upsetRiskTier,
     })
