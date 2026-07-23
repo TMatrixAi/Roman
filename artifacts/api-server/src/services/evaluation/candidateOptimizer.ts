@@ -520,10 +520,10 @@ export async function runOptimizerRun(
   // entries (new evidence snapshot, same fingerprint/strategy).
   options.onPhase?.("retest");
   const existingRows = await db.select().from(candidateConfigsTable).orderBy(desc(candidateConfigsTable.createdAt)).limit(400);
-  const retestSeeds = existingRows
+  const retestSeeds: CandidateDraft[] = existingRows
     .filter((row) => row.status === "approved" || row.status === "rejected" || row.status === "pending" || row.status === "under-review")
     .slice(0, 24)
-    .map((row) => {
+    .map((row): CandidateDraft | null => {
       const existingStrategy = toStrategySpecFromStored(row.proposedConfig);
       if (!existingStrategy) return null;
       const fp = strategyFingerprint(existingStrategy);

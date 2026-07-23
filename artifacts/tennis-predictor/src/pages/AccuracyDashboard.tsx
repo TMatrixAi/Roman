@@ -1230,11 +1230,13 @@ export default function AccuracyDashboardPage() {
   const { data: shadowDashboard } = useGetShadowReplayDashboard()
   const { data: optimizerSummary } = useGetOptimizerAccuracySummary({
     query: {
+      queryKey: getGetOptimizerAccuracySummaryQueryKey(),
       refetchInterval: 10000,
     },
   })
   const { data: candidateConfigs } = useGetCandidateConfigs({
     query: {
+      queryKey: getCandidateConfigsQueryKey(),
       refetchInterval: 10000,
     },
   })

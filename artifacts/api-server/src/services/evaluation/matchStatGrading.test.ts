@@ -63,7 +63,7 @@ function makeMatch(overrides: Partial<MatchRecord> = {}): MatchRecord {
     tournamentName: "Wimbledon",
     tournamentLevel: "GrandSlam",
     round: "Final",
-    matchFormat: "best_of_5",
+    matchFormat: "BestOf5",
     surface: "Grass",
     indoor: false,
     opponentId: "p2",

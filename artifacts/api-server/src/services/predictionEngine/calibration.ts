@@ -49,13 +49,13 @@ export function calibrateProbability(rawProbability: number, dataQuality: number
   if (dataQuality < 20) {
     confidenceFactor = 0.4;
   } else if (dataQuality < 55) {
-    confidenceFactor = 0.4 + ((dataQuality - 20) / 35) * (0.85 - 0.4);
+    confidenceFactor = 0.4 + ((dataQuality - 20) / 35) * (0.8 - 0.4);
   } else if (dataQuality < 65) {
-    confidenceFactor = 0.85;
+    confidenceFactor = 0.8;
   } else if (dataQuality < 85) {
-    confidenceFactor = 0.85 - ((dataQuality - 65) / 20) * (0.85 - 0.55);
+    confidenceFactor = 0.8 - ((dataQuality - 65) / 20) * (0.8 - 0.52);
   } else {
-    confidenceFactor = Math.max(0.4, 0.55 - ((dataQuality - 85) / 15) * (0.55 - 0.4));
+    confidenceFactor = Math.max(0.4, 0.52 - ((dataQuality - 85) / 15) * (0.52 - 0.4));
   }
   const calibrated = 50 + (rawProbability - 50) * confidenceFactor;
   return Math.round(Math.max(5, Math.min(95, calibrated)) * 10) / 10;

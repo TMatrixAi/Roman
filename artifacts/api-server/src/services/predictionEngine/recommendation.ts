@@ -58,20 +58,25 @@ export function computeRecommendation(
   // curve itself (calibration.ts), not this gate -- re-check this threshold again once that's
   // addressed and once live paper-trading volume (Task #121) exists to compare against.
   if (
-    margin >= 22 &&
-    dataQuality >= 45 &&
+    margin >= 26 &&
+    dataQuality >= 50 &&
+    upsetRisk === "LOW" &&
+    modelAgreement === "Strong"
+  )
+    return "STRONG_RECOMMENDATION";
+  if (
+    margin >= 12 &&
     (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
     modelAgreement !== "Mixed" &&
     modelAgreement !== "HighDisagreement"
   )
-    return "STRONG_RECOMMENDATION";
-  if (margin >= 10) return "MODERATE_LEAN";
+    return "MODERATE_LEAN";
   // Margin 8-10 (exclusive of the >=10 branch above, so effectively [8, 10)) with a genuinely
   // low/moderate upset risk and non-Mixed/HighDisagreement agreement is a real, if modest, lean --
   // not a case of "genuine upset danger" (HIGH_RISK's documented meaning above). Falling through
   // to HIGH_RISK for these rows mislabeled otherwise-unremarkable matches as risky.
   if (
-    margin >= 8 &&
+    margin >= 9 &&
     (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
     modelAgreement !== "Mixed" &&
     modelAgreement !== "HighDisagreement"

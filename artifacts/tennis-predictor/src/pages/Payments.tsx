@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useGetPaymentsStatus, useCreatePaymentsCheckoutSession, useCreateBillingPortalSession } from "@workspace/api-client-react";
+import { useGetPaymentsStatus, useCreatePaymentsCheckoutSession, useCreateBillingPortalSession, getPaymentsStatusQueryKey } from "@workspace/api-client-react";
 import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag";
 
 const ENTITLEMENT_LABELS: Record<string, string> = {
@@ -29,7 +29,7 @@ function formatDate(value: string | null | undefined): string {
 
 export default function PaymentsPage() {
   const paymentsEnabled = isPaymentsV2Enabled();
-  const { data, isLoading, refetch } = useGetPaymentsStatus({ query: { enabled: paymentsEnabled } });
+  const { data, isLoading, refetch } = useGetPaymentsStatus({ query: { queryKey: getPaymentsStatusQueryKey(), enabled: paymentsEnabled } });
   const createCheckout = useCreatePaymentsCheckoutSession();
   const createPortal = useCreateBillingPortalSession();
   const [location, setLocation] = useLocation();

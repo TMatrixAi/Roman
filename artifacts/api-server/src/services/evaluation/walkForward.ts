@@ -298,6 +298,15 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
       // rows that were scored by the old directional cascade (see isKnownBadCascadeRow).
       const tieBreakerApplied = scored?.snapshot.engine.tieBreakerApplied ?? false;
       const lockedAt = new Date();
+      const player1Id = typeof match.player1Id === "string" ? match.player1Id : null;
+      const player1Name = typeof match.player1Name === "string" ? match.player1Name : null;
+      const player2Id = typeof match.player2Id === "string" ? match.player2Id : null;
+      const player2Name = typeof match.player2Name === "string" ? match.player2Name : null;
+
+      if (!player1Id || !player1Name || !player2Id || !player2Name) {
+        logger.warn({ historicalMatchId: match.id }, "Skipping historical evaluation row with missing required player identifiers");
+        continue;
+      }
 
       // Sanitize and validate the persistence object to avoid fatal DB errors
       const toInsert = {
@@ -313,10 +322,10 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
         foldId,
         segment,
         historicalMatchId: typeof match.id === "number" ? match.id : null,
-        player1Id: typeof match.player1Id === "string" ? match.player1Id : null,
-        player1Name: typeof match.player1Name === "string" ? match.player1Name : null,
-        player2Id: typeof match.player2Id === "string" ? match.player2Id : null,
-        player2Name: typeof match.player2Name === "string" ? match.player2Name : null,
+        player1Id,
+        player1Name,
+        player2Id,
+        player2Name,
         surface: typeof match.surface === "string" ? match.surface : null,
         matchFormat: typeof match.matchFormat === "string" ? match.matchFormat : null,
         tournamentLevel: typeof match.tournamentLevel === "string" ? match.tournamentLevel : null,
@@ -332,14 +341,14 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
         rawProbability: rawProbability !== null && Number.isFinite(rawProbability) ? rawProbability * 100 : null,
         calibratedProbability: rawProbability !== null && Number.isFinite(rawProbability) ? rawProbability * 100 : null,
         predictedWinnerId: predictedWinnerId ?? null,
-        predictedWinnerName: predictedWinnerId ? (predictedWinnerId === match.player1Id ? match.player1Name : match.player2Name) : null,
+        predictedWinnerName: predictedWinnerId ? (predictedWinnerId === player1Id ? player1Name : player2Name) : null,
         status: rawProbability === null ? "void" : isVoid ? "void" : "graded",
         actualWinnerId: typeof match.winnerId === "string" ? match.winnerId : null,
         actualWinnerName:
           match.winnerId && typeof match.winnerId === "string"
-            ? match.winnerId === match.player1Id
-              ? match.player1Name
-              : match.player2Name
+            ? match.winnerId === player1Id
+              ? player1Name
+              : player2Name
             : null,
         resultType: rawProbability === null ? null : resultType,
         includedInAccuracy: typeof includedInAccuracy === "boolean" ? includedInAccuracy : false,
@@ -377,8 +386,6 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
           throw err;
         }
       }
-
-      results.push({ id: inserted.id, rawProbability, player1Won, includedInAccuracy, tieBreakerApplied, lockedAt });
     }
 
     return results;

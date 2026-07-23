@@ -20,9 +20,9 @@ test("STRONG_RECOMMENDATION is withheld when model agreement is Mixed, even with
   assert.notEqual(result, "STRONG_RECOMMENDATION", "Mixed agreement must block STRONG_RECOMMENDATION regardless of margin/data quality/risk");
 });
 
-test("STRONG_RECOMMENDATION still fires with Moderate model agreement (only Mixed/HighDisagreement block it)", () => {
+test("STRONG_RECOMMENDATION is withheld unless model agreement is Strong", () => {
   const result = computeRecommendation(85, 70, "Strong", "LOW", "Moderate");
-  assert.equal(result, "STRONG_RECOMMENDATION");
+  assert.notEqual(result, "STRONG_RECOMMENDATION");
 });
 
 test("DO_NOT_RECOMMEND still takes priority over everything else on poor data quality", () => {
@@ -40,22 +40,27 @@ test("HIGH_RISK still fires on EXTREME upset risk regardless of agreement", () =
   assert.equal(result, "HIGH_RISK");
 });
 
-test("a high-margin match that fails the agreement check but not the margin-only MODERATE_LEAN threshold falls back to MODERATE_LEAN, not HIGH_RISK", () => {
-  // margin=30 >= 22 (would have been STRONG) but HighDisagreement blocks it; margin >= 10 still
-  // qualifies for MODERATE_LEAN.
+test("a high-margin match with HighDisagreement does not get promoted to MODERATE_LEAN", () => {
+  // HighDisagreement now blocks both STRONG_RECOMMENDATION and MODERATE_LEAN, so this remains
+  // HIGH_RISK despite the large margin.
   const result = computeRecommendation(80, 70, "Strong", "LOW", "HighDisagreement");
-  assert.equal(result, "MODERATE_LEAN");
+  assert.equal(result, "HIGH_RISK");
 });
 
-test("margin 8-10 with LOW upset risk and Moderate agreement is MODERATE_LEAN, not HIGH_RISK (regression: previously fell through the catch-all)", () => {
-  // margin = 8.7, matches the real S. Johnson case that surfaced this bug.
+test("margin below 9 with LOW upset risk and Moderate agreement is HIGH_RISK under the stricter moderate-lean floor", () => {
+  // margin = 8.7 now remains below the cautious moderate-lean floor.
   const result = computeRecommendation(58.7, 70, "Strong", "LOW", "Moderate");
+  assert.equal(result, "HIGH_RISK");
+});
+
+test("margin exactly 9 with MODERATE upset risk and Strong agreement is MODERATE_LEAN (lower boundary of the new band)", () => {
+  const result = computeRecommendation(59, 70, "Strong", "MODERATE", "Strong");
   assert.equal(result, "MODERATE_LEAN");
 });
 
-test("margin exactly 8 with MODERATE upset risk and Strong agreement is MODERATE_LEAN (lower boundary of the new band)", () => {
+test("margin exactly 8 with MODERATE upset risk and Strong agreement is HIGH_RISK", () => {
   const result = computeRecommendation(58, 70, "Strong", "MODERATE", "Strong");
-  assert.equal(result, "MODERATE_LEAN");
+  assert.equal(result, "HIGH_RISK");
 });
 
 test("margin just under 8 with Strong agreement (so NOT caught by NO_STRONG_SIGNAL) still falls through to HIGH_RISK -- the new rule must not swallow sub-8 margins", () => {

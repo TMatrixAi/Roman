@@ -146,12 +146,12 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
 export default function PredictionLogPage() {
   const [runKind, setRunKind] = useState<"all" | "historical_test" | "paper_trade">("all")
 
-  const statsRunKind = runKind === "all" ? undefined : runKind
+  const statsParams = runKind === "all" ? undefined : { runKind }
   const { data: predictions, isLoading } = useListEvaluationPredictions({
     limit: 100,
     ...(runKind !== "all" ? { runKind } : {}),
   })
-  const { data: stats, isLoading: statsLoading } = useGetEvaluationPredictionStats(statsRunKind)
+  const { data: stats, isLoading: statsLoading } = useGetEvaluationPredictionStats(statsParams)
 
   const preMatch = (predictions ?? []).filter((p) => p.status === "pending")
   const postMatch = (predictions ?? []).filter((p) => p.status !== "pending")

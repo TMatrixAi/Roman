@@ -50,6 +50,7 @@ import {
   ClipboardPaste,
   History as HistoryIcon,
   Scale,
+  Target,
 } from "lucide-react"
 
 /** Task #30: real disclosure -- shown when this saved prediction involved a player resolved via
@@ -560,7 +561,7 @@ export default function HistoryPage() {
         <PredictionStatsCards isLoading={true} />
       ) : stats ? (
         <>
-        <PredictionStatsCards stats={stats} isLoading={false} />
+          <PredictionStatsCards stats={stats} isLoading={false} />
           {/* Task #37: coin-flip predictions flagged separately so users can track their borderline picks */}
           {(stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count ?? 0) > 0 && (
             <PredictionStatCard
@@ -570,7 +571,6 @@ export default function HistoryPage() {
               icon={Scale}
             />
           )}
-        </div>
         <SavedPredictionsLookup />
         </>
       ) : null}

@@ -241,7 +241,7 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
   }
 
   // Rule 12 (recommendation catch-all-gap): re-checks, independently of `computeRecommendation`,
-  // for exactly the margin 8-10 gap that recommendation.ts's own catch-all used to mislabel as
+  // for exactly the margin 9-12 gap that recommendation.ts's own catch-all could mislabel as
   // HIGH_RISK -- a real but modest lean (LOW/MODERATE upset risk, non-Mixed/HighDisagreement
   // agreement) is not "genuine upset danger" (HIGH_RISK's documented meaning). Deliberately
   // hardcodes the expected outcome here rather than calling `computeRecommendation` (that's
@@ -251,8 +251,8 @@ export function checkFinalConsistency(input: FinalConsistencyInput): FinalConsis
   // specifically, independent of whatever `computeRecommendation`'s current implementation does.
   const catchAllGapMargin = Math.abs(input.calibratedProbability - 50);
   if (
-    catchAllGapMargin >= 8 &&
-    catchAllGapMargin < 10 &&
+    catchAllGapMargin >= 9 &&
+    catchAllGapMargin < 12 &&
     (input.upsetRisk === "LOW" || input.upsetRisk === "MODERATE") &&
     input.modelAgreement !== "Mixed" &&
     input.modelAgreement !== "HighDisagreement" &&

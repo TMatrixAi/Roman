@@ -213,10 +213,10 @@ export interface DecisionTrace {
 /** Derive the dataQuality-shrink confidence factor (mirrors calibrateProbability internals). */
 function getFallbackShrinkFactor(dq: number): number {
   if (dq < 20) return 0.4;
-  if (dq < 55) return 0.4 + ((dq - 20) / 35) * (0.85 - 0.4);
-  if (dq < 65) return 0.85;
-  if (dq < 85) return 0.85 - ((dq - 65) / 20) * (0.85 - 0.55);
-  return Math.max(0.4, 0.55 - ((dq - 85) / 15) * (0.55 - 0.4));
+  if (dq < 55) return 0.4 + ((dq - 20) / 35) * (0.8 - 0.4);
+  if (dq < 65) return 0.8;
+  if (dq < 85) return 0.8 - ((dq - 65) / 20) * (0.8 - 0.52);
+  return Math.max(0.4, 0.52 - ((dq - 85) / 15) * (0.52 - 0.4));
 }
 
 /** Trace every condition computeRecommendation tests, in order. */
@@ -248,16 +248,16 @@ function buildRecommendationTrace(
   rules.push({ rule: `upsetRisk === "EXTREME" → HIGH_RISK`, matched: r3, decided: r3 });
   if (r3) return { result, margin, rulesChecked: rules };
 
-  const r4 = margin >= 22 && dataQuality >= 45 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
-  rules.push({ rule: `margin ≥ 22 AND DQ ≥ 45 AND LOW/MODERATE AND not Mixed/HighDisagreement → STRONG_RECOMMENDATION (margin=${margin.toFixed(1)}, DQ=${dataQuality})`, matched: r4, decided: r4 });
+  const r4 = margin >= 26 && dataQuality >= 50 && upsetRisk === "LOW" && modelAgreement === "Strong";
+  rules.push({ rule: `margin ≥ 26 AND DQ ≥ 50 AND LOW upset risk AND Strong agreement → STRONG_RECOMMENDATION (margin=${margin.toFixed(1)}, DQ=${dataQuality}, agreement="${modelAgreement}")`, matched: r4, decided: r4 });
   if (r4) return { result, margin, rulesChecked: rules };
 
-  const r5 = margin >= 10;
-  rules.push({ rule: `margin ≥ 10 → MODERATE_LEAN (margin=${margin.toFixed(1)})`, matched: r5, decided: r5 });
+  const r5 = margin >= 12 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 12 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r5, decided: r5 });
   if (r5) return { result, margin, rulesChecked: rules };
 
-  const r6 = margin >= 8 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
-  rules.push({ rule: `margin ≥ 8 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)})`, matched: r6, decided: r6 });
+  const r6 = margin >= 9 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 9 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r6, decided: r6 });
   if (r6) return { result, margin, rulesChecked: rules };
 
   rules.push({ rule: `fallthrough → HIGH_RISK`, matched: true, decided: true });

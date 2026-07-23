@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { calibrateProbability } from "./calibration";
 
-test("caps the confidence factor at 0.85 for the genuinely-supported 55-65 band, never claiming full raw trust (Task #75 re-validation)", () => {
+test("caps the confidence factor at 0.8 for the genuinely-supported 55-65 band, never claiming full raw trust (Task #75 re-validation)", () => {
   const at55 = calibrateProbability(65, 55);
   const at65 = calibrateProbability(65, 65);
   assert.equal(at55, at65);
   assert.ok(at55 < 65, `expected some residual shrinkage even at high data quality, got ${at55}`);
-  assert.equal(at55, 62.8); // 50 + (65-50)*0.85 = 62.75, rounded to 1 decimal
+  assert.equal(at55, 62); // 50 + (65-50)*0.8 = 62.0
 });
 
 test("decays trust back down past data quality 65, instead of holding a flat cap (Task #151 re-validation)", () => {
@@ -30,7 +30,7 @@ test("shrinks moderately, not severely, at typical 'Acceptable' data quality (48
   const at48 = calibrateProbability(65, 48);
   const at63 = calibrateProbability(65, 63);
   assert.ok(at48 > 58, `expected meaningfully above midpoint-shrunk value at DQ=48, got ${at48}`);
-  assert.ok(at63 > 62, `expected close to full trust at DQ=63, got ${at63}`);
+  assert.ok(at63 > 61.5, `expected close to full trust at DQ=63, got ${at63}`);
 });
 
 test("still shrinks hard toward 50 for genuinely thin (Poor) data quality", () => {

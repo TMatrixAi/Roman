@@ -58,6 +58,7 @@ import {
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
   GetRankingVerificationResponse,
+  GetPredictionStatsResponse,
   RunOptimizerBody,
   GetLatestPatternAnalysisResponse,
   GetLatestThresholdEvaluationResponse,
@@ -74,6 +75,18 @@ import { startOptimizerJob, getOptimizerJobStatus } from "../services/evaluation
 import { getLatestPatternAnalysis } from "../services/evaluation/patternAnalysis";
 import { getLatestThresholdEvaluation } from "../services/evaluation/thresholdEvaluation";
 import { getOptimizerAccuracySummary } from "../services/evaluation/optimizerSummary";
+import { computeRecommendation, type Recommendation } from "../services/predictionEngine/recommendation";
+import { enforceEntitlement } from "../lib/entitlements";
+import {
+  canUseCompetitiveBalance,
+  canUseDeveloperAnalytics,
+  canUseEliteRecommendations,
+  canUseEvidenceReliability,
+  canUseOptimizer,
+  canUsePredictionHistory,
+  canUseShadowReplay,
+  canUseWalkForward,
+} from "../services/payments/entitlementService";
 
 const router: IRouter = Router();
 
@@ -88,6 +101,24 @@ function withEvaluationHistoricalMatchFallbackFlag<T extends { featureSnapshot: 
 ): T & { usedHistoricalMatchFallback: boolean } {
   const snapshot = row.featureSnapshot as { engine?: { warnings?: unknown } } | null;
   return { ...row, usedHistoricalMatchFallback: usedHistoricalMatchFallback(snapshot?.engine?.warnings) };
+}
+
+function deriveRecommendationFromEvaluationRow(row: {
+  calibratedProbability: number | null;
+  featureSnapshot: unknown;
+  modelAgreement: string | null;
+  upsetRiskTier: string | null;
+}): Recommendation | null {
+  if (typeof row.calibratedProbability !== "number" || !Number.isFinite(row.calibratedProbability)) return null;
+  if (typeof row.modelAgreement !== "string" || typeof row.upsetRiskTier !== "string") return null;
+
+  const snapshot = row.featureSnapshot as { dataQuality?: unknown; engine?: { tieBreakerApplied?: unknown } } | null;
+  const dataQuality = typeof snapshot?.dataQuality === "number" && Number.isFinite(snapshot.dataQuality) ? snapshot.dataQuality : null;
+  if (dataQuality === null) return null;
+
+  const dataQualityLabel = dataQuality >= 85 ? "Excellent" : dataQuality >= 65 ? "Strong" : dataQuality >= 45 ? "Acceptable" : dataQuality >= 25 ? "Limited" : "Poor";
+  const tieBreakerApplied = typeof snapshot?.engine?.tieBreakerApplied === "boolean" ? snapshot.engine.tieBreakerApplied : false;
+  return computeRecommendation(row.calibratedProbability, dataQuality, dataQualityLabel, row.upsetRiskTier as Parameters<typeof computeRecommendation>[3], row.modelAgreement as Parameters<typeof computeRecommendation>[4], tieBreakerApplied);
 }
 
 router.get("/evaluation/runs", async (_req, res): Promise<void> => {
@@ -166,14 +197,24 @@ router.get("/evaluation/predictions/stats", async (req, res): Promise<void> => {
     .from(evaluationPredictionsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-  const byRecommendationRows = await db
+  const recommendationInputs = await db
     .select({
-      recommendation: evaluationPredictionsTable.recommendation,
-      count: sql<number>`count(*)`.mapWith(Number),
+      calibratedProbability: evaluationPredictionsTable.calibratedProbability,
+      featureSnapshot: evaluationPredictionsTable.featureSnapshot,
+      modelAgreement: evaluationPredictionsTable.modelAgreement,
+      upsetRiskTier: evaluationPredictionsTable.upsetRiskTier,
     })
     .from(evaluationPredictionsTable)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .groupBy(evaluationPredictionsTable.recommendation);
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+  const byRecommendationCounts = new Map<Recommendation, number>();
+  for (const row of recommendationInputs) {
+    const recommendation = deriveRecommendationFromEvaluationRow(row);
+    if (!recommendation) continue;
+    byRecommendationCounts.set(recommendation, (byRecommendationCounts.get(recommendation) ?? 0) + 1);
+  }
+
+  const byRecommendationRows = Array.from(byRecommendationCounts.entries()).map(([recommendation, count]) => ({ recommendation, count }));
 
   const { totalPredictions, resolvedPredictions, correctPredictions } = totals ?? {
     totalPredictions: 0,
@@ -209,6 +250,12 @@ router.get("/evaluation/predictions/:predictionId", async (req, res): Promise<vo
 });
 
 router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
+  if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
+  if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
+  if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
+  if (!(await enforceEntitlement(res, canUseDeveloperAnalytics, "developerAnalytics"))) return;
+
   // Each segment is fetched with its own indexed WHERE (runKind [+ segment]) instead of loading
   // the entire evaluation_predictions table into Node and filtering in JS -- same three segments,
   // same rows per segment, but the query no longer scales with total table size.
@@ -288,39 +335,29 @@ router.get("/evaluation/dashboard", async (_req, res): Promise<void> => {
       activeCalibrationIsotonicHoldoutLogLoss: activeCalibration?.isotonicHoldoutLogLoss ?? null,
       activeCalibrationPlattHoldoutLogLoss: activeCalibration?.plattHoldoutLogLoss ?? null,
       specialistSegments,
-      import { enforceEntitlement } from "../lib/entitlements";
-      import {
-        canUseCompetitiveBalance,
-        canUseDeveloperAnalytics,
-        canUseEliteRecommendations,
-        canUseEvidenceReliability,
-        canUseOptimizer,
-        canUsePredictionHistory,
-        canUseShadowReplay,
-        canUseWalkForward,
-      } from "../services/payments/entitlementService";
       eliteTierBacktest,
       upsetRiskTierMetrics,
-        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
       disagreementTierMetrics,
       marketEdge,
     }),
   );
 });
 
-        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
 router.get("/evaluation/settings", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
+
   const settings = await getPredictionSettings();
   res.json(GetEvaluationSettingsResponse.parse(settings));
 });
 
 router.patch("/evaluation/settings", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
+
   const parsed = UpdateEvaluationSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-        if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
 
   const current = await getPredictionSettings();
   const [updated] = await db
@@ -333,9 +370,10 @@ router.patch("/evaluation/settings", async (req, res): Promise<void> => {
 });
 
 router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const [row] = await db.select().from(simulatorValidationTable).limit(1);
   if (!row) {
-        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
     res.json(
       GetSimulatorValidationResponse.parse({
         sampleSize: 0,
@@ -358,9 +396,10 @@ router.get("/evaluation/simulator", async (_req, res): Promise<void> => {
 });
 
 router.post("/evaluation/simulator/validate", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const summary = await validateAndStoreSimulator();
   res.json(
-        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
     GetSimulatorValidationResponse.parse({
       ...summary,
       computedAt: new Date().toISOString(),
@@ -408,7 +447,8 @@ router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<v
 });
 
 router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Promise<void> => {
-        if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
   const provider = getTennisDataProvider();
   const result = await runIncrementalHistoricalBackfill(provider);
   res.json(RunHistoricalBackfillCycleResponse.parse(result));
@@ -425,10 +465,6 @@ router.post("/evaluation/historical-backfill/run-range", async (req, res): Promi
   const parsed = RunHistoricalBackfillRangeBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
-        if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
-        if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
-        if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
-        if (!(await enforceEntitlement(res, canUseDeveloperAnalytics, "developerAnalytics"))) return;
     return;
   }
   const { dateStart, dateStop, chunkDays } = parsed.data;
