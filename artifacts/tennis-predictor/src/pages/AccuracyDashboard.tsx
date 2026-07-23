@@ -40,10 +40,11 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useToast } from "@/hooks/use-toast"
 import { formatDate } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { getGetEvaluationDashboardQueryKey, getListEvaluationRunsQueryKey, getGetEvaluationSettingsQueryKey, getGetShadowReplayDashboardQueryKey } from "@workspace/api-client-react"
-import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical, ChevronDown, ChevronUp, Beaker, TrendingUp } from "lucide-react"
+import { Loader2, PlayCircle, Radio, Flame, Snowflake, Layers, Crown, LineChart, ShieldAlert, Swords, FlaskConical, ChevronDown, ChevronUp, Beaker, TrendingUp, AlertTriangle } from "lucide-react"
 
 // ── Stage A2: Async job polling for walk-forward and optimizer ────────────────────────────────────
 
@@ -156,6 +157,44 @@ function MetricStat({ label, value }: { label: string; value: string }) {
     <div className="space-y-1.5 p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center">
       <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
       <div className="text-3xl font-display font-bold tracking-tight text-primary tabular-nums">{value}</div>
+    </div>
+  )
+}
+
+function toRunStatus(phase: "idle" | "starting" | "running" | "done" | "error", hasWarnings = false): string {
+  if (phase === "idle") return "Idle"
+  if (phase === "starting") return "Queued"
+  if (phase === "running") return "Running"
+  if (phase === "done") return hasWarnings ? "Completed with warnings" : "Completed"
+  return "Failed"
+}
+
+function CompactRunnerErrorCard({ feature, message }: { feature: string; message: string }) {
+  const [showTechnical, setShowTechnical] = useState(false)
+  const refId = useMemo(() => `ERR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`, [])
+  const simpleMessage = message.toLowerCase().includes("column") || message.toLowerCase().includes("relation")
+    ? "Evaluation database schema appears out of sync. No production settings were changed."
+    : "Runner failed before completion. No production settings were changed."
+
+  return (
+    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs space-y-2">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-destructive mt-0.5" />
+        <div>
+          <div className="font-mono font-bold text-destructive">{feature} failed</div>
+          <div className="text-muted-foreground">{simpleMessage}</div>
+          <div className="text-muted-foreground/80 font-mono mt-1">Ref: {refId} • {new Date().toLocaleTimeString()}</div>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" className="h-7 text-[10px] font-mono" onClick={() => window.location.reload()}>Retry</Button>
+        <Button size="sm" variant="ghost" className="h-7 text-[10px] font-mono" onClick={() => setShowTechnical((v) => !v)}>
+          {showTechnical ? "Hide Technical Details" : "View Technical Details"}
+        </Button>
+      </div>
+      {showTechnical && (
+        <pre className="max-h-40 overflow-auto rounded bg-background p-2 text-[10px] font-mono text-muted-foreground whitespace-pre-wrap">{message}</pre>
+      )}
     </div>
   )
 }
@@ -1224,6 +1263,7 @@ function OptimizerRecommendationsPanel({ summary, strategies }: { summary: Optim
 
 export default function AccuracyDashboardPage() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
   const { data: dashboard, isLoading } = useGetEvaluationDashboard()
   const { data: runs } = useListEvaluationRuns()
   const { data: settings } = useGetEvaluationSettings()
@@ -1285,6 +1325,42 @@ export default function AccuracyDashboardPage() {
     },
   })
 
+  const [pendingAction, setPendingAction] = useState<null | { kind: "promote" | "reject" | "archive" | "restore" | "delete"; strategy: CandidateConfigRecord }>(null)
+  const [actionBusy, setActionBusy] = useState(false)
+
+  async function runCandidateAction(kind: "promote" | "reject" | "archive" | "restore" | "delete", strategy: CandidateConfigRecord): Promise<void> {
+    let response: Response
+    if (kind === "promote") {
+      response = await fetch(`${getBaseUrl()}/api/candidate-configs/${strategy.id}/promote`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Manual promotion from strategy library" }) })
+    } else if (kind === "reject") {
+      response = await fetch(`${getBaseUrl()}/api/candidate-configs/${strategy.id}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Manual rejection" }) })
+    } else if (kind === "archive") {
+      response = await fetch(`${getBaseUrl()}/api/candidate-configs/${strategy.id}/archive`, { method: "POST" })
+    } else if (kind === "restore") {
+      response = await fetch(`${getBaseUrl()}/api/candidate-configs/${strategy.id}/restore`, { method: "POST" })
+    } else {
+      response = await fetch(`${getBaseUrl()}/api/candidate-configs/${strategy.id}`, { method: "DELETE" })
+    }
+
+    if (!response.ok) {
+      let message = `Action failed (HTTP ${response.status})`
+      try {
+        const payload = await response.json() as { error?: string }
+        if (typeof payload.error === "string" && payload.error.trim().length > 0) message = payload.error
+      } catch {
+        // keep fallback message
+      }
+      throw new Error(message)
+    }
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getGetOptimizerAccuracySummaryQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getCandidateConfigsQueryKey() }),
+    ])
+  }
+
+  const validation600 = optimizerSummary?.validation600 ?? null
+
   return (
     <div className="space-y-10 animate-in fade-in duration-500 w-full max-w-6xl mx-auto pb-12 overflow-x-hidden">
       <div className="flex flex-col gap-4 border-b border-border/50 pb-6">
@@ -1306,6 +1382,7 @@ export default function AccuracyDashboardPage() {
               {runPaperTrading.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
               RUN PAPER-TRADE
             </Button>
+            <div className="text-[11px] font-mono text-muted-foreground">Status: <span className="text-foreground">{runPaperTrading.isPending ? "Running" : runPaperTrading.isError ? "Failed" : runPaperTrading.isSuccess ? "Completed" : "Idle"}</span></div>
             {runPaperTrading.data && (
               <div className="flex flex-wrap gap-3 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase bg-background p-3 rounded-lg border border-border/50">
                 <span>LOCKED: <span className="text-foreground">{runPaperTrading.data.locked}</span></span>
@@ -1322,9 +1399,7 @@ export default function AccuracyDashboardPage() {
               </div>
             )}
             {runPaperTrading.isError && (
-              <p className="text-xs text-destructive font-mono">
-                {runPaperTrading.error instanceof Error ? runPaperTrading.error.message : "Paper-trade cycle failed. Check the API server is running."}
-              </p>
+              <CompactRunnerErrorCard feature="Paper-Trade" message={runPaperTrading.error instanceof Error ? runPaperTrading.error.message : "Paper-trade cycle failed"} />
             )}
           </div>
 
@@ -1346,6 +1421,7 @@ export default function AccuracyDashboardPage() {
                 : <PlayCircle className="w-4 h-4" />}
               {walkForwardJob.state.phase === "starting" ? "QUEUING…" : walkForwardJob.state.phase === "running" ? "RUNNING…" : "RUN WALK-FORWARD"}
             </Button>
+            <div className="text-[11px] font-mono text-muted-foreground">Status: <span className="text-foreground">{toRunStatus(walkForwardJob.state.phase)}</span></div>
             {walkForwardJob.state.phase === "running" && (
               <p className="text-xs text-muted-foreground font-mono animate-pulse">
                 Walk-forward in progress — typically 20–60 min depending on corpus size.{walkForwardJob.state.matchesScored ? ` ${walkForwardJob.state.matchesScored.toLocaleString()} matches scored so far.` : ""} Results appear automatically when done.
@@ -1360,10 +1436,7 @@ export default function AccuracyDashboardPage() {
               </div>
             )}
             {walkForwardJob.state.phase === "error" && (
-              <div className="flex items-start gap-2">
-                <p className="text-xs text-destructive font-mono flex-1">{walkForwardJob.state.message}</p>
-                <button onClick={() => walkForwardJob.reset()} className="text-[10px] font-mono text-muted-foreground hover:text-foreground underline shrink-0">retry</button>
-              </div>
+              <CompactRunnerErrorCard feature="Walk-Forward" message={walkForwardJob.state.message} />
             )}
           </div>
 
@@ -1385,6 +1458,7 @@ export default function AccuracyDashboardPage() {
                 : <Beaker className="w-4 h-4" />}
               {optimizerJob.state.phase === "starting" ? "QUEUING…" : optimizerJob.state.phase === "running" ? "OPTIMIZING…" : "RUN OPTIMIZER"}
             </Button>
+            <div className="text-[11px] font-mono text-muted-foreground">Status: <span className="text-foreground">{toRunStatus(optimizerJob.state.phase)}</span></div>
             {optimizerJob.state.phase === "running" && (
               <p className="text-xs text-muted-foreground font-mono animate-pulse">
                 Optimizer running — refitting calibration + specialist weights. Takes 20–40 min.
@@ -1399,10 +1473,7 @@ export default function AccuracyDashboardPage() {
               </div>
             )}
             {optimizerJob.state.phase === "error" && (
-              <div className="flex items-start gap-2">
-                <p className="text-xs text-destructive font-mono flex-1">{optimizerJob.state.message}</p>
-                <button onClick={() => optimizerJob.reset()} className="text-[10px] font-mono text-muted-foreground hover:text-foreground underline shrink-0">retry</button>
-              </div>
+              <CompactRunnerErrorCard feature="Optimizer" message={optimizerJob.state.message} />
             )}
           </div>
         </div>
@@ -1482,9 +1553,131 @@ export default function AccuracyDashboardPage() {
             </CardContent>
           </Card>
 
+          <Card className="glass-panel">
+            <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
+              <CardTitle className="text-lg font-display">OPTIMIZER STRATEGY LIBRARY</CardTitle>
+              <p className="text-xs text-muted-foreground font-mono">Versioned history of production, candidate, promoted, rejected, archived, and testing strategies.</p>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/10">
+                  <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
+                    <th className="py-4 px-5">Strategy</th>
+                    <th className="py-4 px-5">Version</th>
+                    <th className="py-4 px-5">Status</th>
+                    <th className="py-4 px-5 text-right">Accuracy</th>
+                    <th className="py-4 px-5 text-right">Log Loss</th>
+                    <th className="py-4 px-5 text-right">Brier</th>
+                    <th className="py-4 px-5 text-right">ECE</th>
+                    <th className="py-4 px-5">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {(candidateConfigs ?? []).map((strategy) => {
+                    const holdout = strategy.holdoutMetrics ?? strategy.validationMetrics ?? {}
+                    const canDeleteDraft = strategy.status !== "promoted" && strategy.productionStatus !== "production"
+                    return (
+                      <tr key={strategy.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="py-3 px-5">
+                          <div className="font-display font-bold">{strategy.strategyName ?? strategy.name}</div>
+                          <div className="text-[11px] font-mono text-muted-foreground">ID: {strategy.strategyId ?? "—"}</div>
+                        </td>
+                        <td className="py-3 px-5 font-mono text-[11px] text-muted-foreground">{strategy.strategyVersion ?? "—"}</td>
+                        <td className="py-3 px-5"><Badge variant={strategy.status === "promoted" ? "success" : strategy.status === "rejected" ? "destructive" : strategy.status === "archived" ? "secondary" : "outline"}>{strategy.status}</Badge></td>
+                        <td className="py-3 px-5 text-right font-mono">{metricPct(typeof holdout.accuracy === "number" ? holdout.accuracy : null)}</td>
+                        <td className="py-3 px-5 text-right font-mono">{metricNum(typeof holdout.logLoss === "number" ? holdout.logLoss : null)}</td>
+                        <td className="py-3 px-5 text-right font-mono">{metricNum(typeof holdout.brier === "number" ? holdout.brier : null)}</td>
+                        <td className="py-3 px-5 text-right font-mono">{metricNum(typeof holdout.ece === "number" ? holdout.ece : null)}</td>
+                        <td className="py-3 px-5">
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" className="h-8" onClick={() => setPendingAction({ kind: "promote", strategy })}>Promote to Production</Button>
+                            <Button size="sm" variant="outline" className="h-8" onClick={() => setPendingAction({ kind: "reject", strategy })}>Reject</Button>
+                            <Button size="sm" variant="ghost" className="h-8" onClick={() => setPendingAction({ kind: "archive", strategy })}>Archive</Button>
+                            <Button size="sm" variant="ghost" className="h-8" onClick={() => setPendingAction({ kind: "restore", strategy })}>Restore</Button>
+                            {canDeleteDraft && <Button size="sm" variant="destructive" className="h-8" onClick={() => setPendingAction({ kind: "delete", strategy })}>Delete Draft</Button>}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
           <StrategyLeaderboard strategies={candidateConfigs ?? []} />
           <OptimizerRecommendationsPanel summary={optimizerSummary} strategies={candidateConfigs ?? []} />
         </section>
+      )}
+
+      <Card className="glass-panel">
+        <CardHeader className="border-b border-border/50 bg-secondary/20 p-5 md:p-6">
+          <CardTitle className="text-lg font-display">600-Match Strategy Validation</CardTitle>
+          <p className="text-xs text-muted-foreground font-mono">Separate from live results, historical results, shadow replay, and paper trading.</p>
+        </CardHeader>
+        {validation600 ? (
+          <CardContent className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Validation Status: <span className="text-foreground">{validation600.status}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Dataset Size: <span className="text-foreground">{validation600.sampleSize.toLocaleString()} / {validation600.sampleTarget.toLocaleString()} rows</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Timestamp: <span className="text-foreground">{validation600.timestamp ? formatDate(validation600.timestamp) : "—"}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Baseline Accuracy: <span className="text-foreground">{metricPct(validation600.baseline.accuracy)}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Best Strategy Accuracy: <span className="text-foreground">{metricPct(validation600.candidate.accuracy)}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Coverage / Abstention: <span className="text-foreground">{metricPct(validation600.baseline.coverage)} / {metricPct(validation600.baseline.abstentionRate)}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Baseline LL / Brier / ECE: <span className="text-foreground">{metricNum(validation600.baseline.logLoss)} / {metricNum(validation600.baseline.brier)} / {metricNum(validation600.baseline.ece)}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Candidate LL / Brier / ECE: <span className="text-foreground">{metricNum(validation600.candidate.logLoss)} / {metricNum(validation600.candidate.brier)} / {metricNum(validation600.candidate.ece)}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Accuracy Change / Calibration Change: <span className="text-foreground">{validation600.deltas.accuracy === null ? "—" : `${validation600.deltas.accuracy > 0 ? "+" : ""}${validation600.deltas.accuracy.toFixed(2)}%`} / {validation600.deltas.ece === null ? "—" : `${validation600.deltas.ece > 0 ? "+" : ""}${validation600.deltas.ece.toFixed(3)}`}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Trades Rejected / Losses Avoided: <span className="text-foreground">{validation600.tradesRejected === null || validation600.lossesAvoided === null ? "Unavailable" : `${validation600.tradesRejected} / ${validation600.lossesAvoided}${validation600.tradesRejectedEstimated || validation600.lossesAvoidedEstimated ? " (Estimated)" : ""}`}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono md:col-span-2">Strategy Tested: <span className="text-foreground">{validation600.candidate.name ? `${validation600.candidate.name}${validation600.candidate.strategyVersion ? ` (${validation600.candidate.strategyVersion})` : ""}` : "No candidate with holdout metrics yet"}</span></div>
+            <div className="bg-background p-4 rounded-xl border border-border/50 text-sm font-mono">Promotion Recommendation: <span className="text-foreground">{validation600.promotionRecommendation}</span></div>
+            {validation600.limitation && (
+              <div className="bg-secondary/20 p-4 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground md:col-span-3">
+                Note: {validation600.limitation}
+              </div>
+            )}
+          </CardContent>
+        ) : (
+          <CardContent className="p-6 text-sm text-muted-foreground">Validation summary unavailable.</CardContent>
+        )}
+      </Card>
+
+      {pendingAction && (
+        <div className="fixed inset-0 z-[60] bg-background/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="w-full max-w-xl shadow-2xl">
+            <CardHeader>
+              <CardTitle className="text-lg font-display">Confirm {pendingAction.kind.toUpperCase()}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Strategy: <span className="text-foreground font-bold">{pendingAction.strategy.strategyName ?? pendingAction.strategy.name}</span>
+              </div>
+              <div className="text-xs font-mono text-muted-foreground bg-secondary/30 rounded p-3">
+                Current production strategy remains unchanged until manual promotion succeeds.
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setPendingAction(null)}>Cancel</Button>
+                <Button
+                  variant={pendingAction.kind === "delete" ? "destructive" : "outline"}
+                  disabled={actionBusy}
+                  onClick={async () => {
+                    setActionBusy(true)
+                    try {
+                      await runCandidateAction(pendingAction.kind, pendingAction.strategy)
+                      toast({ title: `Strategy ${pendingAction.kind} action completed` })
+                      setPendingAction(null)
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Action failed"
+                      toast({ title: "Strategy action failed", description: message })
+                    } finally {
+                      setActionBusy(false)
+                    }
+                  }}
+                >
+                  {actionBusy ? "Working..." : "Confirm"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {isLoading ? (

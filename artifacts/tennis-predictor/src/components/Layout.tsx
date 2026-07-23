@@ -17,12 +17,19 @@ const NAV_LINKS = [
   ...(isPaymentsV2Enabled() ? [{ href: "/payments", label: "Payments", icon: CreditCard, exact: false }] : []),
 ]
 
-const MOBILE_LABELS: Record<string, string> = {
-  "Dashboard": "Home",
-  "Prediction Log": "Log",
-  "Backtesting": "Backtest",
-  "Paper Trading": "Paper",
-}
+const MOBILE_PRIMARY_TABS = [
+  { href: "/", label: "Home", icon: LayoutDashboard, exact: true },
+  { href: "/predict", label: "Run Model", icon: PlaySquare, exact: false },
+  { href: "/history", label: "History", icon: History, exact: false },
+] as const
+
+const MOBILE_MORE_LINKS = [
+  { href: "/evaluation/log", label: "Log", icon: ClipboardList, exact: false },
+  { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
+  { href: "/backtesting", label: "Backtest", icon: FlaskConical, exact: false },
+  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
+  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
+] as const
 
 function isActive(href: string, location: string, exact: boolean) {
   if (exact) return location === href
@@ -51,6 +58,7 @@ function ThemeToggle() {
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
 
   const isForceSignalActive = location.startsWith("/force-signal")
 
@@ -165,7 +173,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* ─── Mobile bottom tab bar ───────────────────────────── */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/50 bg-background/90 backdrop-blur-xl mobile-nav-safe">
         <nav className="flex items-stretch">
-          {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+          {MOBILE_PRIMARY_TABS.map(({ href, label, icon: Icon, exact }) => {
             const active = isActive(href, location, exact)
             return (
               <Link
@@ -174,13 +182,40 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[0.6rem] font-mono font-bold tracking-wider uppercase transition-colors min-h-[3.25rem] ${active ? "text-primary" : "text-muted-foreground"}`}
               >
                 <Icon className={`w-4.5 h-4.5 ${active ? "text-primary" : "text-muted-foreground/70"}`} style={{ width: "1.125rem", height: "1.125rem" }} />
-                <span className="leading-tight">{MOBILE_LABELS[label] ?? label}</span>
+                <span className="leading-tight">{label}</span>
                 {active && <span className="absolute top-0 w-full max-w-[2.5rem] h-[2px] bg-primary rounded-b-full" />}
               </Link>
             )
           })}
+          <button
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[0.6rem] font-mono font-bold tracking-wider uppercase transition-colors min-h-[3.25rem] ${mobileMoreOpen ? "text-primary" : "text-muted-foreground"}`}
+            onClick={() => setMobileMoreOpen((open) => !open)}
+            aria-label="Open more navigation"
+          >
+            <Menu className={`w-4.5 h-4.5 ${mobileMoreOpen ? "text-primary" : "text-muted-foreground/70"}`} style={{ width: "1.125rem", height: "1.125rem" }} />
+            <span className="leading-tight">More</span>
+          </button>
         </nav>
       </div>
+
+      {mobileMoreOpen && (
+        <div className="md:hidden fixed bottom-[4.25rem] left-3 right-3 z-50 rounded-2xl border border-border/70 bg-background shadow-xl p-2">
+          {MOBILE_MORE_LINKS.map(({ href, label, icon: Icon, exact }) => {
+            const active = isActive(href, location, exact)
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMobileMoreOpen(false)}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
 
       {/* ─── Footer ─────────────────────────────────────────── */}
       <footer className="hidden md:block border-t border-border/40 py-6 bg-secondary/20">

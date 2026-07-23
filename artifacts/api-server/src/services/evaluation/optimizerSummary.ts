@@ -26,6 +26,8 @@ interface StrategyPick {
 interface CandidateRow {
   id: number;
   name: string;
+  strategyName: string | null;
+  strategyVersion: string | null;
   status: string;
   notes: string | null;
   holdoutMetrics: unknown;
@@ -94,6 +96,48 @@ export interface OptimizerAccuracySummaryResponse {
     bestByRecommendationType: StrategyPick;
     bestByCalibrationQuality: StrategyPick;
     bestByRawWinnerAccuracy: StrategyPick;
+  };
+  validation600: {
+    sampleTarget: number;
+    sampleSize: number;
+    sampleReady: boolean;
+    status: string;
+    timestamp: string | null;
+    datasetRangeStart: string | null;
+    datasetRangeEnd: string | null;
+    baseline: {
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+      coverage: number | null;
+      abstentionRate: number | null;
+      gradedRows: number;
+    };
+    candidate: {
+      id: number | null;
+      name: string | null;
+      strategyVersion: string | null;
+      status: string | null;
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+      coverage: number | null;
+      abstentionRate: number | null;
+    };
+    deltas: {
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+    };
+    tradesRejected: number | null;
+    tradesRejectedEstimated: boolean;
+    lossesAvoided: number | null;
+    lossesAvoidedEstimated: boolean;
+    promotionRecommendation: "Promote" | "Hold";
+    limitation: string | null;
   };
   updatedAt: string;
 }
@@ -250,6 +294,25 @@ function deriveDuplicateRejected(row: CandidateRow): number {
   return rejected;
 }
 
+function readCoverage(metrics: Record<string, unknown>): number | null {
+  const direct = readMetric(metrics, ["coverage"]);
+  if (direct !== null) return direct;
+  const total = metrics["totalPredictions"];
+  const graded = metrics["totalGradedPredictions"];
+  if (typeof total === "number" && Number.isFinite(total) && total > 0 && typeof graded === "number" && Number.isFinite(graded)) {
+    return Math.round((graded / total) * 1000) / 10;
+  }
+  return null;
+}
+
+function readAbstention(metrics: Record<string, unknown>): number | null {
+  const direct = readMetric(metrics, ["abstentionRate"]);
+  if (direct !== null) return direct;
+  const coverage = readCoverage(metrics);
+  if (coverage === null) return null;
+  return Math.round((100 - coverage) * 10) / 10;
+}
+
 export async function getOptimizerAccuracySummary(): Promise<OptimizerAccuracySummaryResponse> {
   const [lastPromotion, allCandidates, allPredictions, lastWalkForward, latestThreshold, latestPattern] = await Promise.all([
     db.select().from(configPromotionsTable).orderBy(desc(configPromotionsTable.approvedAt)).limit(1),
@@ -268,6 +331,8 @@ export async function getOptimizerAccuracySummary(): Promise<OptimizerAccuracySu
   const candidateStrategies: CandidateRow[] = allCandidates.map((c) => ({
     id: c.id,
     name: c.name,
+    strategyName: c.strategyName,
+    strategyVersion: c.strategyVersion,
     status: c.status,
     notes: c.notes,
     holdoutMetrics: c.holdoutMetrics,
@@ -412,6 +477,83 @@ export async function getOptimizerAccuracySummary(): Promise<OptimizerAccuracySu
 
   const lastRunAt = latestThreshold[0]?.createdAt ?? latestPattern[0]?.createdAt ?? lastWalkForward[0]?.createdAt ?? null;
 
+  const VALIDATION_SAMPLE_TARGET = 600;
+  const gradedProductionRows = productionRows
+    .filter((r) => r.status === "graded" || r.status === "void")
+    .filter((r) => r.runKind !== "paper_trade_shadow")
+    .filter((r) => !(r.runKind === "historical_test" && r.segment === "validation"));
+  const latestSampleRows = [...gradedProductionRows]
+    .sort((a, b) => {
+      const aT = (a.gradedAt ?? a.lockedAt).getTime();
+      const bT = (b.gradedAt ?? b.lockedAt).getTime();
+      return bT - aT;
+    })
+    .slice(0, VALIDATION_SAMPLE_TARGET);
+  const latestSampleMetrics = computeSegmentMetrics(latestSampleRows);
+  const sampleCoverage = latestSampleRows.length > 0 ? Math.round((latestSampleMetrics.n / latestSampleRows.length) * 1000) / 10 : null;
+  const sampleAbstention = sampleCoverage === null ? null : Math.round((100 - sampleCoverage) * 10) / 10;
+  const latestSampleTimestamps = latestSampleRows.map((r) => (r.gradedAt ?? r.lockedAt).getTime());
+
+  let bestCandidateForValidation: CandidateRow | null = null;
+  let bestCandidateAccuracy = -Infinity;
+  for (const row of candidateStrategies) {
+    if (row.status === "rejected" || row.status === "archived") continue;
+    const holdout = asObj(row.holdoutMetrics);
+    const candidateAcc = readMetric(holdout, ["accuracy", "overallAccuracy", "candidateAccuracy"]);
+    if (candidateAcc === null) continue;
+    if (candidateAcc > bestCandidateAccuracy) {
+      bestCandidateAccuracy = candidateAcc;
+      bestCandidateForValidation = row;
+    }
+  }
+
+  const candidateMetrics = bestCandidateForValidation ? asObj(bestCandidateForValidation.holdoutMetrics) : {};
+  const candidateAcc = readMetric(candidateMetrics, ["accuracy", "overallAccuracy", "candidateAccuracy"]);
+  const candidateLogLoss = readMetric(candidateMetrics, ["logLoss", "candidateLogLoss"]);
+  const candidateBrier = readMetric(candidateMetrics, ["brier", "brierScore", "candidateBrier"]);
+  const candidateEce = readMetric(candidateMetrics, ["ece", "eceCalibrated", "calibrationError"]);
+  const candidateCoverage = readCoverage(candidateMetrics);
+  const candidateAbstention = readAbstention(candidateMetrics);
+
+  const sampleReady = latestSampleRows.length >= VALIDATION_SAMPLE_TARGET;
+  const deltaAcc = candidateAcc !== null && latestSampleMetrics.accuracy !== null
+    ? Math.round((candidateAcc - latestSampleMetrics.accuracy) * 100) / 100
+    : null;
+  const deltaLogLoss = candidateLogLoss !== null && latestSampleMetrics.logLoss !== null
+    ? Math.round((candidateLogLoss - latestSampleMetrics.logLoss) * 1000) / 1000
+    : null;
+  const deltaBrier = candidateBrier !== null && latestSampleMetrics.brier !== null
+    ? Math.round((candidateBrier - latestSampleMetrics.brier) * 1000) / 1000
+    : null;
+  const deltaEce = candidateEce !== null && latestSampleMetrics.eceCalibrated !== null
+    ? Math.round((candidateEce - latestSampleMetrics.eceCalibrated) * 1000) / 1000
+    : null;
+
+  const promotionRecommendation: "Promote" | "Hold" =
+    sampleReady && deltaAcc !== null && deltaLogLoss !== null && deltaBrier !== null && deltaEce !== null && deltaAcc >= 0.5 && deltaLogLoss < 0 && deltaBrier < 0 && deltaEce <= 0
+      ? "Promote"
+      : "Hold";
+
+  // Exact same-cohort candidate rows are not yet persisted; derive transparent estimates from
+  // aggregate deltas when candidate holdout metrics include coverage/accuracy.
+  const estimatedTradesRejected =
+    candidateCoverage !== null && sampleCoverage !== null
+      ? Math.max(0, Math.round((sampleCoverage - candidateCoverage) * latestSampleRows.length / 100))
+      : null;
+  const estimatedLossesAvoided =
+    deltaAcc !== null
+      ? Math.max(0, Math.round((deltaAcc / 100) * latestSampleMetrics.n))
+      : null;
+
+  const validationStatus = sampleReady
+    ? `Ready (${VALIDATION_SAMPLE_TARGET} graded rows)`
+    : `Insufficient graded rows (${latestSampleRows.length}/${VALIDATION_SAMPLE_TARGET})`;
+
+  const limitation =
+    bestCandidateForValidation === null
+      ? "No candidate with holdout metrics exists yet."
+      : "Candidate metrics are holdout-summary metrics and are not yet persisted as per-match outcomes on the exact same 600-row cohort. Trades Rejected and Losses Avoided are aggregate estimates derived from coverage/accuracy deltas.";
+
   return {
     production: {
       strategyName: productionPick.name,
@@ -468,6 +610,48 @@ export async function getOptimizerAccuracySummary(): Promise<OptimizerAccuracySu
       bestByRecommendationType: byRecommendation,
       bestByCalibrationQuality: byCalibrationQuality,
       bestByRawWinnerAccuracy: byRawAccuracy,
+    },
+    validation600: {
+      sampleTarget: VALIDATION_SAMPLE_TARGET,
+      sampleSize: latestSampleRows.length,
+      sampleReady,
+      status: validationStatus,
+      timestamp: latestSampleTimestamps.length > 0 ? new Date(Math.max(...latestSampleTimestamps)).toISOString() : null,
+      datasetRangeStart: latestSampleMetrics.dateRangeStart,
+      datasetRangeEnd: latestSampleMetrics.dateRangeEnd,
+      baseline: {
+        accuracy: latestSampleMetrics.accuracy,
+        logLoss: latestSampleMetrics.logLoss,
+        brier: latestSampleMetrics.brier,
+        ece: latestSampleMetrics.eceCalibrated,
+        coverage: sampleCoverage,
+        abstentionRate: sampleAbstention,
+        gradedRows: latestSampleRows.length,
+      },
+      candidate: {
+        id: bestCandidateForValidation?.id ?? null,
+        name: bestCandidateForValidation?.strategyName ?? bestCandidateForValidation?.name ?? null,
+        strategyVersion: bestCandidateForValidation?.strategyVersion ?? null,
+        status: bestCandidateForValidation?.status ?? null,
+        accuracy: candidateAcc,
+        logLoss: candidateLogLoss,
+        brier: candidateBrier,
+        ece: candidateEce,
+        coverage: candidateCoverage,
+        abstentionRate: candidateAbstention,
+      },
+      deltas: {
+        accuracy: deltaAcc,
+        logLoss: deltaLogLoss,
+        brier: deltaBrier,
+        ece: deltaEce,
+      },
+      tradesRejected: estimatedTradesRejected,
+      tradesRejectedEstimated: estimatedTradesRejected !== null,
+      lossesAvoided: estimatedLossesAvoided,
+      lossesAvoidedEstimated: estimatedLossesAvoided !== null,
+      promotionRecommendation,
+      limitation,
     },
     updatedAt: new Date().toISOString(),
   };

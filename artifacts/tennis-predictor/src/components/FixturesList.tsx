@@ -383,6 +383,55 @@ export const FixturesList = forwardRef<
       .filter(f => !dismissedIds.has(f.id))
   }, [fixtures, tourFilter, tournamentFilter, dismissedIds])
 
+  const groupedFixtures = useMemo(() => {
+    const now = Date.now()
+    const soonCutoffMs = now + 90 * 60_000
+    const today = new Date(now).toISOString().slice(0, 10)
+
+    const liveNow: Fixture[] = []
+    const startingSoon: Fixture[] = []
+    const laterToday: Fixture[] = []
+    const recentlyCompleted: Fixture[] = []
+
+    for (const fixture of visibleFixtures) {
+      const scheduledMs = fixture.scheduledStart ? new Date(fixture.scheduledStart).getTime() : null
+      if (fixture.isLive) {
+        liveNow.push(fixture)
+        continue
+      }
+      if (scheduledMs !== null && !Number.isNaN(scheduledMs) && scheduledMs <= now && now - scheduledMs <= 3 * 60 * 60_000) {
+        recentlyCompleted.push(fixture)
+        continue
+      }
+      if (scheduledMs !== null && !Number.isNaN(scheduledMs) && scheduledMs <= soonCutoffMs) {
+        startingSoon.push(fixture)
+        continue
+      }
+      if (fixture.date === today) {
+        laterToday.push(fixture)
+        continue
+      }
+      laterToday.push(fixture)
+    }
+
+    return { liveNow, startingSoon, laterToday, recentlyCompleted }
+  }, [visibleFixtures])
+
+  const diagnostics = useMemo(() => {
+    const providerFixturesReceived = fixtures?.length ?? 0
+    const filteredByTourOrEvent = (fixtures ?? []).filter((f) => !matchesFilter(f, tourFilter) || !matchesTournament(f, tournamentFilter)).length
+    const excludedDismissed = (fixtures ?? []).filter((f) => dismissedIds.has(f.id)).length
+    const retained = visibleFixtures.length
+    return {
+      providerFixturesReceived,
+      retained,
+      filteredByTourOrEvent,
+      excludedDismissed,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      lastRefresh: new Date().toISOString(),
+    }
+  }, [fixtures, tourFilter, tournamentFilter, dismissedIds, visibleFixtures.length])
+
   // Live score polling — only fires when there are live fixtures, every 6 seconds.
   const liveFixtureIds = useMemo(
     () => (fixtures ?? []).filter((f) => f.isLive).map((f) => f.id),
@@ -474,12 +523,34 @@ export const FixturesList = forwardRef<
         </Button>
       </div>
 
+      <div className="rounded-xl border border-border/50 bg-secondary/20 p-3 text-[11px] font-mono text-muted-foreground">
+        <div className="font-bold tracking-wider text-foreground">Fixtures Diagnostics</div>
+        <div className="mt-1.5 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1">
+          <span>Provider received: {diagnostics.providerFixturesReceived}</span>
+          <span>Retained: {diagnostics.retained}</span>
+          <span>Filtered: {diagnostics.filteredByTourOrEvent}</span>
+          <span>Dismissed: {diagnostics.excludedDismissed}</span>
+          <span>Timezone: {diagnostics.timezone}</span>
+          <span>Last refresh: {new Date(diagnostics.lastRefresh).toLocaleTimeString()}</span>
+        </div>
+      </div>
+
       {visibleFixtures.length === 0 ? (
         <div className="p-10 border border-dashed border-border/60 rounded-xl text-center text-muted-foreground font-mono text-xs tracking-widest uppercase">
           No upcoming fixtures found
         </div>
       ) : (
-        visibleFixtures.map((fixture) => {
+        [
+          { title: "Live Now", items: groupedFixtures.liveNow },
+          { title: "Starting Soon", items: groupedFixtures.startingSoon },
+          { title: "Later Today", items: groupedFixtures.laterToday },
+          { title: "Recently Completed", items: groupedFixtures.recentlyCompleted },
+        ].map((group) => {
+          if (group.items.length === 0) return null
+          return (
+            <div key={group.title} className="space-y-2">
+              <div className="text-[11px] font-mono font-bold tracking-[0.18em] uppercase text-muted-foreground px-1">{group.title} ({group.items.length})</div>
+              {group.items.map((fixture) => {
           const liveScore = liveScores?.[fixture.id]
           return (
             <SwipeableCard key={fixture.id} id={fixture.id} onDismiss={() => dismissFixture(fixture.id)}>
@@ -593,6 +664,9 @@ export const FixturesList = forwardRef<
                 </div>
               </div>
             </SwipeableCard>
+          )
+              })}
+            </div>
           )
         })
       )}

@@ -19,7 +19,6 @@ function withMockedFetch<T>(impl: typeof fetch, fn: () => Promise<T>): Promise<T
 function withCapturedWarnings<T>(fn: () => Promise<T>): Promise<{ result: T; warnings: unknown[][] }> {
   const original = logger.warn.bind(logger);
   const warnings: unknown[][] = [];
-  // @ts-expect-error -- test-only spy, restored immediately after
   logger.warn = (...args: unknown[]) => {
     warnings.push(args);
     return original(...(args as Parameters<typeof original>));

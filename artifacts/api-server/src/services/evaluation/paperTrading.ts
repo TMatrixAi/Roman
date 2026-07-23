@@ -165,7 +165,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         engine: output.engine,
         preCalibrationProbability: rawProbability,
         dataQuality: output.dataQuality,
-        isEliteTier: output.isEliteTier,
+        isEliteTier: output.engine.isEliteTier,
       };
 
       // Task 47: real market odds, looked up AT LOCK TIME (never refreshed or backfilled

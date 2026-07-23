@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { runPaperTradingJob } from "./jobs/runPaperTradingJob";
 import { runHistoricalBackfillJob } from "./jobs/runHistoricalBackfillJob";
+import { ensureEvaluationSchema } from "./lib/ensureEvaluationSchema";
 
 const rawPort = process.env["PORT"];
 
@@ -17,13 +18,21 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
+async function bootstrap(): Promise<void> {
+  try {
+    await ensureEvaluationSchema();
+  } catch (err) {
+    logger.error({ err }, "Schema compatibility check failed");
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port }, "Server listening");
 
   // Task #121 root cause: this in-process trigger was deliberately removed (see git history)
   // in favor of a standalone, durably-logged job (`src/jobs/runPaperTradingJob.ts`) intended to
@@ -119,4 +128,7 @@ app.listen(port, (err) => {
   // Fire once shortly after startup too, offset from the paper-trading/calibration startup
   // triggers so they don't all hit the provider at once.
   setTimeout(triggerHistoricalBackfillCycle, 20_000);
-});
+  });
+}
+
+void bootstrap();

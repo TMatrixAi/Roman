@@ -305,6 +305,14 @@ router.get("/candidate-configs", async (_req, res): Promise<void> => {
   res.json(rows);
 });
 
+// Compatibility alias used by generated client in this workspace.
+router.get("/backtests/candidate-configs", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
+  const rows = await db.select().from(candidateConfigsTable).orderBy(desc(candidateConfigsTable.createdAt));
+  res.json(rows);
+});
+
 router.get("/candidate-configs/:id", async (req, res): Promise<void> => {
   if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
 
@@ -339,6 +347,82 @@ router.patch("/candidate-configs/:id", async (req, res): Promise<void> => {
     .returning();
 
   res.json(updated);
+});
+
+router.post("/candidate-configs/:id/reject", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const [row] = await db.select().from(candidateConfigsTable).where(eq(candidateConfigsTable.id, id));
+  if (!row) { res.status(404).json({ error: "not found" }); return; }
+  if (row.status === "promoted") {
+    res.status(409).json({ error: "Production strategy cannot be rejected" });
+    return;
+  }
+
+  const reason = typeof req.body?.reason === "string" && req.body.reason.trim().length > 0
+    ? req.body.reason.trim().slice(0, 300)
+    : "Manual rejection";
+
+  const [updated] = await db
+    .update(candidateConfigsTable)
+    .set({
+      status: "rejected",
+      lifecycleStatus: "rejected",
+      notes: `${row.notes ? `${row.notes}\n\n` : ""}Rejection reason: ${reason}`.slice(0, 2000),
+      updatedAt: new Date(),
+    })
+    .where(eq(candidateConfigsTable.id, id))
+    .returning();
+
+  res.json({ ok: true, config: updated, reason });
+});
+
+router.post("/candidate-configs/:id/archive", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const [row] = await db.select().from(candidateConfigsTable).where(eq(candidateConfigsTable.id, id));
+  if (!row) { res.status(404).json({ error: "not found" }); return; }
+  if (row.status === "promoted") {
+    res.status(409).json({ error: "Production strategy cannot be archived" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(candidateConfigsTable)
+    .set({ status: "archived", lifecycleStatus: "archived", updatedAt: new Date() })
+    .where(eq(candidateConfigsTable.id, id))
+    .returning();
+
+  res.json({ ok: true, config: updated });
+});
+
+router.post("/candidate-configs/:id/restore", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const [row] = await db.select().from(candidateConfigsTable).where(eq(candidateConfigsTable.id, id));
+  if (!row) { res.status(404).json({ error: "not found" }); return; }
+  if (row.status === "promoted") {
+    res.status(409).json({ error: "Promoted strategy does not need restore" });
+    return;
+  }
+
+  const restoredStatus = row.acceptanceChecksPassed ? "under-review" : "pending";
+  const [updated] = await db
+    .update(candidateConfigsTable)
+    .set({ status: restoredStatus, lifecycleStatus: "generated", updatedAt: new Date() })
+    .where(eq(candidateConfigsTable.id, id))
+    .returning();
+
+  res.json({ ok: true, config: updated });
 });
 
 router.delete("/candidate-configs/:id", async (req, res): Promise<void> => {

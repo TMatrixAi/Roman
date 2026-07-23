@@ -129,7 +129,6 @@ function PredictionExplorer({ runId, status }: { runId: number; status: string }
   const [offset, setOffset] = useState(0)
   const [expanded, setExpanded] = useState<number | null>(null)
   const PAGE = 20
-
   const { data: preds, isLoading } = useGetBacktestPredictions(runId, {
     limit: PAGE,
     offset,
@@ -187,7 +186,12 @@ function PredictionExplorer({ runId, status }: { runId: number; status: string }
       {!isLoading && preds && preds.length > 0 && (
         <div className="space-y-2">
           {preds.map((p) => (
-            <PredictionCard key={p.id} p={p} expanded={expanded === p.id} onToggle={() => setExpanded(expanded === p.id ? null : p.id)} />
+            <PredictionCard
+              key={p.id}
+              p={p}
+              expanded={expanded === p.id}
+              onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
+            />
           ))}
         </div>
       )}
@@ -227,7 +231,7 @@ function PredictionCard({ p, expanded, onToggle }: { p: BacktestPrediction; expa
   const prob = p.calibratedProbability ?? p.rawProbability
 
   return (
-    <div className={`rounded-lg border transition-colors ${isCorrect ? "border-success/30 bg-success/5" : p.includedInAccuracy ? "border-destructive/20 bg-destructive/5" : "border-border/40 bg-secondary/5"}`}>
+    <div className={`relative rounded-lg border transition-colors ${isCorrect ? "border-success/30 bg-success/5" : p.includedInAccuracy ? "border-destructive/20 bg-destructive/5" : "border-border/40 bg-secondary/5"}`}>
       <button
         className="w-full text-left p-3 flex items-start gap-3"
         onClick={onToggle}

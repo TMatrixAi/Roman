@@ -88,6 +88,48 @@ export interface OptimizerAccuracySummaryResponse {
     bestByCalibrationQuality: OptimizerStrategyPick;
     bestByRawWinnerAccuracy: OptimizerStrategyPick;
   };
+  validation600: {
+    sampleTarget: number;
+    sampleSize: number;
+    sampleReady: boolean;
+    status: string;
+    timestamp: string | null;
+    datasetRangeStart: string | null;
+    datasetRangeEnd: string | null;
+    baseline: {
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+      coverage: number | null;
+      abstentionRate: number | null;
+      gradedRows: number;
+    };
+    candidate: {
+      id: number | null;
+      name: string | null;
+      strategyVersion: string | null;
+      status: string | null;
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+      coverage: number | null;
+      abstentionRate: number | null;
+    };
+    deltas: {
+      accuracy: number | null;
+      logLoss: number | null;
+      brier: number | null;
+      ece: number | null;
+    };
+    tradesRejected: number | null;
+    tradesRejectedEstimated: boolean;
+    lossesAvoided: number | null;
+    lossesAvoidedEstimated: boolean;
+    promotionRecommendation: "Promote" | "Hold";
+    limitation: string | null;
+  };
   updatedAt: string;
 }
 

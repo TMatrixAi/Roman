@@ -9,6 +9,7 @@ import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
 import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
+import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
 import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
@@ -31,6 +32,39 @@ const CLOSENESS_LABELS: Record<string, string> = {
   Clear: "Clear favorite",
 }
 
+const MODEL_NAME_LABELS: Record<string, string> = {
+  "Surface Elo": "Surface Elo",
+  "Serve & Return": "Serve & Return",
+  "Recent Form": "Recent Form",
+  "Fatigue Index": "Fatigue, Rest & Match Load",
+  "Head-to-Head": "Head-to-Head",
+  "Style Matchup": "Style Matchup",
+  "Availability": "Availability / Injury",
+  "Court Speed": "Court Speed",
+  "Weather": "Weather",
+  "Tour Adjustment": "Tour-Level Adjustment",
+  "Segment Specialist": "Specialist Model",
+  "Monte Carlo": "Monte Carlo",
+  "Calibrated Ensemble": "Calibrated Ensemble",
+}
+
+function toVisibleModelName(name: string): string {
+  const exact = MODEL_NAME_LABELS[name]
+  if (exact) return exact
+  if (name.includes("Surface Elo")) return "Surface Elo"
+  if (name.includes("Serve") || name.includes("Return")) return "Serve & Return"
+  if (name.includes("Recent Form")) return "Recent Form"
+  if (name.includes("Fatigue") || name.includes("Match Load") || name.includes("Recovery")) return "Fatigue, Rest & Match Load"
+  if (name.includes("Head")) return "Head-to-Head"
+  if (name.includes("Style")) return "Style Matchup"
+  if (name.includes("Availability") || name.includes("Injury")) return "Availability / Injury"
+  if (name.includes("Weather")) return "Weather"
+  if (name.includes("Specialist")) return "Specialist Model"
+  if (name.includes("Monte")) return "Monte Carlo"
+  if (name.includes("Ensemble") || name.includes("Calibrat")) return "Calibrated Ensemble"
+  return name
+}
+
 // "STRONG_RECOMMENDATION" is displayed as "HIGH CONFIDENCE" rather than a literal
 // underscore-replace of its name: a fresh walk-forward audit (docs/audit-task116-full-statistical-audit.md,
 // section 4) found this tier currently has the worst log loss of any recommendation tier on
@@ -41,110 +75,6 @@ const CLOSENESS_LABELS: Record<string, string> = {
 // Dashboard -- do NOT hardcode a snapshot count here, it drifts silently as more rows are graded.
 const RECOMMENDATION_LABELS: Record<string, string> = {
   STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
-}
-
-const COPY_RECOMMENDATION_LABELS: Record<string, string> = {
-  STRONG_RECOMMENDATION: "Strong Recommendation",
-  MODERATE_LEAN: "Moderate Lean",
-  HIGH_RISK: "High Risk",
-  NO_STRONG_SIGNAL: "No Strong Signal",
-  DO_NOT_RECOMMEND: "Do Not Recommend",
-}
-
-function toSocialReason(text: string): string {
-  const clean = text.replace(/\s+/g, " ").trim()
-  if (!clean) return ""
-  const firstSentence = clean.split(/[.!?]\s/)[0]?.trim() ?? clean
-  const clipped = firstSentence.length > 88 ? `${firstSentence.slice(0, 85).trimEnd()}...` : firstSentence
-  return clipped
-}
-
-function buildCopyText(prediction: any, forceSignal: boolean): string {
-  const engine = prediction?.engine ?? {}
-  const recommendation = engine.isEliteTier
-    ? "Elite Tier"
-    : (COPY_RECOMMENDATION_LABELS[prediction.recommendation] ?? String(prediction.recommendation || "").replace(/_/g, " "))
-
-  const lines: string[] = []
-  lines.push(String(prediction.predictedWinnerName ?? "Predicted Winner"))
-  lines.push("")
-  if (typeof prediction.predictedWinnerProbability === "number") {
-    lines.push(`${Number(prediction.predictedWinnerProbability).toFixed(1)}% Win Probability`)
-  }
-  lines.push(`Recommendation: ${recommendation}${forceSignal ? " (Forced Signal)" : ""}`)
-  const upsetShort = UPSET_RISK_SHORT[prediction.upsetRisk as keyof typeof UPSET_RISK_SHORT] ?? String(prediction.upsetRisk ?? "")
-  if (upsetShort) lines.push(`Upset Risk: ${upsetShort}`)
-  if (typeof prediction.dataQuality === "number") lines.push(`Data Quality: ${Number(prediction.dataQuality).toFixed(0)}%`)
-  if (prediction.predictedSetScore) lines.push(`Predicted Set Score: ${String(prediction.predictedSetScore)}`)
-
-  if (engine.simulation && typeof engine.simulation.player1WinProbability === "number") {
-    const { headlineWinProbability } = deriveMonteCarloHeadline({
-      predictedWinnerId: String(prediction.predictedWinnerId),
-      player1Id: String(prediction.player1Id),
-      player1Name: String(prediction.player1Name),
-      player2Name: String(prediction.player2Name),
-      player1WinProbability: Number(engine.simulation.player1WinProbability),
-      rangeLow: Number(engine.simulation.rangeLow ?? engine.simulation.player1WinProbability),
-      rangeHigh: Number(engine.simulation.rangeHigh ?? engine.simulation.player1WinProbability),
-    })
-    lines.push(`Monte Carlo: ${headlineWinProbability.toFixed(1)}%`)
-  }
-
-  if (engine.headToHead && typeof engine.headToHead.player1Wins === "number" && typeof engine.headToHead.player2Wins === "number") {
-    const p1Wins = Number(engine.headToHead.player1Wins)
-    const p2Wins = Number(engine.headToHead.player2Wins)
-    const winnerIsP1 = prediction.predictedWinnerId === prediction.player1Id
-    if (p1Wins === p2Wins) {
-      lines.push(`Head-to-Head: ${p1Wins}-${p2Wins} (tied)`)
-    } else {
-      const leader = p1Wins > p2Wins ? prediction.player1Name : prediction.player2Name
-      const leaderWins = Math.max(p1Wins, p2Wins)
-      const trailerWins = Math.min(p1Wins, p2Wins)
-      lines.push(`Head-to-Head: ${leader} leads ${leaderWins}-${trailerWins}`)
-      if (winnerIsP1 ? p1Wins < p2Wins : p2Wins < p1Wins) {
-        lines.push("Head-to-head disagrees with this pick.")
-      }
-    }
-  } else {
-    lines.push("Head-to-Head: 0-0 (Example)")
-  }
-
-  const reasonPool = [
-    ...(Array.isArray(engine.reasons) ? engine.reasons : []),
-    ...(Array.isArray(engine.risks) ? engine.risks : []),
-    ...(Array.isArray(engine.disclosures) ? engine.disclosures : []),
-    ...(Array.isArray(engine.warnings) ? engine.warnings : []),
-  ].map((r) => toSocialReason(String(r))).filter(Boolean)
-
-  if (reasonPool.length > 0) {
-    lines.push("")
-    lines.push("Why:")
-    lines.push(`• ${reasonPool[0]}`)
-    if (reasonPool[1]) lines.push(`• ${reasonPool[1]}`)
-  }
-
-  lines.push("")
-  lines.push("Built with Tennis Matrix AI 🎾")
-  lines.push("AI Tennis Prediction App in development.")
-  lines.push("Follow for launch updates.")
-
-  let text = lines.join("\n")
-
-  // Keep social copy concise while still rich enough for one-tap sharing.
-  if (text.length < 350 && reasonPool.length > 2) {
-    const extra = reasonPool.slice(2, 4).map((r) => `• ${r}`).join("\n")
-    text = text.replace("\n\nBuilt with Tennis Matrix AI 🎾", `\n${extra}\n\nBuilt with Tennis Matrix AI 🎾`)
-  }
-
-  if (text.length > 600 && reasonPool.length > 1) {
-    const trimmed = lines.filter((line) => line !== `• ${reasonPool[1]}`)
-    text = trimmed.join("\n")
-  }
-  if (text.length > 600) {
-    text = text.slice(0, 597).trimEnd() + "..."
-  }
-
-  return text
 }
 
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
@@ -230,10 +160,12 @@ export default function PredictionResultPage() {
   const engine = prediction.engine;
   const isResolved = !!prediction.actualWinnerId;
   const isCorrect = prediction.actualWinnerId === prediction.predictedWinnerId;
-  const canCopy = adminAuth?.authenticated === true
+  // Auth status represents the single owner session cookie, so this stays owner-only.
+  const isOwnerSession = adminAuth?.authenticated === true
+  const canCopy = isOwnerSession
 
   const handleCopyPrediction = async () => {
-    const text = buildCopyText(prediction, forceSignal)
+    const text = buildPredictionCopyText(prediction)
     try {
       await navigator.clipboard.writeText(text)
       toast({ title: "✅ Prediction copied!" })
@@ -589,24 +521,48 @@ export default function PredictionResultPage() {
             )}
             
             <div className="space-y-3 pt-2">
-              <div className="flex text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase px-4 pb-2 border-b border-border/50">
-                <span className="flex-1">MODEL</span>
-                <span className="w-16 text-right">PROB</span>
-                <span className="w-32 text-center">WEIGHT</span>
-                <span className="w-14 text-right">W_VAL</span>
-                <span className="w-14 text-right">REL</span>
+              <div className="hidden md:flex text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase px-4 pb-2 border-b border-border/50">
+                <span className="flex-1" title="Model used in this prediction">Model Name</span>
+                <span className="w-16 text-right" title="Player 1 raw probability from this model">Raw Prob</span>
+                <span className="w-28 text-right" title="Final contribution weight used in the ensemble">Effective Weight</span>
+                <span className="w-28 text-right" title="Raw probability multiplied by effective weight">Weighted Contribution</span>
+                <span className="w-20 text-right" title="Reliability score (0-100)">Reliability</span>
+                <span className="w-24 text-right" title="Whether this model materially influenced the final pick">Status</span>
               </div>
-              {engine.models.map((vote, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm p-3 rounded-lg hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/50">
-                  <span className="flex-1 truncate font-medium">{vote.modelName}</span>
-                  <span className="w-16 text-right font-mono font-bold text-primary tabular-nums">{vote.player1Probability.toFixed(1)}%</span>
-                  <div className="w-24 mx-auto h-2 bg-background border border-border shadow-inner rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-muted-foreground to-foreground transition-all duration-1000" style={{ width: `${vote.weightUsed * 100}%` }} />
-                  </div>
-                  <span className="w-14 text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.weightUsed.toFixed(2)}</span>
-                  <span className="w-14 text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.reliability.toFixed(0)}</span>
-                </div>
-              ))}
+              {engine.models
+                .filter((vote) => typeof vote.modelName === "string" && vote.modelName.trim().length > 0)
+                .map((vote, i) => {
+                  const modelName = toVisibleModelName(vote.modelName)
+                  const effectiveWeightPct = vote.weightUsed * 100
+                  const weightedContribution = (vote.player1Probability * vote.weightUsed)
+                  const favored = vote.player1Probability >= 50 ? prediction.player1Name : prediction.player2Name
+                  const status = vote.weightUsed < 0.01 ? "Excluded" : vote.reliability < 25 ? "Limited" : "Active"
+                  const availability = vote.weightUsed < 0.01 ? "Unavailable" : "Available"
+                  const sampleDepth = vote.reliability >= 75 ? "High" : vote.reliability >= 45 ? "Medium" : "Low"
+
+                  return (
+                    <div key={i} className="p-3 rounded-lg hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/50 space-y-2">
+                      <div className="md:flex md:items-center md:gap-3 md:text-sm">
+                        <span className="md:flex-1 font-medium truncate">{modelName}</span>
+                        <span className="md:w-16 md:text-right font-mono font-bold text-primary tabular-nums">{vote.player1Probability.toFixed(1)}%</span>
+                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{effectiveWeightPct.toFixed(1)}%</span>
+                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{weightedContribution.toFixed(1)}</span>
+                        <span className="hidden md:block md:w-20 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.reliability.toFixed(0)}</span>
+                        <span className="hidden md:block md:w-24 md:text-right text-xs font-mono">{status}</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:hidden gap-2 text-[11px] font-mono text-muted-foreground">
+                        <span>Favored: <span className="text-foreground">{favored}</span></span>
+                        <span>Effective Weight: <span className="text-foreground">{effectiveWeightPct.toFixed(1)}%</span></span>
+                        <span>Weighted Contribution: <span className="text-foreground">{weightedContribution.toFixed(1)}</span></span>
+                        <span>Reliability: <span className="text-foreground">{vote.reliability.toFixed(0)}</span></span>
+                        <span>Data Availability: <span className="text-foreground">{availability}</span></span>
+                        <span>Sample Depth: <span className="text-foreground">{sampleDepth}</span></span>
+                        <span>Status: <span className="text-foreground">{status}</span></span>
+                        <span>Explanation: <span className="text-foreground">{status === "Excluded" ? "Near-zero effect in final ensemble." : "Contributed to final probability."}</span></span>
+                      </div>
+                    </div>
+                  )
+                })}
             </div>
           </CardContent>
         </Card>

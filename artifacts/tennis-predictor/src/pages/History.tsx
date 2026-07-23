@@ -44,7 +44,6 @@ import {
   ChevronLeft,
   Trash2,
   RefreshCw,
-  Copy,
   X,
   UserSearch,
   ClipboardPaste,
@@ -188,7 +187,7 @@ function PredictionRow({
   }
 
   return (
-    <div className="group flex flex-col md:flex-row md:items-center justify-between p-4 sm:p-5 border border-border/50 rounded-xl bg-card/60 backdrop-blur-sm shadow-sm hover:border-primary/40 hover:bg-card hover:shadow-md transition-all duration-300 gap-4">
+    <div className="group relative flex flex-col md:flex-row md:items-center justify-between p-4 sm:p-5 border border-border/50 rounded-xl bg-card/60 backdrop-blur-sm shadow-sm hover:border-primary/40 hover:bg-card hover:shadow-md transition-all duration-300 gap-4">
       <input
         type="checkbox"
         checked={selected}
@@ -298,7 +297,7 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
   return (
     <Link
       href={`/predictions/${prediction.id}?from=ledger`}
-      className="flex flex-col md:flex-row md:items-center justify-between p-5 border-2 border-primary rounded-xl bg-card shadow-md ring-4 ring-primary/20 hover:bg-card/80 transition-all duration-300 gap-4"
+      className="relative flex flex-col md:flex-row md:items-center justify-between p-5 border-2 border-primary rounded-xl bg-card shadow-md ring-4 ring-primary/20 hover:bg-card/80 transition-all duration-300 gap-4"
     >
       <div className="flex-1 space-y-2.5">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
@@ -383,6 +382,26 @@ export default function HistoryPage() {
     }
   }, [predictions])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [floatingBottomPx, setFloatingBottomPx] = useState(96)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const recalc = () => {
+      const keyboardOverlap = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop))
+      setFloatingBottomPx(96 + keyboardOverlap)
+    }
+
+    vv.addEventListener("resize", recalc)
+    vv.addEventListener("scroll", recalc)
+    recalc()
+
+    return () => {
+      vv.removeEventListener("resize", recalc)
+      vv.removeEventListener("scroll", recalc)
+    }
+  }, [])
 
   // Player search + navigation: selecting a player loads that player's *entire* chronological
   // Ledger history (never capped by the main list's 50-row limit) and jumps focus to their most
@@ -685,7 +704,7 @@ export default function HistoryPage() {
       </div>
 
       {activePlayer && playerPredictions && playerPredictions.length > 1 && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5">
+        <div className="fixed right-4 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5" style={{ bottom: `calc(${floatingBottomPx}px + env(safe-area-inset-bottom))` }}>
           <Button
             variant="ghost"
             size="icon"
@@ -713,7 +732,7 @@ export default function HistoryPage() {
       )}
 
       {pasteMatches.length > 1 && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5">
+        <div className="fixed right-4 z-50 flex items-center gap-1 bg-card border rounded-full shadow-lg p-1.5" style={{ bottom: `calc(${floatingBottomPx}px + env(safe-area-inset-bottom))` }}>
           <Button
             variant="ghost"
             size="icon"
