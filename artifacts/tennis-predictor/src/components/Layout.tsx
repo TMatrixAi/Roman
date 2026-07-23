@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
@@ -59,6 +59,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+
+  useEffect(() => {
+    setMobileOpen(false)
+    setMobileMoreOpen(false)
+  }, [location])
 
   const isForceSignalActive = location.startsWith("/force-signal")
 
