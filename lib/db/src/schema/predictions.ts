@@ -17,6 +17,13 @@ export const predictionsTable = pgTable(
     tournamentLevel: text("tournament_level"),
     tournamentName: text("tournament_name"),
 
+    // Provenance fields for cross-interface prediction parity/auditability.
+    strategyId: text("strategy_id"),
+    strategyVersion: text("strategy_version"),
+    calibrationVersion: text("calibration_version"),
+    externalFixtureId: text("external_fixture_id"),
+    snapshotCapturedAt: timestamp("snapshot_captured_at", { withTimezone: true }).notNull().defaultNow(),
+
     predictedWinnerId: text("predicted_winner_id").notNull(),
     predictedWinnerName: text("predicted_winner_name").notNull(),
     calibratedProbability: real("calibrated_probability").notNull(),

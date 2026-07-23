@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, sql, inArray } from "drizzle-orm";
-import { db, predictionsTable, calibrationModelsTable } from "@workspace/db";
+import { db, predictionsTable } from "@workspace/db";
 import {
   ListPredictionsQueryParams,
   ListPredictionsResponse,
@@ -24,17 +24,15 @@ import {
   GetLedgerPlayerPredictionsResponse,
 } from "@workspace/api-zod";
 import { getTennisDataProvider, ProviderUnavailableError } from "../services/tennisData";
-import { resolvePlayerProfile, enrichPlayerRankFromSearch } from "../services/tennisData/playerIdentity";
-import { runPredictionEngine } from "../services/predictionEngine";
-import { buildPlayerProfileWarnings, usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
-import { resolveOpponentStrength } from "../services/predictionEngine/opponentStrength";
+import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { computeMatchIdentityKey, computeInputSnapshotHash } from "../services/predictionEngine/predictionIdentity";
-import { resolveSegmentSpecialistInput } from "../services/evaluation/specialistWeights";
-import { resolveSimulatorAdoption } from "../services/evaluation/simulatorValidation";
 import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrading";
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
 import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evaluation/ledgerPlayers";
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
+import { predictFromSnapshot } from "../services/evaluation/predictionSnapshot";
+import { LIVE_MODEL_VERSION } from "../services/evaluation/types";
+import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "../services/evaluation/strategyIdentity";
 import { enforceEntitlement } from "../lib/entitlements";
 import {
   canUseCompetitiveBalance,
@@ -165,64 +163,40 @@ router.post("/predictions", async (req, res): Promise<void> => {
   const provider = getTennisDataProvider();
 
   try {
-    const [player1, player2] = await Promise.all([
-      resolvePlayerProfile(provider, body.player1Id),
-      resolvePlayerProfile(provider, body.player2Id),
-    ]);
+    const currentProductionIdentity = await getCurrentProductionStrategyIdentity();
+    const fallbackProductionIdentity = derivePredictionStrategyIdentity({
+      predictionMode: defaultPredictionMode("live"),
+      modelVersion: LIVE_MODEL_VERSION,
+      createdAt: new Date(),
+    });
+    const effectiveProductionIdentity = {
+      strategyId: currentProductionIdentity.strategyId ?? fallbackProductionIdentity.strategyId,
+      strategyVersion: currentProductionIdentity.strategyVersion ?? fallbackProductionIdentity.strategyVersion,
+      strategyFingerprint: currentProductionIdentity.strategyFingerprint ?? LIVE_MODEL_VERSION,
+    };
 
-    if (!player1 || !player2) {
-      res.status(400).json({ error: "One or both players could not be found by the data provider" });
-      return;
-    }
-
-    // Enrich currentRank from the provider's search/rankings feed when it's null on the primary
-    // profile (common for historical-match-resolved players not in current live standings). Best-
-    // effort: if the provider is unavailable or the name doesn't match exactly, rank stays null and
-    // the honest "missing rank" disclosure fires as before.
-    const [player1Enriched, player2Enriched] = await Promise.all([
-      enrichPlayerRankFromSearch(provider, player1),
-      enrichPlayerRankFromSearch(provider, player2),
-    ]);
-
-    const [player1Matches, player2Matches, headToHead] = await Promise.all([
-      provider.getPlayerMatches(body.player1Id),
-      provider.getPlayerMatches(body.player2Id),
-      provider.getHeadToHead(body.player1Id, body.player2Id),
-    ]);
-
-    // Tour isn't part of the request -- it's read off the player profiles themselves (both
-    // players are on the same tour for any real fixture; player1's is preferred, player2's used
-    // only if player1's happens to be unknown). Use enriched profiles consistently.
-    const matchTour = player1Enriched.tour ?? player2Enriched.tour;
-
-    const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment, simulatorAdoption] = await Promise.all([
-      resolveOpponentStrength(player1Matches),
-      resolveOpponentStrength(player2Matches),
-      db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
-      resolveSegmentSpecialistInput(matchTour, body.surface),
-      resolveSimulatorAdoption(),
-    ]);
-
-    const output = runPredictionEngine({
-      player1: player1Enriched,
-      player2: player2Enriched,
+    const {
+      player1,
+      player2,
       player1Matches,
       player2Matches,
       headToHead,
+      player1OpponentStrength,
+      player2OpponentStrength,
+      activeCalibrationId,
+      output,
+    } = await predictFromSnapshot({
+      provider,
+      player1Id: body.player1Id,
+      player2Id: body.player2Id,
       surface: body.surface,
       matchFormat: body.matchFormat,
-      player1OpponentElo: player1OpponentStrength.lookup,
-      player2OpponentElo: player2OpponentStrength.lookup,
-      activeCalibration: activeCalibrationRow[0]?.mapping ?? null,
-      // No scheduled fixture date is known for an ad-hoc prediction request, so weather is
-      // intentionally omitted here -- see paperTrading.ts for genuinely upcoming fixtures.
-      weather: null,
       tournamentName: body.tournamentName ?? null,
       tournamentLevel: body.tournamentLevel ?? null,
-      segment,
-      simulatorAdoption,
+      // Ad-hoc live-search predictions have no fixture start time, so weather remains intentionally
+      // unavailable here while using the same canonical snapshot scorer as paper trading.
+      includeWeather: false,
     });
-    output.engine.warnings.push(...buildPlayerProfileWarnings(player1Enriched, player2Enriched));
 
     const matchIdentityKey = computeMatchIdentityKey(player1.id, player2.id, body.tournamentName ?? null, body.surface, body.matchFormat);
     const inputSnapshotHash = computeInputSnapshotHash({
@@ -244,6 +218,11 @@ router.post("/predictions", async (req, res): Promise<void> => {
       matchFormat: body.matchFormat,
       tournamentLevel: body.tournamentLevel ?? null,
       tournamentName: body.tournamentName ?? null,
+      strategyId: effectiveProductionIdentity.strategyId,
+      strategyVersion: effectiveProductionIdentity.strategyVersion,
+      calibrationVersion: activeCalibrationId,
+      externalFixtureId: null,
+      snapshotCapturedAt: new Date(),
       predictedWinnerId: output.predictedWinnerId,
       predictedWinnerName: output.predictedWinnerName,
       calibratedProbability: output.calibratedProbability,

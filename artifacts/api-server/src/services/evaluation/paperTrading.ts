@@ -1,19 +1,13 @@
-import { db, evaluationPredictionsTable, calibrationModelsTable } from "@workspace/db";
+import { db, evaluationPredictionsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getTennisDataProvider, ProviderUnavailableError, type TennisDataProvider } from "../tennisData";
-import { resolvePlayerProfile } from "../tennisData/playerIdentity";
-import { runPredictionEngine } from "../predictionEngine";
-import { resolveOpponentStrength } from "../predictionEngine/opponentStrength";
-import { buildPlayerProfileWarnings } from "../predictionEngine/playerProfileWarnings";
-import { getUpcomingConditions } from "../predictionEngine/weather";
 import { getPredictionSettings, settleEvaluationPrediction } from "./settle";
-import { resolveSegmentSpecialistInput } from "./specialistWeights";
-import { resolveSimulatorAdoption } from "./simulatorValidation";
 import { LIVE_MODEL_VERSION, type LiveFeatureSnapshot } from "./types";
 import { fetchMarketOdds } from "../oddsData";
 import { computeVigAdjustedImpliedProbability } from "../oddsData/impliedProbability";
 import { logger } from "../../lib/logger";
 import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "./strategyIdentity";
+import { predictFromSnapshot } from "./predictionSnapshot";
 
 /**
  * How long after a fixture's cutoff instant the cycle will still lock a fresh prediction for it.
@@ -30,11 +24,6 @@ function todayPlus(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
-}
-
-async function getActiveCalibration() {
-  const [active] = await db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1);
-  return active ?? null;
 }
 
 export interface PaperTradingCycleSummary {
@@ -148,49 +137,21 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
     if (now < cutoffAt.getTime()) continue; // not yet time to lock this one
 
     try {
-      const [player1, player2] = await Promise.all([
-        resolvePlayerProfile(provider, fixture.player1Id),
-        resolvePlayerProfile(provider, fixture.player2Id),
-      ]);
-      if (!player1 || !player2 || !fixture.surface || !fixture.matchFormat) {
+      if (!fixture.surface || !fixture.matchFormat) {
         summary.errors.push(`Fixture ${fixture.id}: missing player profile or surface/format, skipped this cycle`);
         continue;
       }
-      const [player1Matches, player2Matches, headToHead] = await Promise.all([
-        provider.getPlayerMatches(fixture.player1Id),
-        provider.getPlayerMatches(fixture.player2Id),
-        provider.getHeadToHead(fixture.player1Id, fixture.player2Id),
-      ]);
-
-      const matchTour = player1.tour ?? player2.tour;
-
-      const [player1OpponentStrength, player2OpponentStrength, activeCalibration, weather, segment, simulatorAdoption] = await Promise.all([
-        resolveOpponentStrength(player1Matches),
-        resolveOpponentStrength(player2Matches),
-        getActiveCalibration(),
-        getUpcomingConditions(fixture.tournamentName, scheduledStartAt),
-        resolveSegmentSpecialistInput(matchTour, fixture.surface),
-        resolveSimulatorAdoption(),
-      ]);
-
-      const output = runPredictionEngine({
-        player1,
-        player2,
-        player1Matches,
-        player2Matches,
-        headToHead,
+      const { player1, player2, output, activeCalibrationId } = await predictFromSnapshot({
+        provider,
+        player1Id: fixture.player1Id,
+        player2Id: fixture.player2Id,
         surface: fixture.surface,
         matchFormat: fixture.matchFormat,
-        player1OpponentElo: player1OpponentStrength.lookup,
-        player2OpponentElo: player2OpponentStrength.lookup,
-        activeCalibration: activeCalibration?.mapping ?? null,
-        weather,
         tournamentName: fixture.tournamentName,
         tournamentLevel: fixture.tournamentLevel,
-        segment,
-        simulatorAdoption,
+        scheduledStartAt,
+        includeWeather: true,
       });
-      output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));
 
       // The engine already applies the active Phase-4 calibration internally when one exists (see
       // predictionEngine/index.ts), so its own `calibratedProbability` output IS the final,
@@ -203,6 +164,8 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         modelVersion: LIVE_MODEL_VERSION,
         engine: output.engine,
         preCalibrationProbability: rawProbability,
+        dataQuality: output.dataQuality,
+        isEliteTier: output.isEliteTier,
       };
 
       // Task 47: real market odds, looked up AT LOCK TIME (never refreshed or backfilled
@@ -229,7 +192,7 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
         strategyVersion: effectiveProductionIdentity.strategyVersion,
         strategyFingerprint: effectiveProductionIdentity.strategyFingerprint,
         optimizerRunId: null,
-        calibrationVersion: activeCalibration?.id ? String(activeCalibration.id) : null,
+        calibrationVersion: activeCalibrationId,
         competitiveBalanceVersion: null,
         evidenceReliabilityVersion: null,
         runKind: "paper_trade",
@@ -266,6 +229,10 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
     } catch (err) {
       if (err instanceof ProviderUnavailableError) {
         summary.errors.push(`Fixture ${fixture.id}: provider unavailable (${err.message})`);
+        continue;
+      }
+      if (err instanceof Error && err.message.includes("could not be found by the data provider")) {
+        summary.errors.push(`Fixture ${fixture.id}: ${err.message}`);
         continue;
       }
       throw err;
