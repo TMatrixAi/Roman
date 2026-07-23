@@ -1,4 +1,4 @@
-import { useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
+import { useGetAdminAuthStatus, useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
 import { useParams, useSearch } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -9,9 +9,10 @@ import { DataWarning, EmptyDataState } from "@/components/DataWarning"
 import { formatProbability } from "@/lib/utils"
 import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
 import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
+import { useToast } from "@/hooks/use-toast"
 
 const UPSET_RISK_SHORT_LABEL = UPSET_RISK_SHORT
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
@@ -40,6 +41,110 @@ const CLOSENESS_LABELS: Record<string, string> = {
 // Dashboard -- do NOT hardcode a snapshot count here, it drifts silently as more rows are graded.
 const RECOMMENDATION_LABELS: Record<string, string> = {
   STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
+}
+
+const COPY_RECOMMENDATION_LABELS: Record<string, string> = {
+  STRONG_RECOMMENDATION: "Strong Recommendation",
+  MODERATE_LEAN: "Moderate Lean",
+  HIGH_RISK: "High Risk",
+  NO_STRONG_SIGNAL: "No Strong Signal",
+  DO_NOT_RECOMMEND: "Do Not Recommend",
+}
+
+function toSocialReason(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim()
+  if (!clean) return ""
+  const firstSentence = clean.split(/[.!?]\s/)[0]?.trim() ?? clean
+  const clipped = firstSentence.length > 88 ? `${firstSentence.slice(0, 85).trimEnd()}...` : firstSentence
+  return clipped
+}
+
+function buildCopyText(prediction: any, forceSignal: boolean): string {
+  const engine = prediction?.engine ?? {}
+  const recommendation = engine.isEliteTier
+    ? "Elite Tier"
+    : (COPY_RECOMMENDATION_LABELS[prediction.recommendation] ?? String(prediction.recommendation || "").replace(/_/g, " "))
+
+  const lines: string[] = []
+  lines.push(String(prediction.predictedWinnerName ?? "Predicted Winner"))
+  lines.push("")
+  if (typeof prediction.predictedWinnerProbability === "number") {
+    lines.push(`${Number(prediction.predictedWinnerProbability).toFixed(1)}% Win Probability`)
+  }
+  lines.push(`Recommendation: ${recommendation}${forceSignal ? " (Forced Signal)" : ""}`)
+  const upsetShort = UPSET_RISK_SHORT[prediction.upsetRisk as keyof typeof UPSET_RISK_SHORT] ?? String(prediction.upsetRisk ?? "")
+  if (upsetShort) lines.push(`Upset Risk: ${upsetShort}`)
+  if (typeof prediction.dataQuality === "number") lines.push(`Data Quality: ${Number(prediction.dataQuality).toFixed(0)}%`)
+  if (prediction.predictedSetScore) lines.push(`Predicted Set Score: ${String(prediction.predictedSetScore)}`)
+
+  if (engine.simulation && typeof engine.simulation.player1WinProbability === "number") {
+    const { headlineWinProbability } = deriveMonteCarloHeadline({
+      predictedWinnerId: String(prediction.predictedWinnerId),
+      player1Id: String(prediction.player1Id),
+      player1Name: String(prediction.player1Name),
+      player2Name: String(prediction.player2Name),
+      player1WinProbability: Number(engine.simulation.player1WinProbability),
+      rangeLow: Number(engine.simulation.rangeLow ?? engine.simulation.player1WinProbability),
+      rangeHigh: Number(engine.simulation.rangeHigh ?? engine.simulation.player1WinProbability),
+    })
+    lines.push(`Monte Carlo: ${headlineWinProbability.toFixed(1)}%`)
+  }
+
+  if (engine.headToHead && typeof engine.headToHead.player1Wins === "number" && typeof engine.headToHead.player2Wins === "number") {
+    const p1Wins = Number(engine.headToHead.player1Wins)
+    const p2Wins = Number(engine.headToHead.player2Wins)
+    const winnerIsP1 = prediction.predictedWinnerId === prediction.player1Id
+    if (p1Wins === p2Wins) {
+      lines.push(`Head-to-Head: ${p1Wins}-${p2Wins} (tied)`)
+    } else {
+      const leader = p1Wins > p2Wins ? prediction.player1Name : prediction.player2Name
+      const leaderWins = Math.max(p1Wins, p2Wins)
+      const trailerWins = Math.min(p1Wins, p2Wins)
+      lines.push(`Head-to-Head: ${leader} leads ${leaderWins}-${trailerWins}`)
+      if (winnerIsP1 ? p1Wins < p2Wins : p2Wins < p1Wins) {
+        lines.push("Head-to-head disagrees with this pick.")
+      }
+    }
+  } else {
+    lines.push("Head-to-Head: 0-0 (Example)")
+  }
+
+  const reasonPool = [
+    ...(Array.isArray(engine.reasons) ? engine.reasons : []),
+    ...(Array.isArray(engine.risks) ? engine.risks : []),
+    ...(Array.isArray(engine.disclosures) ? engine.disclosures : []),
+    ...(Array.isArray(engine.warnings) ? engine.warnings : []),
+  ].map((r) => toSocialReason(String(r))).filter(Boolean)
+
+  if (reasonPool.length > 0) {
+    lines.push("")
+    lines.push("Why:")
+    lines.push(`• ${reasonPool[0]}`)
+    if (reasonPool[1]) lines.push(`• ${reasonPool[1]}`)
+  }
+
+  lines.push("")
+  lines.push("Built with Tennis Matrix AI 🎾")
+  lines.push("AI Tennis Prediction App in development.")
+  lines.push("Follow for launch updates.")
+
+  let text = lines.join("\n")
+
+  // Keep social copy concise while still rich enough for one-tap sharing.
+  if (text.length < 350 && reasonPool.length > 2) {
+    const extra = reasonPool.slice(2, 4).map((r) => `• ${r}`).join("\n")
+    text = text.replace("\n\nBuilt with Tennis Matrix AI 🎾", `\n${extra}\n\nBuilt with Tennis Matrix AI 🎾`)
+  }
+
+  if (text.length > 600 && reasonPool.length > 1) {
+    const trimmed = lines.filter((line) => line !== `• ${reasonPool[1]}`)
+    text = trimmed.join("\n")
+  }
+  if (text.length > 600) {
+    text = text.slice(0, 597).trimEnd() + "..."
+  }
+
+  return text
 }
 
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
@@ -104,6 +209,8 @@ export default function PredictionResultPage() {
   const { data: prediction, isLoading, isError } = useGetPrediction(id, {
     query: { queryKey: getGetPredictionQueryKey(id), enabled: !!id }
   })
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const { toast } = useToast()
 
   const recordOutcome = useRecordPredictionOutcome()
 
@@ -123,6 +230,28 @@ export default function PredictionResultPage() {
   const engine = prediction.engine;
   const isResolved = !!prediction.actualWinnerId;
   const isCorrect = prediction.actualWinnerId === prediction.predictedWinnerId;
+  const canCopy = adminAuth?.authenticated === true
+
+  const handleCopyPrediction = async () => {
+    const text = buildCopyText(prediction, forceSignal)
+    try {
+      await navigator.clipboard.writeText(text)
+      toast({ title: "✅ Prediction copied!" })
+      return
+    } catch {
+      // Fallback for older/blocked clipboard contexts.
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.style.position = "fixed"
+      textarea.style.left = "-9999px"
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
+      toast({ title: "✅ Prediction copied!" })
+    }
+  }
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500 max-w-6xl mx-auto pb-24">
@@ -142,6 +271,18 @@ export default function PredictionResultPage() {
 
       {/* COMPACT SUMMARY HERO */}
       <Card className="border border-primary/20 overflow-hidden relative shadow-xl glass-panel">
+        {canCopy && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="absolute top-3 right-3 z-20 h-8 px-2.5 text-xs font-mono gap-1.5 bg-background/95"
+            onClick={handleCopyPrediction}
+            title="Copy social summary"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            📋 Copy
+          </Button>
+        )}
         <div className="absolute right-0 top-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
         <div className="absolute left-0 bottom-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
         

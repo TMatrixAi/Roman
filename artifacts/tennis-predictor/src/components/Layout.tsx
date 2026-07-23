@@ -68,7 +68,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="w-7 h-7 bg-gradient-to-br from-accent to-accent/80 rounded-lg shadow-inner flex items-center justify-center text-accent-foreground">
               <ActivitySquare className="w-4 h-4" />
             </div>
-            <span className="hidden sm:inline">TENNIS<span className="text-muted-foreground font-medium">QUANT</span></span>
+            <span>Tennis Matrix Ai</span>
           </Link>
 
           {/* Desktop nav */}
