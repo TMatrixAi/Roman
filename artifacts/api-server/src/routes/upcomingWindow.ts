@@ -1,5 +1,7 @@
 import type { Fixture } from "../services/tennisData/types";
 
+const UPCOMING_WINDOW_TIMEZONE = "America/New_York";
+
 // Days are fetched in parallel batches of this size, widening the window round by round until
 // `limit` results are collected or this many total days out have been examined -- a safety cap
 // so a genuinely dead calendar (e.g. off-season) can't trigger an unbounded number of provider
@@ -7,8 +9,18 @@ import type { Fixture } from "../services/tennisData/types";
 export const BATCH_DAYS = 7;
 export const MAX_LOOKAHEAD_DAYS = 35;
 
-export function utcDateString(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+export function upcomingWindowDateString(ms: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: UPCOMING_WINDOW_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(ms));
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!year || !month || !day) throw new Error("Failed to format upcoming window date string");
+  return `${year}-${month}-${day}`;
 }
 
 /** Real start-time sort key: unconfirmed ("Time TBD") fixtures sort after every confirmed fixture on the same calendar date. */
@@ -73,8 +85,8 @@ export async function collectUpcomingWindow(
 
   for (let dayOffset = 0; dayOffset < MAX_LOOKAHEAD_DAYS; dayOffset += BATCH_DAYS) {
     const dayCount = Math.min(BATCH_DAYS, MAX_LOOKAHEAD_DAYS - dayOffset);
-    const batchStart = utcDateString(nowMs + dayOffset * 86_400_000);
-    const batchStop = utcDateString(nowMs + (dayOffset + dayCount - 1) * 86_400_000);
+    const batchStart = upcomingWindowDateString(nowMs + dayOffset * 86_400_000);
+    const batchStop = upcomingWindowDateString(nowMs + (dayOffset + dayCount - 1) * 86_400_000);
     const fixtures = await fetchRange(batchStart, batchStop);
 
     for (const fixture of fixtures) {

@@ -156,3 +156,19 @@ test("collectUpcomingWindow de-duplicates a fixture id seen more than once", asy
 
   assert.equal(result.fixtures.length, 1);
 });
+
+test("collectUpcomingWindow anchors batches to Eastern calendar dates rather than UTC dates", async () => {
+  // 2026-07-14T01:00:00Z is still 2026-07-13 in America/New_York. The upcoming fixtures window
+  // should therefore start its first batch on 2026-07-13 so same-day evening fixtures are not
+  // skipped just because the server clock has crossed midnight UTC.
+  const nowMs = new Date("2026-07-14T01:00:00Z").getTime();
+  const byDate: Record<string, Fixture[]> = {
+    "2026-07-13": [fixture({ id: "late-same-et-day", scheduledStart: "2026-07-14T02:30:00Z" })],
+  };
+  const callLog: string[] = [];
+
+  const result = await collectUpcomingWindow(makeFetchRange(byDate, callLog), { limit: 50, nowMs });
+
+  assert.deepEqual(result.fixtures.map((f) => f.id), ["late-same-et-day"]);
+  assert.equal(callLog[0], "2026-07-13:2026-07-19");
+});
