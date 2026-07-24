@@ -661,7 +661,7 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     ]);
     historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
   } catch (err) {
-    logger.warn({ err, query }, "Historical player search fallback unavailable; returning live provider search results only");
+    logger.warn({ err, query }, "Historical player search unavailable; using provider-only player search results");
   }
 
   const historicalById = new Map<string, HistoricalPlayerRow>();

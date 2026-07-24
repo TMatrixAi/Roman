@@ -602,6 +602,11 @@ async function gatherCandidates(provider: TennisDataProvider, searchName: string
 
 // ── Player resolution ──────────────────────────────────────────────────────
 
+/**
+ * Strict OCR resolution: requires exactly one confident match or returns null.
+ * Never substitutes a different player due to specificity/ranking heuristics.
+ * All ambiguity is reported to the user for manual disambiguation.
+ */
 async function resolvePlayerMatch(
   provider: TennisDataProvider,
   recognizedName: string | null,
@@ -625,6 +630,9 @@ async function resolvePlayerMatch(
     return { match: { recognizedName, player: confident[0] }, status: "resolved" };
   }
 
+  // Zero or multiple matches: ALWAYS report as unresolved, NEVER substitute
+  // This strict behavior ensures OCR never silently picks the "most likely" player
+  // when the real player remains ambiguous or unidentified.
   if (confident.length > 1) {
     const exactName = confident.filter((c) => normalizeName(c.name) === norm);
     if (exactName.length === 1) {
