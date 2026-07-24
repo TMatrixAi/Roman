@@ -1,5 +1,12 @@
-import type { CreatePredictionBody } from "@workspace/api-zod";
 import type { PlayerProfile } from "../services/tennisData";
+
+interface PredictionIdentityRequestBody {
+  player1Id: string;
+  player2Id: string;
+  surface: string;
+  matchFormat: string;
+  [key: string]: unknown;
+}
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -55,7 +62,7 @@ export function normalizePersonName(name: string): string {
 }
 
 export function assertPredictionIdentityIntegrity(
-  body: CreatePredictionBody,
+  body: PredictionIdentityRequestBody,
   integrity: PredictionRequestIntegrity,
   player1: PlayerProfile,
   player2: PlayerProfile,

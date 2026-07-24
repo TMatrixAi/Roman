@@ -64,6 +64,7 @@ test("assertPredictionIdentityIntegrity blocks mismatched submitted names", () =
     {
       id: "p1",
       name: "Carlos Alcaraz",
+      fullName: null,
       countryCode: null,
       currentRank: 1,
       age: null,
@@ -73,6 +74,7 @@ test("assertPredictionIdentityIntegrity blocks mismatched submitted names", () =
     {
       id: "p2",
       name: "Jannik Sinner",
+      fullName: null,
       countryCode: null,
       currentRank: 2,
       age: null,

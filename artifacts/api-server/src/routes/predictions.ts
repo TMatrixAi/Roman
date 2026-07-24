@@ -42,11 +42,6 @@ import {
   parsePredictionRequestIntegrityHeaders,
 } from "./predictionRequestIntegrity";
 import {
-  assertPredictionIdentityIntegrity,
-  getExternalFixtureIdFromRequestMatchId,
-  parsePredictionRequestIntegrityHeaders,
-} from "./predictionRequestIntegrity";
-import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
   canUseEvidenceReliability,
