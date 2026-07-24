@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
 import { TennisMatrixLogo } from "./TennisMatrixLogo"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
+import { useLiveAuditsAccess } from "@/hooks/useLiveAuditsAccess"
 import { MatrixRain } from "./MatrixRain"
 import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck } from "lucide-react"
 
@@ -17,7 +18,6 @@ const NAV_LINKS = [
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
   { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
-  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
 ]
 
 const MOBILE_PRIMARY_TABS = [
@@ -31,7 +31,6 @@ const MOBILE_MORE_LINKS = [
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/backtesting", label: "Backtest", icon: FlaskConical, exact: false },
   { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
-  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
 ] as const
 
 function isActive(href: string, location: string, exact: boolean) {
@@ -191,6 +190,7 @@ function AdminAuthButton() {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
+  const { data: liveAuditsAccess } = useLiveAuditsAccess()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
 
@@ -200,6 +200,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location])
 
   const isForceSignalActive = location.startsWith("/force-signal")
+  const canViewLiveAudits = Boolean(liveAuditsAccess?.canAccessLiveAudits)
+  const adminDevLinks = canViewLiveAudits
+    ? [{ href: "/launch-audit", label: "Live Audits", icon: ShieldCheck, exact: false }]
+    : []
+
+  const desktopNavLinks = [...NAV_LINKS, ...adminDevLinks]
+  const mobileMoreLinks = [...MOBILE_MORE_LINKS, ...adminDevLinks]
   const dateTag = useMemo(() => {
     const now = new Date()
     const yyyy = now.getFullYear()
@@ -230,7 +237,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-6 text-[0.8125rem] font-medium">
-            {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+            {desktopNavLinks.map(({ href, label, icon: Icon, exact }) => {
               const active = isActive(href, location, exact)
               return (
                 <Link
@@ -316,6 +323,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 )
               })}
+              {adminDevLinks.length > 0 ? (
+                <div className="border-t border-border/50 mt-2 pt-2">
+                  <p className="px-3 py-1 text-[0.65rem] font-mono uppercase tracking-[0.18em] text-muted-foreground">Admin / Developer</p>
+                  {adminDevLinks.map(({ href, label, icon: Icon, exact }) => {
+                    const active = isActive(href, location, exact)
+                    return (
+                      <Link
+                        key={`mobile-admin-${href}`}
+                        href={href}
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? "bg-primary/12 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              ) : null}
               {/* Admin login in mobile nav */}
               <div className="border-t border-border/50 mt-2 pt-2">
                 <AdminAuthButton />
@@ -360,7 +386,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {mobileMoreOpen && (
         <div className="md:hidden fixed bottom-[4.25rem] left-3 right-3 z-50 rounded-2xl border border-border/70 bg-background shadow-xl p-2">
-          {MOBILE_MORE_LINKS.map(({ href, label, icon: Icon, exact }) => {
+          {mobileMoreLinks.map(({ href, label, icon: Icon, exact }) => {
             const active = isActive(href, location, exact)
             return (
               <Link
