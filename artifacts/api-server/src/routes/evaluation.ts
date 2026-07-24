@@ -130,6 +130,8 @@ router.get("/evaluation/runs", async (_req, res): Promise<void> => {
  * never hits the Replit proxy timeout. Poll GET /evaluation/walk-forward/status.
  */
 router.post("/evaluation/walk-forward/run", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseWalkForward, "walkForward"))) return;
+
   const parsed = RunWalkForwardBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -140,18 +142,29 @@ router.post("/evaluation/walk-forward/run", async (req, res): Promise<void> => {
 });
 
 router.get("/evaluation/walk-forward/status", async (_req, res): Promise<void> => {
-  const status = getWalkForwardJobStatus();
-  if (status.state === "running") {
-    // Pull a live DB count so the UI can show real progress without requiring a progress callback
-    // wired through the entire walk-forward stack.
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(evaluationPredictionsTable)
-      .where(eq(evaluationPredictionsTable.runKind, "historical_test"));
-    res.json(WalkForwardJobStatusResponse.parse({ ...status, matchesScored: count ?? 0 }));
-    return;
+  try {
+    const status = getWalkForwardJobStatus();
+    if (status.state === "running") {
+      // Pull a live DB count so the UI can show real progress without requiring a progress callback
+      // wired through the entire walk-forward stack.
+      // Use a short timeout to prevent proxy hangs if the DB is slow.
+      const [{ count }] = await Promise.race([
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(evaluationPredictionsTable)
+          .where(eq(evaluationPredictionsTable.runKind, "historical_test")),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Database query timeout")), 5000)
+        ),
+      ]);
+      res.json(WalkForwardJobStatusResponse.parse({ ...status, matchesScored: count ?? 0 }));
+      return;
+    }
+    res.json(WalkForwardJobStatusResponse.parse(status));
+  } catch (err) {
+    logger.warn({ err }, "Walk-forward status query failed, returning current in-memory state");
+    res.json(WalkForwardJobStatusResponse.parse(getWalkForwardJobStatus()));
   }
-  res.json(WalkForwardJobStatusResponse.parse(status));
 });
 
 router.get("/evaluation/predictions", async (req, res): Promise<void> => {
@@ -647,11 +660,9 @@ router.post("/evaluation/optimizer/run", async (req, res): Promise<void> => {
   res.json(StartOptimizerResponse.parse(result));
 });
 
-router.get("/evaluation/optimizer/status", (_req, res): void => {
-  void (async () => {
-    if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
-    res.json(OptimizerJobStatusResponse.parse(getOptimizerJobStatus()));
-  })();
+router.get("/evaluation/optimizer/status", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUseOptimizer, "optimizer"))) return;
+  res.json(OptimizerJobStatusResponse.parse(getOptimizerJobStatus()));
 });
 
 router.get("/evaluation/optimizer/summary", async (_req, res): Promise<void> => {

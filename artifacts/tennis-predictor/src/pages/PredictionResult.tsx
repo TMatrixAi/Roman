@@ -375,15 +375,17 @@ export default function PredictionResultPage() {
                   <p className="text-3xl font-display font-bold text-primary tabular-nums">{prediction.dataQuality}%</p>
                   <p className="text-xs mt-2 text-muted-foreground/80 leading-snug">{prediction.dataQualityLabel}</p>
                 </div>
-                <div className="p-5 bg-background rounded-2xl border border-border shadow-sm">
+                <div className="p-5 bg-background rounded-2xl border border-border shadow-sm flex flex-col">
                   <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2 tracking-widest uppercase">UPSET RISK</p>
-                  <div className={`text-2xl font-display font-bold tabular-nums mb-1 ${UPSET_RISK_TEXT_CLASS[prediction.upsetRisk] ?? "text-accent"}`}>
+                  <div className={`text-2xl font-display font-bold tabular-nums mb-2 ${UPSET_RISK_TEXT_CLASS[prediction.upsetRisk] ?? "text-accent"}`}>
                     {UPSET_RISK_SHORT_LABEL[prediction.upsetRisk] ?? prediction.upsetRisk}
                   </div>
-                  <span className={upsetRiskBadgeClasses(prediction.upsetRisk)}>
-                    {UPSET_RISK_LABEL[prediction.upsetRisk] ?? prediction.upsetRisk}
-                  </span>
-                  <p className="text-xs mt-2 text-muted-foreground/80 leading-snug">
+                  <div className="mb-3 w-full box-border max-w-full">
+                    <div className={upsetRiskBadgeClasses(prediction.upsetRisk)}>
+                      {UPSET_RISK_LABEL[prediction.upsetRisk] ?? prediction.upsetRisk}
+                    </div>
+                  </div>
+                  <p className="text-xs mt-auto text-muted-foreground/80 leading-snug">
                     {engine.upsetRiskBreakdown?.note ?? "Not available for predictions made before this breakdown existed."}
                   </p>
                 </div>

@@ -372,21 +372,53 @@ export default function HistoryPage() {
   const [floatingBottomPx, setFloatingBottomPx] = useState(96)
 
   useEffect(() => {
+    // Primary: visualViewport gives exact keyboard overlap on Android + modern iOS.
     const vv = window.visualViewport
-    if (!vv) return
+    let vpKeyboardOverlap = 0
 
-    const recalc = () => {
-      const keyboardOverlap = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop))
-      setFloatingBottomPx(96 + keyboardOverlap)
+    const recalcVP = () => {
+      if (!vv) return
+      vpKeyboardOverlap = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop))
+      setFloatingBottomPx(96 + vpKeyboardOverlap)
     }
 
-    vv.addEventListener("resize", recalc)
-    vv.addEventListener("scroll", recalc)
-    recalc()
+    if (vv) {
+      vv.addEventListener("resize", recalcVP)
+      vv.addEventListener("scroll", recalcVP)
+      recalcVP()
+    }
+
+    // Fallback: focusin/focusout fires on all browsers when a keyboard-triggering input
+    // is focused. Raises the button to 340px (well above any standard soft keyboard)
+    // when an input or textarea is focused, in case visualViewport doesn't fire.
+    const KEYBOARD_SAFE_BOTTOM = 340
+    const onFocusIn = (e: FocusEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        setFloatingBottomPx((prev) => Math.max(prev, KEYBOARD_SAFE_BOTTOM))
+      }
+    }
+    const onFocusOut = (e: FocusEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        // Restore to base or visualViewport-derived value after a short delay
+        // (delay avoids flicker when focus moves between inputs)
+        setTimeout(() => {
+          setFloatingBottomPx(96 + vpKeyboardOverlap)
+        }, 150)
+      }
+    }
+
+    document.addEventListener("focusin", onFocusIn)
+    document.addEventListener("focusout", onFocusOut)
 
     return () => {
-      vv.removeEventListener("resize", recalc)
-      vv.removeEventListener("scroll", recalc)
+      if (vv) {
+        vv.removeEventListener("resize", recalcVP)
+        vv.removeEventListener("scroll", recalcVP)
+      }
+      document.removeEventListener("focusin", onFocusIn)
+      document.removeEventListener("focusout", onFocusOut)
     }
   }, [])
 
