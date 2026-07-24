@@ -234,12 +234,17 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     const liveFit = fitBestCalibration(allValidationPoints);
     const liveMapping = liveFit.knots;
     const dates = allMatches.map((m) => m.scheduledStartAt.getTime());
+    // Use reduce instead of spread (Math.min(...dates)) to avoid "Maximum call stack size
+    // exceeded" when allMatches is large (50k+ rows -- spread pushes every element onto the
+    // call stack as a function argument, which blows the stack limit at scale).
+    const minDate = dates.length ? dates.reduce((a, b) => (b < a ? b : a), dates[0]!) : null;
+    const maxDate = dates.length ? dates.reduce((a, b) => (b > a ? b : a), dates[0]!) : null;
     await db.insert(calibrationModelsTable).values({
       method: liveFit.method,
       mapping: liveMapping,
       validationSampleSize: allValidationPoints.length,
-      validationDateRangeStart: dates.length ? new Date(Math.min(...dates)) : null,
-      validationDateRangeEnd: dates.length ? new Date(Math.max(...dates)) : null,
+      validationDateRangeStart: minDate !== null ? new Date(minDate) : null,
+      validationDateRangeEnd: maxDate !== null ? new Date(maxDate) : null,
       active: true,
       isotonicHoldoutLogLoss: liveFit.isotonicHoldoutLogLoss,
       plattHoldoutLogLoss: liveFit.plattHoldoutLogLoss,
