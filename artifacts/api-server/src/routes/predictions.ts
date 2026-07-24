@@ -30,10 +30,11 @@ import { gradePendingLedgerPredictions } from "../services/evaluation/ledgerGrad
 import { findDuplicatePredictionGroups, removeDuplicatePredictions } from "../services/evaluation/ledgerDuplicates";
 import { searchLedgerPlayers, getPredictionsForPlayer } from "../services/evaluation/ledgerPlayers";
 import { saveOrUpdatePrediction } from "../services/evaluation/savePrediction";
-import { predictFromSnapshot } from "../services/evaluation/predictionSnapshot";
+import { predictFromSnapshot, PredictionSnapshotResolutionError } from "../services/evaluation/predictionSnapshot";
 import { LIVE_MODEL_VERSION } from "../services/evaluation/types";
 import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "../services/evaluation/strategyIdentity";
 import { enforceEntitlement } from "../lib/entitlements";
+import { logger } from "../lib/logger";
 import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
@@ -244,6 +245,16 @@ router.post("/predictions", async (req, res): Promise<void> => {
       res.status(502).json({ error: "Tennis data provider unavailable", detail: err.message });
       return;
     }
+    if (err instanceof PredictionSnapshotResolutionError) {
+      logger.warn({ err, requestBody: body }, "Prediction blocked due to unresolved required player identity inputs");
+      res.status(422).json({
+        error: "Prediction cannot run because required player identity data is unavailable.",
+        detail: err.message,
+        missingFields: err.missingFields,
+      });
+      return;
+    }
+    logger.error({ err, requestBody: body }, "Prediction engine failed unexpectedly");
     throw err;
   }
 });

@@ -11,6 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
+import { normalizePredictionInput } from "@/lib/predictionInput"
+import { getApiErrorMessage } from "@/lib/apiError"
 import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
 
 function PlayerCard({ 
@@ -183,21 +185,24 @@ export default function PredictBuilderPage() {
   }, [conditionsExpanded])
 
   const createPrediction = useCreatePrediction()
+  const predictionErrorMessage = createPrediction.isError
+    ? getApiErrorMessage(createPrediction.error, "Failed to run prediction. Provider may be unavailable or matchup data is insufficient.")
+    : null
 
   const handleRunModel = () => {
     if (!player1Id || !player2Id) return
 
-    const trimmedTournamentName = tournamentName.trim()
+    const payload = normalizePredictionInput({
+      player1Id,
+      player2Id,
+      surface,
+      matchFormat: format,
+      tournamentLevel: level,
+      tournamentName,
+    })
 
     createPrediction.mutate({
-      data: {
-        player1Id,
-        player2Id,
-        surface,
-        matchFormat: format,
-        tournamentLevel: level,
-        tournamentName: trimmedTournamentName || undefined
-      }
+      data: payload
     }, {
       onSuccess: (prediction) => {
         setLocation(`/predictions/${prediction.id}`)
@@ -365,7 +370,7 @@ export default function PredictBuilderPage() {
                 <Activity className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
                   <strong className="block mb-1">ENGINE ERROR:</strong>
-                  Failed to run prediction. Provider may be unavailable or matchup data is insufficient.
+                  {predictionErrorMessage}
                 </div>
               </div>
             )}

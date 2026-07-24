@@ -6,9 +6,19 @@ import { buildPlayerProfileWarnings } from "../predictionEngine/playerProfileWar
 import { resolveOpponentStrength, type OpponentStrengthResolution } from "../predictionEngine/opponentStrength";
 import { getUpcomingConditions, type WeatherConditions } from "../predictionEngine/weather";
 import type { MatchFormat, MatchRecord, PlayerProfile, Surface, TennisDataProvider, TournamentLevel, HeadToHeadRecord } from "../tennisData";
-import { enrichPlayerRankFromSearch, resolvePlayerProfile } from "../tennisData/playerIdentity";
+import { enrichPlayerRankFromSearch, resolvePlayerProfileForPrediction } from "../tennisData/playerIdentity";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
 import { resolveSimulatorAdoption } from "./simulatorValidation";
+
+export class PredictionSnapshotResolutionError extends Error {
+  readonly missingFields: string[];
+
+  constructor(message: string, missingFields: string[]) {
+    super(message);
+    this.name = "PredictionSnapshotResolutionError";
+    this.missingFields = missingFields;
+  }
+}
 
 export interface PredictionSnapshotInput {
   provider: TennisDataProvider;
@@ -40,14 +50,27 @@ export interface PredictionSnapshotResult {
  * Every caller gets the same profile enrichment, feature assembly, and engine invocation flow.
  */
 export async function predictFromSnapshot(input: PredictionSnapshotInput): Promise<PredictionSnapshotResult> {
-  const [player1Raw, player2Raw] = await Promise.all([
-    resolvePlayerProfile(input.provider, input.player1Id),
-    resolvePlayerProfile(input.provider, input.player2Id),
+  const [player1Resolution, player2Resolution] = await Promise.all([
+    resolvePlayerProfileForPrediction(input.provider, input.player1Id),
+    resolvePlayerProfileForPrediction(input.provider, input.player2Id),
   ]);
 
+  const player1Raw = player1Resolution.profile;
+  const player2Raw = player2Resolution.profile;
+
   if (!player1Raw || !player2Raw) {
-    throw new Error("One or both players could not be found by the data provider");
+    const missingFields: string[] = [];
+    if (!player1Raw) missingFields.push("player1Id");
+    if (!player2Raw) missingFields.push("player2Id");
+    const detail = [player1Resolution.detail, player2Resolution.detail].filter(Boolean).join(" | ");
+    throw new PredictionSnapshotResolutionError(
+      detail || "One or both players could not be resolved to a provider-backed player ID.",
+      missingFields,
+    );
   }
+
+  const resolvedPlayer1Id = player1Resolution.resolvedPlayerId;
+  const resolvedPlayer2Id = player2Resolution.resolvedPlayerId;
 
   const [player1, player2] = await Promise.all([
     enrichPlayerRankFromSearch(input.provider, player1Raw),
@@ -55,9 +78,9 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
   ]);
 
   const [player1Matches, player2Matches, headToHead] = await Promise.all([
-    input.provider.getPlayerMatches(input.player1Id),
-    input.provider.getPlayerMatches(input.player2Id),
-    input.provider.getHeadToHead(input.player1Id, input.player2Id),
+    input.provider.getPlayerMatches(resolvedPlayer1Id),
+    input.provider.getPlayerMatches(resolvedPlayer2Id),
+    input.provider.getHeadToHead(resolvedPlayer1Id, resolvedPlayer2Id),
   ]);
 
   const matchTour = player1.tour ?? player2.tour;

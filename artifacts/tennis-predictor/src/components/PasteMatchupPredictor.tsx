@@ -3,6 +3,8 @@ import { useLocation } from "wouter"
 import { searchPlayers, createPrediction, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
 import { expandNickname, isGrandSlam } from "@/lib/grandSlam"
+import { normalizePredictionInput } from "@/lib/predictionInput"
+import { getApiErrorMessage } from "@/lib/apiError"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -287,24 +289,27 @@ export function PasteMatchupPredictor() {
         // Grand Slam ATP men's matches are Best-of-5; all others are Best-of-3.
         const isATPMatch = line.player1?.tour === "ATP" || line.player2?.tour === "ATP"
         const matchFormat = isGrandSlam(line.resolvedTournament) && isATPMatch ? "BestOf5" : "BestOf3"
-        const prediction = await createPrediction({
+        const payload = normalizePredictionInput({
           player1Id: line.player1.id,
           player2Id: line.player2.id,
-          // Use auto-detected surface/level when available; fall back to sensible defaults.
           surface: line.detectedSurface ?? "Hard",
           matchFormat,
-          tournamentLevel: line.detectedLevel ?? "ATP250",
-          tournamentName: line.resolvedTournament ?? undefined,
+          tournamentLevel: line.detectedLevel,
+          tournamentName: line.resolvedTournament,
+          player1Tour: line.player1.tour,
+          player2Tour: line.player2.tour,
         })
+        const prediction = await createPrediction(payload)
         resultIds.push(prediction.id)
         setLines((prev) =>
           prev.map((l) => (l.key === line.key ? { ...l, status: "predict-success" as LineStatus, predictionId: prediction.id } : l)),
         )
-      } catch {
+      } catch (err) {
+        const message = getApiErrorMessage(err, "Failed to run prediction engine for this matchup")
         setLines((prev) =>
           prev.map((l) =>
             l.key === line.key
-              ? { ...l, status: "predict-error" as LineStatus, errorMessage: "Failed to run prediction engine for this matchup" }
+              ? { ...l, status: "predict-error" as LineStatus, errorMessage: message }
               : l,
           ),
         )

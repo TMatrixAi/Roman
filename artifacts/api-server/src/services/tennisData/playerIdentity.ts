@@ -103,6 +103,17 @@ export function isInitialNamePattern(normalizedName: string): boolean {
 }
 
 /**
+ * Abbreviated name keys (e.g. "m uchijima", "a smith") are not stable identity keys when more
+ * than one player shares the same initial+surname form. Those keys must never be used to merge
+ * distinct provider IDs into one canonical identity.
+ */
+function isWeakIdentityNameKey(normalizedName: string): boolean {
+  const words = normalizedName.split(" ").filter(Boolean);
+  if (words.length < 2) return true;
+  return words.some((w) => w.length <= 1);
+}
+
+/**
  * Generates every normalized name variant that should be tried when resolving a player by name.
  * Always includes the direct normalized form. Additionally:
  *  - Reversed word order ("nadal rafael" alongside "rafael nadal"), so providers that report
@@ -257,6 +268,14 @@ export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
   const canonicalIdById = new Map<string, string>();
   const aliasIdsByCanonicalId = new Map<string, string[]>();
   for (const [normalized, idMap] of byName) {
+    // Never alias multiple IDs together on an abbreviated key like "m uchijima".
+    if (idMap.size > 1 && isWeakIdentityNameKey(normalized)) {
+      for (const id of idMap.keys()) {
+        if (!canonicalIdById.has(id)) canonicalIdById.set(id, id);
+      }
+      continue;
+    }
+
     let canonicalId: string | null = null;
     let mostRecent = -Infinity;
     for (const [id, seenAt] of idMap) {
@@ -374,6 +393,95 @@ async function findMostRecentHistoricalSighting(playerId: string): Promise<Histo
   return { id: best.id, name: best.name, tour: best.tour };
 }
 
+interface HistoricalIdValidationCacheRow {
+  checkedAt: number;
+  profile: PlayerProfile | null;
+}
+
+const HISTORICAL_ID_VALIDATION_TTL_MS = 6 * 60 * 60 * 1000;
+const historicalIdValidationCache = new Map<string, HistoricalIdValidationCacheRow>();
+
+async function validateHistoricalPlayerId(provider: TennisDataProvider, playerId: string): Promise<PlayerProfile | null | undefined> {
+  const cached = historicalIdValidationCache.get(playerId);
+  if (cached && Date.now() - cached.checkedAt < HISTORICAL_ID_VALIDATION_TTL_MS) {
+    return cached.profile;
+  }
+
+  try {
+    const profile = await provider.getPlayer(playerId);
+    historicalIdValidationCache.set(playerId, { profile, checkedAt: Date.now() });
+    return profile;
+  } catch (err) {
+    logger.warn({ err, playerId }, "Historical ID provider validation failed; keeping historical player fallback for this search");
+    return undefined;
+  }
+}
+
+export interface PredictionPlayerResolution {
+  profile: PlayerProfile | null;
+  resolvedPlayerId: string;
+  /** Populated only when resolution failed, so callers can show exact remediation. */
+  detail: string | null;
+}
+
+/**
+ * Prediction-time player resolution that starts from an input player id and attempts stable
+ * remapping when that id exists only in historical rows but no longer resolves in the provider.
+ */
+export async function resolvePlayerProfileForPrediction(
+  provider: TennisDataProvider,
+  requestedPlayerId: string,
+): Promise<PredictionPlayerResolution> {
+  const direct = await resolvePlayerProfile(provider, requestedPlayerId);
+  if (direct) {
+    return { profile: direct, resolvedPlayerId: direct.id, detail: null };
+  }
+
+  const sighting = await findMostRecentHistoricalSighting(requestedPlayerId);
+  if (!sighting) {
+    return {
+      profile: null,
+      resolvedPlayerId: requestedPlayerId,
+      detail: `Player ID ${requestedPlayerId} could not be found in provider data or historical records.`,
+    };
+  }
+
+  const index = await getCachedPlayerIdentityIndex();
+  const canonicalId = canonicalizePlayerId(index, requestedPlayerId, sighting.name);
+  if (canonicalId !== requestedPlayerId) {
+    const canonicalProfile = await resolvePlayerProfile(provider, canonicalId);
+    if (canonicalProfile) {
+      logger.info(
+        { requestedPlayerId, canonicalId, sightingName: sighting.name },
+        "Resolved stale historical player ID to canonical provider-resolvable ID for prediction",
+      );
+      return { profile: canonicalProfile, resolvedPlayerId: canonicalProfile.id, detail: null };
+    }
+  }
+
+  const normalizedName = normalizePlayerName(sighting.name);
+  const byNameCandidates = await provider.searchPlayers(sighting.name);
+  const exactNameCandidates = byNameCandidates.filter((c) => normalizePlayerName(c.name) === normalizedName);
+
+  if (exactNameCandidates.length === 1) {
+    const remappedId = exactNameCandidates[0]!.id;
+    const remappedProfile = await resolvePlayerProfile(provider, remappedId);
+    if (remappedProfile) {
+      logger.info(
+        { requestedPlayerId, remappedId, sightingName: sighting.name },
+        "Resolved historical-only player ID to live provider ID via exact name match",
+      );
+      return { profile: remappedProfile, resolvedPlayerId: remappedProfile.id, detail: null };
+    }
+  }
+
+  const reason = exactNameCandidates.length > 1
+    ? `Historical player ID ${requestedPlayerId} (\"${sighting.name}\") maps to multiple live players; choose the exact player from Search.`
+    : `Historical player ID ${requestedPlayerId} (\"${sighting.name}\") is not provider-resolvable; select a live player record instead.`;
+
+  return { profile: null, resolvedPlayerId: requestedPlayerId, detail: reason };
+}
+
 /**
  * Resolves a player profile the way every prediction route needs: try the live provider first
  * (works for ANY known player_key, not just standings-listed ones -- confirmed live 2026-07-11
@@ -433,19 +541,24 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
 
   const lowerQuery = query.toLowerCase().trim();
   const likePattern = `%${lowerQuery}%`;
-  const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
-    db
-      .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
-      .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
-      .limit(100),
-    db
-      .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
-      .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
-      .limit(100),
-  ]);
-  const historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
+  let historicalRows: HistoricalPlayerRow[] = [];
+  try {
+    const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
+      db
+        .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
+        .from(historicalMatchesTable)
+        .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
+        .limit(100),
+      db
+        .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
+        .from(historicalMatchesTable)
+        .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
+        .limit(100),
+    ]);
+    historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
+  } catch (err) {
+    logger.warn({ err, query }, "Historical player search fallback unavailable; returning live provider search results only");
+  }
 
   const historicalById = new Map<string, HistoricalPlayerRow>();
   for (const row of historicalRows) {
@@ -456,16 +569,42 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     if (!existing) historicalById.set(row.id, row);
   }
 
-  const historicalSummaries: PlayerSummary[] = Array.from(historicalById.values()).map((row) => ({
-    id: row.id,
-    name: row.name,
-    countryCode: null, // placeholder -- enriched below for the top few results, honestly left null otherwise
-    currentRank: null, // no live ranking known -- this player wasn't in the standings feed
-    tour: row.tour,
-    source: "historical-match",
-  }));
+  const historicalSummaries: PlayerSummary[] = [];
+  for (const row of historicalById.values()) {
+    const validated = await validateHistoricalPlayerId(provider, row.id);
 
-  const results = [...liveResults, ...historicalSummaries].slice(0, 25);
+    // Explicitly stale/invalid historical ID: don't present it as a selectable player.
+    if (validated === null) continue;
+
+    if (validated) {
+      historicalSummaries.push({
+        id: validated.id,
+        name: validated.name,
+        countryCode: validated.countryCode,
+        currentRank: validated.currentRank,
+        tour: validated.tour ?? row.tour,
+        source: "historical-match",
+      });
+      continue;
+    }
+
+    // Provider validation unavailable (transient provider error): keep the historical row,
+    // clearly labeled, rather than dropping all fallback coverage.
+    historicalSummaries.push({
+      id: row.id,
+      name: row.name,
+      countryCode: null,
+      currentRank: null,
+      tour: row.tour,
+      source: "historical-match",
+    });
+  }
+
+  const deduped = new Map<string, PlayerSummary>();
+  for (const player of [...liveResults, ...historicalSummaries]) {
+    if (!deduped.has(player.id)) deduped.set(player.id, player);
+  }
+  const results = Array.from(deduped.values()).slice(0, 25);
   await enrichCountryCodes(provider, results);
   return results;
 }

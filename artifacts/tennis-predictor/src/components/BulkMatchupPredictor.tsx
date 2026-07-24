@@ -19,6 +19,8 @@ import {
   ChevronDown, Settings2, Copy, Bug, FileText, RotateCcw,
 } from "lucide-react"
 import { isGrandSlam } from "@/lib/grandSlam"
+import { normalizePredictionInput } from "@/lib/predictionInput"
+import { getApiErrorMessage } from "@/lib/apiError"
 
 const MAX_FILES = 20
 
@@ -192,8 +194,19 @@ function computeGaps(items: BatchItem[]): DataGap[] {
   const noLevel = ready.filter((i) => !i.levelDetected).length
   if (noSurface > 0) gaps.push({ label: `${noSurface} match${noSurface > 1 ? "es" : ""}: surface not detected`, tip: "Defaulting to Hard. Tap ▸ Edit Conditions on any row to correct it.", count: noSurface })
   if (noTournament > 0) gaps.push({ label: `${noTournament} match${noTournament > 1 ? "es" : ""}: no tournament name`, tip: "Venue weather and travel distance won't be available.", count: noTournament })
-  if (noLevel > 0) gaps.push({ label: `${noLevel} match${noLevel > 1 ? "es" : ""}: level not detected`, tip: "Defaulting to ATP 250. Tap ▸ Edit Conditions on any row to correct it.", count: noLevel })
+  if (noLevel > 0) gaps.push({ label: `${noLevel} match${noLevel > 1 ? "es" : ""}: level not detected`, tip: "Defaulting from tournament text/tour context. Tap ▸ Edit Conditions on any row to correct it.", count: noLevel })
   return gaps
+}
+
+function inferFallbackLevel(tournamentName: string | null, player1Tour: string | null | undefined, player2Tour: string | null | undefined): TournamentLevel {
+  return normalizePredictionInput({
+    player1Id: "bulk-p1",
+    player2Id: "bulk-p2",
+    tournamentName,
+    tournamentLevel: null,
+    player1Tour,
+    player2Tour,
+  }).tournamentLevel
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +524,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           rawTextParsing: false,
           errorMessage: ready ? null : (result.warnings[0] ?? "Couldn't match these names to known players."),
           surface: (result.event.surface as Surface | null) ?? "Hard",
-          level: (result.event.level as TournamentLevel | null) ?? "ATP250",
+          level: (result.event.level as TournamentLevel | null) ?? inferFallbackLevel(txtTournament, result.player1.player?.tour, result.player2.player?.tour),
           matchFormat: txtFormat,
           tournamentName: txtTournament,
           surfaceDetected: !!result.event.surface,
@@ -548,21 +561,25 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
     for (const item of items) {
       if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
       try {
-        const prediction = await createPrediction({
+        const payload = normalizePredictionInput({
           player1Id: item.result.player1.player.id,
           player2Id: item.result.player2.player.id,
           surface: item.surface,
           matchFormat: item.matchFormat,
           tournamentLevel: item.level,
-          tournamentName: item.tournamentName ?? undefined,
+          tournamentName: item.tournamentName,
+          player1Tour: item.result.player1.player.tour,
+          player2Tour: item.result.player2.player.tour,
         })
+        const prediction = await createPrediction(payload)
         setItems((prev) =>
           prev.map((it) => (it.key === item.key ? { ...it, predictStatus: "success", predictionId: prediction.id } : it)),
         )
-      } catch {
+      } catch (err) {
+        const message = getApiErrorMessage(err, "Prediction engine failed for this matchup.")
         setItems((prev) =>
           prev.map((it) =>
-            it.key === item.key ? { ...it, predictStatus: "error", predictError: "Prediction engine failed for this matchup." } : it,
+            it.key === item.key ? { ...it, predictStatus: "error", predictError: message } : it,
           ),
         )
       }

@@ -273,6 +273,11 @@ async function resolvePlayerMatch(
   }
 
   if (confident.length > 1) {
+    const exactName = confident.filter((c) => normalizeName(c.name) === norm);
+    if (exactName.length === 1) {
+      return { recognizedName, player: exactName[0] };
+    }
+
     // When multiple candidates pass the confidence check, prefer the one whose
     // stored name has the MOST words — a longer/more-specific stored name covers
     // more of the recognized name and is the more precise identity.

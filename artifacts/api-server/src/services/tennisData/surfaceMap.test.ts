@@ -76,6 +76,7 @@ test("resolveSurfaceAndLevel falls back to the null-safe key lookup entry (expli
 test("legacy inferSurfaceAndLevel still resolves the named majors/Masters table on its own", () => {
   assert.deepEqual(inferSurfaceAndLevel("Miami Open"), { surface: "Hard", level: "Masters1000" });
   assert.deepEqual(inferSurfaceAndLevel("Some Challenger Event"), { surface: null, level: null });
+  assert.deepEqual(inferSurfaceAndLevel("2026 W15 Brisbane"), { surface: null, level: "ITF" });
 });
 
 test("Task #123: resolveSurfaceAndLevel resolves known fixed-venue indoor hard-court events via the reference list", () => {

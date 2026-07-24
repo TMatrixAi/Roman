@@ -137,6 +137,12 @@ const TOURNAMENT_SURFACE: Array<{ match: RegExp; surface: Surface; level?: Tourn
 // never suppress a real match.
 const NEVER_NAMED_TABLE = /challenger|\bitf\b|\bqualif|\bjunior|\bboys\b|\bgirls\b/i;
 
+function inferLevelFromNameOnlyTournament(tournamentName: string): TournamentLevel | null {
+  // ITF tournament shorthand appears as "W15", "W35", "M25", etc.
+  if (/\b[WM]\d{2,3}\b/i.test(tournamentName)) return "ITF";
+  return null;
+}
+
 // Verified live (2026-07-14): API-Tennis's `tournament_name` field is NOT reliably prefixed with
 // a tier marker -- e.g. some ITF events come back as "M15 St. Petersburg 4" (catches
 // NEVER_NAMED_TABLE above), but others come back as a completely bare city name like "Marseille"
@@ -199,7 +205,7 @@ export function inferSurfaceAndLevel(tournamentName: string | null | undefined):
       return { surface: entry.surface, level: entry.level ?? null };
     }
   }
-  return { surface: null, level: null };
+  return { surface: null, level: inferLevelFromNameOnlyTournament(tournamentName) };
 }
 
 /**
