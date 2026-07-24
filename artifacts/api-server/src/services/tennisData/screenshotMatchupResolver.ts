@@ -143,6 +143,13 @@ function normalizeLooseText(text: string | null | undefined): string {
   return normalizeName(text).replace(/\s+/g, " ").trim();
 }
 
+function isWeakOcrIdentityKey(normalizedName: string): boolean {
+  const words = normalizedName.split(" ").filter(Boolean);
+  if (words.length < 2) return false;
+  // "G. Castro"-style inputs are identity-weak for singles disambiguation.
+  return words[0]!.length === 1;
+}
+
 function editDistanceWithin(a: string, b: string, maxDistance: number): number {
   if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
   const prev = new Array<number>(b.length + 1);
@@ -626,6 +633,13 @@ async function resolvePlayerMatch(
   const candidates = await gatherCandidates(provider, searchName);
   const confident = candidates.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
 
+  if (isWeakOcrIdentityKey(norm)) {
+    return {
+      match: { recognizedName, player: null },
+      status: confident.length > 0 ? "ambiguous" : "not-found",
+    };
+  }
+
   if (confident.length === 1) {
     return { match: { recognizedName, player: confident[0] }, status: "resolved" };
   }
@@ -634,25 +648,6 @@ async function resolvePlayerMatch(
   // This strict behavior ensures OCR never silently picks the "most likely" player
   // when the real player remains ambiguous or unidentified.
   if (confident.length > 1) {
-    const exactName = confident.filter((c) => normalizeName(c.name) === norm);
-    if (exactName.length === 1) {
-      return { match: { recognizedName, player: exactName[0] }, status: "resolved" };
-    }
-
-    // When multiple candidates pass the confidence check, prefer the one whose
-    // stored name has the MOST words — a longer/more-specific stored name covers
-    // more of the recognized name and is the more precise identity.
-    //
-    // Example: "G. Da Rosa Castro" (4 words) beats "G. Castro" (2 words) for
-    // "Goncalo Da Rosa Castro". If this doesn't produce a unique winner (tied word
-    // count), report ambiguity and let the user pick.
-    const scored = confident
-      .map((c) => ({ c, score: normalizeName(c.name).split(" ").filter(Boolean).length }))
-      .sort((a, b) => b.score - a.score);
-
-    if (scored[0].score > scored[1].score) {
-      return { match: { recognizedName, player: scored[0].c }, status: "resolved" };
-    }
     return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
     return { match: { recognizedName, player: null }, status: "not-found" };
@@ -706,8 +701,9 @@ async function resolveOneMatchup(
 
   let player1 = player1Outcome.match;
   let player2 = player2Outcome.match;
+  const hasAmbiguousSide = player1Outcome.status === "ambiguous" || player2Outcome.status === "ambiguous";
 
-  if (!player1.player || !player2.player) {
+  if ((!player1.player || !player2.player) && !hasAmbiguousSide) {
     const singleSideInference = inferUniqueOpponentFromSingleResolvedSide({
       entry,
       event,
@@ -742,7 +738,7 @@ async function resolveOneMatchup(
     }
   }
 
-  if (!player1.player || !player2.player) {
+  if ((!player1.player || !player2.player) && !hasAmbiguousSide) {
     const candidates = todayFixtures
       .map((fixture) => scoreFixtureCandidate({
         fixture,
