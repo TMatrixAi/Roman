@@ -21,7 +21,7 @@ const ShadowReplayPage = lazy(() => import('@/pages/ShadowReplay'));
 const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
-const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
+const LiveAuditsPage = lazy(() => import('@/pages/LaunchAudit'));
 const PaymentsPage = lazy(() => import('@/pages/Payments'));
 const AdminLoginPage = lazy(() => import('@/pages/AdminLogin'));
 
@@ -51,7 +51,7 @@ function Router() {
           <Route path="/shadow-replay" component={ShadowReplayPage} />
           <Route path="/backtesting/:id" component={BacktestResultsPage} />
           <Route path="/backtesting" component={BacktestingPortalPage} />
-          <Route path="/launch-audit" component={LaunchAuditPage} />
+          <Route path="/launch-audit" component={LiveAuditsPage} />
           <Route path="/payments" component={PaymentsPage} />
           <Route path="/payments/pricing" component={PaymentsPage} />
           <Route path="/payments/billing" component={PaymentsPage} />
