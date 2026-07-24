@@ -14,7 +14,7 @@ async function main() {
   }
 
   const dir = path.dirname(fileURLToPath(import.meta.url));
-  const files = ["sql/immutability-trigger.sql"];
+  const files = ["sql/immutability-trigger.sql", "sql/predictions-forward-compat.sql"];
 
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   try {

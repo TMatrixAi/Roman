@@ -18,7 +18,11 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (body?.error) return body.error
 
   const message = (error as Error | null)?.message
-  if (message && message.trim().length > 0) return message
+  if (message && message.trim().length > 0) {
+    const trimmed = message.trim()
+    if (/^<!doctype html>|^<html/i.test(trimmed)) return fallback
+    return trimmed
+  }
 
   return fallback
 }

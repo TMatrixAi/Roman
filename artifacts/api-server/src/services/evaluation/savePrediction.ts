@@ -1,6 +1,46 @@
 import { db, predictionsTable, type InsertPrediction, type PredictionRow } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
+function normalizePredictionInsert(values: InsertPrediction): InsertPrediction {
+  const requiredTextFields: Array<keyof InsertPrediction> = [
+    "player1Id",
+    "player1Name",
+    "player2Id",
+    "player2Name",
+    "surface",
+    "matchFormat",
+    "predictedWinnerId",
+    "predictedWinnerName",
+    "dataQualityLabel",
+    "upsetRisk",
+    "recommendation",
+    "predictedSetScore",
+    "matchIdentityKey",
+    "inputSnapshotHash",
+  ];
+  for (const key of requiredTextFields) {
+    const value = values[key];
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error(`Prediction persistence payload missing required field: ${String(key)}`);
+    }
+  }
+
+  return {
+    ...values,
+    tournamentLevel: values.tournamentLevel ?? null,
+    tournamentName: values.tournamentName ?? null,
+    strategyId: values.strategyId ?? null,
+    strategyVersion: values.strategyVersion ?? null,
+    calibrationVersion: values.calibrationVersion ?? null,
+    externalFixtureId: values.externalFixtureId ?? null,
+    snapshotCapturedAt: values.snapshotCapturedAt ?? new Date(),
+    actualWinnerId: values.actualWinnerId ?? null,
+    actualWinnerName: values.actualWinnerName ?? null,
+    decisionTrace: values.decisionTrace ?? null,
+    resolvedAt: values.resolvedAt ?? null,
+  };
+}
+
 /**
  * Inserts a new prediction row, or -- when a row already exists with the exact same
  * `matchIdentityKey` + `inputSnapshotHash` (see `predictionEngine/predictionIdentity.ts`) --
@@ -25,9 +65,11 @@ import { eq, and } from "drizzle-orm";
  * a given match+inputs always wins, resolved or not.
  */
 export async function saveOrUpdatePrediction(values: InsertPrediction): Promise<PredictionRow> {
+  const normalizedValues = normalizePredictionInsert(values);
+
   const [saved] = await db
     .insert(predictionsTable)
-    .values(values)
+    .values(normalizedValues)
     .onConflictDoNothing({
       target: [predictionsTable.matchIdentityKey, predictionsTable.inputSnapshotHash],
     })
@@ -40,7 +82,7 @@ export async function saveOrUpdatePrediction(values: InsertPrediction): Promise<
   const [existing] = await db
     .select()
     .from(predictionsTable)
-    .where(and(eq(predictionsTable.matchIdentityKey, values.matchIdentityKey), eq(predictionsTable.inputSnapshotHash, values.inputSnapshotHash)));
+    .where(and(eq(predictionsTable.matchIdentityKey, normalizedValues.matchIdentityKey), eq(predictionsTable.inputSnapshotHash, normalizedValues.inputSnapshotHash)));
   if (!existing) throw new Error("saveOrUpdatePrediction: insert/update returned no row and none found on lookup");
   return existing;
 }

@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { formatDatabaseError } from "./lib/databaseError";
 
 const app: Express = express();
 
@@ -56,5 +57,13 @@ const bodyParserErrorHandler: ErrorRequestHandler = (err, _req, res, next) => {
 app.use(bodyParserErrorHandler);
 
 app.use("/api", router);
+
+const apiErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  const dbErr = formatDatabaseError(err, "Unhandled server error");
+  logger.error({ err, dbError: dbErr.log }, "Unhandled API error");
+  res.status(dbErr.status).json(dbErr.body);
+};
+
+app.use(apiErrorHandler);
 
 export default app;

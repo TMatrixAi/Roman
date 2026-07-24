@@ -35,6 +35,7 @@ import { LIVE_MODEL_VERSION } from "../services/evaluation/types";
 import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "../services/evaluation/strategyIdentity";
 import { enforceEntitlement } from "../lib/entitlements";
 import { logger } from "../lib/logger";
+import { formatDatabaseError } from "../lib/databaseError";
 import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
@@ -254,8 +255,10 @@ router.post("/predictions", async (req, res): Promise<void> => {
       });
       return;
     }
-    logger.error({ err, requestBody: body }, "Prediction engine failed unexpectedly");
-    throw err;
+    const dbErr = formatDatabaseError(err, "Prediction insert failed");
+    logger.error({ err, requestBody: body, dbError: dbErr.log }, "Prediction engine failed during persistence");
+    res.status(dbErr.status).json(dbErr.body);
+    return;
   }
 });
 
