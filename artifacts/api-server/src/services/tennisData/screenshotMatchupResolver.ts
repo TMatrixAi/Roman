@@ -447,17 +447,24 @@ function inferUniqueOpponentFromSingleResolvedSide(params: {
 }
 
 async function getTodayFixtures(provider: TennisDataProvider): Promise<Fixture[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const todayDate = new Date();
+  const today = todayDate.toISOString().slice(0, 10);
   try {
     const sameDay = await provider.getUpcomingFixtures(today);
-    if (sameDay.length > 0 || !provider.getUpcomingFixturesRange) return sameDay;
 
-    // Tight fallback window: include tomorrow in case provider's schedule date boundary is offset
-    // from server UTC, while still prioritizing "today" behavior.
-    const tomorrowDate = new Date();
-    tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
-    const tomorrow = tomorrowDate.toISOString().slice(0, 10);
-    const range = await provider.getUpcomingFixturesRange(today, tomorrow);
+    // Always include a small adjacent-day range when available: some providers split fixtures
+    // across nearby calendar days relative to server UTC even when they belong to the same local
+    // tournament day. Limiting to ±1/+2 keeps this tight while preventing false "unresolved"
+    // skips caused by date-boundary drift.
+    if (!provider.getUpcomingFixturesRange) return sameDay;
+
+    const startDate = new Date(todayDate);
+    startDate.setUTCDate(startDate.getUTCDate() - 1);
+    const stopDate = new Date(todayDate);
+    stopDate.setUTCDate(stopDate.getUTCDate() + 2);
+    const start = startDate.toISOString().slice(0, 10);
+    const stop = stopDate.toISOString().slice(0, 10);
+    const range = await provider.getUpcomingFixturesRange(start, stop);
     const deduped = new Map<string, Fixture>();
     for (const fixture of [...sameDay, ...range]) deduped.set(fixture.id, fixture);
     return Array.from(deduped.values());

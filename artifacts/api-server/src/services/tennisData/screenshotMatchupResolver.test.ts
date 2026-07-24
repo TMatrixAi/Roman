@@ -442,3 +442,61 @@ test("resolveScreenshotMatchup does not skip when duplicate fixture rows point t
   assert.equal(result.player2.player?.name, "Maiko Uchijima");
   assert.ok(result.warnings.some((w) => w.includes("single-opponent unique match")));
 });
+
+test("resolveScreenshotMatchup checks adjacent-day fixture range even when same-day list is non-empty", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      const q = query.toLowerCase();
+      if (q.includes("arakawa")) {
+        return [{ id: "arakawa-id", name: "Natsuho Arakawa", countryCode: "JP", currentRank: 250, tour: "WTA" }];
+      }
+      if (q.includes("uchijima")) {
+        return [];
+      }
+      return [];
+    },
+    // Same-day has unrelated fixtures, but target appears in adjacent-day range.
+    getUpcomingFixtures: async () => [{
+      id: "fx-sameday-other",
+      date: "2026-07-24",
+      scheduledStart: null,
+      timeConfirmed: false,
+      isLive: false,
+      tournamentName: "Unrelated Event",
+      tournamentLevel: "WTA250",
+      round: "Round of 32",
+      surface: "Hard",
+      indoor: false,
+      matchFormat: "BestOf3",
+      player1Id: "other-1",
+      player1Name: "Other Player A",
+      player2Id: "other-2",
+      player2Name: "Other Player B",
+    }],
+    getUpcomingFixturesRange: async () => [{
+      id: "fx-range-target",
+      date: "2026-07-25",
+      scheduledStart: null,
+      timeConfirmed: false,
+      isLive: false,
+      tournamentName: "2026 W15 Brisbane",
+      tournamentLevel: "ITF",
+      round: "Quarter-Final",
+      surface: "Hard",
+      indoor: false,
+      matchFormat: "BestOf3",
+      player1Id: "arakawa-id",
+      player1Name: "Natsuho Arakawa",
+      player2Id: "maiko-id",
+      player2Name: "Maiko Uchijima",
+    }],
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "Natsuho Arakawa", player2Name: "Maiko Uchijima", eventName: "2026 W15 Brisbane" }],
+  });
+
+  assert.equal(result.player1.player?.id, "arakawa-id");
+  assert.equal(result.player2.player?.id, "maiko-id");
+  assert.ok(result.warnings.some((w) => w.includes("[resolver-debug] Resolved via fixture-opponent-inference-from-player1")));
+});
