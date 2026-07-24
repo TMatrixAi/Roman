@@ -2,7 +2,6 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { useLocation } from "wouter"
 import {
   recognizeMatchupScreenshot,
-  createPrediction,
   type ScreenshotMatchupResult,
   type ScreenshotMatchupEntry,
   type Surface,
@@ -19,8 +18,7 @@ import {
   ChevronDown, Settings2, Copy, Bug, FileText, RotateCcw,
 } from "lucide-react"
 import { isGrandSlam } from "@/lib/grandSlam"
-import { normalizePredictionInput } from "@/lib/predictionInput"
-import { getApiErrorMessage } from "@/lib/apiError"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 const MAX_FILES = 20
 
@@ -110,6 +108,7 @@ type PredictStatus = "idle" | "pending" | "success" | "error"
 interface BatchItem {
   key: string
   fileName: string
+  selected: boolean
   status: ItemStatus
   result: ScreenshotMatchupResult | null
   errorMessage: string | null
@@ -153,6 +152,7 @@ function makeDefaultItem(key: string, fileName: string): BatchItem {
   return {
     key,
     fileName,
+    selected: false,
     status: "resolving",
     result: null,
     errorMessage: null,
@@ -174,10 +174,10 @@ function makeDefaultItem(key: string, fileName: string): BatchItem {
 // Surface colour helper
 // ---------------------------------------------------------------------------
 function surfaceColour(s: Surface) {
-  if (s === "Clay") return "text-[hsl(var(--surface-clay))]"
-  if (s === "Grass") return "text-[hsl(var(--surface-grass))]"
-  if (s === "IndoorHard") return "text-[hsl(var(--surface-indoor))]"
-  return "text-[hsl(var(--surface-hard))]"
+  if (s === "Clay") return "text-orange-500"
+  if (s === "Grass") return "text-green-500"
+  if (s === "IndoorHard") return "text-purple-400"
+  return "text-blue-400"
 }
 
 // ---------------------------------------------------------------------------
@@ -194,19 +194,8 @@ function computeGaps(items: BatchItem[]): DataGap[] {
   const noLevel = ready.filter((i) => !i.levelDetected).length
   if (noSurface > 0) gaps.push({ label: `${noSurface} match${noSurface > 1 ? "es" : ""}: surface not detected`, tip: "Defaulting to Hard. Tap ▸ Edit Conditions on any row to correct it.", count: noSurface })
   if (noTournament > 0) gaps.push({ label: `${noTournament} match${noTournament > 1 ? "es" : ""}: no tournament name`, tip: "Venue weather and travel distance won't be available.", count: noTournament })
-  if (noLevel > 0) gaps.push({ label: `${noLevel} match${noLevel > 1 ? "es" : ""}: level not detected`, tip: "Defaulting from tournament text/tour context. Tap ▸ Edit Conditions on any row to correct it.", count: noLevel })
+  if (noLevel > 0) gaps.push({ label: `${noLevel} match${noLevel > 1 ? "es" : ""}: level not detected`, tip: "Defaulting to ATP 250. Tap ▸ Edit Conditions on any row to correct it.", count: noLevel })
   return gaps
-}
-
-function inferFallbackLevel(tournamentName: string | null, player1Tour: string | null | undefined, player2Tour: string | null | undefined): TournamentLevel {
-  return normalizePredictionInput({
-    player1Id: "bulk-p1",
-    player2Id: "bulk-p2",
-    tournamentName,
-    tournamentLevel: null,
-    player1Tour,
-    player2Tour,
-  }).tournamentLevel
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +303,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const alreadyPredictedCount = resolvedCount - pendingPredictCount
   const hasItems = items.length > 0
   const anyResolving = items.some((i) => i.status === "resolving")
+  const selectedItemCount = items.filter((i) => i.selected).length
   const gaps = computeGaps(items)
 
   // ---------------------------------------------------------------------------
@@ -326,6 +316,20 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
     setResumableBatch(null)
   }
   const handleDiscardResumable = () => { clearStoredBatch(); setResumableBatch(null) }
+  const handleClearAll = () => {
+    setItems([])
+    setBatchError(null)
+    setSelectionWarning(null)
+    setResumableBatch(null)
+    clearStoredBatch()
+  }
+  const handleRemoveSelected = () => {
+    setItems((prev) => {
+      const next = prev.filter((it) => !it.selected)
+      if (next.length === 0) clearStoredBatch()
+      return next
+    })
+  }
   const handleDeleteItem = (key: string) => {
     setItems((prev) => {
       const next = prev.filter((it) => it.key !== key)
@@ -342,6 +346,9 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   }
   function toggleConditions(key: string) {
     setItems((prev) => prev.map((it) => it.key === key ? { ...it, conditionsExpanded: !it.conditionsExpanded } : it))
+  }
+  function toggleSelected(key: string) {
+    setItems((prev) => prev.map((it) => it.key === key ? { ...it, selected: !it.selected } : it))
   }
 
   // ---------------------------------------------------------------------------
@@ -524,7 +531,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           rawTextParsing: false,
           errorMessage: ready ? null : (result.warnings[0] ?? "Couldn't match these names to known players."),
           surface: (result.event.surface as Surface | null) ?? "Hard",
-          level: (result.event.level as TournamentLevel | null) ?? inferFallbackLevel(txtTournament, result.player1.player?.tour, result.player2.player?.tour),
+          level: (result.event.level as TournamentLevel | null) ?? "ATP250",
           matchFormat: txtFormat,
           tournamentName: txtTournament,
           surfaceDetected: !!result.event.surface,
@@ -553,56 +560,66 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   // ---------------------------------------------------------------------------
   // Predict
   // ---------------------------------------------------------------------------
-  const handlePredict = async () => {
+  const handlePredict = async (): Promise<number[]> => {
     setBatchError(null); setIsPredicting(true)
     const readyKeys = items.filter(needsPredicting).map((i) => i.key)
     setItems((prev) => prev.map((it) => (readyKeys.includes(it.key) ? { ...it, predictStatus: "pending" } : it)))
+    const createdIdsThisRun: number[] = []
 
     for (const item of items) {
       if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
       try {
-        const payload = normalizePredictionInput({
+        const requestMatchId = buildClientMatchId({
+          source: "bulk",
           player1Id: item.result.player1.player.id,
           player2Id: item.result.player2.player.id,
+          tournamentName: item.tournamentName,
           surface: item.surface,
           matchFormat: item.matchFormat,
-          tournamentLevel: item.level,
-          tournamentName: item.tournamentName,
-          player1Tour: item.result.player1.player.tour,
-          player2Tour: item.result.player2.player.tour,
         })
-        const prediction = await createPrediction(payload)
+        const prediction = await createPredictionWithIntegrity(
+          {
+            player1Id: item.result.player1.player.id,
+            player2Id: item.result.player2.player.id,
+            surface: item.surface,
+            matchFormat: item.matchFormat,
+            tournamentLevel: item.level,
+            tournamentName: item.tournamentName,
+          },
+          {
+            requestMatchId,
+            submittedPlayer1Name: item.result.player1.player.name,
+            submittedPlayer2Name: item.result.player2.player.name,
+          },
+        )
+        createdIdsThisRun.push(prediction.id)
         setItems((prev) =>
           prev.map((it) => (it.key === item.key ? { ...it, predictStatus: "success", predictionId: prediction.id } : it)),
         )
-      } catch (err) {
-        const message = getApiErrorMessage(err, "Prediction engine failed for this matchup.")
+      } catch {
         setItems((prev) =>
           prev.map((it) =>
-            it.key === item.key ? { ...it, predictStatus: "error", predictError: message } : it,
+            it.key === item.key ? { ...it, predictStatus: "error", predictError: "Prediction engine failed for this matchup." } : it,
           ),
         )
       }
     }
     setIsPredicting(false)
+    return createdIdsThisRun
   }
 
-  const navigateToResults = () => {
-    setItems((prev) => {
-      const createdIds = prev.filter((it) => it.predictStatus === "success" && it.predictionId != null).map((it) => it.predictionId as number)
-      if (createdIds.length > 0) {
-        clearStoredBatch()
-        setLocation(`/predictions/${createdIds[0]}?batch=${createdIds.join(",")}`)
-      } else {
-        setBatchError("None of the matchups in this batch could be predicted. Check the errors below and try again.")
-      }
-      return prev
-    })
+  const navigateToResults = (createdIds: number[]) => {
+    if (createdIds.length > 0) {
+      clearStoredBatch()
+      setLocation(`/predictions/${createdIds[0]}?batch=${createdIds.join(",")}`)
+      return
+    }
+    setBatchError("None of the matchups in this batch could be predicted. Check the errors below and try again.")
   }
 
   const handlePredictClick = async () => {
-    await handlePredict()
-    navigateToResults()
+    const createdIds = await handlePredict()
+    navigateToResults(createdIds)
   }
 
   // ---------------------------------------------------------------------------
@@ -616,27 +633,51 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           Drop up to {MAX_FILES} screenshots — each image is read by the vision AI independently.
           Long images with multiple match cards are expanded into separate matchup rows automatically.
         </p>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? [])
-            if (files.length > 0) void handleFiles(files)
-            e.target.value = ""
-          }}
-        />
-        <Button
-          variant="outline" size="sm" className="font-mono shrink-0"
-          disabled={anyResolving || isPredicting}
-          onClick={() => inputRef.current?.click()}
-        >
-          {anyResolving
-            ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> READING...</>
-            : <><Layers className="w-4 h-4 mr-2" /> SELECT SCREENSHOTS</>}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          {hasItems && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono shrink-0"
+                disabled={selectedItemCount === 0}
+                onClick={handleRemoveSelected}
+              >
+                <Trash2 className="w-4 h-4 mr-2" /> REMOVE SELECTED ({selectedItemCount})
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-mono shrink-0"
+                disabled={items.length === 0}
+                onClick={handleClearAll}
+              >
+                <X className="w-4 h-4 mr-2" /> CLEAR ALL
+              </Button>
+            </>
+          )}
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              if (files.length > 0) void handleFiles(files)
+              e.target.value = ""
+            }}
+          />
+          <Button
+            variant="outline" size="sm" className="font-mono shrink-0"
+            disabled={anyResolving || isPredicting}
+            onClick={() => inputRef.current?.click()}
+          >
+            {anyResolving
+              ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> READING...</>
+              : <><Layers className="w-4 h-4 mr-2" /> SELECT SCREENSHOTS</>}
+          </Button>
+        </div>
       </div>
 
       {/* Resume banner */}
@@ -673,7 +714,15 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
               {/* Main row */}
               <div className="p-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">{item.fileName}</span>
+                  <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground truncate max-w-[200px] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={item.selected}
+                      onChange={() => toggleSelected(item.key)}
+                      className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                    />
+                    <span className="truncate">{item.fileName}</span>
+                  </label>
                   <div className="flex items-center gap-2 ml-auto shrink-0">
                     <ItemStatusBadge item={item} />
                     <button
@@ -858,7 +907,6 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                         <option value="ATP250">ATP 250</option>
                         <option value="WTA250">WTA 250</option>
                         <option value="Challenger">Challenger</option>
-                        <option value="ITF">ITF / W-Series / M-Series</option>
                       </Select>
                     </div>
                   </div>

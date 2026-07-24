@@ -126,3 +126,35 @@ test("paper trading cycle: locks at cutoff, misses once the lock-grace window el
   assert.equal(summary.locked, 1);
   assert.equal(summary.missed, 2);
 });
+
+test("paper trading cycle blocks duplicate fixture ids with conflicting player pairs", async (t) => {
+  const MINUTE = 60_000;
+  const LEAD_MINUTES = 30;
+
+  const base = makeFixture("ptt-dup-fixture", (LEAD_MINUTES - 5) * MINUTE);
+  const conflicting: Fixture = {
+    ...base,
+    player1Id: "ptt-dup-fixture-p1-alt",
+    player1Name: "ptt-dup-fixture-p1-alt",
+    player2Id: "ptt-dup-fixture-p2-alt",
+    player2Name: "ptt-dup-fixture-p2-alt",
+  };
+
+  const provider = new FakeProvider([base, conflicting]);
+
+  t.after(async () => {
+    await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.provider, PROVIDER_NAME));
+  });
+
+  const summary = await runPaperTradingCycle(provider);
+
+  const rows = await db
+    .select()
+    .from(evaluationPredictionsTable)
+    .where(eq(evaluationPredictionsTable.externalFixtureId, base.id));
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].player1Id, base.player1Id);
+  assert.equal(rows[0].player2Id, base.player2Id);
+  assert.ok(summary.errors.some((e) => e.includes("duplicate fixture id with conflicting players")));
+});

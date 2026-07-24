@@ -1,31 +1,14 @@
-import { useState, useCallback } from "react"
-import { useListEvaluationPredictions, type EvaluationPrediction } from "@workspace/api-client-react"
+import { useState } from "react"
+import { useListEvaluationPredictions, useGetEvaluationPredictionStats, type EvaluationPrediction } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
-import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon, ChevronDown, Loader2 } from "lucide-react"
-
-const PAGE_SIZE = 50
-
-/** Task #30: mirrors the Ledger's `HistoricalMatchFallbackBadge` (see `History.tsx`) -- real
- * disclosure that at least one player in this prediction was resolved via the historical-match
- * fallback (not in current live ATP/WTA standings) rather than a live ranking, per
- * `usedHistoricalMatchFallback` (derived server-side from this row's own stored
- * `featureSnapshot.engine.warnings`, never guessed). */
-function HistoricalMatchFallbackBadge() {
-  return (
-    <span
-      className="px-1.5 py-0.5 bg-muted text-muted-foreground rounded-[2px] normal-case text-xs font-mono flex items-center gap-1 shrink-0"
-      title="At least one player's tour/rank came from their own past match record, not a live ranking"
-    >
-      <HistoryIcon className="w-3 h-3" /> PAST-MATCH RANK
-    </span>
-  )
-}
+import { PredictionStatsCards } from "@/components/PredictionStatsCards"
+import { HistoricalMatchFallbackBadge } from "@/components/HistoricalMatchFallbackBadge"
+import { CheckCircle2, XCircle, Clock, Ban, CalendarClock, FlaskConical, Radio, History as HistoryIcon } from "lucide-react"
 
 const RUN_KIND_LABEL: Record<string, string> = {
   historical_test: "Historical Test",
@@ -147,53 +130,32 @@ function PredictionRow({ prediction }: { prediction: EvaluationPrediction }) {
 
 export default function PredictionLogPage() {
   const [runKind, setRunKind] = useState<"all" | "historical_test" | "paper_trade">("all")
-  const [page, setPage] = useState(0)
-  const [allPredictions, setAllPredictions] = useState<EvaluationPrediction[]>([])
-  const [hasMore, setHasMore] = useState(true)
 
-  const { data: predictions, isLoading, isFetching } = useListEvaluationPredictions({
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+  const statsParams = runKind === "all" ? undefined : { runKind }
+  const { data: predictions, isLoading } = useListEvaluationPredictions({
+    limit: 100,
     ...(runKind !== "all" ? { runKind } : {}),
-  }, {
-    query: {
-      keepPreviousData: true,
-      onSuccess: (data: EvaluationPrediction[]) => {
-        if (page === 0) {
-          setAllPredictions(data)
-        } else {
-          setAllPredictions(prev => [...prev, ...data])
-        }
-        setHasMore(data.length === PAGE_SIZE)
-      },
-    },
   })
+  const { data: stats, isLoading: statsLoading } = useGetEvaluationPredictionStats(statsParams)
 
-  const handleTabChange = useCallback((v: string) => {
-    setRunKind(v as typeof runKind)
-    setPage(0)
-    setAllPredictions([])
-    setHasMore(true)
-  }, [])
-
-  const loadMore = useCallback(() => {
-    setPage(p => p + 1)
-  }, [])
-
-  const displayed = allPredictions.length > 0 ? allPredictions : (predictions ?? [])
-  const preMatch = displayed.filter((p) => p.status === "pending")
-  const postMatch = displayed.filter((p) => p.status !== "pending")
+  const preMatch = (predictions ?? []).filter((p) => p.status === "pending")
+  const postMatch = (predictions ?? []).filter((p) => p.status !== "pending")
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 max-w-6xl mx-auto pb-12">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/50 pb-6">
-        <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">Prediction Log</h1>
-          <p className="text-muted-foreground mt-2 text-lg">
-            Every locked evaluation prediction — historical walk-forward tests and live paper trades. Locked at cutoff, never edited or backfilled.
-          </p>
+      <div className="space-y-6 border-b border-border/50 pb-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-4xl font-display font-bold tracking-tight">Prediction Log</h1>
+            <p className="text-muted-foreground mt-2 text-lg">
+              Every locked evaluation prediction — historical walk-forward tests and live paper trades. Locked at cutoff, never edited or backfilled.
+            </p>
+          </div>
         </div>
-        <Tabs value={runKind} onValueChange={handleTabChange} className="w-full md:w-auto">
+
+        <PredictionStatsCards stats={stats} isLoading={statsLoading} />
+
+        <Tabs value={runKind} onValueChange={(v) => setRunKind(v as typeof runKind)} className="w-full md:w-auto">
           <TabsList className="w-full h-11 bg-secondary/50 border border-border/50 p-1">
             <TabsTrigger value="all" className="flex-1 font-mono text-xs uppercase tracking-widest">All</TabsTrigger>
             <TabsTrigger value="historical_test" className="flex-1 font-mono text-xs uppercase tracking-widest">Historical Test</TabsTrigger>
@@ -210,8 +172,8 @@ export default function PredictionLogPage() {
         <div className="space-y-12">
           <section className="space-y-6">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg border border-primary/30">
-                <Clock className="w-5 h-5 text-primary" />
+              <div className="p-2 bg-secondary rounded-lg">
+                <Clock className="w-5 h-5 text-secondary-foreground" />
               </div>
               <h2 className="text-2xl font-bold font-display">Pre-match <span className="text-muted-foreground font-medium text-lg ml-2">(locked, awaiting result)</span></h2>
             </div>
@@ -220,8 +182,8 @@ export default function PredictionLogPage() {
                 {preMatch.map((p) => <PredictionRow key={p.id} prediction={p} />)}
               </div>
             ) : (
-              <Card className="glass-panel border-dashed border-primary/45 shadow-none"><CardContent className="p-12 text-center text-sm text-muted-foreground font-mono font-bold tracking-widest uppercase flex flex-col items-center gap-4">
-                <div className="p-3 bg-secondary/50 rounded-full mb-2 border border-border/60"><Clock className="w-6 h-6 opacity-50" /></div>
+              <Card className="glass-panel border-dashed shadow-none"><CardContent className="p-12 text-center text-sm text-muted-foreground font-mono font-bold tracking-widest uppercase flex flex-col items-center gap-4">
+                <div className="p-3 bg-secondary/50 rounded-full mb-2"><Clock className="w-6 h-6 opacity-50" /></div>
                 No Pending Locked Predictions
               </CardContent></Card>
             )}
@@ -239,26 +201,12 @@ export default function PredictionLogPage() {
                 {postMatch.map((p) => <PredictionRow key={p.id} prediction={p} />)}
               </div>
             ) : (
-              <Card className="glass-panel border-dashed border-primary/45 shadow-none"><CardContent className="p-12 text-center text-sm text-muted-foreground font-mono font-bold tracking-widest uppercase flex flex-col items-center gap-4">
-                <div className="p-3 bg-secondary/50 rounded-full mb-2 border border-border/60"><HistoryIcon className="w-6 h-6 opacity-50" /></div>
+              <Card className="glass-panel border-dashed shadow-none"><CardContent className="p-12 text-center text-sm text-muted-foreground font-mono font-bold tracking-widest uppercase flex flex-col items-center gap-4">
+                <div className="p-3 bg-secondary/50 rounded-full mb-2"><HistoryIcon className="w-6 h-6 opacity-50" /></div>
                 No Graded Predictions Yet
               </CardContent></Card>
             )}
           </section>
-        </div>
-      )}
-
-      {!isLoading && hasMore && (
-        <div className="flex justify-center pt-4">
-          <Button
-            variant="outline"
-            onClick={loadMore}
-            disabled={isFetching}
-            className="gap-2 font-mono"
-          >
-            {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
-            {isFetching ? "Loading…" : `Load more (showing ${displayed.length})`}
-          </Button>
         </div>
       )}
     </div>

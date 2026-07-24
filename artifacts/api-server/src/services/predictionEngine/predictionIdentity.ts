@@ -83,6 +83,8 @@ export interface InputSnapshotFields {
   headToHead: HeadToHeadRecord | null;
   player1OpponentElo?: OpponentEloLookup;
   player2OpponentElo?: OpponentEloLookup;
+  /** Optional immutable client request id to keep each user-submitted request distinct. */
+  requestNonce?: string;
 }
 
 /**
@@ -108,6 +110,7 @@ export function computeInputSnapshotHash(input: InputSnapshotFields): string {
   const snapshot = {
     players: perPlayer,
     headToHead: normalizeHeadToHead(input.headToHead),
+    requestNonce: input.requestNonce ?? null,
   };
 
   return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");

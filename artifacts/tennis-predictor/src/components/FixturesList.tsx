@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
 import {
   useGetUpcomingFixtures,
-  useCreatePrediction,
   useGetLiveFixtureScores,
   getGetLiveFixtureScoresQueryKey,
   type Fixture,
@@ -14,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyDataState } from "./DataWarning"
 import { Calendar, Clock, Swords, Trash2, Zap, RefreshCw, Wifi, XCircle } from "lucide-react"
 import { formatEasternDateTime } from "@/lib/timezone"
+import { createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 // Specific TournamentLevel strings + the legacy aggregate shorthands ("atp", "wta", "itf").
 // Aggregate shorthands are kept for backward compatibility; specific values are passed through
@@ -322,7 +322,6 @@ export const FixturesList = forwardRef<
   const fixtures = data?.fixtures
   const hasMore = data?.hasMore ?? false
   const [, setLocation] = useLocation()
-  const createPrediction = useCreatePrediction()
   const [predictNowFixtureId, setPredictNowFixtureId] = useState<string | null>(null)
   const [predictNowError, setPredictNowError] = useState<string | null>(null)
 
@@ -450,31 +449,32 @@ export const FixturesList = forwardRef<
   )
   const liveScores = liveScoresData?.scores
 
-  const handlePredictNow = (fixture: Fixture) => {
+  const handlePredictNow = async (fixture: Fixture) => {
     setPredictNowError(null)
     setPredictNowFixtureId(fixture.id)
-    createPrediction.mutate(
-      {
-        data: {
+
+    try {
+      const prediction = await createPredictionWithIntegrity(
+        {
           player1Id: fixture.player1Id,
           player2Id: fixture.player2Id,
           surface: fixture.surface ?? "Hard",
           matchFormat: fixture.matchFormat ?? (fixture.tournamentLevel === "GrandSlam" ? "BestOf5" : "BestOf3"),
           tournamentLevel: fixture.tournamentLevel ?? undefined,
-          tournamentName: fixture.tournamentName ?? undefined,
+          tournamentName: fixture.tournamentName ?? null,
         },
-      },
-      {
-        onSuccess: (prediction) => {
-          setPredictNowFixtureId(null)
-          setLocation(`/predictions/${prediction.id}`)
+        {
+          requestMatchId: `fixture:${fixture.id}`,
+          submittedPlayer1Name: fixture.player1Name,
+          submittedPlayer2Name: fixture.player2Name,
         },
-        onError: () => {
-          setPredictNowFixtureId(null)
-          setPredictNowError(fixture.id)
-        },
-      },
-    )
+      )
+      setPredictNowFixtureId(null)
+      setLocation(`/predictions/${prediction.id}`)
+    } catch {
+      setPredictNowFixtureId(null)
+      setPredictNowError(fixture.id)
+    }
   }
 
   if (isLoading) {

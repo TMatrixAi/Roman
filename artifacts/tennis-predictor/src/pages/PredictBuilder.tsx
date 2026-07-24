@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useLocation, useSearch } from "wouter"
-import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import type { PredictionSummary } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,9 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
-import { normalizePredictionInput } from "@/lib/predictionInput"
-import { getApiErrorMessage } from "@/lib/apiError"
 import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 function PlayerCard({ 
   playerId, 
@@ -36,10 +35,10 @@ function PlayerCard({
 
   if (!playerId) {
     return (
-      <Card className="h-full border-dashed border-2 border-primary/60 bg-secondary/30 glass-panel">
+      <Card className="h-full border-dashed border-2 bg-secondary/30 glass-panel">
         <CardContent className="p-4 sm:p-8 h-full flex flex-col justify-center items-center text-center space-y-3 min-h-[140px] sm:min-h-[200px]">
           <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-full bg-background shadow-sm flex items-center justify-center border border-border">
-            <Swords className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground" />
+            <Swords className="w-4 h-4 sm:w-6 sm:h-6 text-muted-foreground/50" />
           </div>
           <div>
             <h3 className="font-display font-bold text-base sm:text-xl">{title}</h3>
@@ -122,19 +121,19 @@ function PlayerCard({
               </div>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloHard != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloHard != null ? 'bg-sky-500/10 border-sky-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">H.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloHard ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloClay != null ? 'bg-accent/10 border-accent/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloClay != null ? 'bg-orange-500/10 border-orange-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">C.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloClay ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.eloGrass != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.eloGrass != null ? 'bg-green-500/10 border-green-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">G.ELO</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.eloGrass ?? '--'}</p>
               </div>
-              <div className={`rounded-md p-1.5 text-center border ${stats.serveRatingProxy != null ? 'bg-primary/10 border-primary/25' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
+              <div className={`rounded-md p-1.5 text-center border ${stats.serveRatingProxy != null ? 'bg-violet-500/10 border-violet-500/20' : 'bg-secondary/30 border-border/30 opacity-50'}`}>
                 <p className="text-[8px] font-mono font-bold text-muted-foreground mb-0.5">MARGIN</p>
                 <p className="font-bold font-mono text-xs tabular-nums">{stats.serveRatingProxy ?? '--'}</p>
               </div>
@@ -166,6 +165,8 @@ export default function PredictBuilderPage() {
 
   const [player1Id, setPlayer1Id] = useState<string | null>(p1)
   const [player2Id, setPlayer2Id] = useState<string | null>(p2)
+  const [player1Name, setPlayer1Name] = useState<string | null>(null)
+  const [player2Name, setPlayer2Name] = useState<string | null>(null)
   const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
   const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
   const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
@@ -184,41 +185,51 @@ export default function PredictBuilderPage() {
     try { localStorage.setItem("matchConditionsExpanded", conditionsExpanded ? "true" : "false") } catch { /* best-effort */ }
   }, [conditionsExpanded])
 
-  const createPrediction = useCreatePrediction()
-  const predictionErrorMessage = createPrediction.isError
-    ? getApiErrorMessage(createPrediction.error, "Failed to run prediction. Provider may be unavailable or matchup data is insufficient.")
-    : null
+  useEffect(() => {
+    setPlayer1Id(p1)
+    setPlayer2Id(p2)
+    setSurface(prefillSurface ?? "Hard")
+    setFormat(prefillFormat ?? "BestOf3")
+    setLevel(prefillLevel ?? "ATP250")
+    setTournamentName(prefillTournamentName ?? "")
+    setPlayer1Name(null)
+    setPlayer2Name(null)
+  }, [p1, p2, prefillSurface, prefillFormat, prefillLevel, prefillTournamentName])
 
-  // Fetch player profiles in the parent so we can pass tour data to normalizePredictionInput.
-  // React Query deduplicates these with the identical calls in PlayerCard, so no extra requests.
-  const { data: player1Data } = useGetPlayer(player1Id || "", {
-    query: { queryKey: getGetPlayerQueryKey(player1Id || ""), enabled: !!player1Id }
-  })
-  const { data: player2Data } = useGetPlayer(player2Id || "", {
-    query: { queryKey: getGetPlayerQueryKey(player2Id || ""), enabled: !!player2Id }
-  })
-
-  const handleRunModel = () => {
+  const handleRunModel = async () => {
     if (!player1Id || !player2Id) return
 
-    const payload = normalizePredictionInput({
+    const trimmedTournamentName = tournamentName.trim()
+
+    const requestMatchId = buildClientMatchId({
+      source: "manual",
       player1Id,
       player2Id,
+      tournamentName: trimmedTournamentName || null,
       surface,
       matchFormat: format,
-      tournamentLevel: level,
-      tournamentName,
-      player1Tour: player1Data?.tour ?? null,
-      player2Tour: player2Data?.tour ?? null,
     })
 
-    createPrediction.mutate({
-      data: payload
-    }, {
-      onSuccess: (prediction) => {
-        setLocation(`/predictions/${prediction.id}`)
-      }
-    })
+    try {
+      const prediction = await createPredictionWithIntegrity(
+        {
+        player1Id,
+        player2Id,
+        surface,
+        matchFormat: format,
+        tournamentLevel: level,
+          tournamentName: trimmedTournamentName || null,
+        },
+        {
+          requestMatchId,
+          submittedPlayer1Name: player1Name,
+          submittedPlayer2Name: player2Name,
+        },
+      )
+      setLocation(`/predictions/${prediction.id}`)
+    } catch {
+      // Integrity failures and provider issues are surfaced by the route's error UI.
+    }
   }
 
   return (
@@ -239,12 +250,12 @@ export default function PredictBuilderPage() {
         <PlayerCard 
           title="PLAYER 1" 
           playerId={player1Id} 
-          onRemove={() => setPlayer1Id(null)} 
+          onRemove={() => { setPlayer1Id(null); setPlayer1Name(null) }} 
         />
         <PlayerCard 
           title="PLAYER 2" 
           playerId={player2Id} 
-          onRemove={() => setPlayer2Id(null)} 
+          onRemove={() => { setPlayer2Id(null); setPlayer2Name(null) }} 
         />
       </div>
 
@@ -252,7 +263,7 @@ export default function PredictBuilderPage() {
       <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
-            <TabsList className="mb-3 w-full h-11 bg-secondary/60 border border-border/60">
+            <TabsList className="mb-3 w-full">
               <TabsTrigger value="search" className="font-mono gap-1.5 flex-1">
                 <Search className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">PLAYER </span>SEARCH
@@ -270,8 +281,13 @@ export default function PredictBuilderPage() {
             <TabsContent value="search">
               <PlayerSearch 
                 onSelect={(player) => {
-                  if (!player1Id) setPlayer1Id(player.id)
-                  else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
+                  if (!player1Id) {
+                    setPlayer1Id(player.id)
+                    setPlayer1Name(player.name)
+                  } else if (!player2Id && player.id !== player1Id) {
+                    setPlayer2Id(player.id)
+                    setPlayer2Name(player.name)
+                  }
                 }} 
               />
             </TabsContent>
@@ -368,7 +384,6 @@ export default function PredictBuilderPage() {
                     <option value="ATP250">ATP 250</option>
                     <option value="WTA250">WTA 250</option>
                     <option value="Challenger">Challenger</option>
-                    <option value="ITF">ITF / W-Series / M-Series</option>
                   </Select>
                 </div>
               </div>
@@ -382,7 +397,7 @@ export default function PredictBuilderPage() {
                 <Activity className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
                   <strong className="block mb-1">ENGINE ERROR:</strong>
-                  {predictionErrorMessage}
+                  Failed to run prediction. Provider may be unavailable or matchup data is insufficient.
                 </div>
               </div>
             )}
@@ -396,7 +411,7 @@ export default function PredictBuilderPage() {
             <Button 
               size="lg" 
               className="w-full font-bold font-mono text-lg h-16 rounded-xl relative overflow-hidden group" 
-              variant="default"
+              variant="accent"
               disabled={createPrediction.isPending || player1Id === player2Id}
               onClick={handleRunModel}
             >

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useGetPredictionStats,
-  useGetAdminAuthStatus,
   useListPredictions,
   useDeletePrediction,
   useBulkDeletePredictions,
@@ -22,9 +21,11 @@ import { Button } from "@/components/ui/button"
 import { formatDate, formatProbability } from "@/lib/utils"
 import { asPercentage } from "@/lib/percentage"
 import { Skeleton } from "@/components/ui/skeleton"
+import { PredictionStatsCards, PredictionStatCard } from "@/components/PredictionStatsCards"
 import { readAndClearPasteSearchHandoff } from "@/lib/pasteSearchHandoff"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
-import { buildPredictionCopyText } from "@/lib/predictionCopyText"
+import { HistoricalMatchFallbackBadge } from "@/components/HistoricalMatchFallbackBadge"
+import { getShortRecommendationLabel } from "@/lib/recommendationLabels"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +36,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { useToast } from "@/hooks/use-toast"
 import { Link, useLocation, useSearch } from "wouter"
 import {
-  Target,
   CheckCircle2,
   XCircle,
   Clock,
   AlertTriangle,
   Copy,
-  TrendingUp,
   ChevronRight,
   ChevronLeft,
   Trash2,
@@ -54,23 +52,8 @@ import {
   ClipboardPaste,
   History as HistoryIcon,
   Scale,
+  Target,
 } from "lucide-react"
-
-/** Task #30: real disclosure -- shown when this saved prediction involved a player resolved via
- * the historical-match fallback (not in current live ATP/WTA standings) rather than a live
- * ranking, per `usedHistoricalMatchFallback` (derived server-side from this row's own stored
- * `engine.warnings`, never guessed). Shares the "muted, normal-case" styling `PlayerSearch.tsx`
- * uses for the same real disclosure at prediction-creation time. */
-function HistoricalMatchFallbackBadge() {
-  return (
-    <span
-      className="px-1.5 py-0.5 bg-muted text-muted-foreground rounded-[2px] normal-case text-xs font-mono flex items-center gap-1 shrink-0"
-      title="At least one player's tour/rank came from their own past match record, not a live ranking"
-    >
-      <HistoryIcon className="w-3 h-3" /> PAST-MATCH RANK
-    </span>
-  )
-}
 
 function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
   const [preview, setPreview] = useState<DuplicatePredictionsPreviewResult | null>(null)
@@ -92,7 +75,7 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
   return (
     <>
       <Button
-        variant="secondary"
+        variant="outline"
         size="sm"
         className="font-mono self-start md:self-auto"
         disabled={previewDuplicates.isPending}
@@ -156,41 +139,18 @@ function RemoveDuplicateTradesButton({ onRemoved }: { onRemoved: () => void }) {
   )
 }
 
-function StatCard({ title, value, subtext, icon: Icon }: { title: string, value: string | number, subtext?: string, icon: any }) {
-  return (
-    <Card className="bg-card shadow-sm glass-panel hover-lift matrix-stat-card">
-      <CardContent className="p-6">
-        <div className="flex justify-between items-start">
-          <div className="space-y-3">
-            <p className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
-            <p className="text-4xl font-display font-bold tracking-tight matrix-number tabular-nums">{value}</p>
-            {subtext && <p className="text-xs text-muted-foreground/80 font-medium">{subtext}</p>}
-          </div>
-          <div className="p-3 bg-secondary/50 rounded-xl border border-border/50">
-            <Icon className="w-5 h-5 text-primary" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 function PredictionRow({
   prediction,
   selected,
   onToggleSelect,
   onDelete,
   isDeleting,
-  canCopy,
-  onCopy,
 }: {
   prediction: PredictionSummary
   selected: boolean
   onToggleSelect: () => void
   onDelete: () => void
   isDeleting: boolean
-  canCopy: boolean
-  onCopy: () => void
 }) {
   const isResolved = !!prediction.actualWinnerName;
   // NOTE: PredictionSummary (the Ledger list endpoint) only exposes player/winner NAMES, not IDs,
@@ -204,11 +164,11 @@ function PredictionRow({
 
   const renderRecommendationBadge = () => {
     switch (prediction.recommendation) {
-      case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
-      case 'MODERATE_LEAN': return <Badge variant="secondary">LEAN</Badge>
-      case 'HIGH_RISK': return <Badge variant="warning">RISK</Badge>
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">{getShortRecommendationLabel("STRONG_RECOMMENDATION")}</Badge>
+      case 'MODERATE_LEAN': return <Badge variant="secondary">{getShortRecommendationLabel("MODERATE_LEAN")}</Badge>
+      case 'HIGH_RISK': return <Badge variant="warning">{getShortRecommendationLabel("HIGH_RISK")}</Badge>
       case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="gap-1 text-muted-foreground border-muted-foreground/30" title="Task #37: prediction was within ±3% of a coin flip — backtesting shows these picks perform at or below chance. Flagged separately so you can track your borderline pick accuracy."><Scale className="w-3 h-3" /> COIN FLIP</Badge>
-      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">NO REC</Badge>
+      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive">{getShortRecommendationLabel("DO_NOT_RECOMMEND")}</Badge>
       default: return null
     }
   }
@@ -259,22 +219,6 @@ function PredictionRow({
               {prediction.predictedWinnerName}
               <Badge variant="outline" className="font-mono tabular-nums bg-background shadow-sm">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
             </div>
-            {canCopy && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onCopy()
-                }}
-                className="h-7 px-2 text-[10px] font-mono gap-1 self-start md:self-end"
-                aria-label="Copy prediction summary"
-              >
-                <Copy className="w-3 h-3" />
-                Copy
-              </Button>
-            )}
           </div>
 
           <div className="flex flex-col md:items-end gap-1.5">
@@ -328,11 +272,11 @@ function PlayerFocusRow({ prediction }: { prediction: PredictionSummary }) {
 
   const renderRecommendationBadge = () => {
     switch (prediction.recommendation) {
-      case 'STRONG_RECOMMENDATION': return <Badge variant="success" className="shadow-sm" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">HIGH CONF</Badge>
-      case 'MODERATE_LEAN': return <Badge variant="secondary" className="shadow-sm">LEAN</Badge>
-      case 'HIGH_RISK': return <Badge variant="warning" className="shadow-sm">RISK</Badge>
+      case 'STRONG_RECOMMENDATION': return <Badge variant="success" className="shadow-sm" title="Engine's highest-confidence tier -- validation is still limited and this tier hasn't yet been shown to beat other tiers.">{getShortRecommendationLabel("STRONG_RECOMMENDATION")}</Badge>
+      case 'MODERATE_LEAN': return <Badge variant="secondary" className="shadow-sm">{getShortRecommendationLabel("MODERATE_LEAN")}</Badge>
+      case 'HIGH_RISK': return <Badge variant="warning" className="shadow-sm">{getShortRecommendationLabel("HIGH_RISK")}</Badge>
       case 'NO_STRONG_SIGNAL': return <Badge variant="outline" className="shadow-sm bg-background gap-1 text-muted-foreground border-muted-foreground/30" title="Prediction was within ±3% of a coin flip — these picks perform at or below chance in backtesting."><Scale className="w-3 h-3" /> COIN FLIP</Badge>
-      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive" className="shadow-sm">NO REC</Badge>
+      case 'DO_NOT_RECOMMEND': return <Badge variant="destructive" className="shadow-sm">{getShortRecommendationLabel("DO_NOT_RECOMMEND")}</Badge>
       default: return null
     }
   }
@@ -409,23 +353,6 @@ export default function HistoryPage() {
   const queryClient = useQueryClient()
   const { data: stats, isLoading: statsLoading } = useGetPredictionStats()
   const { data: predictions, isLoading: predictionsLoading } = useListPredictions({ limit: 50 })
-  const { data: adminAuth } = useGetAdminAuthStatus()
-  const { toast } = useToast()
-  const canCopy = adminAuth?.authenticated === true
-
-  const handleCopyPrediction = async (prediction: PredictionSummary) => {
-    const text = buildPredictionCopyText(prediction)
-    try {
-      await navigator.clipboard.writeText(text)
-      toast({ title: "✅ Prediction copied!" })
-    } catch {
-      toast({
-        title: "Copy failed",
-        description: "Clipboard access failed. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
 
   // Restore scroll position when returning from a prediction detail via "Back to Ledger".
   // The position is saved in sessionStorage by PredictionRow's Link onClick; we restore it
@@ -617,7 +544,7 @@ export default function HistoryPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             className="font-mono self-start md:self-auto h-10 shadow-sm"
             disabled={gradePending.isPending}
@@ -637,44 +564,19 @@ export default function HistoryPage() {
       )}
 
       {statsLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
-        </div>
+        <PredictionStatsCards isLoading={true} />
       ) : stats ? (
         <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard 
-            title="TOTAL RUNS" 
-            value={stats.totalPredictions} 
-            icon={Target} 
-          />
-          <StatCard 
-            title="RESOLVED" 
-            value={stats.resolvedPredictions} 
-            icon={Clock} 
-          />
-          <StatCard 
-            title="ACCURACY" 
-            value={stats.accuracy !== null ? `${stats.accuracy.toFixed(1)}%` : '--'} 
-            subtext={`${stats.correctPredictions} correct`}
-            icon={TrendingUp} 
-          />
-          <StatCard 
-            title="HIGH CONF" 
-            value={stats.byRecommendation?.find(r => r.recommendation === 'STRONG_RECOMMENDATION')?.count || 0} 
-            subtext="Highest-confidence tier -- not yet proven better than other tiers"
-            icon={AlertTriangle} 
-          />
+          <PredictionStatsCards stats={stats} isLoading={false} />
           {/* Task #37: coin-flip predictions flagged separately so users can track their borderline picks */}
           {(stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count ?? 0) > 0 && (
-            <StatCard
+            <PredictionStatCard
               title="COIN FLIP"
               value={stats.byRecommendation?.find(r => r.recommendation === 'NO_STRONG_SIGNAL')?.count || 0}
               subtext="Within ±3% of 50/50 — backtesting shows these perform at or below chance"
               icon={Scale}
             />
           )}
-        </div>
         <SavedPredictionsLookup />
         </>
       ) : null}
@@ -774,8 +676,6 @@ export default function HistoryPage() {
                 onToggleSelect={() => toggleSelect(pred.id)}
                 onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
                 isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
-                canCopy={canCopy}
-                onCopy={() => handleCopyPrediction(pred)}
               />
             ))}
           </div>

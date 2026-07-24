@@ -10,6 +10,7 @@ import { formatProbability } from "@/lib/utils"
 import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type Percentage } from "@/lib/percentage"
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { buildPredictionCopyText } from "@/lib/predictionCopyText"
+import { getRecommendationLabel } from "@/lib/recommendationLabels"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
 import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
@@ -63,18 +64,6 @@ function toVisibleModelName(name: string): string {
   if (name.includes("Monte")) return "Monte Carlo"
   if (name.includes("Ensemble") || name.includes("Calibrat")) return "Calibrated Ensemble"
   return name
-}
-
-// "STRONG_RECOMMENDATION" is displayed as "HIGH CONFIDENCE" rather than a literal
-// underscore-replace of its name: a fresh walk-forward audit (docs/audit-task116-full-statistical-audit.md,
-// section 4) found this tier currently has the worst log loss of any recommendation tier on
-// held-out data -- "strong recommendation" reads as an endorsement the evidence doesn't yet back.
-// "HIGH CONFIDENCE" describes what the tier actually is (the engine's highest-margin threshold)
-// without implying a proven track record. Keep this label consistent everywhere the tier is shown
-// (Ledger list rows, Ledger stats, this page). Current backtest n is shown live on the Accuracy
-// Dashboard -- do NOT hardcode a snapshot count here, it drifts silently as more rows are graded.
-const RECOMMENDATION_LABELS: Record<string, string> = {
-  STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
 }
 
 const COMPANY_NAME = "Tennis Matrix Ai"
@@ -301,7 +290,7 @@ export default function PredictionResultPage() {
                           : undefined
                       }
                     >
-                      {RECOMMENDATION_LABELS[prediction.recommendation] ?? prediction.recommendation.replace(/_/g, ' ')}
+                      {getRecommendationLabel(prediction.recommendation)}
                     </Badge>
                     {engine.isEliteTier && (
                       <Badge

@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react"
 import { useLocation } from "wouter"
-import { searchPlayers, createPrediction, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
+import { searchPlayers, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
 import { expandNickname, isGrandSlam } from "@/lib/grandSlam"
-import { normalizePredictionInput } from "@/lib/predictionInput"
-import { getApiErrorMessage } from "@/lib/apiError"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ClipboardPaste, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, HelpCircle } from "lucide-react"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 const STORAGE_KEY = "pasteMatchupPredictor.text.v1"
 const RESOLVE_CONCURRENCY = 4
@@ -289,27 +288,39 @@ export function PasteMatchupPredictor() {
         // Grand Slam ATP men's matches are Best-of-5; all others are Best-of-3.
         const isATPMatch = line.player1?.tour === "ATP" || line.player2?.tour === "ATP"
         const matchFormat = isGrandSlam(line.resolvedTournament) && isATPMatch ? "BestOf5" : "BestOf3"
-        const payload = normalizePredictionInput({
+        const requestMatchId = buildClientMatchId({
+          source: "paste",
           player1Id: line.player1.id,
           player2Id: line.player2.id,
+          tournamentName: line.resolvedTournament,
           surface: line.detectedSurface ?? "Hard",
           matchFormat,
-          tournamentLevel: line.detectedLevel,
-          tournamentName: line.resolvedTournament,
-          player1Tour: line.player1.tour,
-          player2Tour: line.player2.tour,
         })
-        const prediction = await createPrediction(payload)
+        const prediction = await createPredictionWithIntegrity(
+          {
+            player1Id: line.player1.id,
+            player2Id: line.player2.id,
+            // Use auto-detected surface/level when available; fall back to sensible defaults.
+            surface: line.detectedSurface ?? "Hard",
+            matchFormat,
+            tournamentLevel: line.detectedLevel ?? "ATP250",
+            tournamentName: line.resolvedTournament,
+          },
+          {
+            requestMatchId,
+            submittedPlayer1Name: line.player1.name,
+            submittedPlayer2Name: line.player2.name,
+          },
+        )
         resultIds.push(prediction.id)
         setLines((prev) =>
           prev.map((l) => (l.key === line.key ? { ...l, status: "predict-success" as LineStatus, predictionId: prediction.id } : l)),
         )
-      } catch (err) {
-        const message = getApiErrorMessage(err, "Failed to run prediction engine for this matchup")
+      } catch {
         setLines((prev) =>
           prev.map((l) =>
             l.key === line.key
-              ? { ...l, status: "predict-error" as LineStatus, errorMessage: message }
+              ? { ...l, status: "predict-error" as LineStatus, errorMessage: "Failed to run prediction engine for this matchup" }
               : l,
           ),
         )
@@ -479,10 +490,10 @@ const STATUS_BADGE: Record<LineStatus, BadgeVariant> = {
 
 /** Surface colour coding — matches the rest of the app's convention */
 const SURFACE_COLOR: Record<Surface, string> = {
-  Clay: "text-[hsl(var(--surface-clay))]",
-  Grass: "text-[hsl(var(--surface-grass))]",
-  Hard: "text-[hsl(var(--surface-hard))]",
-  IndoorHard: "text-[hsl(var(--surface-indoor))]",
+  Clay: "text-orange-500",
+  Grass: "text-green-500",
+  Hard: "text-blue-400",
+  IndoorHard: "text-purple-400",
 }
 
 function PasteLineRow({

@@ -160,6 +160,37 @@ async function insertTestPrediction(createdAt: Date): Promise<number> {
   return row.id;
 }
 
+async function insertFixtureLineagePrediction(createdAt: Date, externalFixtureId: string): Promise<number> {
+  const [row] = await db
+    .insert(predictionsTable)
+    .values({
+      player1Id: PLAYER_A,
+      player1Name: "Player Alpha",
+      player2Id: PLAYER_B,
+      player2Name: "Player Beta",
+      surface: "Hard",
+      matchFormat: "best_of_3",
+      tournamentLevel: null,
+      tournamentName: "Test Tournament",
+      externalFixtureId,
+      predictedWinnerId: PLAYER_A,
+      predictedWinnerName: "Player Alpha",
+      calibratedProbability: 65,
+      predictedWinnerProbability: 65,
+      dataQuality: 50,
+      dataQualityLabel: "MEDIUM",
+      upsetRisk: "LOW",
+      recommendation: "LEAN",
+      predictedSetScore: "6-4 6-3",
+      matchIdentityKey: `test-grading-fixture-${Date.now()}-${Math.random()}`,
+      inputSnapshotHash: `test-fixture-hash-${Date.now()}-${Math.random()}`,
+      createdAt,
+      engine: {},
+    })
+    .returning({ id: predictionsTable.id });
+  return row.id;
+}
+
 async function cleanupTestPredictions() {
   // Delete only the rows inserted by this test file.
   // Using a name prefix to isolate without needing a separate test DB.
@@ -277,6 +308,56 @@ test("gradePendingLedgerPredictionsFromBatch surfaces batch fetch errors in summ
     summary.errors.some((e) => e.includes("p99")),
     "batch fetch errors should appear in summary errors",
   );
+
+  await cleanupTestPredictions();
+});
+
+test("gradePendingLedgerPredictionsFromBatch grades only the exact stored fixture when fixture lineage exists", async () => {
+  await cleanupTestPredictions();
+  const createdAt = new Date(Date.now() - 3 * 60 * 60_000);
+  const predId = await insertFixtureLineagePrediction(createdAt, "fixture-exact-1");
+
+  const batch = {
+    matchesByPlayerId: new Map<string, MatchRecord[]>([
+      [
+        PLAYER_A,
+        [
+          makeMatch({ id: "fixture-wrong-1", opponentId: PLAYER_B, result: "L", date: new Date().toISOString() }),
+          makeMatch({ id: "fixture-exact-1", opponentId: PLAYER_B, result: "W", date: new Date().toISOString() }),
+        ],
+      ],
+      [PLAYER_B, []],
+    ]),
+    fetchErrors: [],
+  };
+
+  const summary = await gradePendingLedgerPredictionsFromBatch(batch);
+
+  assert.equal(summary.graded, 1);
+  const [graded] = await db.select().from(predictionsTable).where(eq(predictionsTable.id, predId));
+  assert.equal(graded.actualWinnerId, PLAYER_A);
+
+  await cleanupTestPredictions();
+});
+
+test("gradePendingLedgerPredictionsFromBatch blocks grading when exact fixture lineage is missing even if a pair/date fallback exists", async () => {
+  await cleanupTestPredictions();
+  const createdAt = new Date(Date.now() - 3 * 60 * 60_000);
+  const predId = await insertFixtureLineagePrediction(createdAt, "fixture-required-9");
+
+  const batch = {
+    matchesByPlayerId: new Map<string, MatchRecord[]>([
+      [PLAYER_A, [makeMatch({ id: "fixture-other-9", opponentId: PLAYER_B, result: "W", date: new Date().toISOString() })]],
+      [PLAYER_B, []],
+    ]),
+    fetchErrors: [],
+  };
+
+  const summary = await gradePendingLedgerPredictionsFromBatch(batch);
+
+  assert.ok(summary.unresolvedIds.includes(predId));
+  const [still] = await db.select().from(predictionsTable).where(eq(predictionsTable.id, predId));
+  assert.equal(still.actualWinnerId, null);
 
   await cleanupTestPredictions();
 });

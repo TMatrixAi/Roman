@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useLocation } from "wouter"
-import { useCreatePrediction, Surface, MatchFormat, TournamentLevel, useGetPlayer, getGetPlayerQueryKey } from "@workspace/api-client-react"
+import { Surface, MatchFormat, TournamentLevel, useGetPlayer, getGetPlayerQueryKey } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { Zap, Activity, RefreshCw, Swords, AlertTriangle, XCircle, ChevronDown } from "lucide-react"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 // ---------------------------------------------------------------------------
 // Mini player slot (no external import — keeps ForceSignal self-contained)
@@ -60,30 +61,47 @@ export default function ForceSignalPage() {
   const [level, setLevel] = useState<TournamentLevel>("ATP250")
   const [tournamentName, setTournamentName] = useState("")
   const [conditionsOpen, setConditionsOpen] = useState(false)
+  const [isRunning, setIsRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [player1Name, setPlayer1Name] = useState<string | null>(null)
+  const [player2Name, setPlayer2Name] = useState<string | null>(null)
 
-  const createPrediction = useCreatePrediction()
-
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!player1Id || !player2Id) return
-    createPrediction.mutate(
-      {
-        data: {
+    setRunError(null)
+    setIsRunning(true)
+
+    try {
+      const prediction = await createPredictionWithIntegrity(
+        {
           player1Id,
           player2Id,
           surface,
           matchFormat: format,
           tournamentLevel: level,
-          tournamentName: tournamentName.trim() || undefined,
+          tournamentName: tournamentName.trim() || null,
         },
-      },
-      {
-        onSuccess: (prediction) => {
-          // forceSignal=true tells the result page to show the directional pick
-          // even when the engine says "too close to call".
-          setLocation(`/predictions/${prediction.id}?forceSignal=true`)
+        {
+          requestMatchId: buildClientMatchId({
+            source: "force-signal",
+            player1Id,
+            player2Id,
+            tournamentName: tournamentName.trim() || null,
+            surface,
+            matchFormat: format,
+          }),
+          submittedPlayer1Name: player1Name,
+          submittedPlayer2Name: player2Name,
         },
-      },
-    )
+      )
+      // forceSignal=true tells the result page to show the directional pick
+      // even when the engine says "too close to call".
+      setLocation(`/predictions/${prediction.id}?forceSignal=true`)
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Prediction failed")
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   const bothSelected = !!player1Id && !!player2Id && player1Id !== player2Id
@@ -119,8 +137,8 @@ export default function ForceSignalPage() {
 
       {/* Player slots */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <PlayerSlot title="PLAYER 1" playerId={player1Id} onRemove={() => setPlayer1Id(null)} />
-        <PlayerSlot title="PLAYER 2" playerId={player2Id} onRemove={() => setPlayer2Id(null)} />
+        <PlayerSlot title="PLAYER 1" playerId={player1Id} onRemove={() => { setPlayer1Id(null); setPlayer1Name(null) }} />
+        <PlayerSlot title="PLAYER 2" playerId={player2Id} onRemove={() => { setPlayer2Id(null); setPlayer2Name(null) }} />
       </div>
 
       {/* Player search */}
@@ -128,8 +146,13 @@ export default function ForceSignalPage() {
         <CardContent className="p-4">
           <PlayerSearch
             onSelect={(player) => {
-              if (!player1Id) setPlayer1Id(player.id)
-              else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
+              if (!player1Id) {
+                setPlayer1Id(player.id)
+                setPlayer1Name(player.name)
+              } else if (!player2Id && player.id !== player1Id) {
+                setPlayer2Id(player.id)
+                setPlayer2Name(player.name)
+              }
             }}
           />
         </CardContent>
@@ -201,21 +224,21 @@ export default function ForceSignalPage() {
 
           {/* Execute */}
           <div className="p-4 pt-0 border-t border-border/30">
-            {createPrediction.isError && (
+            {runError && (
               <div className="mb-3 p-3 border border-destructive/30 bg-destructive/5 text-destructive text-xs rounded-lg font-mono flex items-center gap-2">
                 <Activity className="w-4 h-4 shrink-0" />
-                Engine error — provider may be unavailable or matchup data is insufficient.
+                {runError}
               </div>
             )}
             <Button
               size="lg"
               className="w-full font-bold font-mono text-base h-14 rounded-xl relative overflow-hidden group bg-warning hover:bg-warning/90 text-warning-foreground"
-              disabled={createPrediction.isPending || !bothSelected}
+              disabled={isRunning || !bothSelected}
               onClick={handleRun}
             >
               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
               <span className="relative z-10 flex items-center justify-center gap-3">
-                {createPrediction.isPending ? (
+                {isRunning ? (
                   <><RefreshCw className="w-5 h-5 animate-spin" /> RUNNING MODELS...</>
                 ) : (
                   <><Zap className="w-5 h-5" /> FORCE SIGNAL</>

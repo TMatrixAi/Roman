@@ -37,6 +37,11 @@ import { enforceEntitlement } from "../lib/entitlements";
 import { logger } from "../lib/logger";
 import { formatDatabaseError } from "../lib/databaseError";
 import {
+  assertPredictionIdentityIntegrity,
+  getExternalFixtureIdFromRequestMatchId,
+  parsePredictionRequestIntegrityHeaders,
+} from "./predictionRequestIntegrity";
+import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
   canUseEvidenceReliability,
@@ -162,6 +167,12 @@ router.post("/predictions", async (req, res): Promise<void> => {
     return;
   }
 
+  const integrity = parsePredictionRequestIntegrityHeaders(req.headers as Record<string, unknown>);
+  if ("code" in integrity) {
+    res.status(400).json({ error: integrity.message });
+    return;
+  }
+
   const provider = getTennisDataProvider();
 
   try {
@@ -200,6 +211,12 @@ router.post("/predictions", async (req, res): Promise<void> => {
       includeWeather: false,
     });
 
+    const identityViolation = assertPredictionIdentityIntegrity(body, integrity, player1, player2);
+    if (identityViolation) {
+      res.status(identityViolation.code === "BAD_REQUEST" ? 400 : 409).json({ error: identityViolation.message });
+      return;
+    }
+
     const matchIdentityKey = computeMatchIdentityKey(player1.id, player2.id, body.tournamentName ?? null, body.surface, body.matchFormat);
     const inputSnapshotHash = computeInputSnapshotHash({
       player1Id: player1.id,
@@ -209,7 +226,11 @@ router.post("/predictions", async (req, res): Promise<void> => {
       headToHead,
       player1OpponentElo: player1OpponentStrength.lookup,
       player2OpponentElo: player2OpponentStrength.lookup,
+      requestNonce: integrity.requestId,
     });
+
+    output.engine.warnings.push(`REQUEST_ID:${integrity.requestId}`);
+    output.engine.warnings.push(`REQUEST_MATCH_ID:${integrity.requestMatchId}`);
 
     const saved = await saveOrUpdatePrediction({
       player1Id: player1.id,
@@ -223,7 +244,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
       strategyId: effectiveProductionIdentity.strategyId,
       strategyVersion: effectiveProductionIdentity.strategyVersion,
       calibrationVersion: activeCalibrationId,
-      externalFixtureId: null,
+      externalFixtureId: getExternalFixtureIdFromRequestMatchId(integrity.requestMatchId),
       snapshotCapturedAt: new Date(),
       predictedWinnerId: output.predictedWinnerId,
       predictedWinnerName: output.predictedWinnerName,
@@ -239,6 +260,25 @@ router.post("/predictions", async (req, res): Promise<void> => {
       matchIdentityKey,
       inputSnapshotHash,
     });
+
+    if (
+      saved.player1Id !== body.player1Id ||
+      saved.player2Id !== body.player2Id ||
+      saved.surface !== body.surface ||
+      saved.matchFormat !== body.matchFormat ||
+      (saved.tournamentName ?? null) !== (body.tournamentName ?? null)
+    ) {
+      res.status(409).json({ error: "Integrity check failed: saved prediction no longer matches the submitted request context" });
+      return;
+    }
+
+    if ((saved.externalFixtureId ?? null) !== getExternalFixtureIdFromRequestMatchId(integrity.requestMatchId)) {
+      res.status(409).json({ error: "Integrity check failed: saved fixture lineage no longer matches the submitted request context" });
+      return;
+    }
+
+    res.setHeader("x-prediction-request-id", integrity.requestId);
+    res.setHeader("x-prediction-match-id", integrity.requestMatchId);
 
     res.status(201).json(CreatePredictionResponse.parse(saved));
   } catch (err) {

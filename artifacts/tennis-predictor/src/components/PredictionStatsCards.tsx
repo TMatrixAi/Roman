@@ -2,6 +2,7 @@ import { AlertTriangle, Clock, Target, TrendingUp } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { getShortRecommendationLabel } from "@/lib/recommendationLabels"
 
 export interface PredictionStatsSummary {
   totalPredictions: number
@@ -47,7 +48,7 @@ export function PredictionStatsCards({ stats, isLoading }: { stats?: PredictionS
       <PredictionStatCard title="RESOLVED" value={stats.resolvedPredictions} icon={Clock} />
       <PredictionStatCard title="ACCURACY" value={stats.accuracy !== null ? `${stats.accuracy.toFixed(1)}%` : "--"} subtext={`${stats.correctPredictions} correct`} icon={TrendingUp} />
       <PredictionStatCard
-        title="HIGH CONF"
+        title={getShortRecommendationLabel("STRONG_RECOMMENDATION")}
         value={stats.byRecommendation?.find((r) => r.recommendation === "STRONG_RECOMMENDATION")?.count || 0}
         subtext="Highest-confidence tier -- not yet proven better than other tiers"
         icon={AlertTriangle}
