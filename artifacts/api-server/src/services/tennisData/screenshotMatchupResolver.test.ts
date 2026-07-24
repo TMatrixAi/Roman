@@ -139,3 +139,29 @@ test("resolveScreenshotMatchup prefers an exact full-name match over abbreviated
   assert.equal(result.player2.player?.id, "maiko-id");
   assert.ok(result.warnings.every((w) => !w.includes("multiple matching players")));
 });
+
+test("resolveScreenshotMatchup does not silently guess between multiple full-name candidates sharing one abbreviation", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      const q = query.toLowerCase();
+      if (q.includes("uchijima")) {
+        return [
+          { id: "moyuka-id", name: "Moyuka Uchijima", countryCode: "JP", currentRank: 55, tour: "WTA" },
+          { id: "maiko-id", name: "Maiko Uchijima", countryCode: "JP", currentRank: 120, tour: "WTA" },
+        ];
+      }
+      if (q.includes("arakawa")) {
+        return [{ id: "arakawa-id", name: "Natsuho Arakawa", countryCode: "JP", currentRank: 250, tour: "WTA" }];
+      }
+      return [];
+    },
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "Natsuho Arakawa", player2Name: "M. Uchijima", eventName: "2026 W15 Brisbane Quarterfinal" }],
+  });
+
+  assert.equal(result.player1.player?.id, "arakawa-id");
+  assert.equal(result.player2.player, null);
+  assert.ok(result.warnings.some((w) => w.includes("multiple matching players")));
+});

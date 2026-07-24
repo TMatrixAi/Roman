@@ -475,6 +475,42 @@ export async function resolvePlayerProfileForPrediction(
     }
   }
 
+  const words = normalizedName.split(" ").filter(Boolean);
+  if (isInitialNamePattern(normalizedName) && words.length >= 2) {
+    const initial = words[0]!;
+    const surnameWords = words.slice(1);
+    const surnameQuery = surnameWords.join(" ");
+
+    const surnameCandidates = await provider.searchPlayers(surnameQuery);
+    const narrowed = surnameCandidates.filter((candidate) => {
+      const candidateWords = normalizePlayerName(candidate.name).split(" ").filter(Boolean);
+      if (candidateWords.length < 2) return false;
+      const candidateWordSet = new Set(candidateWords);
+      return surnameWords.every((w) => candidateWordSet.has(w)) && candidateWords[0]![0] === initial;
+    });
+
+    if (narrowed.length === 1) {
+      const remappedId = narrowed[0]!.id;
+      const remappedProfile = await resolvePlayerProfile(provider, remappedId);
+      if (remappedProfile) {
+        logger.info(
+          { requestedPlayerId, remappedId, sightingName: sighting.name },
+          "Resolved abbreviated historical player name to unique live provider ID via initial+surname narrowing",
+        );
+        return { profile: remappedProfile, resolvedPlayerId: remappedProfile.id, detail: null };
+      }
+    }
+
+    if (narrowed.length > 1) {
+      const names = narrowed.map((c) => c.name).join(", ");
+      return {
+        profile: null,
+        resolvedPlayerId: requestedPlayerId,
+        detail: `Historical player ID ${requestedPlayerId} (\"${sighting.name}\") is ambiguous across multiple live players (${names}); choose the exact full-name player from Search.`,
+      };
+    }
+  }
+
   const reason = exactNameCandidates.length > 1
     ? `Historical player ID ${requestedPlayerId} (\"${sighting.name}\") maps to multiple live players; choose the exact player from Search.`
     : `Historical player ID ${requestedPlayerId} (\"${sighting.name}\") is not provider-resolvable; select a live player record instead.`;
@@ -571,12 +607,16 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
 
   const historicalSummaries: PlayerSummary[] = [];
   for (const row of historicalById.values()) {
+    const historicalNorm = normalizePlayerName(row.name);
+    const historicalNameIsWeak = isWeakIdentityNameKey(historicalNorm);
     const validated = await validateHistoricalPlayerId(provider, row.id);
 
     // Explicitly stale/invalid historical ID: don't present it as a selectable player.
     if (validated === null) continue;
 
     if (validated) {
+      const validatedNameIsWeak = isWeakIdentityNameKey(normalizePlayerName(validated.name));
+      if (validatedNameIsWeak) continue;
       historicalSummaries.push({
         id: validated.id,
         name: validated.name,
@@ -589,7 +629,9 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     }
 
     // Provider validation unavailable (transient provider error): keep the historical row,
-    // clearly labeled, rather than dropping all fallback coverage.
+    // clearly labeled, rather than dropping all fallback coverage. Weak abbreviated names are
+    // still excluded because they are not stable identity records.
+    if (historicalNameIsWeak) continue;
     historicalSummaries.push({
       id: row.id,
       name: row.name,
