@@ -23,6 +23,7 @@ const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
 const PaymentsPage = lazy(() => import('@/pages/Payments'));
+const AdminLoginPage = lazy(() => import('@/pages/AdminLogin'));
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,7 @@ function Router() {
           <Route path="/payments/pricing" component={PaymentsPage} />
           <Route path="/payments/billing" component={PaymentsPage} />
           <Route path="/payments/admin" component={PaymentsPage} />
+          <Route path="/admin/login" component={AdminLoginPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
