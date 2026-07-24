@@ -265,7 +265,7 @@ async function readErrorMessage(response: Response): Promise<string> {
   return response.statusText || 'Request failed';
 }
 
-function withTimeoutSignal(parentSignal?: AbortSignal): AbortSignal {
+function withTimeoutSignal(parentSignal?: AbortSignal | null): AbortSignal {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
