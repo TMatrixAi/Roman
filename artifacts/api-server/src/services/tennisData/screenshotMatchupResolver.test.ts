@@ -383,3 +383,62 @@ test("resolveScreenshotMatchup falls back to next-day fixture range when same-da
   assert.equal(result.player2.player?.id, "maiko-id");
   assert.ok(result.warnings.some((w) => w.includes("[resolver-debug] Resolved via fixture-opponent-inference-from-player1")));
 });
+
+test("resolveScreenshotMatchup does not skip when duplicate fixture rows point to one unique inferred opponent", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      const q = query.toLowerCase();
+      if (q.includes("arakawa")) {
+        return [{ id: "arakawa-canonical-id", name: "Natsuho Arakawa", countryCode: "JP", currentRank: 250, tour: "WTA" }];
+      }
+      if (q.includes("uchijima")) {
+        return [];
+      }
+      return [];
+    },
+    getUpcomingFixtures: async () => [
+      {
+        id: "fx-dup-1",
+        date: "2026-07-24",
+        scheduledStart: null,
+        timeConfirmed: false,
+        isLive: false,
+        tournamentName: "2026 W15 Brisbane",
+        tournamentLevel: "ITF",
+        round: "Quarter-Final",
+        surface: "Hard",
+        indoor: false,
+        matchFormat: "BestOf3",
+        player1Id: "arakawa-provider-id",
+        player1Name: "Natsuho Arakawa",
+        player2Id: "maiko-provider-id",
+        player2Name: "Maiko Uchijima",
+      },
+      {
+        id: "fx-dup-2",
+        date: "2026-07-24",
+        scheduledStart: null,
+        timeConfirmed: false,
+        isLive: false,
+        tournamentName: "2026 W15 Brisbane",
+        tournamentLevel: "ITF",
+        round: "Quarter-Final",
+        surface: "Hard",
+        indoor: false,
+        matchFormat: "BestOf3",
+        player1Id: "arakawa-provider-id",
+        player1Name: "Natsuho Arakawa",
+        player2Id: "maiko-provider-id",
+        player2Name: "Maiko Uchijima",
+      },
+    ],
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "Natsuho Arakawa", player2Name: "Maiko Uchijima", eventName: "2026 W15 Brisbane" }],
+  });
+
+  assert.equal(result.player1.player?.name, "Natsuho Arakawa");
+  assert.equal(result.player2.player?.name, "Maiko Uchijima");
+  assert.ok(result.warnings.some((w) => w.includes("single-opponent unique match")));
+});

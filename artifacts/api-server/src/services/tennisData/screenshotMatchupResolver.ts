@@ -61,6 +61,12 @@ interface FixtureCandidate {
   orientation: "direct" | "swapped";
 }
 
+interface SingleSideInference {
+  fixture: Fixture;
+  orientation: "direct" | "swapped";
+  rule: "fixture-opponent-inference-from-player1" | "fixture-opponent-inference-from-player2";
+}
+
 // ── OCR metadata stripping ────────────────────────────────────────────────
 //
 // Draw sheets attach tokens to player names that are NOT part of the name:
@@ -361,6 +367,85 @@ function pickUniqueFixtureCandidate(candidates: FixtureCandidate[]): FixtureCand
   return ranked[0];
 }
 
+function inferUniqueOpponentFromSingleResolvedSide(params: {
+  entry: RawMatchupEntry;
+  event: ScreenshotEventMatch;
+  resolvedPlayer1: PlayerSummary | null;
+  resolvedPlayer2: PlayerSummary | null;
+  fixtures: Fixture[];
+}): SingleSideInference | null {
+  // This rule only applies when exactly one side is already resolved by player search.
+  if (!!params.resolvedPlayer1 === !!params.resolvedPlayer2) return null;
+
+  const unresolvedName = params.resolvedPlayer1 ? params.entry.player2Name : params.entry.player1Name;
+  if (!unresolvedName) return null;
+
+  type OpponentHit = { fixture: Fixture; orientation: "direct" | "swapped"; key: string; score: number };
+  const hits: OpponentHit[] = [];
+
+  for (const fixture of params.fixtures) {
+    const directFirstFits = params.resolvedPlayer1
+      ? resolvedPlayerFitsFixtureSlot(params.resolvedPlayer1, fixture.player1Id, fixture.player1Name)
+      : resolvedPlayerFitsFixtureSlot(params.resolvedPlayer2!, fixture.player2Id, fixture.player2Name);
+    const swappedFirstFits = params.resolvedPlayer1
+      ? resolvedPlayerFitsFixtureSlot(params.resolvedPlayer1, fixture.player2Id, fixture.player2Name)
+      : resolvedPlayerFitsFixtureSlot(params.resolvedPlayer2!, fixture.player1Id, fixture.player1Name);
+
+    if (!directFirstFits && !swappedFirstFits) continue;
+
+    if (directFirstFits) {
+      const opponentScore = params.resolvedPlayer1
+        ? scoreNamePair(unresolvedName, fixture.player2Name)
+        : scoreNamePair(unresolvedName, fixture.player1Name);
+      if (opponentScore >= 0.74) {
+        const opponentName = params.resolvedPlayer1 ? fixture.player2Name : fixture.player1Name;
+        hits.push({
+          fixture,
+          orientation: "direct",
+          key: `${normalizeName(opponentName)}|${params.resolvedPlayer1 ? fixture.player2Id : fixture.player1Id}`,
+          score: opponentScore + eventSimilarity(params.entry.eventName, fixture.tournamentName) * 0.15,
+        });
+      }
+    }
+
+    if (swappedFirstFits) {
+      const opponentScore = params.resolvedPlayer1
+        ? scoreNamePair(unresolvedName, fixture.player1Name)
+        : scoreNamePair(unresolvedName, fixture.player2Name);
+      if (opponentScore >= 0.74) {
+        const opponentName = params.resolvedPlayer1 ? fixture.player1Name : fixture.player2Name;
+        hits.push({
+          fixture,
+          orientation: "swapped",
+          key: `${normalizeName(opponentName)}|${params.resolvedPlayer1 ? fixture.player1Id : fixture.player2Id}`,
+          score: opponentScore + eventSimilarity(params.entry.eventName, fixture.tournamentName) * 0.15,
+        });
+      }
+    }
+  }
+
+  if (hits.length === 0) return null;
+
+  // Collapse duplicate rows of the same inferred opponent identity.
+  const byOpponent = new Map<string, OpponentHit[]>();
+  for (const hit of hits) {
+    const list = byOpponent.get(hit.key) ?? [];
+    list.push(hit);
+    byOpponent.set(hit.key, list);
+  }
+
+  if (byOpponent.size !== 1) return null;
+
+  const best = [...byOpponent.values()][0].sort((a, b) => b.score - a.score)[0];
+  return {
+    fixture: best.fixture,
+    orientation: best.orientation,
+    rule: params.resolvedPlayer1
+      ? "fixture-opponent-inference-from-player1"
+      : "fixture-opponent-inference-from-player2",
+  };
+}
+
 async function getTodayFixtures(provider: TennisDataProvider): Promise<Fixture[]> {
   const today = new Date().toISOString().slice(0, 10);
   try {
@@ -606,6 +691,41 @@ async function resolveOneMatchup(
 
   let player1 = player1Outcome.match;
   let player2 = player2Outcome.match;
+
+  if (!player1.player || !player2.player) {
+    const singleSideInference = inferUniqueOpponentFromSingleResolvedSide({
+      entry,
+      event,
+      resolvedPlayer1: player1.player,
+      resolvedPlayer2: player2.player,
+      fixtures: todayFixtures,
+    });
+
+    if (singleSideInference) {
+      const syntheticCandidate: FixtureCandidate = {
+        fixture: singleSideInference.fixture,
+        score: 1,
+        nameScore: 1,
+        orientation: singleSideInference.orientation,
+      };
+      const resolved = resolveFromFixtureCandidate(syntheticCandidate, player1, player2);
+      const previousPlayer1 = player1;
+      const previousPlayer2 = player2;
+      player1 = resolved.player1;
+      player2 = resolved.player2;
+
+      if (!previousPlayer1.player && player1.player) {
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 1"));
+      }
+      if (!previousPlayer2.player && player2.player) {
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 2"));
+      }
+
+      warnings.push(
+        `[resolver-debug] Resolved via ${singleSideInference.rule}: ${singleSideInference.fixture.player1Name} vs ${singleSideInference.fixture.player2Name} (single-opponent unique match).`,
+      );
+    }
+  }
 
   if (!player1.player || !player2.player) {
     const candidates = todayFixtures
