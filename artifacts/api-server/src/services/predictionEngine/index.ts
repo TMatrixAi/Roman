@@ -260,6 +260,10 @@ function buildRecommendationTrace(
   rules.push({ rule: `margin ≥ 9 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r6, decided: r6 });
   if (r6) return { result, margin, rulesChecked: rules };
 
+  const r7 = margin >= 40 && upsetRisk !== "EXTREME" && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 40 AND upsetRisk ≠ EXTREME AND not Mixed/HighDisagreement → MODERATE_LEAN (high-confidence guardrail)`, matched: r7, decided: r7 });
+  if (r7) return { result, margin, rulesChecked: rules };
+
   rules.push({ rule: `fallthrough → HIGH_RISK`, matched: true, decided: true });
   return { result, margin, rulesChecked: rules };
 }

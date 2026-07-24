@@ -108,6 +108,22 @@ test("margin 8-10 with EXTREME upset risk is still HIGH_RISK via the earlier EXT
   assert.equal(result, "HIGH_RISK");
 });
 
+test("high-confidence picks (>=90% winner confidence) with no explicit severe conflict are never HIGH_RISK", () => {
+  const strongAgreement = computeRecommendation(92, 70, "Strong", "HIGH", "Strong");
+  const moderateAgreement = computeRecommendation(92, 70, "Strong", "HIGH", "Moderate");
+  assert.equal(strongAgreement, "MODERATE_LEAN");
+  assert.equal(moderateAgreement, "MODERATE_LEAN");
+});
+
+test("high-confidence picks can still be HIGH_RISK with explicit severe conflict evidence", () => {
+  const highDisagreement = computeRecommendation(92, 70, "Strong", "LOW", "HighDisagreement");
+  const mixed = computeRecommendation(92, 70, "Strong", "LOW", "Mixed");
+  const extremeRisk = computeRecommendation(92, 70, "Strong", "EXTREME", "Strong");
+  assert.equal(highDisagreement, "HIGH_RISK");
+  assert.equal(mixed, "HIGH_RISK");
+  assert.equal(extremeRisk, "HIGH_RISK");
+});
+
 // Regression guard for the margin 8-10 catch-all gap class of bug: sweep every margin from 0 to
 // 50 (in 0.1 steps) across every upsetRisk x modelAgreement combination, holding dataQuality/label
 // fixed at a value that can never trigger DO_NOT_RECOMMEND, and assert two structural properties

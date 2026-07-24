@@ -130,7 +130,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="w-8 h-8 text-accent">
               <TennisMatrixLogo />
             </div>
-            <span>Tennis Matrix AI</span>
+            <span className="uppercase tracking-[0.16em] text-emerald-300">TENNIS MATRIX AI</span>
           </Link>
 
           {/* Desktop nav */}

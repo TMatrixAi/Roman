@@ -4,6 +4,8 @@ import type { ModelAgreement } from "./ensemble";
 
 export type Recommendation = "STRONG_RECOMMENDATION" | "MODERATE_LEAN" | "HIGH_RISK" | "NO_STRONG_SIGNAL" | "DO_NOT_RECOMMEND";
 
+const HIGH_PROBABILITY_MARGIN_FLOOR = 40; // 90% winner-confidence equivalent (or 10% for player1-relative probability)
+
 /**
  * NO_STRONG_SIGNAL is distinct from HIGH_RISK: HIGH_RISK means the engine has a real lean but the
  * matchup carries genuine upset danger (e.g. a big favorite who could plausibly lose).
@@ -78,6 +80,17 @@ export function computeRecommendation(
   if (
     margin >= 9 &&
     (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
+    modelAgreement !== "Mixed" &&
+    modelAgreement !== "HighDisagreement"
+  )
+    return "MODERATE_LEAN";
+  // Guardrail: very high-confidence picks (>=90% winner-confidence equivalent) should not be
+  // shown as HIGH_RISK unless there is explicit severe conflict evidence (Mixed/HighDisagreement)
+  // or truly extreme upset danger. This keeps top-badge semantics aligned with user-facing
+  // intuition while preserving the stricter STRONG_RECOMMENDATION gate above.
+  if (
+    margin >= HIGH_PROBABILITY_MARGIN_FLOOR &&
+    upsetRisk !== "EXTREME" &&
     modelAgreement !== "Mixed" &&
     modelAgreement !== "HighDisagreement"
   )

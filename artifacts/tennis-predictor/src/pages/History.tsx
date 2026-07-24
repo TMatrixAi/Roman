@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useGetPredictionStats,
+  useGetAdminAuthStatus,
   useListPredictions,
   useDeletePrediction,
   useBulkDeletePredictions,
@@ -24,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { PredictionStatsCards, PredictionStatCard } from "@/components/PredictionStatsCards"
 import { readAndClearPasteSearchHandoff } from "@/lib/pasteSearchHandoff"
 import { SavedPredictionsLookup } from "@/components/SavedPredictionsLookup"
+import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
 import { Link, useLocation, useSearch } from "wouter"
 import {
   CheckCircle2,
@@ -51,6 +54,7 @@ import {
   History as HistoryIcon,
   Scale,
   Target,
+  Copy,
 } from "lucide-react"
 
 /** Task #30: real disclosure -- shown when this saved prediction involved a player resolved via
@@ -159,12 +163,16 @@ function PredictionRow({
   onToggleSelect,
   onDelete,
   isDeleting,
+  canCopy,
+  onCopy,
 }: {
   prediction: PredictionSummary
   selected: boolean
   onToggleSelect: () => void
   onDelete: () => void
   isDeleting: boolean
+  canCopy: boolean
+  onCopy: () => void
 }) {
   const isResolved = !!prediction.actualWinnerName;
   // NOTE: PredictionSummary (the Ledger list endpoint) only exposes player/winner NAMES, not IDs,
@@ -233,6 +241,22 @@ function PredictionRow({
               {prediction.predictedWinnerName}
               <Badge variant="outline" className="font-mono tabular-nums bg-background shadow-sm">{formatProbability(asPercentage(prediction.predictedWinnerProbability))}</Badge>
             </div>
+            {canCopy && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onCopy()
+                }}
+                className="h-7 px-2 text-[10px] font-mono gap-1 self-start md:self-end"
+                aria-label="Copy prediction summary"
+              >
+                <Copy className="w-3 h-3" />
+                Copy
+              </Button>
+            )}
           </div>
 
           <div className="flex flex-col md:items-end gap-1.5">
@@ -367,6 +391,38 @@ export default function HistoryPage() {
   const queryClient = useQueryClient()
   const { data: stats, isLoading: statsLoading } = useGetPredictionStats()
   const { data: predictions, isLoading: predictionsLoading } = useListPredictions({ limit: 50 })
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const { toast } = useToast()
+  const canCopy = adminAuth?.authenticated === true
+
+  const handleCopyPrediction = async (prediction: PredictionSummary) => {
+    const socialPayload = {
+      ...prediction,
+      predictedSetScore: null,
+      engine: {
+        // History list rows do not include full engine details; pass safe defaults and omit unavailable sections.
+        isEliteTier: false,
+        reasons: [],
+        risks: [],
+        disclosures: [],
+        warnings: [],
+      },
+      // PredictionSummary does not expose winner ids in list rows. Keep this empty so optional sections are omitted.
+      predictedWinnerId: "",
+    }
+
+    const text = buildPredictionCopyText(socialPayload)
+    try {
+      await navigator.clipboard.writeText(text)
+      toast({ title: "✅ Prediction copied!" })
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Clipboard access failed. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
   // Restore scroll position when returning from a prediction detail via "Back to Ledger".
   // The position is saved in sessionStorage by PredictionRow's Link onClick; we restore it
@@ -690,6 +746,8 @@ export default function HistoryPage() {
                 onToggleSelect={() => toggleSelect(pred.id)}
                 onDelete={() => deletePrediction.mutate({ predictionId: pred.id })}
                 isDeleting={deletePrediction.isPending && deletePrediction.variables?.predictionId === pred.id}
+                canCopy={canCopy}
+                onCopy={() => handleCopyPrediction(pred)}
               />
             ))}
           </div>
