@@ -40,6 +40,7 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  Copy,
   ChevronRight,
   ChevronLeft,
   Trash2,
