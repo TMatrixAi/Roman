@@ -142,6 +142,10 @@ test("rule 4 tolerates High Disagreement/High risk as long as Elite is correctly
       modelAgreement: "HighDisagreement",
       upsetRisk: "HIGH",
       upsetRiskBreakdownTier: "HIGH",
+      // computeRecommendation produces HIGH_RISK for upsetRisk=HIGH + HighDisagreement
+      // (margin=15, falls through all MODERATE_LEAN gates). Explicitly pass the correct
+      // recommendation so Rule 10 (freshness check) stays silent and only Rule 4 is tested.
+      recommendation: "HIGH_RISK",
       disagreementNote: "HIGHDISAGREEMENT: some real note explaining the conflicting models.",
     }),
   );
