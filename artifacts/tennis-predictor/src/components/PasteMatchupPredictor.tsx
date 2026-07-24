@@ -205,20 +205,39 @@ export function PasteMatchupPredictor() {
       return
     }
 
-    const initialLines: PasteLine[] = parsed.map((p, i) => ({
-      key: `line-${i}-${crypto.randomUUID()}`,
-      raw: p.raw,
-      parsed: p,
-      status: p.parseError ? ("parse-error" as LineStatus) : ("resolving" as LineStatus),
-      player1: null,
-      player2: null,
-      errorMessage: p.parseError,
-      predictionId: null,
-      resolvedTournament: p.tournamentName,
-      detectedSurface: null,
-      detectedLevel: null,
-      parsedDate: p.matchDate ?? null,
-    }))
+    // Propagate tournament context from section headers (e.g. "ATP Estoril") to the matchup
+    // lines that follow them. Headers are silently skipped — never shown as parse errors.
+    let currentHeaderTournament: string | null = null
+    const initialLines: PasteLine[] = []
+    parsed.forEach((p, i) => {
+      if (p.isTournamentHeader) {
+        // Update running context, don't add a row for the header itself.
+        currentHeaderTournament = p.tournamentName
+        return
+      }
+      // Matchup line: use its own tournament name if present, otherwise fall back to the
+      // most recent section header.
+      const resolvedTournament = p.tournamentName ?? currentHeaderTournament
+      initialLines.push({
+        key: `line-${i}-${crypto.randomUUID()}`,
+        raw: p.raw,
+        parsed: { ...p, tournamentName: resolvedTournament },
+        status: p.parseError ? ("parse-error" as LineStatus) : ("resolving" as LineStatus),
+        player1: null,
+        player2: null,
+        errorMessage: p.parseError,
+        predictionId: null,
+        resolvedTournament,
+        detectedSurface: null,
+        detectedLevel: null,
+        parsedDate: p.matchDate ?? null,
+      })
+    })
+
+    if (initialLines.length === 0) {
+      setBatchError('No matchup lines found. Paste one or more lines like "Player A vs Player B".')
+      return
+    }
 
     setLines(initialLines)
     setIsResolving(true)
