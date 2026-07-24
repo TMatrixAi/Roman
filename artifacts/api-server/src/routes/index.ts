@@ -10,6 +10,7 @@ import evaluationRouter from "./evaluation";
 import authRouter from "./auth";
 import backtestsRouter from "./backtests";
 import launchAuditRouter from "./launchAudit";
+import liveAuditsRouter from "./liveAudits";
 import paymentsRouter from "./payments";
 import publicPortalRouter from "./publicPortal";
 
@@ -26,6 +27,7 @@ router.use(predictionsRouter);
 router.use(evaluationRouter);
 router.use(backtestsRouter);
 router.use(launchAuditRouter);
+router.use(liveAuditsRouter);
 router.use(paymentsRouter);
 router.use(publicPortalRouter);
 
