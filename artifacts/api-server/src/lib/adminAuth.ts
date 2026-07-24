@@ -15,7 +15,19 @@ function isProduction(): boolean {
 }
 
 export function getAdminAccessKey(): string | undefined {
-  return process.env.ADMIN_ACCESS_KEY;
+  // Accept a few common secret-name variants across hosts (Replit/Codespaces/etc.).
+  // The first non-empty value wins.
+  const candidates = [
+    process.env.ADMIN_ACCESS_KEY,
+    process.env.ADMIN_ACCESSKEY,
+    process.env.ADMIN_KEY,
+    process.env.ADMIN_PASSWORD,
+  ];
+  for (const value of candidates) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 export function isAdminSessionCookieValid(signedCookies: Record<string, unknown> | undefined): boolean {

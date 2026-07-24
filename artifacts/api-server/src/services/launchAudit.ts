@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { getOddsProviderStatuses } from './oddsData';
 import { getTennisDataProvider } from './tennisData';
+import { getAdminAccessKey } from '../lib/adminAuth';
 
 export interface LaunchAuditFinding {
   category: string;
@@ -140,6 +141,7 @@ async function writeHistory(history: LaunchAuditHistoryEntry[]): Promise<void> {
 export async function runLaunchAudit(): Promise<LaunchAuditSummary> {
   const provider = getTennisDataProvider();
   const providerStatus = provider.getStatus();
+  const adminAccessKey = getAdminAccessKey();
   const oddsStatuses = getOddsProviderStatuses();
 
   const findings: LaunchAuditFinding[] = [
@@ -170,12 +172,12 @@ export async function runLaunchAudit(): Promise<LaunchAuditSummary> {
     {
       category: 'Security',
       checkName: 'Admin access key',
-      status: process.env.ADMIN_ACCESS_KEY ? 'Pass' : 'Warning',
-      severity: process.env.ADMIN_ACCESS_KEY ? 'Informational' : 'Medium',
-      evidence: process.env.ADMIN_ACCESS_KEY ? 'Admin access key configured' : 'Admin access key not configured',
+      status: adminAccessKey ? 'Pass' : 'Warning',
+      severity: adminAccessKey ? 'Informational' : 'Medium',
+      evidence: adminAccessKey ? 'Admin access key configured' : 'Admin access key not configured',
       expectedResult: 'Admin access key configured',
-      actualResult: process.env.ADMIN_ACCESS_KEY ? 'Configured' : 'Missing',
-      recommendedAction: process.env.ADMIN_ACCESS_KEY ? 'Keep monitoring' : 'Set ADMIN_ACCESS_KEY before enabling admin workflows',
+      actualResult: adminAccessKey ? 'Configured' : 'Missing',
+      recommendedAction: adminAccessKey ? 'Keep monitoring' : 'Set ADMIN_ACCESS_KEY before enabling admin workflows',
       relatedService: 'admin-auth',
       timestamp: new Date().toISOString(),
     },
