@@ -9,14 +9,6 @@ const COPY_RECOMMENDATION_LABELS: Record<string, string> = {
   DO_NOT_RECOMMEND: "Do Not Recommend",
 };
 
-function toSocialReason(text: string): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return "";
-  const firstSentence = clean.split(/[.!?]\s/)[0]?.trim() ?? clean;
-  const clipped = firstSentence.length > 88 ? `${firstSentence.slice(0, 85).trimEnd()}...` : firstSentence;
-  return clipped;
-}
-
 function getRecommendationLabel(prediction: any): string {
   const engine = prediction?.engine ?? {};
   if (engine.isEliteTier) return "Elite";
@@ -40,7 +32,7 @@ function getWinProbability(prediction: any): number | null {
 function formatHeadToHead(prediction: any): string {
   const headToHead = prediction?.engine?.headToHead;
   if (!headToHead || typeof headToHead.player1Wins !== "number" || typeof headToHead.player2Wins !== "number") {
-    return "0–0 (Example)";
+    return "0–0 (tied)";
   }
 
   const p1Wins = Number(headToHead.player1Wins);
@@ -55,35 +47,13 @@ function formatHeadToHead(prediction: any): string {
   return `${leader} leads ${leaderWins}–${trailerWins}`;
 }
 
-function getSocialReasons(prediction: any): string[] {
-  const engine = prediction?.engine ?? {};
-  const source = [
-    ...(Array.isArray(engine.reasons) ? engine.reasons : []),
-    ...(Array.isArray(engine.risks) ? engine.risks : []),
-    ...(Array.isArray(engine.disclosures) ? engine.disclosures : []),
-    ...(Array.isArray(engine.warnings) ? engine.warnings : []),
-  ];
-
-  const reasons: string[] = [];
-  for (const item of source) {
-    const reason = toSocialReason(String(item));
-    if (reason && !reasons.includes(reason)) {
-      reasons.push(reason);
-    }
-    if (reasons.length === 2) break;
-  }
-
-  return reasons;
-}
-
 export function buildPredictionCopyText(prediction: any): string {
   const engine = prediction?.engine ?? {};
   const recommendation = getRecommendationLabel(prediction);
   const winProbability = getWinProbability(prediction);
-  const reasons = getSocialReasons(prediction);
 
   const lines: string[] = [];
-  lines.push(String(prediction.predictedWinnerName ?? "Predicted Winner"));
+  lines.push(`${String(prediction.predictedWinnerName ?? "Predicted Winner")}🥇`);
   lines.push("");
 
   if (typeof winProbability === "number") {
@@ -121,34 +91,12 @@ export function buildPredictionCopyText(prediction: any): string {
     lines.push(`Head-to-Head: ${headToHead}`);
   }
 
-  if (reasons.length > 0) {
-    lines.push("");
-    lines.push("Why:");
-    lines.push(`- ${reasons[0]}`);
-    if (reasons[1]) lines.push(`- ${reasons[1]}`);
-  }
-
   lines.push("");
-  lines.push("Built with Tennis Matrix AI");
-  lines.push("AI Tennis Prediction App in development.");
-  lines.push("Follow for launch updates.");
+  lines.push("🤖Built with Tennis Matrix AI🤖 ");
+  lines.push("TennisMatrixAI🎾Tennis Prediction App🔮");
+  lines.push("Follow For launch Updates");
+  lines.push("X: @TennisMatrixAI");
+  lines.push("Instagram: @TennisMatrixAI");
 
-  if (lines.join("\n").length < 350) {
-    lines.push("X: @TennisMatrixAI");
-    lines.push("Instagram: @TennisMatrixAI");
-  }
-
-  let text = lines.join("\n");
-  if (text.length < 350 && reasons.length > 2) {
-    const extra = reasons.slice(2, 4).map((r) => `- ${r}`).join("\n");
-    text = text.replace("\n\nBuilt with Tennis Matrix AI", `\n${extra}\n\nBuilt with Tennis Matrix AI`);
-  }
-  if (text.length > 600 && reasons.length > 1) {
-    const trimmed = lines.filter((line) => line !== `- ${reasons[1]}`);
-    text = trimmed.join("\n");
-  }
-  if (text.length > 600) {
-    text = text.slice(0, 597).trimEnd() + "...";
-  }
-  return text;
+  return lines.join("\n");
 }
