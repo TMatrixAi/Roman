@@ -433,19 +433,24 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
 
   const lowerQuery = query.toLowerCase().trim();
   const likePattern = `%${lowerQuery}%`;
-  const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
-    db
-      .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
-      .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
-      .limit(100),
-    db
-      .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
-      .from(historicalMatchesTable)
-      .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
-      .limit(100),
-  ]);
-  const historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
+  let historicalRows: HistoricalPlayerRow[] = [];
+  try {
+    const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
+      db
+        .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
+        .from(historicalMatchesTable)
+        .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
+        .limit(100),
+      db
+        .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
+        .from(historicalMatchesTable)
+        .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
+        .limit(100),
+    ]);
+    historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
+  } catch (err) {
+    logger.warn({ err, query }, "Historical player search unavailable; using provider-only player search results");
+  }
 
   const historicalById = new Map<string, HistoricalPlayerRow>();
   for (const row of historicalRows) {

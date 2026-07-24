@@ -113,3 +113,29 @@ test("resolveScreenshotMatchup returns matchups array with multiple entries when
   assert.ok(result.matchups![0].resolved);
   assert.ok(result.matchups![1].resolved);
 });
+
+test("resolveScreenshotMatchup never auto-selects a player when multiple confident candidates exist", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      if (query.toLowerCase().includes("castro")) {
+        return [
+          { id: "p-castro-a", name: "G. Castro", countryCode: "PT", currentRank: 100, tour: "ATP" },
+          { id: "p-castro-b", name: "Goncalo Da Rosa Castro", countryCode: "PT", currentRank: 120, tour: "ATP" },
+        ];
+      }
+      if (query.toLowerCase().includes("testington")) {
+        return [{ id: "test-1", name: "John Testington", countryCode: "TST", currentRank: 99, tour: "ATP" }];
+      }
+      return [];
+    },
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "G. Castro", player2Name: "Testington", eventName: null }],
+  });
+
+  assert.equal(result.player1.player, null);
+  assert.equal(result.player2.player?.id, "test-1");
+  assert.equal(result.matchups?.[0].resolved, false);
+  assert.ok(result.warnings.some((w) => w.includes("multiple matching players were found")));
+});

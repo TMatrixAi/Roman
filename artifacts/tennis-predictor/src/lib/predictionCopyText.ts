@@ -1,13 +1,6 @@
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline";
+import { getRecommendationLabel as getSharedRecommendationLabel } from "@/lib/recommendationLabels";
 import { UPSET_RISK_SHORT } from "@/lib/upsetRiskColors";
-
-const COPY_RECOMMENDATION_LABELS: Record<string, string> = {
-  STRONG_RECOMMENDATION: "Strong Recommendation",
-  MODERATE_LEAN: "Moderate Lean",
-  HIGH_RISK: "High Risk",
-  NO_STRONG_SIGNAL: "No Strong Signal",
-  DO_NOT_RECOMMEND: "Do Not Recommend",
-};
 
 function toSocialReason(text: string): string {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -22,7 +15,7 @@ function getRecommendationLabel(prediction: any): string {
   if (engine.isEliteTier) return "Elite";
 
   const recommendation = String(prediction?.recommendation ?? "");
-  return COPY_RECOMMENDATION_LABELS[recommendation] ?? recommendation.replace(/_/g, " ");
+  return getSharedRecommendationLabel(recommendation);
 }
 
 function getWinProbability(prediction: any): number | null {

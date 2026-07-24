@@ -69,8 +69,16 @@ export async function runPaperTradingCycle(providerOverride?: TennisDataProvider
   }
 
   const now = Date.now();
+  const fixtureShapeById = new Map<string, { player1Id: string; player2Id: string }>();
 
   for (const fixture of fixtures) {
+    const prior = fixtureShapeById.get(fixture.id);
+    if (prior && (prior.player1Id !== fixture.player1Id || prior.player2Id !== fixture.player2Id)) {
+      summary.errors.push(`Fixture ${fixture.id}: duplicate fixture id with conflicting players in provider response; skipped to prevent contamination`);
+      continue;
+    }
+    if (!prior) fixtureShapeById.set(fixture.id, { player1Id: fixture.player1Id, player2Id: fixture.player2Id });
+
     // A cutoff can only be computed from a real, per-fixture provider time -- never from the
     // calendar date alone (that would give every match on a day the same, fabricated cutoff).
     // Fixtures the provider hasn't confirmed a time for yet are simply not processable this
@@ -256,10 +264,31 @@ async function gradePendingPaperTrades(errors: string[], providerOverride?: Tenn
     // Only attempt grading once the match's scheduled start is safely in the past.
     if (Date.now() < row.scheduledStartAt.getTime() + 60 * 60_000) continue;
 
+    if (row.player1Id === row.player2Id) {
+      errors.push(`Grading prediction ${row.id}: duplicate player IDs (${row.player1Id}) -- grading blocked`);
+      continue;
+    }
+
     try {
       const matches = await provider.getPlayerMatches(row.player1Id);
-      const scheduledDay = row.scheduledStartAt.toISOString().slice(0, 10);
-      const match = matches.find((m) => m.opponentId === row.player2Id && Math.abs(new Date(m.date).getTime() - row.scheduledStartAt.getTime()) < 3 * 24 * 60 * 60_000);
+      const exactFixtureCandidates = row.externalFixtureId
+        ? matches.filter((m) => m.id === row.externalFixtureId && m.opponentId === row.player2Id)
+        : [];
+      const fallbackCandidates = matches.filter(
+        (m) => m.opponentId === row.player2Id && Math.abs(new Date(m.date).getTime() - row.scheduledStartAt.getTime()) < 3 * 24 * 60 * 60_000,
+      );
+      const candidates = row.externalFixtureId ? exactFixtureCandidates : fallbackCandidates;
+
+      if (candidates.length > 1) {
+        errors.push(
+          row.externalFixtureId
+            ? `Grading prediction ${row.id}: ambiguous matches for fixture ${row.externalFixtureId}; grading blocked`
+            : `Grading prediction ${row.id}: ambiguous matches for player pair ${row.player1Id}/${row.player2Id}; grading blocked`,
+        );
+        continue;
+      }
+
+      const match = candidates[0];
 
       if (!match) {
         // No result surfaced after a generous window -- treat as cancelled rather than leaving

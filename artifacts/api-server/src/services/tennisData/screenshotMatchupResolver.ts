@@ -249,6 +249,11 @@ async function gatherCandidates(provider: TennisDataProvider, searchName: string
 
 // ── Player resolution ──────────────────────────────────────────────────────
 
+/**
+ * Strict OCR resolution: requires exactly one confident match or returns null.
+ * Never substitutes a different player due to specificity/ranking heuristics.
+ * All ambiguity is reported to the user for manual disambiguation.
+ */
 async function resolvePlayerMatch(
   provider: TennisDataProvider,
   recognizedName: string | null,
@@ -269,30 +274,14 @@ async function resolvePlayerMatch(
   const confident = candidates.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
 
   if (confident.length === 1) {
+    // Exactly one confident match — safe to return
     return { recognizedName, player: confident[0] };
   }
 
+  // Zero or multiple matches: ALWAYS report as unresolved, NEVER substitute
+  // This strict behavior ensures OCR never silently picks the "most likely" player
+  // when the real player remains ambiguous or unidentified.
   if (confident.length > 1) {
-    // When multiple candidates pass the confidence check, prefer the one whose
-    // stored name has the MOST words — a longer/more-specific stored name covers
-    // more of the recognized name and is the more precise identity.
-    //
-    // Example: "G. Da Rosa Castro" (4 words) beats "G. Castro" (2 words) for
-    // "Goncalo Da Rosa Castro". If this doesn't produce a unique winner (tied word
-    // count), report ambiguity and let the user pick.
-    const scored = confident
-      .map((c) => ({ c, score: normalizeName(c.name).split(" ").filter(Boolean).length }))
-      .sort((a, b) => b.score - a.score);
-
-    if (scored[0].score > scored[1].score) {
-      // Auto-selected by word-count disambiguation — add a visible notice so the user can
-      // verify the choice rather than silently predicting the wrong person (Task #24).
-      warnings.push(
-        `Read "${recognizedName}" for ${label} — matched to ${scored[0].c.name} (best fit from ${confident.length} candidates). If this is the wrong player, use Search Players to correct it.`,
-      );
-      return { recognizedName, player: scored[0].c };
-    }
-
     warnings.push(
       `Read "${recognizedName}" for ${label}, but multiple matching players were found -- please select the right one from Search Players.`,
     );

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import { useLocation } from "wouter"
-import { searchPlayers, createPrediction, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
+import { searchPlayers, type PlayerSummary, type Surface, type TournamentLevel } from "@workspace/api-client-react"
 import { parseMatchupLines, type ParsedMatchupLine } from "@/lib/matchupLineParser"
 import { expandNickname, isGrandSlam } from "@/lib/grandSlam"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ClipboardPaste, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Activity, HelpCircle } from "lucide-react"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 const STORAGE_KEY = "pasteMatchupPredictor.text.v1"
 const RESOLVE_CONCURRENCY = 4
@@ -287,15 +288,30 @@ export function PasteMatchupPredictor() {
         // Grand Slam ATP men's matches are Best-of-5; all others are Best-of-3.
         const isATPMatch = line.player1?.tour === "ATP" || line.player2?.tour === "ATP"
         const matchFormat = isGrandSlam(line.resolvedTournament) && isATPMatch ? "BestOf5" : "BestOf3"
-        const prediction = await createPrediction({
+        const requestMatchId = buildClientMatchId({
+          source: "paste",
           player1Id: line.player1.id,
           player2Id: line.player2.id,
-          // Use auto-detected surface/level when available; fall back to sensible defaults.
+          tournamentName: line.resolvedTournament,
           surface: line.detectedSurface ?? "Hard",
           matchFormat,
-          tournamentLevel: line.detectedLevel ?? "ATP250",
-          tournamentName: line.resolvedTournament ?? undefined,
         })
+        const prediction = await createPredictionWithIntegrity(
+          {
+            player1Id: line.player1.id,
+            player2Id: line.player2.id,
+            // Use auto-detected surface/level when available; fall back to sensible defaults.
+            surface: line.detectedSurface ?? "Hard",
+            matchFormat,
+            tournamentLevel: line.detectedLevel ?? "ATP250",
+            tournamentName: line.resolvedTournament,
+          },
+          {
+            requestMatchId,
+            submittedPlayer1Name: line.player1.name,
+            submittedPlayer2Name: line.player2.name,
+          },
+        )
         resultIds.push(prediction.id)
         setLines((prev) =>
           prev.map((l) => (l.key === line.key ? { ...l, status: "predict-success" as LineStatus, predictionId: prediction.id } : l)),

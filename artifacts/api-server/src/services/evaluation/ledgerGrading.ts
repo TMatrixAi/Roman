@@ -76,11 +76,23 @@ export async function gradePendingLedgerPredictionsFromBatch(
     if (Date.now() - row.createdAt.getTime() < MIN_AGE_BEFORE_CHECKING_MS) continue;
     summary.checked += 1;
 
+    if (row.player1Id === row.player2Id) {
+      const msg = `Prediction ${row.id}: invalid duplicate player IDs (${row.player1Id}) -- grading blocked`;
+      logger.warn(msg);
+      summary.errors.push(msg);
+      summary.unresolvedIds.push(row.id);
+      continue;
+    }
+
     // Use pre-fetched results for this player — an empty array means either
     // "genuinely no matches yet" or "fetch failed"; both cases leave the prediction pending.
     const matches = batch.matchesByPlayerId.get(row.player1Id) ?? [];
 
-    const match = matches.find((m) => {
+    const candidateByFixtureId = row.externalFixtureId
+      ? matches.filter((m) => m.id === row.externalFixtureId && m.opponentId === row.player2Id)
+      : [];
+
+    const candidateByWindow = matches.filter((m) => {
       if (m.opponentId !== row.player2Id) return false;
       const matchTime = new Date(m.date).getTime();
       if (Number.isNaN(matchTime)) return false;
@@ -90,7 +102,9 @@ export async function gradePendingLedgerPredictionsFromBatch(
       );
     });
 
-    if (!match) {
+    const candidateMatches = row.externalFixtureId ? candidateByFixtureId : candidateByWindow;
+
+    if (candidateMatches.length === 0) {
       // No result yet — this is normal for recent predictions. Log at debug, not warn.
       logger.debug(
         { predictionId: row.id, player1Id: row.player1Id, player2Id: row.player2Id },
@@ -99,6 +113,18 @@ export async function gradePendingLedgerPredictionsFromBatch(
       summary.unresolvedIds.push(row.id);
       continue;
     }
+
+    if (candidateMatches.length > 1) {
+      const msg = row.externalFixtureId
+        ? `Prediction ${row.id}: ambiguous grading candidates for fixture ${row.externalFixtureId} -- grading blocked`
+        : `Prediction ${row.id}: ambiguous grading candidates for player pair ${row.player1Id}/${row.player2Id} -- grading blocked`;
+      logger.warn({ predictionId: row.id, candidates: candidateMatches.map((m) => ({ id: m.id, date: m.date, opponentId: m.opponentId })) }, msg);
+      summary.errors.push(msg);
+      summary.unresolvedIds.push(row.id);
+      continue;
+    }
+
+    const match = candidateMatches[0];
 
     try {
       const winnerId = match.result === "W" ? row.player1Id : row.player2Id;

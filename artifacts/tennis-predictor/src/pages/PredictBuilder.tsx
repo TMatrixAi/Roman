@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useLocation, useSearch } from "wouter"
-import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, useCreatePrediction, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import type { PredictionSummary } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
 import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
+import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 function PlayerCard({ 
   playerId, 
@@ -164,6 +165,8 @@ export default function PredictBuilderPage() {
 
   const [player1Id, setPlayer1Id] = useState<string | null>(p1)
   const [player2Id, setPlayer2Id] = useState<string | null>(p2)
+  const [player1Name, setPlayer1Name] = useState<string | null>(null)
+  const [player2Name, setPlayer2Name] = useState<string | null>(null)
   const [surface, setSurface] = useState<Surface>(prefillSurface ?? 'Hard')
   const [format, setFormat] = useState<MatchFormat>(prefillFormat ?? 'BestOf3')
   const [level, setLevel] = useState<TournamentLevel>(prefillLevel ?? 'ATP250')
@@ -182,27 +185,51 @@ export default function PredictBuilderPage() {
     try { localStorage.setItem("matchConditionsExpanded", conditionsExpanded ? "true" : "false") } catch { /* best-effort */ }
   }, [conditionsExpanded])
 
-  const createPrediction = useCreatePrediction()
+  useEffect(() => {
+    setPlayer1Id(p1)
+    setPlayer2Id(p2)
+    setSurface(prefillSurface ?? "Hard")
+    setFormat(prefillFormat ?? "BestOf3")
+    setLevel(prefillLevel ?? "ATP250")
+    setTournamentName(prefillTournamentName ?? "")
+    setPlayer1Name(null)
+    setPlayer2Name(null)
+  }, [p1, p2, prefillSurface, prefillFormat, prefillLevel, prefillTournamentName])
 
-  const handleRunModel = () => {
+  const handleRunModel = async () => {
     if (!player1Id || !player2Id) return
 
     const trimmedTournamentName = tournamentName.trim()
 
-    createPrediction.mutate({
-      data: {
+    const requestMatchId = buildClientMatchId({
+      source: "manual",
+      player1Id,
+      player2Id,
+      tournamentName: trimmedTournamentName || null,
+      surface,
+      matchFormat: format,
+    })
+
+    try {
+      const prediction = await createPredictionWithIntegrity(
+        {
         player1Id,
         player2Id,
         surface,
         matchFormat: format,
         tournamentLevel: level,
-        tournamentName: trimmedTournamentName || undefined
-      }
-    }, {
-      onSuccess: (prediction) => {
-        setLocation(`/predictions/${prediction.id}`)
-      }
-    })
+          tournamentName: trimmedTournamentName || null,
+        },
+        {
+          requestMatchId,
+          submittedPlayer1Name: player1Name,
+          submittedPlayer2Name: player2Name,
+        },
+      )
+      setLocation(`/predictions/${prediction.id}`)
+    } catch {
+      // Integrity failures and provider issues are surfaced by the route's error UI.
+    }
   }
 
   return (
@@ -223,12 +250,12 @@ export default function PredictBuilderPage() {
         <PlayerCard 
           title="PLAYER 1" 
           playerId={player1Id} 
-          onRemove={() => setPlayer1Id(null)} 
+          onRemove={() => { setPlayer1Id(null); setPlayer1Name(null) }} 
         />
         <PlayerCard 
           title="PLAYER 2" 
           playerId={player2Id} 
-          onRemove={() => setPlayer2Id(null)} 
+          onRemove={() => { setPlayer2Id(null); setPlayer2Name(null) }} 
         />
       </div>
 
@@ -254,8 +281,13 @@ export default function PredictBuilderPage() {
             <TabsContent value="search">
               <PlayerSearch 
                 onSelect={(player) => {
-                  if (!player1Id) setPlayer1Id(player.id)
-                  else if (!player2Id && player.id !== player1Id) setPlayer2Id(player.id)
+                  if (!player1Id) {
+                    setPlayer1Id(player.id)
+                    setPlayer1Name(player.name)
+                  } else if (!player2Id && player.id !== player1Id) {
+                    setPlayer2Id(player.id)
+                    setPlayer2Name(player.name)
+                  }
                 }} 
               />
             </TabsContent>
