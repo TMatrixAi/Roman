@@ -77,6 +77,8 @@ const RECOMMENDATION_LABELS: Record<string, string> = {
   STRONG_RECOMMENDATION: "HIGH CONFIDENCE",
 }
 
+const COMPANY_NAME = "Tennis Matrix Ai"
+
 function EdgeBar({ p1Value, p2Value, p1Name, p2Name, label }: { p1Value: number, p2Value: number, p1Name: string, p2Name: string, label: string }) {
   const total = p1Value + p2Value;
   const p1Pct = total > 0 ? (p1Value / total) * 100 : 50;
@@ -187,6 +189,12 @@ export default function PredictionResultPage() {
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500 max-w-6xl mx-auto pb-24">
+      <div className="pt-2">
+        <p className="text-center text-sm sm:text-base font-display font-bold tracking-[0.18em] uppercase text-primary">
+          {COMPANY_NAME}
+        </p>
+      </div>
+
       {/* HEADER MATCHUP */}
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-border/50 pb-6">
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
