@@ -396,22 +396,7 @@ export default function HistoryPage() {
   const canCopy = adminAuth?.authenticated === true
 
   const handleCopyPrediction = async (prediction: PredictionSummary) => {
-    const socialPayload = {
-      ...prediction,
-      predictedSetScore: null,
-      engine: {
-        // History list rows do not include full engine details; pass safe defaults and omit unavailable sections.
-        isEliteTier: false,
-        reasons: [],
-        risks: [],
-        disclosures: [],
-        warnings: [],
-      },
-      // PredictionSummary does not expose winner ids in list rows. Keep this empty so optional sections are omitted.
-      predictedWinnerId: "",
-    }
-
-    const text = buildPredictionCopyText(socialPayload)
+    const text = buildPredictionCopyText(prediction)
     try {
       await navigator.clipboard.writeText(text)
       toast({ title: "✅ Prediction copied!" })
