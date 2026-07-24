@@ -1,5 +1,17 @@
 [
   {
+    "id": "audit-1784881815047",
+    "startedAt": "2026-07-24T08:30:15.047Z",
+    "completedAt": "2026-07-24T08:30:15.047Z",
+    "overallStatus": "Ready",
+    "passCount": 3,
+    "warningCount": 0,
+    "failCount": 0,
+    "criticalCount": 0,
+    "highCount": 0,
+    "reportPath": "/home/runner/workspace/artifacts/api-server/docs/launch-audit/launch-audit-1784881815044.md"
+  },
+  {
     "id": "audit-1784867701969",
     "startedAt": "2026-07-24T04:35:01.969Z",
     "completedAt": "2026-07-24T04:35:01.969Z",
