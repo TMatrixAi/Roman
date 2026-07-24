@@ -1,4 +1,4 @@
-import type { PlayerSummary, TennisDataProvider } from "./types";
+import type { Fixture, PlayerSummary, TennisDataProvider } from "./types";
 import { searchKnownPlayers } from "./playerIdentity";
 import { inferSurfaceAndLevel } from "./surfaceMap";
 import type { RawScreenshotRecognition, RawMatchupEntry } from "./screenshotRecognition";
@@ -47,6 +47,18 @@ export interface ScreenshotMatchupResult {
    * All matchups extracted from the screenshot. Includes the primary as matchups[0].
    */
   matchups?: ScreenshotMatchupEntry[];
+}
+
+interface PlayerResolveOutcome {
+  match: ScreenshotPlayerMatch;
+  status: "resolved" | "unreadable" | "ambiguous" | "not-found";
+}
+
+interface FixtureCandidate {
+  fixture: Fixture;
+  score: number;
+  nameScore: number;
+  orientation: "direct" | "swapped";
 }
 
 // ── OCR metadata stripping ────────────────────────────────────────────────
@@ -118,6 +130,224 @@ function normalizeName(name: string): string {
     .replace(/[^a-z0-9\s]/g, "")    // keep only ASCII letters, digits, spaces
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeLooseText(text: string | null | undefined): string {
+  if (!text) return "";
+  return normalizeName(text).replace(/\s+/g, " ").trim();
+}
+
+function editDistanceWithin(a: string, b: string, maxDistance: number): number {
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+  const prev = new Array<number>(b.length + 1);
+  const next = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    next[0] = i;
+    let minInRow = next[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      next[j] = Math.min(
+        prev[j] + 1,
+        next[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+      if (next[j] < minInRow) minInRow = next[j];
+    }
+    if (minInRow > maxDistance) return maxDistance + 1;
+    for (let j = 0; j <= b.length; j++) prev[j] = next[j];
+  }
+
+  return prev[b.length];
+}
+
+function fuzzyWordMatch(a: string, b: string): boolean {
+  if (wordsMatch(a, b)) return true;
+  const minLen = Math.min(a.length, b.length);
+  if (minLen < 4) return false;
+  const distance = editDistanceWithin(a, b, 1);
+  return distance <= 1;
+}
+
+function tokenOverlapScore(left: string, right: string): number {
+  if (!left || !right) return 0;
+  const leftTokens = left.split(" ").filter(Boolean);
+  const rightTokens = right.split(" ").filter(Boolean);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return 0;
+
+  const used = new Set<number>();
+  let matched = 0;
+  for (const token of leftTokens) {
+    for (let i = 0; i < rightTokens.length; i++) {
+      if (!used.has(i) && fuzzyWordMatch(token, rightTokens[i])) {
+        used.add(i);
+        matched++;
+        break;
+      }
+    }
+  }
+
+  return matched / Math.max(leftTokens.length, rightTokens.length);
+}
+
+function stringSimilarity(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const maxLen = Math.max(left.length, right.length);
+  if (maxLen === 0) return 0;
+  const threshold = Math.min(3, Math.ceil(maxLen * 0.3));
+  const distance = editDistanceWithin(left, right, threshold);
+  if (distance > threshold) return 0;
+  return Math.max(0, 1 - distance / maxLen);
+}
+
+function scoreNamePair(recognizedName: string | null, fixtureName: string): number {
+  if (!recognizedName) return 0;
+
+  const recognizedNorm = normalizeName(stripOcrMetadata(recognizedName));
+  const fixtureNorm = normalizeName(fixtureName);
+  if (!recognizedNorm || !fixtureNorm) return 0;
+  if (isConfidentMatch(recognizedNorm, fixtureNorm)) return 1;
+
+  const tokenScore = tokenOverlapScore(recognizedNorm, fixtureNorm);
+  const charScore = stringSimilarity(recognizedNorm, fixtureNorm);
+  return Math.max(tokenScore, charScore * 0.9);
+}
+
+function inferRoundLabel(text: string | null | undefined): string | null {
+  const norm = normalizeLooseText(text);
+  if (!norm) return null;
+  if (/\bqf\b|quarter\s*final/.test(norm)) return "QF";
+  if (/\bsf\b|semi\s*final/.test(norm)) return "SF";
+  if (/\bfinal\b/.test(norm) && !/semi/.test(norm)) return "F";
+  if (/\br16\b|round\s*of\s*16/.test(norm)) return "R16";
+  if (/\br32\b|round\s*of\s*32/.test(norm)) return "R32";
+  if (/\br64\b|round\s*of\s*64/.test(norm)) return "R64";
+  return null;
+}
+
+function eventSimilarity(recognizedEvent: string | null, fixtureEvent: string | null): number {
+  const left = normalizeLooseText(recognizedEvent);
+  const right = normalizeLooseText(fixtureEvent);
+  if (!left || !right) return 0;
+  const tokenScore = tokenOverlapScore(left, right);
+  const charScore = stringSimilarity(left, right);
+  return Math.max(tokenScore, charScore);
+}
+
+function prunePlayerWarningsForLabel(warnings: string[], label: "Player 1" | "Player 2"): string[] {
+  return warnings.filter((w) => !w.includes(`for ${label}`) && !w.startsWith(`${label} could not be read`));
+}
+
+function fixturePlayerSummary(fixture: Fixture, slot: "player1" | "player2"): PlayerSummary {
+  return slot === "player1"
+    ? {
+        id: fixture.player1Id,
+        name: fixture.player1Name,
+        countryCode: null,
+        currentRank: null,
+        tour: null,
+      }
+    : {
+        id: fixture.player2Id,
+        name: fixture.player2Name,
+        countryCode: null,
+        currentRank: null,
+        tour: null,
+      };
+}
+
+function scoreFixtureCandidate(params: {
+  fixture: Fixture;
+  entry: RawMatchupEntry;
+  event: ScreenshotEventMatch;
+  resolvedPlayer1: PlayerSummary | null;
+  resolvedPlayer2: PlayerSummary | null;
+}): FixtureCandidate | null {
+  const directA = scoreNamePair(params.entry.player1Name, params.fixture.player1Name);
+  const directB = scoreNamePair(params.entry.player2Name, params.fixture.player2Name);
+  const swapA = scoreNamePair(params.entry.player1Name, params.fixture.player2Name);
+  const swapB = scoreNamePair(params.entry.player2Name, params.fixture.player1Name);
+
+  const directScores = [
+    params.entry.player1Name ? directA : null,
+    params.entry.player2Name ? directB : null,
+  ].filter((v): v is number => v !== null);
+  const swappedScores = [
+    params.entry.player1Name ? swapA : null,
+    params.entry.player2Name ? swapB : null,
+  ].filter((v): v is number => v !== null);
+  const directNameScore = directScores.length > 0 ? directScores.reduce((sum, s) => sum + s, 0) / directScores.length : 0;
+  const swappedNameScore = swappedScores.length > 0 ? swappedScores.reduce((sum, s) => sum + s, 0) / swappedScores.length : 0;
+  const orientation = swappedNameScore > directNameScore ? "swapped" : "direct";
+  const nameScore = orientation === "direct" ? directNameScore : swappedNameScore;
+
+  // Reject very weak pair matches when both OCR names exist.
+  const bothNamesPresent = !!params.entry.player1Name && !!params.entry.player2Name;
+  if (bothNamesPresent && nameScore < 0.62) return null;
+
+  const fixtureFirstId = orientation === "direct" ? params.fixture.player1Id : params.fixture.player2Id;
+  const fixtureSecondId = orientation === "direct" ? params.fixture.player2Id : params.fixture.player1Id;
+
+  if (params.resolvedPlayer1 && params.resolvedPlayer1.id !== fixtureFirstId) return null;
+  if (params.resolvedPlayer2 && params.resolvedPlayer2.id !== fixtureSecondId) return null;
+
+  let score = nameScore;
+  const eventScore = eventSimilarity(params.entry.eventName, params.fixture.tournamentName);
+  score += eventScore * 0.2;
+
+  if (params.event.level && params.fixture.tournamentLevel) {
+    score += params.event.level === params.fixture.tournamentLevel ? 0.12 : -0.08;
+  }
+
+  if (params.event.surface && params.fixture.surface) {
+    score += params.event.surface === params.fixture.surface ? 0.1 : -0.06;
+  }
+
+  const recognizedRound = inferRoundLabel(params.entry.eventName);
+  const fixtureRound = inferRoundLabel(params.fixture.round);
+  if (recognizedRound && fixtureRound) {
+    score += recognizedRound === fixtureRound ? 0.08 : -0.05;
+  }
+
+  return { fixture: params.fixture, score, nameScore, orientation };
+}
+
+function resolveFromFixtureCandidate(
+  candidate: FixtureCandidate,
+  existingPlayer1: ScreenshotPlayerMatch,
+  existingPlayer2: ScreenshotPlayerMatch,
+): { player1: ScreenshotPlayerMatch; player2: ScreenshotPlayerMatch } {
+  const firstSlot = candidate.orientation === "direct" ? "player1" : "player2";
+  const secondSlot = candidate.orientation === "direct" ? "player2" : "player1";
+
+  return {
+    player1: existingPlayer1.player
+      ? existingPlayer1
+      : { recognizedName: existingPlayer1.recognizedName, player: fixturePlayerSummary(candidate.fixture, firstSlot) },
+    player2: existingPlayer2.player
+      ? existingPlayer2
+      : { recognizedName: existingPlayer2.recognizedName, player: fixturePlayerSummary(candidate.fixture, secondSlot) },
+  };
+}
+
+function pickUniqueFixtureCandidate(candidates: FixtureCandidate[]): FixtureCandidate | null {
+  if (candidates.length === 0) return null;
+  const ranked = [...candidates].sort((a, b) => b.score - a.score);
+  if (ranked[0].nameScore < 0.68) return null;
+  if (ranked.length === 1) return ranked[0];
+  if (ranked[0].score - ranked[1].score < 0.06) return null;
+  return ranked[0];
+}
+
+async function getTodayFixtures(provider: TennisDataProvider): Promise<Fixture[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    return await provider.getUpcomingFixtures(today);
+  } catch {
+    return [];
+  }
 }
 
 // ── Word-level matching ────────────────────────────────────────────────────
@@ -252,12 +482,12 @@ async function gatherCandidates(provider: TennisDataProvider, searchName: string
 async function resolvePlayerMatch(
   provider: TennisDataProvider,
   recognizedName: string | null,
-  warnings: string[],
-  label: "Player 1" | "Player 2",
-): Promise<ScreenshotPlayerMatch> {
+): Promise<PlayerResolveOutcome> {
   if (!recognizedName) {
-    warnings.push(`${label} could not be read from the screenshot -- use Search Players to add them manually.`);
-    return { recognizedName: null, player: null };
+    return {
+      match: { recognizedName: null, player: null },
+      status: "unreadable",
+    };
   }
 
   // Strip OCR draw-sheet metadata (seeds, status tokens, birth years, etc.) before
@@ -269,13 +499,13 @@ async function resolvePlayerMatch(
   const confident = candidates.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
 
   if (confident.length === 1) {
-    return { recognizedName, player: confident[0] };
+    return { match: { recognizedName, player: confident[0] }, status: "resolved" };
   }
 
   if (confident.length > 1) {
     const exactName = confident.filter((c) => normalizeName(c.name) === norm);
     if (exactName.length === 1) {
-      return { recognizedName, player: exactName[0] };
+      return { match: { recognizedName, player: exactName[0] }, status: "resolved" };
     }
 
     // When multiple candidates pass the confidence check, prefer the one whose
@@ -290,23 +520,12 @@ async function resolvePlayerMatch(
       .sort((a, b) => b.score - a.score);
 
     if (scored[0].score > scored[1].score) {
-      // Auto-selected by word-count disambiguation — add a visible notice so the user can
-      // verify the choice rather than silently predicting the wrong person (Task #24).
-      warnings.push(
-        `Read "${recognizedName}" for ${label} — matched to ${scored[0].c.name} (best fit from ${confident.length} candidates). If this is the wrong player, use Search Players to correct it.`,
-      );
-      return { recognizedName, player: scored[0].c };
+      return { match: { recognizedName, player: scored[0].c }, status: "resolved" };
     }
-
-    warnings.push(
-      `Read "${recognizedName}" for ${label}, but multiple matching players were found -- please select the right one from Search Players.`,
-    );
+    return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
-    warnings.push(
-      `Read "${recognizedName}" for ${label}, but couldn't confidently match them to a known player -- please use Search Players.`,
-    );
+    return { match: { recognizedName, player: null }, status: "not-found" };
   }
-  return { recognizedName, player: null };
 }
 
 // ── Event resolution ───────────────────────────────────────────────────────
@@ -344,22 +563,89 @@ async function resolveEventMatch(
 async function resolveOneMatchup(
   provider: TennisDataProvider,
   entry: RawMatchupEntry,
+  todayFixtures: Fixture[],
 ): Promise<ScreenshotMatchupEntry> {
   const warnings: string[] = [];
 
-  const [player1, player2Initial] = await Promise.all([
-    resolvePlayerMatch(provider, entry.player1Name, warnings, "Player 1"),
-    resolvePlayerMatch(provider, entry.player2Name, warnings, "Player 2"),
+  const [player1Outcome, player2Outcome, event] = await Promise.all([
+    resolvePlayerMatch(provider, entry.player1Name),
+    resolvePlayerMatch(provider, entry.player2Name),
+    resolveEventMatch(provider, entry.eventName, warnings),
   ]);
 
+  let player1 = player1Outcome.match;
+  let player2 = player2Outcome.match;
+
+  if (!player1.player || !player2.player) {
+    const candidates = todayFixtures
+      .map((fixture) => scoreFixtureCandidate({
+        fixture,
+        entry,
+        event,
+        resolvedPlayer1: player1.player,
+        resolvedPlayer2: player2.player,
+      }))
+      .filter((c): c is FixtureCandidate => c !== null);
+
+    const winner = pickUniqueFixtureCandidate(candidates);
+    if (winner) {
+      const resolved = resolveFromFixtureCandidate(winner, player1, player2);
+      const previousPlayer1 = player1;
+      const previousPlayer2 = player2;
+      player1 = resolved.player1;
+      player2 = resolved.player2;
+
+      if (!previousPlayer1.player && player1.player) {
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 1"));
+      }
+      if (!previousPlayer2.player && player2.player) {
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 2"));
+      }
+
+      const rule = previousPlayer1.player && !previousPlayer2.player
+        ? "fixture-opponent-inference-from-player1"
+        : (!previousPlayer1.player && previousPlayer2.player
+            ? "fixture-opponent-inference-from-player2"
+            : "fixture-pair-fuzzy-unique");
+      warnings.push(
+        `[resolver-debug] Resolved via ${rule}: ${winner.fixture.player1Name} vs ${winner.fixture.player2Name} (score ${winner.score.toFixed(2)}).`,
+      );
+    }
+  }
+
+  if (!player1.player) {
+    if (player1Outcome.status === "unreadable") {
+      warnings.push("Player 1 could not be read from the screenshot -- use Search Players to add them manually.");
+    } else if (player1Outcome.status === "ambiguous") {
+      warnings.push(
+        `Read "${entry.player1Name}" for Player 1, but multiple matching players were found -- please select the right one from Search Players.`,
+      );
+    } else {
+      warnings.push(
+        `Read "${entry.player1Name}" for Player 1, but couldn't confidently match them to a known player -- please use Search Players.`,
+      );
+    }
+  }
+
+  if (!player2.player) {
+    if (player2Outcome.status === "unreadable") {
+      warnings.push("Player 2 could not be read from the screenshot -- use Search Players to add them manually.");
+    } else if (player2Outcome.status === "ambiguous") {
+      warnings.push(
+        `Read "${entry.player2Name}" for Player 2, but multiple matching players were found -- please select the right one from Search Players.`,
+      );
+    } else {
+      warnings.push(
+        `Read "${entry.player2Name}" for Player 2, but couldn't confidently match them to a known player -- please use Search Players.`,
+      );
+    }
+  }
+
   // Guard against the same real player resolving for both slots.
-  let player2 = player2Initial;
   if (player1.player && player2.player && player1.player.id === player2.player.id) {
     warnings.push(`Player 2 resolved to the same player as Player 1 -- please pick Player 2 manually from Search Players.`);
     player2 = { recognizedName: player2.recognizedName, player: null };
   }
-
-  const event = await resolveEventMatch(provider, entry.eventName, warnings);
 
   const resolved = !!player1.player && !!player2.player;
   return { player1, player2, event, resolved, warnings };
@@ -381,9 +667,11 @@ export async function resolveScreenshotMatchup(
     };
   }
 
+  const todayFixtures = await getTodayFixtures(provider);
+
   // Resolve each matchup concurrently
   const resolvedEntries = await Promise.all(
-    raw.matchups.map((entry) => resolveOneMatchup(provider, entry)),
+    raw.matchups.map((entry) => resolveOneMatchup(provider, entry, todayFixtures)),
   );
 
   // Primary slot: first resolved entry (backward compatibility)
