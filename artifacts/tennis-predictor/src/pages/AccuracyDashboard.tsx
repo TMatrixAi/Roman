@@ -154,9 +154,9 @@ const LOW_CONFIDENCE_TIER_SAMPLE = 30
 
 function MetricStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1.5 p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center">
+    <div className="space-y-1.5 p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center matrix-stat-card">
       <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
-      <div className="text-3xl font-display font-bold tracking-tight text-primary tabular-nums">{value}</div>
+      <div className="text-3xl font-display font-bold tracking-tight matrix-number tabular-nums">{value}</div>
     </div>
   )
 }
@@ -484,7 +484,7 @@ function UpsetRiskTierCard({ tiers }: { tiers: UpsetRiskTierMetrics[] }) {
                             LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
                           </Badge>
                         )}
-                        <span className="text-primary text-lg">{t.favoriteLossRate !== null ? `${t.favoriteLossRate}%` : "—"}</span>
+                        <span className="matrix-number text-lg">{t.favoriteLossRate !== null ? `${t.favoriteLossRate}%` : "—"}</span>
                       </div>
                     </td>
                   </tr>
@@ -550,7 +550,7 @@ function DisagreementTierCard({ tiers }: { tiers: DisagreementTierMetrics[] }) {
                             LOW CONFIDENCE (n&lt;{LOW_CONFIDENCE_TIER_SAMPLE})
                           </Badge>
                         )}
-                        <span className="text-primary text-lg">{t.accuracy !== null ? `${t.accuracy}%` : "—"}</span>
+                        <span className="matrix-number text-lg">{t.accuracy !== null ? `${t.accuracy}%` : "—"}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 font-mono font-bold tabular-nums text-right text-muted-foreground">{t.errorRate !== null ? `${t.errorRate}%` : "—"}</td>
@@ -630,11 +630,11 @@ function ShadowReplayCard({ shadowDashboard }: { shadowDashboard: ShadowReplayDa
     <Card className="glass-panel border-accent/40">
       <CardHeader className="border-b border-border/50 bg-secondary/20 p-6 md:p-8">
         <CardTitle className="text-xl font-display flex items-center gap-3">
-          <div className="p-2 bg-accent/10 rounded-lg">
-            <FlaskConical className="w-5 h-5 text-accent" />
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <FlaskConical className="w-5 h-5 text-primary" />
           </div>
           Shadow / Simulated Replay
-          <Badge variant="outline" className="font-mono text-[10px] tracking-widest uppercase border-accent/50 text-accent">
+          <Badge variant="outline" className="font-mono text-[10px] tracking-widest uppercase border-primary/50 text-primary">
             SIMULATED — NOT LIVE EVIDENCE
           </Badge>
         </CardTitle>
@@ -1269,16 +1269,10 @@ export default function AccuracyDashboardPage() {
   const { data: settings } = useGetEvaluationSettings()
   const { data: shadowDashboard } = useGetShadowReplayDashboard()
   const { data: optimizerSummary } = useGetOptimizerAccuracySummary({
-    query: {
-      queryKey: getGetOptimizerAccuracySummaryQueryKey(),
-      refetchInterval: 10000,
-    },
+    query: { refetchInterval: 10000 },
   })
   const { data: candidateConfigs } = useGetCandidateConfigs({
-    query: {
-      queryKey: getCandidateConfigsQueryKey(),
-      refetchInterval: 10000,
-    },
+    query: { refetchInterval: 10000 },
   })
   // Task #12: pattern analysis and threshold evaluation data
   const { data: patternAnalysis } = useGetLatestPatternAnalysis()

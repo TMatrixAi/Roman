@@ -12,7 +12,7 @@ export function DataWarning({
   if (reliability >= 80 && !warnings.length && !note) return null
 
   return (
-    <div className="mt-3 p-3 bg-secondary rounded-sm border border-secondary-border flex gap-3 text-sm">
+    <div className="mt-3 p-3 bg-secondary rounded-sm border border-border/60 flex gap-3 text-sm">
       {reliability < 50 ? (
         <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
       ) : (

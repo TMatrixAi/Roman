@@ -26,8 +26,8 @@ function HistoricalDataFreshnessIndicator() {
           variant="outline"
           className={`h-5 px-1.5 text-[10px] cursor-default hidden xl:flex ${
             isStale
-              ? "border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10"
-              : "border-green-500/30 text-green-700 dark:text-green-400 bg-green-500/10"
+              ? "border-warning/45 text-warning bg-warning/10"
+              : "border-primary/45 text-primary bg-primary/10"
           }`}
         >
           <Database className="w-2.5 h-2.5 mr-1" />
@@ -77,12 +77,15 @@ export function ProviderStatusIndicator() {
       <Tooltip>
         <TooltipTrigger asChild>
           {status.connected ? (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-green-500/30 text-green-700 dark:text-green-400 bg-green-500/10 cursor-default gap-1">
-              <CheckCircle2 className="w-2.5 h-2.5" />
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-primary/45 text-primary bg-primary/10 cursor-default gap-1">
+              <span className="relative inline-flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              </span>
               <span className="hidden sm:inline">ONLINE</span>
             </Badge>
           ) : (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-destructive/30 text-destructive bg-destructive/10 cursor-default gap-1">
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-destructive/40 text-destructive bg-destructive/10 cursor-default gap-1">
               <AlertCircle className="w-2.5 h-2.5" />
               <span className="hidden sm:inline">OFFLINE</span>
             </Badge>

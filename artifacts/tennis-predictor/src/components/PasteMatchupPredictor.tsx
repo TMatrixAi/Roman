@@ -479,10 +479,10 @@ const STATUS_BADGE: Record<LineStatus, BadgeVariant> = {
 
 /** Surface colour coding — matches the rest of the app's convention */
 const SURFACE_COLOR: Record<Surface, string> = {
-  Clay: "text-orange-500",
-  Grass: "text-green-500",
-  Hard: "text-blue-400",
-  IndoorHard: "text-purple-400",
+  Clay: "text-[hsl(var(--surface-clay))]",
+  Grass: "text-[hsl(var(--surface-grass))]",
+  Hard: "text-[hsl(var(--surface-hard))]",
+  IndoorHard: "text-[hsl(var(--surface-indoor))]",
 }
 
 function PasteLineRow({

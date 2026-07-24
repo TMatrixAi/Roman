@@ -40,6 +40,18 @@ export function computeRecommendation(
   if (tieBreakerApplied) return "NO_STRONG_SIGNAL";
   if (margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement")) return "NO_STRONG_SIGNAL";
   if (upsetRisk === "EXTREME") return "HIGH_RISK";
+  // Phase 7 fix: at ≥85% confidence (margin≥35), non-extreme risk, and no active model
+  // disagreement, always return STRONG_RECOMMENDATION — a 92% prediction mislabeled "LEAN"
+  // due to modelAgreement not being exactly "Strong" is confusing and misleading. This gate
+  // applies ONLY going forward; saved records are never retroactively mutated.
+  if (
+    margin >= 35 &&
+    dataQuality >= 45 &&
+    (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
+    modelAgreement !== "Mixed" &&
+    modelAgreement !== "HighDisagreement"
+  )
+    return "STRONG_RECOMMENDATION";
   // Task #75: the dataQuality>=55 floor here was tuned before Task #68 excluded Head-to-Head from
   // the Data Quality blend, which pushed most real scores higher. A real walk-forward re-run
   // (docs/audit-task75-dq-threshold-revalidation.md) shows the 45-55 band is now the

@@ -53,6 +53,7 @@ export interface BacktestRunOptions {
   dateRange: BacktestDateRange;
   filters: BacktestFilters;
   mode: "evaluation" | "optimization";
+  candidateConfigId?: number; // Optional: use a candidate config instead of defaults
 }
 
 /**
@@ -180,7 +181,7 @@ export async function runEvaluationBacktest(
   options: BacktestRunOptions,
   _hooks?: BacktestTestHooks,
 ): Promise<void> {
-  const { runId, dateRange, filters } = options;
+  const { runId, dateRange, filters, candidateConfigId } = options;
 
   const updateStatus = async (status: string, stage?: string, processed?: number, total?: number) => {
     if (_hooks?.onRunUpdated) {
@@ -210,6 +211,18 @@ export async function runEvaluationBacktest(
     await updateStatus("validating", "Loading historical data");
 
     const settings = await getPredictionSettings();
+    let effectiveConfig: Record<string, unknown> | null = null;
+    
+    if (candidateConfigId) {
+      const [candidateConfig] = await db
+        .select()
+        .from(candidateConfigsTable)
+        .where(eq(candidateConfigsTable.id, candidateConfigId))
+        .limit(1);
+      if (candidateConfig?.proposedConfig) {
+        effectiveConfig = candidateConfig.proposedConfig;
+      }
+    }
 
     // Load data slice for this date range
     // If test hooks provide matches, use them directly to avoid needing DB data.
@@ -288,6 +301,11 @@ export async function runEvaluationBacktest(
     await updateStatus("running", "Scoring matches", 0, eligibleMatches.length);
 
     const retirementRule = (settings.retirementRule as RetirementRule) ?? "excluded";
+    
+    // Log effective config for audit
+    if (candidateConfigId || effectiveConfig) {
+      logger.info({ runId, candidateConfigId, configPresent: !!effectiveConfig }, "Backtest running with candidate config");
+    }
 
     // Score matches and write to backtest_predictions
     const predictionRows: Array<{ player1Won: boolean; calibratedProbability: number; includedInAccuracy: boolean }> = [];

@@ -1198,7 +1198,8 @@ export const ListEvaluationPredictionsQueryParams = zod.object({
   "runKind": zod.enum(['historical_test', 'paper_trade', 'live', 'paper_trade_shadow']).optional(),
   "segment": zod.enum(['validation', 'test']).optional(),
   "status": zod.enum(['pending', 'graded', 'void', 'missed']).optional(),
-  "limit": zod.coerce.number().min(1).max(listEvaluationPredictionsQueryLimitMax).default(listEvaluationPredictionsQueryLimitDefault)
+  "limit": zod.coerce.number().min(1).max(listEvaluationPredictionsQueryLimitMax).default(listEvaluationPredictionsQueryLimitDefault),
+  "offset": zod.coerce.number().min(0).default(0),
 })
 
 export const ListEvaluationPredictionsResponseItem = zod.object({

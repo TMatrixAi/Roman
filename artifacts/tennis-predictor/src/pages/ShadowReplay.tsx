@@ -17,9 +17,9 @@ import {
 
 function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="bg-secondary/40 border border-border/50 rounded-xl p-4 space-y-1 text-center">
+    <div className="bg-secondary/40 border border-border/50 rounded-xl p-4 space-y-1 text-center matrix-stat-card">
       <p className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-widest">{label}</p>
-      <p className="text-2xl font-bold font-mono tabular-nums">{value}</p>
+      <p className="text-2xl font-bold font-mono tabular-nums matrix-number">{value}</p>
       {sub && <p className="text-xs font-mono text-muted-foreground/70">{sub}</p>}
     </div>
   )
@@ -191,30 +191,30 @@ export default function ShadowReplayPage() {
                       />
                       <ReferenceLine
                         y={50}
-                        stroke="hsl(var(--muted-foreground)/0.3)"
+                        stroke="hsl(var(--muted-foreground)/0.35)"
                         strokeDasharray="4 4"
                       />
                       <Bar
                         dataKey="predicted"
                         name="predicted"
-                        fill="hsl(var(--primary)/0.5)"
+                        fill="#00CC66"
                         radius={[2, 2, 0, 0]}
                       />
                       <Bar
                         dataKey="observed"
                         name="observed"
-                        fill="hsl(var(--accent))"
+                        fill="#4ADE80"
                         radius={[2, 2, 0, 0]}
                       />
                     </BarChart>
                   </ResponsiveContainer>
                   <div className="flex items-center gap-4 mt-3 justify-end text-xs font-mono text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-sm bg-primary/50 inline-block" />
+                      <span className="w-3 h-3 rounded-sm bg-[#00CC66] inline-block" />
                       Predicted
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-sm bg-accent inline-block" />
+                      <span className="w-3 h-3 rounded-sm bg-[#4ADE80] inline-block" />
                       Observed
                     </span>
                   </div>

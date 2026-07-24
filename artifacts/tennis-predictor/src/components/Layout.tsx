@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/hooks/use-toast"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
 import { TennisMatrixLogo } from "./TennisMatrixLogo"
-import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, CreditCard } from "lucide-react"
-import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
+import { MatrixRain } from "./MatrixRain"
+import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -18,7 +18,6 @@ const NAV_LINKS = [
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
   { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
   { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
-  ...(isPaymentsV2Enabled() ? [{ href: "/payments", label: "Payments", icon: CreditCard, exact: false }] : []),
 ]
 
 const MOBILE_PRIMARY_TABS = [
@@ -41,21 +40,107 @@ function isActive(href: string, location: string, exact: boolean) {
   if (href === "/predict") return location.startsWith("/predict") && !location.startsWith("/predictions")
   if (href === "/backtesting") return location.startsWith("/backtesting")
   if (href === "/shadow-replay") return location.startsWith("/shadow-replay")
-  if (href === "/payments") return location.startsWith("/payments")
   return location.startsWith(href)
 }
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const activeTheme = resolvedTheme === "dark" || resolvedTheme === "light"
+    ? resolvedTheme
+    : "dark"
+
+  const options: Array<{ value: "light" | "dark"; label: string; icon: React.ReactNode }> = [
+    { value: "light", label: "Light", icon: <Sun className="w-3.5 h-3.5" /> },
+    { value: "dark", label: "Dark", icon: <Moon className="w-3.5 h-3.5" /> },
+  ]
+
+  const cycleTheme = () => {
+    if (activeTheme === "light") {
+      setTheme("dark")
+      return
+    }
+    setTheme("light")
+  }
+
   return (
-    <button
-      className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-    >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-    </button>
+    <>
+      <button
+        className="sm:hidden p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+        onClick={cycleTheme}
+        aria-label="Cycle theme"
+      >
+        {activeTheme === "light" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      </button>
+      <div
+        className="hidden sm:inline-flex items-center rounded-lg border border-border/60 bg-secondary/50 p-0.5"
+        role="group"
+        aria-label="Theme selector"
+      >
+        {options.map((option) => {
+          const active = activeTheme === option.value
+          return (
+            <button
+              key={option.value}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono font-bold tracking-widest transition-colors ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"}`}
+              onClick={() => setTheme(option.value)}
+              aria-label={`Switch to ${option.label} mode`}
+              aria-pressed={active}
+            >
+              {option.icon}
+              <span>{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+function MatrixWordmark() {
+  const target = "TENNIS Matrix AI"
+  const [text, setText] = useState(target)
+
+  const key = "matrix-wordmark-decoded.v1"
+
+  useEffect(() => {
+    const hasDecoded = sessionStorage.getItem(key) === "1"
+    if (hasDecoded || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setText(target)
+      return
+    }
+
+    const glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    const revealOrder = [...target].map((_, i) => i).filter((i) => target[i] !== " ")
+    let frame = 0
+    const totalFrames = 20
+    const timer = window.setInterval(() => {
+      frame += 1
+      const progress = Math.min(1, frame / totalFrames)
+      const revealCount = Math.floor(revealOrder.length * progress)
+      const revealed = new Set(revealOrder.slice(0, revealCount))
+      const next = [...target]
+        .map((ch, i) => {
+          if (ch === " ") return " "
+          if (revealed.has(i)) return target[i]
+          return glyphs[Math.floor(Math.random() * glyphs.length)]
+        })
+        .join("")
+      setText(next)
+
+      if (frame >= totalFrames) {
+        window.clearInterval(timer)
+        setText(target)
+        sessionStorage.setItem(key, "1")
+      }
+    }, 70)
+
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <span className="matrix-wordmark font-mono font-extrabold tracking-tight">
+      {text}
+    </span>
   )
 }
 
@@ -115,14 +200,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location])
 
   const isForceSignalActive = location.startsWith("/force-signal")
+  const dateTag = useMemo(() => {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, "0")
+    const dd = String(now.getDate()).padStart(2, "0")
+    return `${yyyy}-${mm}-${dd}`
+  }, [])
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground font-sans overflow-x-hidden selection:bg-primary/20 selection:text-primary">
-      {/* Background gradient */}
-      <div className="fixed inset-0 pointer-events-none z-[-1] bg-[radial-gradient(ellipse_80%_50%_at_top_right,_hsl(var(--primary)/0.06),_transparent)]" />
+      <div className="fixed inset-0 pointer-events-none z-[-2] bg-[linear-gradient(180deg,_hsl(var(--background))_0%,_hsl(var(--background))_100%)]" />
+      <div className="fixed inset-0 pointer-events-none z-[-1] bg-[radial-gradient(ellipse_70%_45%_at_top,_hsl(var(--primary)/0.08),_transparent_55%)]" />
+      <div className={`fixed top-0 left-0 right-0 pointer-events-none z-[-1] overflow-hidden ${location === "/" ? "h-[28rem]" : "h-[7.5rem]"}`}>
+        <MatrixRain />
+      </div>
 
       {/* ─── Top header ─────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 shadow-sm">
+      <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75 shadow-sm shadow-black/30">
         <div className="app-container min-h-[3.75rem] py-2.5 flex items-center justify-between gap-2">
 
           {/* Logo */}
@@ -144,7 +239,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   className={`relative py-1 flex items-center gap-1.5 transition-all hover:text-primary ${active ? "text-primary" : "text-muted-foreground"}`}
                 >
                   {label}
-                  {active && <span className="absolute -bottom-[0.65rem] left-0 w-full h-[2px] bg-primary rounded-t-full" />}
+                  {active && <span className="absolute -bottom-[0.65rem] left-0 w-full h-[2px] bg-primary rounded-t-full shadow-[0_0_10px_hsl(var(--primary)/0.8)]" />}
                 </Link>
               )
             })}
@@ -170,7 +265,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Online Signal (existing) */}
             <ProviderStatusIndicator />
 
-            {/* Visual gap to keep admin and theme toggle separate */}
+            <span className="hidden xl:inline-flex items-center rounded-md border border-border/60 bg-secondary/50 px-2 py-1 text-[10px] font-mono font-bold tracking-widest text-muted-foreground">
+              {dateTag}
+            </span>
+
+            {/* Visual gap to keep theme toggle separate */}
             <div className="w-px h-5 bg-border/50 mx-1 hidden sm:block" />
 
             {/* Admin Login/Logout */}
@@ -210,7 +309,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={href}
                     href={href}
                     onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? "bg-primary/12 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     {label}
@@ -281,7 +380,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* ─── Footer ─────────────────────────────────────────── */}
       <footer className="hidden md:block border-t border-border/40 py-6 bg-secondary/20">
         <div className="app-container text-center text-[0.6875rem] font-mono text-muted-foreground/60 flex flex-col items-center gap-1.5">
-          <p className="font-bold tracking-[0.18em] text-muted-foreground/80">TENNIS QUANT PREDICTION ENGINE v1.0.0</p>
+          <p className="font-bold tracking-[0.18em] text-muted-foreground/80">TENNIS MATRIX AI v1.0.0</p>
           <p className="max-w-md leading-relaxed">PROBABILITIES CALIBRATED DAILY. USE AT OWN RISK. DATA IS FOR ANALYTICAL PURPOSES ONLY.</p>
         </div>
       </footer>
