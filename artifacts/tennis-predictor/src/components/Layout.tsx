@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react"
 import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useToast } from "@/hooks/use-toast"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
-import { ActivitySquare, History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, CreditCard } from "lucide-react"
+import { TennisMatrixLogo } from "./TennisMatrixLogo"
+import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, CreditCard } from "lucide-react"
 import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag"
+import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -55,6 +59,51 @@ function ThemeToggle() {
   )
 }
 
+function AdminAuthButton() {
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+      if (!res.ok) throw new Error("Logout failed")
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminAuthStatus"] })
+      toast({ title: "Logged out", description: "Owner session cleared" })
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" })
+    },
+  })
+
+  if (!adminAuth?.authenticated) {
+    return (
+      <Link
+        href="/admin/login"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:text-primary hover:border-primary/40"
+        title="Owner login"
+      >
+        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+        <span className="hidden sm:inline">Login</span>
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => logoutMutation.mutate()}
+      disabled={logoutMutation.isPending}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-accent/10 text-accent border-accent/20 hover:bg-accent/20 hover:text-accent hover:border-accent/40 disabled:opacity-50"
+      title="Owner logout"
+    >
+      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+      <span className="hidden sm:inline">{logoutMutation.isPending ? "..." : "Logout"}</span>
+    </button>
+  )
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -78,8 +127,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 font-display font-bold tracking-tight text-[1.05rem] hover:opacity-80 transition-opacity shrink-0">
-            <div className="w-7 h-7 bg-gradient-to-br from-accent to-accent/80 rounded-lg shadow-inner flex items-center justify-center text-accent-foreground">
-              <ActivitySquare className="w-4 h-4" />
+            <div className="w-8 h-8 text-accent">
+              <TennisMatrixLogo />
             </div>
             <span>Tennis Matrix AI</span>
           </Link>
@@ -101,7 +150,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Right side controls: FORCE SIGNAL → ONLINE SIGNAL → [gap] → THEME */}
+          {/* Right side controls: FORCE SIGNAL → ONLINE SIGNAL → [gap] → ADMIN → THEME */}
           <div className="flex items-center gap-1 shrink-0">
             {/* Force Signal — visually distinct (warning/amber) from Online Signal (primary) */}
             <Link
@@ -121,8 +170,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Online Signal (existing) */}
             <ProviderStatusIndicator />
 
-            {/* Visual gap to keep theme toggle separate */}
+            {/* Visual gap to keep admin and theme toggle separate */}
             <div className="w-px h-5 bg-border/50 mx-1 hidden sm:block" />
+
+            {/* Admin Login/Logout */}
+            <AdminAuthButton />
 
             {/* Theme toggle */}
             <ThemeToggle />
@@ -148,6 +200,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 onClick={() => setMobileOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isForceSignalActive ? "bg-warning/10 text-warning font-semibold" : "text-warning/70 hover:bg-warning/10 hover:text-warning"}`}
               >
+                <Zap className="w-4 h-4 shrink-0" />
+                Force Signal
+              </Link>
+              {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+                const active = isActive(href, location, exact)
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {label}
+                  </Link>
+                )
+              })}
+              {/* Admin login in mobile nav */}
+              <div className="border-t border-border/50 mt-2 pt-2">
+                <AdminAuthButton />
+              </div>
+            </nav>
+          </div>
+        )}
                 <Zap className="w-4 h-4 shrink-0" />
                 Force Signal
               </Link>
