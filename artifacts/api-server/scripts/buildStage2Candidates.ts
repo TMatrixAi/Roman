@@ -16,20 +16,7 @@
 import { db, candidateConfigsTable, specialistModelsTable, evaluationPredictionsTable } from "@workspace/db";
 import { buildSprintStage2Candidates } from "../src/services/evaluation/sprintStage2Candidates";
 import { eq, count } from "drizzle-orm";
-
-function detectDbHostResolutionError(err: unknown): string | null {
-  const e = err as { code?: string; hostname?: string; cause?: { code?: string; hostname?: string } };
-  const code = e?.code ?? e?.cause?.code;
-  const hostname = e?.hostname ?? e?.cause?.hostname;
-  if (code === "ENOTFOUND" && hostname === "helium") {
-    return [
-      "Database host 'helium' is only resolvable inside Replit runtime.",
-      "Run this script in Replit shell (same repo), not from Codespaces/local shell.",
-      "Command: npx tsx scripts/buildStage2Candidates.ts",
-    ].join(" ");
-  }
-  return null;
-}
+import { detectDbHostResolutionHint } from "./lib/replitEnv.js";
 
 async function verifyPrerequisites(): Promise<void> {
   console.log("\n🔍 Verifying prerequisites...\n");
@@ -123,7 +110,7 @@ async function main(): Promise<void> {
 
     process.exit(0);
   } catch (err: unknown) {
-    const envHint = detectDbHostResolutionError(err);
+    const envHint = detectDbHostResolutionHint(err, "npx tsx scripts/buildStage2Candidates.ts");
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : "";
     console.error("\n❌ Fatal error:", message);

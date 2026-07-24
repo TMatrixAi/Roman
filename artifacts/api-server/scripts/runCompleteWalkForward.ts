@@ -15,20 +15,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { fitBestCalibration } from "../src/services/evaluation/calibration";
 import { computeAndStoreSpecialistSegments } from "../src/services/evaluation/specialistWeights";
 import type { CalibrationPoint } from "../src/services/evaluation/calibration";
-
-function detectDbHostResolutionError(err: unknown): string | null {
-  const e = err as { code?: string; hostname?: string; cause?: { code?: string; hostname?: string } };
-  const code = e?.code ?? e?.cause?.code;
-  const hostname = e?.hostname ?? e?.cause?.hostname;
-  if (code === "ENOTFOUND" && hostname === "helium") {
-    return [
-      "Database host 'helium' is only resolvable inside Replit runtime.",
-      "Run this script in Replit shell (same repo), not from Codespaces/local shell.",
-      "Command: npx tsx scripts/runCompleteWalkForward.ts",
-    ].join(" ");
-  }
-  return null;
-}
+import { detectDbHostResolutionHint } from "./lib/replitEnv.js";
 
 async function runWalkForward(): Promise<void> {
   console.log("📊 Starting walk-forward evaluation...\n");
@@ -181,7 +168,7 @@ async function main(): Promise<void> {
 
     process.exit(0);
   } catch (err: unknown) {
-    const envHint = detectDbHostResolutionError(err);
+    const envHint = detectDbHostResolutionHint(err, "npx tsx scripts/runCompleteWalkForward.ts");
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : "";
     console.error("\n❌ Fatal error:", message);
