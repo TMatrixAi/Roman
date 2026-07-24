@@ -258,6 +258,20 @@ function fixturePlayerSummary(fixture: Fixture, slot: "player1" | "player2"): Pl
       };
 }
 
+function resolvedPlayerFitsFixtureSlot(
+  resolved: PlayerSummary,
+  fixtureId: string,
+  fixtureName: string,
+): boolean {
+  if (resolved.id === fixtureId) return true;
+
+  const resolvedNorm = normalizeName(stripOcrMetadata(resolved.name));
+  const fixtureNorm = normalizeName(fixtureName);
+  if (!resolvedNorm || !fixtureNorm) return false;
+
+  return isConfidentMatch(resolvedNorm, fixtureNorm) || isConfidentMatch(fixtureNorm, resolvedNorm);
+}
+
 function scoreFixtureCandidate(params: {
   fixture: Fixture;
   entry: RawMatchupEntry;
@@ -290,8 +304,14 @@ function scoreFixtureCandidate(params: {
   const fixtureFirstId = orientation === "direct" ? params.fixture.player1Id : params.fixture.player2Id;
   const fixtureSecondId = orientation === "direct" ? params.fixture.player2Id : params.fixture.player1Id;
 
-  if (params.resolvedPlayer1 && params.resolvedPlayer1.id !== fixtureFirstId) return null;
-  if (params.resolvedPlayer2 && params.resolvedPlayer2.id !== fixtureSecondId) return null;
+  if (
+    params.resolvedPlayer1
+    && !resolvedPlayerFitsFixtureSlot(params.resolvedPlayer1, fixtureFirstId, orientation === "direct" ? params.fixture.player1Name : params.fixture.player2Name)
+  ) return null;
+  if (
+    params.resolvedPlayer2
+    && !resolvedPlayerFitsFixtureSlot(params.resolvedPlayer2, fixtureSecondId, orientation === "direct" ? params.fixture.player2Name : params.fixture.player1Name)
+  ) return null;
 
   let score = nameScore;
   const eventScore = eventSimilarity(params.entry.eventName, params.fixture.tournamentName);
@@ -344,7 +364,18 @@ function pickUniqueFixtureCandidate(candidates: FixtureCandidate[]): FixtureCand
 async function getTodayFixtures(provider: TennisDataProvider): Promise<Fixture[]> {
   const today = new Date().toISOString().slice(0, 10);
   try {
-    return await provider.getUpcomingFixtures(today);
+    const sameDay = await provider.getUpcomingFixtures(today);
+    if (sameDay.length > 0 || !provider.getUpcomingFixturesRange) return sameDay;
+
+    // Tight fallback window: include tomorrow in case provider's schedule date boundary is offset
+    // from server UTC, while still prioritizing "today" behavior.
+    const tomorrowDate = new Date();
+    tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+    const tomorrow = tomorrowDate.toISOString().slice(0, 10);
+    const range = await provider.getUpcomingFixturesRange(today, tomorrow);
+    const deduped = new Map<string, Fixture>();
+    for (const fixture of [...sameDay, ...range]) deduped.set(fixture.id, fixture);
+    return Array.from(deduped.values());
   } catch {
     return [];
   }

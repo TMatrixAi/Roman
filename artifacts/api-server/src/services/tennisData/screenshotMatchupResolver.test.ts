@@ -301,3 +301,85 @@ test("resolveScreenshotMatchup keeps entry unresolved when multiple scheduled fi
   assert.ok(result.warnings.some((w) => w.includes("couldn't confidently match") && w.includes("Player 2")));
   assert.ok(result.warnings.every((w) => !w.includes("[resolver-debug] Resolved via")));
 });
+
+test("resolveScreenshotMatchup allows fixture fallback when resolved player id differs but name matches fixture slot", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      const q = query.toLowerCase();
+      if (q.includes("arakawa")) {
+        // Simulate canonical/alias id mismatch vs fixture row.
+        return [{ id: "arakawa-canonical-id", name: "Natsuho Arakawa", countryCode: "JP", currentRank: 250, tour: "WTA" }];
+      }
+      if (q.includes("uchijima")) {
+        return [];
+      }
+      return [];
+    },
+    getUpcomingFixtures: async () => [{
+      id: "fx-alias-1",
+      date: "2026-07-24",
+      scheduledStart: null,
+      timeConfirmed: false,
+      isLive: false,
+      tournamentName: "2026 W15 Brisbane",
+      tournamentLevel: "ITF",
+      round: "Quarter-Final",
+      surface: "Hard",
+      indoor: false,
+      matchFormat: "BestOf3",
+      player1Id: "arakawa-provider-id",
+      player1Name: "Natsuho Arakawa",
+      player2Id: "maiko-provider-id",
+      player2Name: "Maiko Uchijima",
+    }],
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "Natsuho Arakawa", player2Name: "Maiko Uchijima", eventName: "2026 W15 Brisbane" }],
+  });
+
+  assert.equal(result.player1.player?.name, "Natsuho Arakawa");
+  assert.equal(result.player2.player?.name, "Maiko Uchijima");
+  assert.ok(result.warnings.some((w) => w.includes("[resolver-debug] Resolved via fixture-opponent-inference-from-player1")));
+});
+
+test("resolveScreenshotMatchup falls back to next-day fixture range when same-day fixtures are empty", async () => {
+  const provider = makeProvider({
+    searchPlayers: async (query: string) => {
+      const q = query.toLowerCase();
+      if (q.includes("arakawa")) {
+        return [{ id: "arakawa-id", name: "Natsuho Arakawa", countryCode: "JP", currentRank: 250, tour: "WTA" }];
+      }
+      if (q.includes("uchijima")) {
+        return [];
+      }
+      return [];
+    },
+    getUpcomingFixtures: async () => [],
+    getUpcomingFixturesRange: async () => [{
+      id: "fx-range-1",
+      date: "2026-07-25",
+      scheduledStart: null,
+      timeConfirmed: false,
+      isLive: false,
+      tournamentName: "2026 W15 Brisbane",
+      tournamentLevel: "ITF",
+      round: "Quarter-Final",
+      surface: "Hard",
+      indoor: false,
+      matchFormat: "BestOf3",
+      player1Id: "arakawa-id",
+      player1Name: "Natsuho Arakawa",
+      player2Id: "maiko-id",
+      player2Name: "Maiko Uchijima",
+    }],
+  });
+
+  const result = await resolveScreenshotMatchup(provider, {
+    matchups: [{ player1Name: "Natsuho Arakawa", player2Name: "Maiko Uchijima", eventName: "2026 W15 Brisbane" }],
+  });
+
+  assert.equal(result.player1.player?.id, "arakawa-id");
+  assert.equal(result.player2.player?.id, "maiko-id");
+  assert.ok(result.warnings.some((w) => w.includes("[resolver-debug] Resolved via fixture-opponent-inference-from-player1")));
+});
