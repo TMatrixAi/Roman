@@ -224,26 +224,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
         )}
-                <Zap className="w-4 h-4 shrink-0" />
-                Force Signal
-              </Link>
-              {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
-                const active = isActive(href, location, exact)
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    {label}
-                  </Link>
-                )
-              })}
-            </nav>
-          </div>
-        )}
       </header>
 
       {/* ─── Page content ───────────────────────────────────── */}
