@@ -475,6 +475,45 @@ export async function resolvePlayerProfileForPrediction(
     }
   }
 
+  // Reverse-abbreviation fallback: when the historical name is a FULL name (e.g. "Moyuka Uchijima")
+  // but the provider's search returns only abbreviated forms (e.g. "M. Uchijima"), the exact-match
+  // step above finds nothing. Check whether any candidate is a valid abbreviated form of the
+  // historical full name (initial matches first letter, surname(s) match exactly). Only use it
+  // when exactly one candidate qualifies -- multiple matches mean ambiguity (e.g. "M. Uchijima"
+  // could be Maiko OR Moyuka) and we must not guess.
+  if (exactNameCandidates.length === 0) {
+    const fullWords = normalizedName.split(" ").filter(Boolean);
+    if (fullWords.length >= 2 && !isInitialNamePattern(normalizedName)) {
+      const abbreviatedCandidates = byNameCandidates.filter((c) => {
+        const cNorm = normalizePlayerName(c.name);
+        if (!isInitialNamePattern(cNorm)) return false;
+        const cWords = cNorm.split(" ").filter(Boolean);
+        if (cWords.length !== fullWords.length) return false;
+        if (cWords[0] !== fullWords[0]![0]) return false;
+        return cWords.slice(1).every((w, i) => w === fullWords.slice(1)[i]);
+      });
+      if (abbreviatedCandidates.length === 1) {
+        const remappedId = abbreviatedCandidates[0]!.id;
+        const remappedProfile = await resolvePlayerProfile(provider, remappedId);
+        if (remappedProfile) {
+          logger.info(
+            { requestedPlayerId, remappedId, sightingName: sighting.name },
+            "Resolved full historical player name to live provider ID via reverse-abbreviation match",
+          );
+          return { profile: remappedProfile, resolvedPlayerId: remappedProfile.id, detail: null };
+        }
+      }
+      if (abbreviatedCandidates.length > 1) {
+        const names = abbreviatedCandidates.map((c) => c.name).join(", ");
+        return {
+          profile: null,
+          resolvedPlayerId: requestedPlayerId,
+          detail: `Historical player ID ${requestedPlayerId} ("${sighting.name}") matches multiple abbreviated provider records (${names}); choose the exact full-name player from Search.`,
+        };
+      }
+    }
+  }
+
   const words = normalizedName.split(" ").filter(Boolean);
   if (isInitialNamePattern(normalizedName) && words.length >= 2) {
     const initial = words[0]!;
@@ -573,7 +612,13 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     }
   }
 
-  const seenIds = new Set(liveResults.map((p) => p.id));
+  // Filter abbreviated/weak names from live results (e.g. "M. Uchijima" from provider standings).
+  // These are not stable identity keys -- they're ambiguous across multiple full-name players
+  // sharing the same initial+surname (e.g. Maiko vs. Moyuka Uchijima). Historical filtering
+  // already blocks weak names from the historical fallback; this closes the same gap for live.
+  const filteredLiveResults = liveResults.filter((p) => !isWeakIdentityNameKey(normalizePlayerName(p.name)));
+
+  const seenIds = new Set(filteredLiveResults.map((p) => p.id));
 
   const lowerQuery = query.toLowerCase().trim();
   const likePattern = `%${lowerQuery}%`;
@@ -643,7 +688,7 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   }
 
   const deduped = new Map<string, PlayerSummary>();
-  for (const player of [...liveResults, ...historicalSummaries]) {
+  for (const player of [...filteredLiveResults, ...historicalSummaries]) {
     if (!deduped.has(player.id)) deduped.set(player.id, player);
   }
   const results = Array.from(deduped.values()).slice(0, 25);

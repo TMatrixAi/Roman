@@ -858,6 +858,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                         <option value="ATP250">ATP 250</option>
                         <option value="WTA250">WTA 250</option>
                         <option value="Challenger">Challenger</option>
+                        <option value="ITF">ITF / W-Series / M-Series</option>
                       </Select>
                     </div>
                   </div>

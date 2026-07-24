@@ -189,6 +189,15 @@ export default function PredictBuilderPage() {
     ? getApiErrorMessage(createPrediction.error, "Failed to run prediction. Provider may be unavailable or matchup data is insufficient.")
     : null
 
+  // Fetch player profiles in the parent so we can pass tour data to normalizePredictionInput.
+  // React Query deduplicates these with the identical calls in PlayerCard, so no extra requests.
+  const { data: player1Data } = useGetPlayer(player1Id || "", {
+    query: { queryKey: getGetPlayerQueryKey(player1Id || ""), enabled: !!player1Id }
+  })
+  const { data: player2Data } = useGetPlayer(player2Id || "", {
+    query: { queryKey: getGetPlayerQueryKey(player2Id || ""), enabled: !!player2Id }
+  })
+
   const handleRunModel = () => {
     if (!player1Id || !player2Id) return
 
@@ -199,6 +208,8 @@ export default function PredictBuilderPage() {
       matchFormat: format,
       tournamentLevel: level,
       tournamentName,
+      player1Tour: player1Data?.tour ?? null,
+      player2Tour: player2Data?.tour ?? null,
     })
 
     createPrediction.mutate({
@@ -357,6 +368,7 @@ export default function PredictBuilderPage() {
                     <option value="ATP250">ATP 250</option>
                     <option value="WTA250">WTA 250</option>
                     <option value="Challenger">Challenger</option>
+                    <option value="ITF">ITF / W-Series / M-Series</option>
                   </Select>
                 </div>
               </div>
