@@ -13,6 +13,42 @@
  */
 
 import { spawn } from "node:child_process";
+import { lookup } from "node:dns/promises";
+
+function parseDbHost(databaseUrl: string): string {
+  try {
+    return new URL(databaseUrl).hostname;
+  } catch {
+    throw new Error("DATABASE_URL is not a valid URL.");
+  }
+}
+
+async function runPreflight(): Promise<void> {
+  const databaseUrl = process.env["DATABASE_URL"];
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL is not set. Set it before running this pipeline (Replit sets this automatically).",
+    );
+  }
+
+  const host = parseDbHost(databaseUrl);
+  try {
+    await lookup(host);
+  } catch (err) {
+    const e = err as { code?: string };
+    if (e?.code === "ENOTFOUND") {
+      if (host === "helium") {
+        throw new Error(
+          "Database host 'helium' is not resolvable in this environment. Run this script in Replit shell where helium is reachable.",
+        );
+      }
+      throw new Error(`Database host '${host}' is not resolvable (ENOTFOUND).`);
+    }
+    throw err;
+  }
+
+  console.log(`Preflight OK: DATABASE_URL host '${host}' is resolvable.`);
+}
 
 function runStep(label: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -47,6 +83,7 @@ async function main(): Promise<void> {
   const start = Date.now();
 
   try {
+    await runPreflight();
     await runStep("Stage 1 execution: walk-forward + post-fit", ["tsx", "scripts/runCompleteWalkForward.ts"]);
     await runStep("Stage 2 execution: build candidate configs", ["tsx", "scripts/buildStage2Candidates.ts"]);
 
