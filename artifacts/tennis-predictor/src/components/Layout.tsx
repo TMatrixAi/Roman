@@ -253,10 +253,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75 shadow-sm shadow-black/30">
           <div className="app-container min-h-[3.75rem] py-2.5 flex items-center justify-between gap-2">
             <Link href="/" className="flex items-center gap-2.5 font-display font-bold tracking-tight text-[1.05rem] hover:opacity-80 transition-opacity shrink-0">
-              <div className="w-8 h-8 text-accent">
+              <div className="w-10 h-10 text-accent">
                 <TennisMatrixLogo />
               </div>
-              <span className="uppercase tracking-[0.16em] text-emerald-300">TENNIS MATRIX AI</span>
             </Link>
 
             <nav className="hidden md:flex items-center gap-6 text-[0.8125rem] font-medium">
@@ -348,7 +347,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Logo */}
           <Link href="/app" className="flex items-center gap-2.5 font-display font-bold tracking-tight text-[1.05rem] hover:opacity-80 transition-opacity shrink-0">
-            <div className="w-8 h-8 text-accent">
+            <div className="w-10 h-10 text-accent">
               <TennisMatrixLogo />
             </div>
           </Link>

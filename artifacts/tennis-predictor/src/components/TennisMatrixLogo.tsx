@@ -2,8 +2,8 @@ export function TennisMatrixLogo() {
   return (
     <svg
       viewBox="0 0 48 48"
-      width="36"
-      height="36"
+      width="40"
+      height="40"
       xmlns="http://www.w3.org/2000/svg"
       className="drop-shadow-lg"
     >

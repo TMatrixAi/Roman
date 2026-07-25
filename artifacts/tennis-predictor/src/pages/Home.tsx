@@ -66,7 +66,9 @@ export default function Home() {
           <ActivitySquare className="w-[400px] h-[400px]" />
         </div>
         <div className="relative z-10 max-w-3xl space-y-6">
-          <p className="text-lg md:text-2xl font-mono font-extrabold tracking-[0.28em] uppercase text-emerald-100">TENNIS MATRIX AI</p>
+          <p className="text-2xl md:text-4xl font-mono font-extrabold tracking-[0.32em] uppercase text-emerald-50 drop-shadow-[0_3px_16px_rgba(16,185,129,0.35)]">
+            TENNIS MATRIX AI
+          </p>
           <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05] break-words">
             <span className="text-emerald-50 drop-shadow-[0_2px_12px_rgba(16,185,129,0.2)]">PROBABILITY</span>
             <br />
