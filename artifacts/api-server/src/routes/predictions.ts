@@ -213,7 +213,12 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       includeWeather: false,
     });
 
-    const identityViolation = assertPredictionIdentityIntegrity(body, integrity, player1, player2);
+    // Use canonical resolved IDs for the integrity check. MatchStat fixture IDs may differ
+    // from the API-Tennis canonical IDs that the prediction engine resolves to — substituting
+    // the canonical IDs prevents a false 409 while the name-match check still catches any
+    // real identity substitution.
+    const canonicalBody = { ...body, player1Id: player1.id, player2Id: player2.id };
+    const identityViolation = assertPredictionIdentityIntegrity(canonicalBody, integrity, player1, player2);
     if (identityViolation) {
       res.status(identityViolation.code === "BAD_REQUEST" ? 400 : 409).json({ error: identityViolation.message });
       return;
@@ -264,8 +269,8 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
     });
 
     if (
-      saved.player1Id !== body.player1Id ||
-      saved.player2Id !== body.player2Id ||
+      saved.player1Id !== player1.id ||
+      saved.player2Id !== player2.id ||
       saved.surface !== body.surface ||
       saved.matchFormat !== body.matchFormat ||
       (saved.tournamentName ?? null) !== (body.tournamentName ?? null)
