@@ -186,10 +186,20 @@ export default function PredictionResultPage() {
 
       {/* HEADER MATCHUP */}
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-border/50 pb-6">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
-          <Badge variant="secondary" className="uppercase bg-secondary/50 border shadow-sm">{prediction.surface}</Badge>
-          <span className="uppercase tracking-widest">{prediction.matchFormat}</span>
-          {prediction.tournamentLevel && <Badge variant="outline" className="uppercase bg-background shadow-sm">{prediction.tournamentLevel}</Badge>}
+        <div className="space-y-2">
+          {prediction.tournamentName && (
+            <p className="text-base sm:text-lg font-display font-bold text-foreground tracking-tight">
+              {prediction.tournamentName}{" "}
+              <span className="font-mono text-sm font-normal text-muted-foreground">({prediction.surface})</span>
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
+            {!prediction.tournamentName && (
+              <Badge variant="secondary" className="uppercase bg-secondary/50 border shadow-sm">{prediction.surface}</Badge>
+            )}
+            <span className="uppercase tracking-widest">{prediction.matchFormat}</span>
+            {prediction.tournamentLevel && <Badge variant="outline" className="uppercase bg-background shadow-sm">{prediction.tournamentLevel}</Badge>}
+          </div>
         </div>
         {isResolved && (
           <Badge variant={isCorrect ? "success" : "destructive"} className="text-sm px-4 py-1.5 shadow-md">
@@ -219,6 +229,16 @@ export default function PredictionResultPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
+              {/* Event / tournament label — shown above player names in both paths */}
+              {prediction.tournamentName && (
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-4 bg-primary/40 rounded-full shrink-0" />
+                  <p className="text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate">
+                    {prediction.tournamentName} · {prediction.surface}
+                  </p>
+                </div>
+              )}
+
               {engine.tieBreakerApplied && !forceSignal ? (
                 /* ── TOO CLOSE TO CALL hero ─────────────────────────────────── */
                 <div>

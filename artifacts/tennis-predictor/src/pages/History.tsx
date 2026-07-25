@@ -501,7 +501,7 @@ export default function HistoryPage() {
     })
   }
 
-  // The "Search Players" / "Paste Search" lookup tools now live on Build Matchup
+  // The "Search Players" / "Paste Search" lookup tools now live on Run Model
   // (`SavedPredictionsLookup.tsx`), since they're for finding an *existing* saved prediction
   // before starting a new one -- but the focus/step-through UI they drive only exists here. A
   // selection there navigates here with a handoff: a single player via plain URL params (small,

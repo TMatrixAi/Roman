@@ -29,6 +29,8 @@ const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
 const PaymentsPage = lazy(() => import('@/pages/Payments'));
 const AdminLoginPage = lazy(() => import('@/pages/AdminLogin'));
+const ModelMonitoringPage = lazy(() => import('@/pages/ModelMonitoring'));
+const AccountPage = lazy(() => import('@/pages/Account'));
 
 const queryClient = new QueryClient();
 
@@ -217,6 +219,14 @@ function Router() {
                 {() => <ProtectedRoute component={HistoryPage} />}
               </Route>
               {/* Unprotected / admin-only routes */}
+              {/* Subscriber pages */}
+              <Route path="/monitoring">
+                {() => <ProtectedRoute component={ModelMonitoringPage} />}
+              </Route>
+              <Route path="/account">
+                {() => <ProtectedRoute component={AccountPage} />}
+              </Route>
+              {/* Admin-only routes */}
               <Route path="/evaluation/log" component={PredictionLogPage} />
               <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
               <Route path="/force-signal" component={ForceSignalPage} />

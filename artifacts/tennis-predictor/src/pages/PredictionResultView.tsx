@@ -60,7 +60,7 @@ export default function PredictionResultView() {
 
   return (
     <div onTouchStart={showNav ? handleTouchStart : undefined} onTouchEnd={showNav ? handleTouchEnd : undefined}>
-      {/* Back button — navigates to Ledger when opened from there, Build Match otherwise */}
+      {/* Back button — navigates to Prediction History when opened from there, Run Model otherwise */}
       <div className="mb-4">
         <Button
           variant="ghost"
@@ -69,7 +69,7 @@ export default function PredictionResultView() {
           onClick={() => setLocation(fromLedger ? "/history" : "/predict")}
         >
           <ChevronLeft className="w-4 h-4" />
-          {fromLedger ? "BACK TO HISTORY" : "BACK TO BUILD MATCH"}
+          {fromLedger ? "BACK TO PREDICTION HISTORY" : "BACK TO RUN MODEL"}
         </Button>
       </div>
 
