@@ -68,44 +68,53 @@ async function resolveCanonicalPlayerIdFromName(
     const normalizedQuery = normalizePlayerName(submittedName);
     const queryWords = normalizedQuery.split(" ").filter(Boolean);
 
-    // Collect all qualifying candidates — both exact and abbreviated matches.
-    // searchKnownPlayers merges live API-Tennis results with historical DB (MatchStat) entries.
-    // When the same player appears twice:
-    //   - historical entry: full name ("Tereza Valentova"), MatchStat ID
-    //   - live entry: abbreviated name ("T. Valentova"), API-Tennis ID  ← correct one
-    // We must prefer the abbreviated (live) candidate over the exact-full-name (historical)
-    // because the MatchStat ID space collides with unrelated API-Tennis IDs.
-    let exactMatch: { id: string; name: string } | null = null;
-    let abbreviatedMatch: { id: string; name: string } | null = null;
+    // searchKnownPlayers merges live API-Tennis results (no source / source="live") with
+    // historical DB entries (source="historical-match"). Historical entries often have MatchStat
+    // IDs that collide with unrelated API-Tennis records. Priority order:
+    //   1. Live exact match       — e.g. API-Tennis returns "Alexander Bublik" id=24245
+    //   2. Live abbreviated match — e.g. API-Tennis returns "T. Valentova" id=8976
+    //   3. Historical exact match — fallback only; may be a MatchStat ID
+    //   4. Historical abbreviated — last resort
+    type Candidate = { id: string; name: string };
+    let liveExact: Candidate | null = null;
+    let liveAbbrev: Candidate | null = null;
+    let histExact: Candidate | null = null;
+    let histAbbrev: Candidate | null = null;
 
     for (const c of candidates) {
       if (isDoublesLikeName(c.name)) continue;
       const cn = normalizePlayerName(c.name);
+      const isHistorical = (c as { source?: string }).source === "historical-match";
 
-      if (cn === normalizedQuery && !exactMatch) {
-        exactMatch = c;
+      // Exact normalised match
+      const isExact = cn === normalizedQuery;
+      if (isExact) {
+        if (!isHistorical && !liveExact) liveExact = c;
+        else if (isHistorical && !histExact) histExact = c;
       }
-      // Full-name query ("tereza valentova") matching abbreviated provider entry ("t valentova")
-      // after normalizePlayerName strips the dot — so check single-letter first word, not "t."
-      if (queryWords.length >= 2 && !abbreviatedMatch) {
+
+      // Abbreviated form: after normalizePlayerName strips dots, "T. Valentova" → "t valentova"
+      // so we check for a single-letter first word matching the query's first-name initial.
+      if (queryWords.length >= 2 && !isExact) {
         const initial = queryWords[0]![0]!;
         const surnames = queryWords.slice(1);
         const cnWords = cn.split(" ").filter(Boolean);
-        if (
+        const isAbbrev =
           cnWords.length === surnames.length + 1 &&
           cnWords[0]!.length === 1 &&
           cnWords[0] === initial &&
-          surnames.every((s, i) => cnWords[i + 1] === s)
-        ) {
-          abbreviatedMatch = c;
+          surnames.every((s, i) => cnWords[i + 1] === s);
+        if (isAbbrev) {
+          if (!isHistorical && !liveAbbrev) liveAbbrev = c;
+          else if (isHistorical && !histAbbrev) histAbbrev = c;
         }
       }
     }
 
-    // Prefer the abbreviated (live API-Tennis) match; fall back to exact (may be historical/MatchStat).
-    const best = abbreviatedMatch ?? exactMatch;
+    const best = liveExact ?? liveAbbrev ?? histExact ?? histAbbrev;
     if (best) {
-      logger.info({ submittedName, resolvedId: best.id, resolvedName: best.name, viaAbbreviated: !!abbreviatedMatch }, "resolveCanonicalPlayerIdFromName: resolved");
+      const via = liveExact ? "live-exact" : liveAbbrev ? "live-abbrev" : histExact ? "hist-exact" : "hist-abbrev";
+      logger.info({ submittedName, resolvedId: best.id, resolvedName: best.name, via }, "resolveCanonicalPlayerIdFromName: resolved");
       return best.id;
     }
 

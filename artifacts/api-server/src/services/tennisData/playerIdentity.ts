@@ -429,6 +429,34 @@ export interface PredictionPlayerResolution {
  * Searches the provider, finds the best singles-name match, and returns the resolved profile.
  * Falls through to a constructed minimal profile when the provider has an abbreviated form only.
  */
+/**
+ * Constructs a minimal PlayerProfile from a search-result candidate when getPlayer() is broken
+ * for that ID (returns a wrong/doubles player). The search result is trusted because it came from
+ * API-Tennis's own name-search endpoint and matched the player's name exactly or by abbreviation.
+ */
+function minimalProfileFromSearchCandidate(
+  candidate: { id: string; name: string; tour?: string | null; countryCode?: string | null; currentRank?: number | null },
+  submittedFullName: string,
+  requestedPlayerId: string,
+  reason: string,
+): PlayerProfile {
+  logger.warn(
+    { requestedPlayerId, submittedName: submittedFullName, candidateId: candidate.id, candidateName: candidate.name, reason },
+    "resolvePlayerProfileByName: getPlayer broken — constructing minimal profile from search result",
+  );
+  return {
+    id: candidate.id,
+    name: candidate.name,
+    fullName: submittedFullName,
+    countryCode: candidate.countryCode ?? null,
+    currentRank: candidate.currentRank ?? null,
+    tour: candidate.tour ?? null,
+    age: null,
+    plays: null,
+    source: "historical-match",
+  };
+}
+
 async function resolvePlayerProfileByName(
   provider: TennisDataProvider,
   submittedName: string,
@@ -436,18 +464,26 @@ async function resolvePlayerProfileByName(
 ): Promise<PlayerProfile | null> {
   const normalizedQuery = normalizePlayerName(submittedName);
   const queryWords = normalizedQuery.split(" ").filter(Boolean);
+
+  // Use searchKnownPlayers (combines live + historical) rather than bare provider.searchPlayers
+  // so players not in current standings can still be found via historical match records.
   const candidates = await provider.searchPlayers(submittedName);
 
+  // 1. Exact name match
   for (const c of candidates) {
-    if (/\s\/\s|\//.test(c.name ?? "")) continue; // skip doubles
+    if (/\s\/\s|\//.test(c.name ?? "")) continue;
     const cn = normalizePlayerName(c.name);
     if (cn === normalizedQuery) {
       const profile = await resolvePlayerProfile(provider, c.id);
-      if (profile && !/\s\/\s|\//.test(profile.name ?? "")) return profile;
+      if (profile && !/\s\/\s|\//.test(profile.name ?? "") && playerNamesMatch(submittedName, profile.name ?? "")) {
+        return profile;
+      }
+      // getPlayer broken for this ID (returns wrong/doubles player) but search result is trusted
+      return minimalProfileFromSearchCandidate(c, submittedName, requestedPlayerId, "exact-match-getPlayer-broken");
     }
   }
 
-  // Abbreviated-form fallback: submitted "Daria Snigur" → provider entry "D. Snigur"
+  // 2. Abbreviated-form fallback: submitted "Daria Snigur" → provider entry "D. Snigur"
   if (queryWords.length >= 2) {
     const initial = queryWords[0]![0]!;
     const surnames = queryWords.slice(1);
@@ -463,27 +499,10 @@ async function resolvePlayerProfileByName(
     });
     if (abbreviated) {
       const profile = await resolvePlayerProfile(provider, abbreviated.id);
-      if (profile && !/\s\/\s|\//.test(profile.name ?? "")) return profile;
-      // If getPlayer is also broken for this abbreviated candidate, construct a minimal profile
-      // from the search result so prediction can proceed with what we know.
-      if (abbreviated) {
-        logger.warn(
-          { requestedPlayerId, submittedName, candidateId: abbreviated.id },
-          "resolvePlayerProfileByName: getPlayer broken for abbreviated candidate — constructing minimal profile from search result",
-        );
-        const minimalProfile: PlayerProfile = {
-          id: abbreviated.id,
-          name: abbreviated.name,
-          fullName: submittedName,
-          countryCode: null,
-          currentRank: null,
-          tour: abbreviated.tour ?? null,
-          age: null,
-          plays: null,
-          source: "historical-match",
-        };
-        return minimalProfile;
+      if (profile && !/\s\/\s|\//.test(profile.name ?? "") && playerNamesMatch(submittedName, profile.name ?? "")) {
+        return profile;
       }
+      return minimalProfileFromSearchCandidate(abbreviated, submittedName, requestedPlayerId, "abbreviated-match-getPlayer-broken");
     }
   }
 
@@ -494,6 +513,19 @@ async function resolvePlayerProfileByName(
  * Prediction-time player resolution that starts from an input player id and attempts stable
  * remapping when that id exists only in historical rows but no longer resolves in the provider.
  */
+/** Returns true if two player names are the same player (exact or initial-abbreviated). */
+function playerNamesMatch(a: string, b: string): boolean {
+  const aN = normalizePlayerName(a).split(" ").filter(Boolean);
+  const bN = normalizePlayerName(b).split(" ").filter(Boolean);
+  if (aN.join(" ") === bN.join(" ")) return true;
+  if (aN.length !== bN.length || aN.length < 2) return false;
+  const aSurnames = aN.slice(1);
+  const bSurnames = bN.slice(1);
+  if (!aSurnames.every((w, i) => w === bSurnames[i])) return false;
+  return (aN[0]!.length === 1 && bN[0]!.startsWith(aN[0]!)) ||
+         (bN[0]!.length === 1 && aN[0]!.startsWith(bN[0]!));
+}
+
 export async function resolvePlayerProfileForPrediction(
   provider: TennisDataProvider,
   requestedPlayerId: string,
@@ -501,15 +533,20 @@ export async function resolvePlayerProfileForPrediction(
 ): Promise<PredictionPlayerResolution> {
   const direct = await resolvePlayerProfile(provider, requestedPlayerId);
   if (direct) {
-    // If the provider returns a doubles/team name for this ID, the ID spaces have collided
-    // (e.g. a MatchStat singles player ID happens to match an API-Tennis doubles team ID).
-    // Treat it as a failed direct lookup and fall through to the historical-sighting / name-search
-    // fallback chain so we can find the correct canonical singles player ID.
     const doublesLike = /\s\/\s|\//.test(direct.name ?? "");
-    if (!doublesLike) {
+    // Wrong-player detection: when a submitted name is available, check that getPlayer actually
+    // returned *this* player. If the ID is from a different namespace (e.g. MatchStat → API-Tennis)
+    // getPlayer may return a completely different player — either a doubles team OR a real singles
+    // player with that ID number in API-Tennis's own namespace (e.g. "M. Oezcelik" for ID "31728"
+    // when "31728" is Anna Bondar's MatchStat ID but a different player's API-Tennis ID).
+    const wrongPlayer = submittedName ? !playerNamesMatch(submittedName, direct.name ?? "") : false;
+    if (!doublesLike && !wrongPlayer) {
       return { profile: direct, resolvedPlayerId: direct.id, detail: null };
     }
-    logger.warn({ requestedPlayerId, resolvedName: direct.name }, "resolvePlayerProfileForPrediction: direct lookup returned doubles/team name — skipping, falling back to historical-sighting name search");
+    logger.warn(
+      { requestedPlayerId, resolvedName: direct.name, submittedName, doublesLike, wrongPlayer },
+      "resolvePlayerProfileForPrediction: direct lookup returned wrong player — skipping, falling back to name search",
+    );
   }
 
   const sighting = await findMostRecentHistoricalSighting(requestedPlayerId);
@@ -815,8 +852,36 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     });
   }
 
+  // Cross-ID deduplication: drop historical entries that are just abbreviated or expanded forms
+  // of an existing live entry representing the same player (same initial + identical surnames).
+  // Examples:
+  //   "A. Bublik" (hist id=1895) + "Alexander Bublik" (live id=24245) → drop historical
+  //   "Tereza Valentova" (hist id=73274) + "T. Valentova" (live id=8976) → drop historical
+  // Without this, the player search shows duplicate cards that confuse users and cause
+  // ambiguous-match errors in Paste Search for queries like "Bublik".
+  const liveWordSets = filteredLiveResults.map((p) => normalizePlayerName(p.name).split(" ").filter(Boolean));
+  const isShadowedByLive = (historicalName: string): boolean => {
+    const hWords = normalizePlayerName(historicalName).split(" ").filter(Boolean);
+    if (hWords.length < 2) return false;
+    for (const lWords of liveWordSets) {
+      if (lWords.length !== hWords.length || lWords.length < 2) continue;
+      const lSurnames = lWords.slice(1);
+      const hSurnames = hWords.slice(1);
+      if (!lSurnames.every((s, i) => s === hSurnames[i])) continue;
+      const l0 = lWords[0]!;
+      const h0 = hWords[0]!;
+      // One first word is a single-letter initial of the other's first word
+      if ((l0.length === 1 && h0.startsWith(l0)) || (h0.length === 1 && l0.startsWith(h0))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const filteredHistorical = historicalSummaries.filter((p) => !isShadowedByLive(p.name));
+
   const deduped = new Map<string, PlayerSummary>();
-  for (const player of [...filteredLiveResults, ...historicalSummaries]) {
+  for (const player of [...filteredLiveResults, ...filteredHistorical]) {
     if (!deduped.has(player.id)) deduped.set(player.id, player);
   }
   const results = Array.from(deduped.values()).slice(0, 25);

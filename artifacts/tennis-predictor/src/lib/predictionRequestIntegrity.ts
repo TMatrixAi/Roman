@@ -92,9 +92,11 @@ export async function createPredictionWithIntegrity(
 
   const prediction = body as Prediction
 
-  if (prediction.player1Id !== input.player1Id || prediction.player2Id !== input.player2Id) {
-    throw new Error("Integrity check failed: response player IDs do not match submitted player IDs")
-  }
+  // NOTE: we intentionally do NOT check prediction.player1Id === input.player1Id here.
+  // The server may canonicalize submitted player IDs (e.g. MatchStat fixture IDs → API-Tennis IDs)
+  // while keeping the player identity intact via name-matching. The server's own integrity checks
+  // (assertPredictionIdentityIntegrity + post-save check) already guarantee the correct player
+  // was matched. Enforcing ID equality here would reject all correctly-remapped fixture predictions.
   if (prediction.surface !== input.surface || prediction.matchFormat !== input.matchFormat) {
     throw new Error("Integrity check failed: response match settings do not match submitted settings")
   }
