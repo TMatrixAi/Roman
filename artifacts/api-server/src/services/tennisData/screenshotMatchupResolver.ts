@@ -613,10 +613,17 @@ async function gatherCandidates(provider: TennisDataProvider, searchName: string
  * Strict OCR resolution: requires exactly one confident match or returns null.
  * Never substitutes a different player due to specificity/ranking heuristics.
  * All ambiguity is reported to the user for manual disambiguation.
+ *
+ * @param eventName  Raw OCR event/tournament name from the screenshot. When provided alongside
+ *   todayFixtures, used to break ties when multiple distinct players share the matched name —
+ *   only the candidate scheduled in that tournament's fixtures is accepted.
+ * @param todayFixtures  Today's live fixture list for fixture-context tie-breaking.
  */
 async function resolvePlayerMatch(
   provider: TennisDataProvider,
   recognizedName: string | null,
+  eventName?: string | null,
+  todayFixtures?: Fixture[],
 ): Promise<PlayerResolveOutcome> {
   if (!recognizedName) {
     return {
@@ -667,6 +674,28 @@ async function resolvePlayerMatch(
       })[0]!;
       return { match: { recognizedName, player: best }, status: "resolved" };
     }
+    // Fixture-context tie-break: when multiple genuinely distinct players share the
+    // matched name (e.g. two different "Jordan Lee"s), check whether exactly one of
+    // them is scheduled in today's fixtures for the screenshot's tournament. This
+    // resolves common-name ambiguity without guessing when the context is unambiguous.
+    if (eventName && todayFixtures && todayFixtures.length > 0) {
+      const eventNorm = normalizeName(eventName);
+      if (eventNorm.length > 0) {
+        const tournamentFixtures = todayFixtures.filter((f) => {
+          const tNorm = normalizeName(f.tournamentName ?? "");
+          return tNorm.length > 0 && (tNorm.includes(eventNorm) || eventNorm.includes(tNorm));
+        });
+        if (tournamentFixtures.length > 0) {
+          const inFixture = confident.filter((c) =>
+            tournamentFixtures.some((f) => f.player1Id === c.id || f.player2Id === c.id),
+          );
+          if (inFixture.length === 1) {
+            return { match: { recognizedName, player: inFixture[0]! }, status: "resolved" };
+          }
+        }
+      }
+    }
+
     return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
     return { match: { recognizedName, player: null }, status: "not-found" };
@@ -713,8 +742,8 @@ async function resolveOneMatchup(
   const warnings: string[] = [];
 
   const [player1Outcome, player2Outcome, event] = await Promise.all([
-    resolvePlayerMatch(provider, entry.player1Name),
-    resolvePlayerMatch(provider, entry.player2Name),
+    resolvePlayerMatch(provider, entry.player1Name, entry.eventName, todayFixtures),
+    resolvePlayerMatch(provider, entry.player2Name, entry.eventName, todayFixtures),
     resolveEventMatch(provider, entry.eventName, warnings),
   ]);
 
@@ -801,6 +830,10 @@ async function resolveOneMatchup(
       warnings.push(
         `Read "${entry.player1Name}" for Player 1, but multiple matching players were found -- please select the right one from Search Players.`,
       );
+    } else if (player1Outcome.status === "not-found") {
+      warnings.push(
+        `Read "${entry.player1Name}" for Player 1, but they were not found in any known player source. They may be a very low-ranked player not yet in the database.`,
+      );
     } else {
       warnings.push(
         `Read "${entry.player1Name}" for Player 1, but couldn't confidently match them to a known player -- please use Search Players.`,
@@ -814,6 +847,10 @@ async function resolveOneMatchup(
     } else if (player2Outcome.status === "ambiguous") {
       warnings.push(
         `Read "${entry.player2Name}" for Player 2, but multiple matching players were found -- please select the right one from Search Players.`,
+      );
+    } else if (player2Outcome.status === "not-found") {
+      warnings.push(
+        `Read "${entry.player2Name}" for Player 2, but they were not found in any known player source. They may be a very low-ranked player not yet in the database.`,
       );
     } else {
       warnings.push(

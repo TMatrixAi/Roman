@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql, type SQLWrapper } from "drizzle-orm";
 import { db, historicalMatchesTable } from "@workspace/db";
 import { logger } from "../../lib/logger";
 import type { PlayerProfile, PlayerSummary, TennisDataProvider } from "./types";
@@ -782,12 +782,23 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   // entries like "T. Kokkinakis" are matched when the query is "Thanasi Kokkinakis".
   const surnameLikePattern = surnameSupplement ? `%${surnameSupplement.toLowerCase()}%` : null;
 
+  // Apostrophe-stripped LIKE patterns — OCR frequently drops apostrophes from surnames like
+  // "O'Connell" → "oconnell". The plain LIKE pattern ("%oconnell%") misses rows stored as
+  // "O'Connell" because lower("O'Connell") = "o'connell" ≠ "oconnell". Fix: also compare
+  // replace(lower(col), '''', '') against the apostrophe-stripped query so both directions
+  // resolve correctly ("oconnell" ↔ "o'connell").
+  const apostropheChar = "'"; // passed as a Drizzle parameter — properly escaped in SQL
+  const strippedLikePattern = `%${lowerQuery.replace(/'/g, "")}%`;
+  const strippedSurnameLikePattern = surnameLikePattern
+    ? `%${surnameSupplement!.toLowerCase().replace(/'/g, "")}%`
+    : null;
+
   let historicalRows: HistoricalPlayerRow[] = [];
   try {
-    const nameFilter = (col: Parameters<typeof sql>[0]) =>
-      surnameLikePattern
-        ? sql`(lower(${col}) like ${likePattern} or lower(${col}) like ${surnameLikePattern})`
-        : sql`lower(${col}) like ${likePattern}`;
+    const nameFilter = (col: SQLWrapper) =>
+      surnameLikePattern && strippedSurnameLikePattern
+        ? sql`(lower(${col}) like ${likePattern} or lower(${col}) like ${surnameLikePattern} or replace(lower(${col}), ${apostropheChar}, '') like ${strippedLikePattern} or replace(lower(${col}), ${apostropheChar}, '') like ${strippedSurnameLikePattern})`
+        : sql`(lower(${col}) like ${likePattern} or replace(lower(${col}), ${apostropheChar}, '') like ${strippedLikePattern})`;
 
     const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
       db
