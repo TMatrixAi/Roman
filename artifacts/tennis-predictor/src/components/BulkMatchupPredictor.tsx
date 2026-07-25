@@ -302,6 +302,9 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const resolvedCount = items.filter(isReady).length
   const pendingPredictCount = items.filter(needsPredicting).length
   const alreadyPredictedCount = resolvedCount - pendingPredictCount
+  const donePredictionIds = items
+    .filter((i) => i.predictStatus === "success" && i.predictionId != null)
+    .map((i) => i.predictionId as number)
   const hasItems = items.length > 0
   const anyResolving = items.some((i) => i.status === "resolving")
   const selectedItemCount = items.filter((i) => i.selected).length
@@ -1077,7 +1080,11 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         <Button
           size="lg" className="w-full font-bold font-mono h-12" variant="accent"
           disabled={anyResolving || isPredicting || resolvedCount === 0}
-          onClick={handlePredictClick}
+          onClick={
+            !isPredicting && pendingPredictCount === 0
+              ? () => navigateToResults(donePredictionIds)
+              : handlePredictClick
+          }
         >
           {isPredicting ? (
             <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
