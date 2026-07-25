@@ -31,8 +31,10 @@ export async function buildPaymentsStatus() {
     account: state.account,
     entitlements: state.entitlements,
     active: state.active,
+    tier: state.tier,
     stripe: {
       priceId: process.env.STRIPE_PRICE_ID?.trim() || null,
+      elitePriceId: process.env.STRIPE_ELITE_PRICE_ID?.trim() || null,
       webhookSecretConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim()),
       secretKeyConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
       planKey: getPaymentsPlanKey(),
@@ -42,7 +44,7 @@ export async function buildPaymentsStatus() {
   };
 }
 
-export async function createCheckoutSession(req: { protocol?: string; get(name: string): string | undefined }, body?: { returnPath?: string | null; customerEmail?: string | null }) {
+export async function createCheckoutSession(req: { protocol?: string; get(name: string): string | undefined }, body?: { returnPath?: string | null; customerEmail?: string | null; plan?: "pro" | "elite" | null }) {
   const state = await getPaymentsAccessState();
   if (!state.featureFlagEnabled || !isPaymentsV2Enabled()) {
     throw new Error("Payments V2 is disabled");
@@ -53,6 +55,7 @@ export async function createCheckoutSession(req: { protocol?: string; get(name: 
     throw new Error("APP_PUBLIC_URL or request host is required to create a Stripe checkout session");
   }
 
+  const plan = body?.plan === "elite" ? "elite" : "pro";
   const successPath = body?.returnPath?.startsWith("/") ? body.returnPath : "/payments?checkout=success";
   const cancelPath = "/payments?checkout=cancel";
   const customerId = state.account?.stripeCustomerId ?? null;
@@ -63,8 +66,9 @@ export async function createCheckoutSession(req: { protocol?: string; get(name: 
     customerId,
     customerEmail: body?.customerEmail ?? null,
     accountKey: "workspace",
-    planKey: getPaymentsPlanKey(),
-    planName: getPaymentsPlanName(),
+    planKey: plan,
+    planName: plan === "elite" ? "Elite" : "Pro",
+    plan,
   });
 
   await recordCheckoutSession({

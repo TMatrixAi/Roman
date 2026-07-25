@@ -31,7 +31,18 @@ export interface PaymentEntitlements {
   eliteRecommendations: boolean;
   alerts: boolean;
   teamWorkspace: boolean;
+  // Elite-only
+  fullModelMonitoring: boolean;
+  confidenceCalibration: boolean;
+  recommendationPerformance: boolean;
+  historicalModelTrends: boolean;
+  monteCarlo: boolean;
+  eliteBadge: boolean;
+  advancedExplanation: boolean;
+  confidenceHistory: boolean;
 }
+
+export type SubscriptionTier = "free" | "pro" | "elite";
 
 export interface PaymentWebhookEventSummary {
   id: number;
@@ -51,6 +62,7 @@ export interface PaymentsStatusResponse {
   featureFlagEnabled: boolean;
   configured: boolean;
   active: boolean;
+  tier: SubscriptionTier;
   account: {
     id: number;
     accountKey: string;
@@ -77,6 +89,7 @@ export interface PaymentsStatusResponse {
   entitlements: PaymentEntitlements;
   stripe: {
     priceId: string | null;
+    elitePriceId?: string | null;
     webhookSecretConfigured: boolean;
     secretKeyConfigured: boolean;
     planKey: string;
@@ -88,6 +101,7 @@ export interface PaymentsStatusResponse {
 export interface CreatePaymentsCheckoutSessionBody {
   returnPath?: string;
   customerEmail?: string;
+  plan?: "pro" | "elite";
 }
 
 export interface CreatePaymentsCheckoutSessionResponse {

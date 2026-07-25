@@ -7,6 +7,7 @@ import { Router } from "express";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db, evaluationPredictionsTable, calibrationModelsTable } from "@workspace/db";
 import { requireClerkUser } from "../middlewares/requireClerkUser";
+import { getPaymentsAccessState } from "../services/payments/entitlementService";
 import {
   computeCalibrationBuckets,
   computeUpsetRiskTierMetrics,
@@ -128,9 +129,14 @@ const VERSION_HISTORY = [
 // ─── GET /monitoring/dashboard ───────────────────────────────────────────────
 router.get("/monitoring/dashboard", requireClerkUser, async (_req, res): Promise<void> => {
   try {
-    const [rows, calibrationRows] = await Promise.all([
+    const [rows, calibrationRows, accessState] = await Promise.all([
       db.select().from(evaluationPredictionsTable).where(inArray(evaluationPredictionsTable.runKind, [...LIVE_KINDS])),
       db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
+      // Fail-closed: on any entitlement error, treat caller as free-tier (locked)
+      getPaymentsAccessState().catch((err) => {
+        logger.warn({ err }, "Monitoring: entitlement lookup failed — defaulting to free tier (fail-closed)");
+        return { tier: "free" as const, entitlements: { confidenceCalibration: false, recommendationPerformance: false, historicalModelTrends: false } };
+      }),
     ]);
 
     const activeCalibration = calibrationRows[0] ?? null;
@@ -240,7 +246,9 @@ router.get("/monitoring/dashboard", requireClerkUser, async (_req, res): Promise
     const medDQ = dqValues.filter((v) => v >= 45 && v < 65).length;
     const lowDQ = dqValues.filter((v) => v < 45).length;
 
+    const e = accessState.entitlements;
     res.json({
+      tier: accessState.tier,
       status: {
         label: statusLabel,
         explanation: statusExplanation,
@@ -264,12 +272,10 @@ router.get("/monitoring/dashboard", requireClerkUser, async (_req, res): Promise
         accuracy90d: acc90d.accuracy,
         count90d: acc90d.n,
       },
-      calibration: computeCalibrationBuckets(rows),
       bySurface,
       byLevel,
       byAgreement: computeDisagreementTierMetrics(rows),
       byUpsetRisk: computeUpsetRiskTierMetrics(rows),
-      byRecommendation,
       dataQuality: {
         avgScore: avgDQ,
         highCount: highDQ,
@@ -277,8 +283,11 @@ router.get("/monitoring/dashboard", requireClerkUser, async (_req, res): Promise
         lowCount: lowDQ,
         total: dqValues.length,
       },
-      improvements: RECENT_IMPROVEMENTS,
-      versionHistory: VERSION_HISTORY,
+      // ── Elite-gated sections: empty payload for Pro/free callers ──────────
+      calibration: e.confidenceCalibration ? computeCalibrationBuckets(rows) : [],
+      byRecommendation: e.recommendationPerformance ? byRecommendation : [],
+      improvements: e.historicalModelTrends ? RECENT_IMPROVEMENTS : [],
+      versionHistory: e.historicalModelTrends ? VERSION_HISTORY : [],
     });
   } catch (err) {
     logger.error({ err }, "Monitoring dashboard error");

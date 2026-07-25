@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getStripePriceId, getStripeSecretKey, getStripeWebhookSecret } from "./config";
+import { getStripePriceId, getStripeElitePriceId, getStripeSecretKey, getStripeWebhookSecret } from "./config";
 
 interface StripeRequestOptions {
   method: "GET" | "POST" | "DELETE";
@@ -99,6 +99,14 @@ export function resolveStripePriceId(): string {
   return priceId;
 }
 
+export function resolveStripeElitePriceId(): string {
+  const priceId = getStripeElitePriceId();
+  if (!priceId) {
+    throw new Error("STRIPE_ELITE_PRICE_ID must be configured to offer the Elite plan");
+  }
+  return priceId;
+}
+
 export async function createStripeCheckoutSession(form: {
   successUrl: string;
   cancelUrl: string;
@@ -107,8 +115,9 @@ export async function createStripeCheckoutSession(form: {
   accountKey: string;
   planKey: string;
   planName: string;
+  plan?: "pro" | "elite";
 }): Promise<StripeCheckoutSession> {
-  const priceId = resolveStripePriceId();
+  const priceId = form.plan === "elite" ? resolveStripeElitePriceId() : resolveStripePriceId();
   return stripeRequest<StripeCheckoutSession>({
     method: "POST",
     path: "/v1/checkout/sessions",

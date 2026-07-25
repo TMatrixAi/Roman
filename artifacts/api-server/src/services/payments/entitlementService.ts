@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db, paymentsAccountTable, paymentWebhookEventsTable, type PaymentsAccountRow, type PaymentWebhookEventRow } from "@workspace/db";
-import { isPaymentsV2Enabled, PAYMENTS_ACCOUNT_KEY, getPaymentsPlanKey, getPaymentsPlanName } from "./config";
+import { isPaymentsV2Enabled, PAYMENTS_ACCOUNT_KEY, getPaymentsPlanKey, getPaymentsPlanName, getStripeElitePriceId } from "./config";
 
 export const PAYMENT_ENTITLEMENT_KEYS = [
   "predictionHistory",
@@ -13,10 +13,20 @@ export const PAYMENT_ENTITLEMENT_KEYS = [
   "eliteRecommendations",
   "alerts",
   "teamWorkspace",
+  // ── Elite-only ──────────────────────────────────────────────────────────
+  "fullModelMonitoring",
+  "confidenceCalibration",
+  "recommendationPerformance",
+  "historicalModelTrends",
+  "monteCarlo",
+  "eliteBadge",
+  "advancedExplanation",
+  "confidenceHistory",
 ] as const;
 
 export type PaymentEntitlementKey = (typeof PAYMENT_ENTITLEMENT_KEYS)[number];
 export type PaymentEntitlements = Record<PaymentEntitlementKey, boolean>;
+export type SubscriptionTier = "free" | "pro" | "elite";
 
 export interface PaymentAccessState {
   featureFlagEnabled: boolean;
@@ -24,6 +34,7 @@ export interface PaymentAccessState {
   account: PaymentsAccountRow | null;
   entitlements: PaymentEntitlements;
   active: boolean;
+  tier: SubscriptionTier;
 }
 
 export function getDefaultEntitlements(): PaymentEntitlements {
@@ -38,44 +49,84 @@ export function getDefaultEntitlements(): PaymentEntitlements {
     eliteRecommendations: false,
     alerts: false,
     teamWorkspace: false,
+    // Elite-only — all false for free
+    fullModelMonitoring: false,
+    confidenceCalibration: false,
+    recommendationPerformance: false,
+    historicalModelTrends: false,
+    monteCarlo: false,
+    eliteBadge: false,
+    advancedExplanation: false,
+    confidenceHistory: false,
   };
 }
 
-function paidEntitlements(): PaymentEntitlements {
+/** Pro ($19.99) — "Who wins and why?" — unlimited predictions + core analytics */
+function proEntitlements(): PaymentEntitlements {
   return {
     predictionHistory: true,
-    walkForward: true,
-    shadowReplay: true,
-    optimizer: true,
-    competitiveBalance: true,
-    evidenceReliability: true,
-    developerAnalytics: true,
-    eliteRecommendations: true,
+    walkForward: false,        // admin-only
+    shadowReplay: false,       // admin-only
+    optimizer: false,          // admin-only
+    competitiveBalance: true,  // upset risk, model agreement
+    evidenceReliability: true, // data quality, evidence modules
+    developerAnalytics: false, // admin-only
+    eliteRecommendations: true, // gates POST /predictions — Pro can make unlimited predictions
     alerts: true,
-    teamWorkspace: true,
+    teamWorkspace: false,      // not yet implemented
+    // Elite-only — locked for Pro
+    fullModelMonitoring: false,
+    confidenceCalibration: false,
+    recommendationPerformance: false,
+    historicalModelTrends: false,
+    monteCarlo: false,
+    eliteBadge: false,
+    advancedExplanation: false,
+    confidenceHistory: false,
   };
 }
 
-function entitlementsForSubscriptionStatus(status: string | null | undefined, snapshot: Record<string, boolean> | null | undefined): PaymentEntitlements {
-  if (status === "active" || status === "trialing") {
-    const next = paidEntitlements();
-    if (!snapshot) return next;
-    for (const key of PAYMENT_ENTITLEMENT_KEYS) {
-      if (snapshot[key] === false) next[key] = false;
-    }
-    return next;
-  }
-  return getDefaultEntitlements();
+/** Elite ($49.99) — "How trustworthy is the AI?" — everything in Pro plus deep analytics */
+function eliteEntitlements(): PaymentEntitlements {
+  return {
+    ...proEntitlements(),
+    // Elite deep analytics
+    fullModelMonitoring: true,
+    confidenceCalibration: true,
+    recommendationPerformance: true,
+    historicalModelTrends: true,
+    monteCarlo: true,
+    eliteBadge: true,
+    advancedExplanation: true,
+    confidenceHistory: true,
+  };
 }
 
-function readEntitlements(account: PaymentsAccountRow | null): PaymentEntitlements {
-  if (!account) return getDefaultEntitlements();
-  const snapshot = account.entitlementSnapshot ?? {};
-  const next = getDefaultEntitlements();
-  for (const key of PAYMENT_ENTITLEMENT_KEYS) {
-    next[key] = snapshot[key] === true;
+/** Derive tier from the stored planKey. Existing rows without "elite" planKey default to "pro". */
+function tierFromPlanKey(planKey: string | null | undefined): "pro" | "elite" {
+  return planKey === "elite" ? "elite" : "pro";
+}
+
+/** Derive tier by comparing a Stripe price ID to the configured Elite price ID. */
+function resolveTierFromPriceId(stripePriceId: string | null | undefined): "pro" | "elite" {
+  const elitePriceId = getStripeElitePriceId();
+  if (elitePriceId && stripePriceId && stripePriceId === elitePriceId) return "elite";
+  return "pro";
+}
+
+/**
+ * Compute entitlements purely from subscription status + tier.
+ * No snapshot/DB input — always deterministic.
+ * The stored `entitlementSnapshot` column is an audit record, NOT an input here.
+ */
+function entitlementsForSubscriptionStatus(
+  status: string | null | undefined,
+  tier: "pro" | "elite",
+): PaymentEntitlements {
+  if (status === "active" || status === "trialing") {
+    return tier === "elite" ? eliteEntitlements() : proEntitlements();
   }
-  return next;
+  return getDefaultEntitlements();
 }
 
 function isActiveSubscription(account: PaymentsAccountRow | null): boolean {
@@ -115,29 +166,25 @@ export async function getPaymentsAccessState(): Promise<PaymentAccessState> {
       featureFlagEnabled: false,
       configured: false,
       account: null,
-      entitlements: paidEntitlements(),
+      entitlements: eliteEntitlements(), // dev mode: all unlocked
       active: true,
+      tier: "elite",
     };
   }
 
   const account = await ensureBillingAccount();
-  const entitlements = entitlementsForSubscriptionStatus(account.subscriptionStatus, account.entitlementSnapshot);
+  const tier = tierFromPlanKey(account.planKey);
+  // Always compute fresh from tier + status — snapshot is audit only, not a gate input
+  const entitlements = entitlementsForSubscriptionStatus(account.subscriptionStatus, tier);
+  const active = isActiveSubscription(account);
   return {
     featureFlagEnabled: true,
     configured: true,
     account,
     entitlements,
-    active: isActiveSubscription(account),
+    active,
+    tier: active ? tier : "free",
   };
-}
-
-function mergeEntitlementsFromSnapshot(snapshot: Record<string, boolean> | null | undefined): PaymentEntitlements {
-  const next = paidEntitlements();
-  if (!snapshot) return next;
-  for (const key of PAYMENT_ENTITLEMENT_KEYS) {
-    if (snapshot[key] === false) next[key] = false;
-  }
-  return next;
 }
 
 export async function upsertBillingAccountFromSubscription(input: {
@@ -153,9 +200,14 @@ export async function upsertBillingAccountFromSubscription(input: {
   lastWebhookEventId: string;
   metadata?: Record<string, unknown>;
 }): Promise<PaymentsAccountRow> {
+  const tier = resolveTierFromPriceId(input.stripePriceId);
+  const planKey = tier;
+  const planName = tier === "elite" ? "Elite" : "Pro";
+
   const [existing] = await db.select().from(paymentsAccountTable).where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY)).limit(1);
   if (existing) {
-    const updatedEntitlements = entitlementsForSubscriptionStatus(input.subscriptionStatus, existing.entitlementSnapshot);
+    // Always recompute from tier + status — never carry forward stored booleans as overrides
+    const updatedEntitlements = entitlementsForSubscriptionStatus(input.subscriptionStatus, tier);
 
     const [updated] = await db
       .update(paymentsAccountTable)
@@ -164,6 +216,8 @@ export async function upsertBillingAccountFromSubscription(input: {
         stripeSubscriptionId: input.stripeSubscriptionId,
         stripePriceId: input.stripePriceId,
         subscriptionStatus: input.subscriptionStatus,
+        planKey,
+        planName,
         currentPeriodStartAt: input.currentPeriodStartAt,
         currentPeriodEndAt: input.currentPeriodEndAt,
         trialEndAt: input.trialEndAt,
@@ -173,7 +227,11 @@ export async function upsertBillingAccountFromSubscription(input: {
         entitlementSnapshot: updatedEntitlements,
         metadata: { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) },
         updatedAt: new Date(),
-        accessGrantedAt: isActiveSubscription({ ...existing, subscriptionStatus: input.subscriptionStatus }) ? (existing.accessGrantedAt ?? new Date()) : existing.subscriptionStatus === input.subscriptionStatus ? existing.accessGrantedAt : existing.accessGrantedAt,
+        accessGrantedAt: isActiveSubscription({ ...existing, subscriptionStatus: input.subscriptionStatus })
+          ? (existing.accessGrantedAt ?? new Date())
+          : existing.subscriptionStatus === input.subscriptionStatus
+          ? existing.accessGrantedAt
+          : existing.accessGrantedAt,
       })
       .where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY))
       .returning();
@@ -185,8 +243,8 @@ export async function upsertBillingAccountFromSubscription(input: {
     .values({
       accountKey: PAYMENTS_ACCOUNT_KEY,
       displayName: "Workspace Subscription",
-      planKey: getPaymentsPlanKey(),
-      planName: getPaymentsPlanName(),
+      planKey,
+      planName,
       stripeCustomerId: input.stripeCustomerId,
       stripeSubscriptionId: input.stripeSubscriptionId,
       stripePriceId: input.stripePriceId,
@@ -197,7 +255,7 @@ export async function upsertBillingAccountFromSubscription(input: {
       canceledAt: input.canceledAt,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd,
       lastWebhookEventId: input.lastWebhookEventId,
-      entitlementSnapshot: entitlementsForSubscriptionStatus(input.subscriptionStatus, null),
+      entitlementSnapshot: entitlementsForSubscriptionStatus(input.subscriptionStatus, tier),
       metadata: input.metadata ?? {},
       accessGrantedAt: isActiveSubscription({ accountKey: PAYMENTS_ACCOUNT_KEY, subscriptionStatus: input.subscriptionStatus } as PaymentsAccountRow) ? new Date() : null,
     })
@@ -264,6 +322,7 @@ export async function getPaymentsEntitlements(): Promise<PaymentEntitlements> {
   return state.entitlements;
 }
 
+// ── Convenience helpers ────────────────────────────────────────────────────────
 export async function canUsePredictionHistory(): Promise<boolean> { return (await getPaymentsEntitlements()).predictionHistory; }
 export async function canUseWalkForward(): Promise<boolean> { return (await getPaymentsEntitlements()).walkForward; }
 export async function canUseShadowReplay(): Promise<boolean> { return (await getPaymentsEntitlements()).shadowReplay; }
@@ -274,3 +333,12 @@ export async function canUseDeveloperAnalytics(): Promise<boolean> { return (awa
 export async function canUseEliteRecommendations(): Promise<boolean> { return (await getPaymentsEntitlements()).eliteRecommendations; }
 export async function canUseAlerts(): Promise<boolean> { return (await getPaymentsEntitlements()).alerts; }
 export async function canUseTeamWorkspace(): Promise<boolean> { return (await getPaymentsEntitlements()).teamWorkspace; }
+// Elite-only
+export async function canUseFullModelMonitoring(): Promise<boolean> { return (await getPaymentsEntitlements()).fullModelMonitoring; }
+export async function canUseConfidenceCalibration(): Promise<boolean> { return (await getPaymentsEntitlements()).confidenceCalibration; }
+export async function canUseRecommendationPerformance(): Promise<boolean> { return (await getPaymentsEntitlements()).recommendationPerformance; }
+export async function canUseHistoricalModelTrends(): Promise<boolean> { return (await getPaymentsEntitlements()).historicalModelTrends; }
+export async function canUseMonteCarlo(): Promise<boolean> { return (await getPaymentsEntitlements()).monteCarlo; }
+export async function canUseEliteBadge(): Promise<boolean> { return (await getPaymentsEntitlements()).eliteBadge; }
+export async function canUseAdvancedExplanation(): Promise<boolean> { return (await getPaymentsEntitlements()).advancedExplanation; }
+export async function canUseConfidenceHistory(): Promise<boolean> { return (await getPaymentsEntitlements()).confidenceHistory; }

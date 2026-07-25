@@ -12,8 +12,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   Monitor, Activity, CheckCircle2, AlertTriangle, Clock, AlertCircle,
   TrendingUp, TrendingDown, Minus, Info, ChevronDown, ChevronUp,
-  BarChart3, Shield, Zap, Layers, BookOpen,
+  BarChart3, Shield, Zap, Layers, BookOpen, Lock, Crown, RefreshCw,
 } from "lucide-react"
+
+/** Minimum graded predictions required to display a metric as reliable. */
+const MINIMUM_SAMPLE = 350
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface StatusInfo {
@@ -55,6 +58,7 @@ interface MonitoringDashboard {
   byAgreement: AgreementRow[]; byUpsetRisk: UpsetRiskRow[]; byRecommendation: RecommendationRow[]
   dataQuality: DataQuality
   improvements: ModelImprovement[]; versionHistory: ModelVersion[]
+  tier?: "free" | "pro" | "elite"
 }
 interface TrendPoint { date: string; count: number; accuracy: number | null }
 
@@ -70,7 +74,8 @@ function useDashboard() {
   return useQuery<MonitoringDashboard, Error>({
     queryKey: ["monitoring-dashboard"],
     queryFn: () => apiFetch("/api/monitoring/dashboard"),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,          // consider fresh for 30 min
+    refetchInterval: 12 * 60 * 60 * 1000, // auto-refresh every 12 hours
     retry: 1,
   })
 }
@@ -143,17 +148,45 @@ function SectionError({ message }: { message: string }) {
   )
 }
 
+// ─── Elite locked section ─────────────────────────────────────────────────────
+function EliteLockedSection({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-8 text-center space-y-4">
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/60 pointer-events-none" />
+      <div className="relative z-10 space-y-3">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 border border-primary/20">
+          <Lock className="w-5 h-5 text-primary" />
+        </div>
+        <div>
+          <p className="font-display font-bold text-lg">{title}</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">{description}</p>
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          <Crown className="w-4 h-4 text-primary" />
+          <span className="text-sm font-bold text-primary font-mono tracking-widest uppercase">Elite Plan</span>
+        </div>
+        <a href="/payments">
+          <Button variant="default" size="sm" className="font-mono gap-2">
+            <Crown className="w-3.5 h-3.5" />
+            Upgrade to Elite — $49.99/mo
+          </Button>
+        </a>
+      </div>
+    </div>
+  )
+}
+
 // ─── Metric card ──────────────────────────────────────────────────────────────
 function MetricCard({
-  label, value, sub, tooltip, highlight,
+  label, value, sub, tooltip, highlight, dim,
 }: {
-  label: string; value: string; sub?: string; tooltip?: string; highlight?: string
+  label: string; value: string; sub?: string; tooltip?: string; highlight?: string; dim?: boolean
 }) {
   const card = (
-    <div className="p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center space-y-1.5">
-      <div className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{label}</div>
-      <div className={`text-3xl font-display font-bold tracking-tight tabular-nums ${highlight ?? "text-foreground"}`}>{value}</div>
-      {sub && <div className="text-[10px] font-mono text-muted-foreground">{sub}</div>}
+    <div className={`p-3 sm:p-4 bg-background rounded-xl border border-border/50 shadow-sm text-center space-y-1.5 transition-opacity ${dim ? "opacity-40" : ""}`}>
+      <div className="text-[9px] sm:text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase leading-tight">{label}</div>
+      <div className={`text-2xl sm:text-3xl font-display font-bold tracking-tight tabular-nums ${highlight ?? "text-foreground"}`}>{value}</div>
+      {sub && <div className="text-[9px] sm:text-[10px] font-mono text-muted-foreground leading-tight">{sub}</div>}
     </div>
   )
   if (!tooltip) return card
@@ -202,11 +235,18 @@ function StatusCard({ status }: { status: StatusInfo }) {
 
 // ─── Performance Summary ─────────────────────────────────────────────────────
 function PerformanceSummary({ p }: { p: PerformanceMetrics }) {
+  const hasOverall = p.predictionsEvaluated >= MINIMUM_SAMPLE
+  const has7d = p.count7d >= MINIMUM_SAMPLE
+  const has30d = p.count30d >= MINIMUM_SAMPLE
+  const has90d = p.count90d >= MINIMUM_SAMPLE
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard label="Overall Accuracy" value={fmt(p.overallAccuracy)} highlight={accuracyColor(p.overallAccuracy)}
-          sub={`n = ${p.predictionsEvaluated.toLocaleString()}`}
+    <div className="space-y-4 sm:space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <MetricCard label="Overall Accuracy"
+          value={hasOverall ? fmt(p.overallAccuracy) : "—"}
+          highlight={hasOverall ? accuracyColor(p.overallAccuracy) : "text-muted-foreground/40"}
+          sub={hasOverall ? `n = ${p.predictionsEvaluated.toLocaleString()}` : `n = ${p.predictionsEvaluated} (min ${MINIMUM_SAMPLE})`}
+          dim={!hasOverall}
           tooltip="Percentage of graded live predictions where the model picked the correct winner." />
         <MetricCard label="Avg Confidence" value={fmt(p.avgConfidence)}
           tooltip="Average calibrated win probability stated for the predicted winner, across all graded predictions." />
@@ -215,16 +255,28 @@ function PerformanceSummary({ p }: { p: PerformanceMetrics }) {
         <MetricCard label="Brier Score" value={p.brierScore !== null ? p.brierScore.toFixed(3) : "—"}
           tooltip="Average squared error between stated probability and actual outcome. Lower = more accurate and better calibrated." />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <MetricCard label="ECE (Calibration Error)" value={p.ece !== null ? p.ece.toFixed(3) : "—"}
           highlight={p.ece !== null ? (p.ece < 0.03 ? "text-success" : p.ece < 0.05 ? "text-warning" : "text-destructive") : ""}
           tooltip="Expected Calibration Error — gap between stated confidence and real accuracy. Below 0.03 = well calibrated." />
-        <MetricCard label="Last 7 Days" value={fmt(p.accuracy7d)} sub={`n = ${p.count7d}`}
-          highlight={accuracyColor(p.accuracy7d)} tooltip="Accuracy on predictions graded in the last 7 days." />
-        <MetricCard label="Last 30 Days" value={fmt(p.accuracy30d)} sub={`n = ${p.count30d}`}
-          highlight={accuracyColor(p.accuracy30d)} tooltip="Accuracy on predictions graded in the last 30 days." />
-        <MetricCard label="Last 90 Days" value={fmt(p.accuracy90d)} sub={`n = ${p.count90d}`}
-          highlight={accuracyColor(p.accuracy90d)} tooltip="Accuracy on predictions graded in the last 90 days." />
+        <MetricCard label="Last 7 Days"
+          value={has7d ? fmt(p.accuracy7d) : "—"}
+          sub={`n = ${p.count7d}${!has7d ? ` (min ${MINIMUM_SAMPLE})` : ""}`}
+          highlight={has7d ? accuracyColor(p.accuracy7d) : "text-muted-foreground/40"}
+          dim={!has7d}
+          tooltip="Accuracy on predictions graded in the last 7 days." />
+        <MetricCard label="Last 30 Days"
+          value={has30d ? fmt(p.accuracy30d) : "—"}
+          sub={`n = ${p.count30d}${!has30d ? ` (min ${MINIMUM_SAMPLE})` : ""}`}
+          highlight={has30d ? accuracyColor(p.accuracy30d) : "text-muted-foreground/40"}
+          dim={!has30d}
+          tooltip="Accuracy on predictions graded in the last 30 days." />
+        <MetricCard label="Last 90 Days"
+          value={has90d ? fmt(p.accuracy90d) : "—"}
+          sub={`n = ${p.count90d}${!has90d ? ` (min ${MINIMUM_SAMPLE})` : ""}`}
+          highlight={has90d ? accuracyColor(p.accuracy90d) : "text-muted-foreground/40"}
+          dim={!has90d}
+          tooltip="Accuracy on predictions graded in the last 90 days." />
       </div>
     </div>
   )
@@ -309,57 +361,63 @@ function AccuracyTrendChart() {
 function CalibrationTable({ buckets }: { buckets: CalibrationBucket[] }) {
   if (buckets.length === 0) return <SectionError message="No calibration data yet." />
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/50">
-      <table className="w-full text-sm">
-        <thead className="bg-secondary/20">
-          <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
-            <th className="px-4 py-3">Confidence Range</th>
-            <th className="px-4 py-3 text-right">Sample</th>
-            <th className="px-4 py-3 text-right">Avg Stated</th>
-            <th className="px-4 py-3 text-right">Actual Win Rate</th>
-            <th className="px-4 py-3 text-right">Gap</th>
-            <th className="px-4 py-3">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/50">
-          {buckets.map((b) => {
-            if (b.n < 30) {
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-xl border border-border/50">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead className="bg-secondary/20">
+            <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
+              <th className="px-3 sm:px-4 py-3">Confidence Range</th>
+              <th className="px-3 sm:px-4 py-3 text-right">Sample</th>
+              <th className="px-3 sm:px-4 py-3 text-right">Avg Stated</th>
+              <th className="px-3 sm:px-4 py-3 text-right">Actual Rate</th>
+              <th className="px-3 sm:px-4 py-3 text-right">Gap</th>
+              <th className="px-3 sm:px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {buckets.map((b) => {
+              if (b.n < MINIMUM_SAMPLE) {
+                return (
+                  <tr key={b.label} className="opacity-40">
+                    <td className="px-3 sm:px-4 py-3 font-mono font-bold">{b.label}</td>
+                    <td className="px-3 sm:px-4 py-3 font-mono text-right text-muted-foreground">n={b.n}</td>
+                    <td colSpan={3} className="px-3 sm:px-4 py-3 text-center text-muted-foreground font-mono text-xs">—</td>
+                    <td className="px-3 sm:px-4 py-3">
+                      <Badge variant="outline" className="font-mono text-[9px]">Low Sample</Badge>
+                    </td>
+                  </tr>
+                )
+              }
+              const diff = b.avgPredicted !== null && b.observedAccuracy !== null ? b.observedAccuracy - b.avgPredicted : null
+              const statusLabel = diff === null ? "No Data"
+                : Math.abs(diff) < 2 ? "Well Calibrated"
+                : diff > 0 ? "Underconfident"
+                : Math.abs(diff) > 8 ? "Overconfident"
+                : "Slightly Over"
+              const statusVariant = statusLabel === "Well Calibrated" ? "success"
+                : statusLabel === "Overconfident" ? "destructive" : "warning"
               return (
-                <tr key={b.label} className="opacity-50">
-                  <td className="px-4 py-3 font-mono font-bold">{b.label}</td>
-                  <td className="px-4 py-3 font-mono text-right text-muted-foreground">n={b.n}</td>
-                  <td colSpan={3} className="px-4 py-3 text-center text-muted-foreground font-mono text-xs">—</td>
-                  <td className="px-4 py-3">
-                    <Badge variant="outline" className="font-mono text-[9px]">Insufficient Sample</Badge>
+                <tr key={b.label} className="hover:bg-secondary/20 transition-colors">
+                  <td className="px-3 sm:px-4 py-3 font-mono font-bold">{b.label}</td>
+                  <td className="px-3 sm:px-4 py-3 font-mono text-right text-muted-foreground">n={b.n}</td>
+                  <td className="px-3 sm:px-4 py-3 font-mono text-right">{fmt(b.avgPredicted)}</td>
+                  <td className={`px-3 sm:px-4 py-3 font-mono font-bold text-right ${accuracyColor(b.observedAccuracy)}`}>{fmt(b.observedAccuracy)}</td>
+                  <td className={`px-3 sm:px-4 py-3 font-mono text-right ${diff !== null && diff > 0 ? "text-success" : diff !== null && diff < -3 ? "text-destructive" : "text-muted-foreground"}`}>
+                    {diff !== null ? `${diff > 0 ? "+" : ""}${diff.toFixed(1)}%` : "—"}
+                  </td>
+                  <td className="px-3 sm:px-4 py-3">
+                    <Badge variant={statusVariant as "success" | "warning" | "destructive" | "outline"} className="font-mono text-[9px] tracking-widest whitespace-nowrap">{statusLabel.toUpperCase()}</Badge>
                   </td>
                 </tr>
               )
-            }
-            const diff = b.avgPredicted !== null && b.observedAccuracy !== null ? b.observedAccuracy - b.avgPredicted : null
-            const statusLabel = diff === null ? "No Data"
-              : Math.abs(diff) < 2 ? "Well Calibrated"
-              : diff > 0 ? "Slightly Underconfident"
-              : Math.abs(diff) > 5 ? "Overconfident"
-              : "Slightly Overconfident"
-            const statusVariant = statusLabel === "Well Calibrated" ? "success"
-              : statusLabel.includes("Slightly") ? "warning" : "destructive"
-            return (
-              <tr key={b.label} className="hover:bg-secondary/20 transition-colors">
-                <td className="px-4 py-3 font-mono font-bold">{b.label}</td>
-                <td className="px-4 py-3 font-mono text-right text-muted-foreground">n={b.n}</td>
-                <td className="px-4 py-3 font-mono text-right">{fmt(b.avgPredicted)}</td>
-                <td className={`px-4 py-3 font-mono font-bold text-right ${accuracyColor(b.observedAccuracy)}`}>{fmt(b.observedAccuracy)}</td>
-                <td className={`px-4 py-3 font-mono text-right ${diff !== null && diff > 0 ? "text-success" : diff !== null && diff < -2 ? "text-destructive" : "text-muted-foreground"}`}>
-                  {diff !== null ? `${diff > 0 ? "+" : ""}${diff.toFixed(1)}%` : "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={statusVariant as "success" | "warning" | "destructive" | "outline"} className="font-mono text-[9px] tracking-widest whitespace-nowrap">{statusLabel.toUpperCase()}</Badge>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] font-mono text-muted-foreground/60 leading-relaxed">
+        Bands require ≥{MINIMUM_SAMPLE} graded predictions to display. "Overconfident" = stated probability &gt;8% above actual win rate.
+        A calibration refit (scheduled periodically) adjusts stated probabilities toward real outcomes without changing pick direction.
+      </p>
     </div>
   )
 }
@@ -368,51 +426,78 @@ function CalibrationTable({ buckets }: { buckets: CalibrationBucket[] }) {
 function SurfaceCards({ rows }: { rows: SurfaceRow[] }) {
   if (rows.length === 0) return <SectionError message="No surface data yet." />
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {rows.map((r) => (
-        <div key={r.surface} className="p-5 bg-background rounded-2xl border border-border shadow-sm space-y-3">
-          <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{r.surface}</p>
-          <p className={`text-3xl font-display font-bold tabular-nums ${accuracyColor(r.accuracy)}`}>{fmt(r.accuracy)}</p>
-          <div className="space-y-1 text-[11px] font-mono text-muted-foreground">
-            <div>Predictions: <span className="text-foreground">{r.n}</span></div>
-            {r.avgConfidence !== null && <div>Avg conf: <span className="text-foreground">{r.avgConfidence}%</span></div>}
+    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      {rows.map((r) => {
+        const hasEnough = r.n >= MINIMUM_SAMPLE
+        return (
+          <div key={r.surface} className={`p-4 sm:p-5 bg-background rounded-2xl border border-border shadow-sm space-y-2 sm:space-y-3 transition-opacity ${!hasEnough ? "opacity-50" : ""}`}>
+            <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">{r.surface}</p>
+            <p className={`text-2xl sm:text-3xl font-display font-bold tabular-nums ${hasEnough ? accuracyColor(r.accuracy) : "text-muted-foreground"}`}>
+              {hasEnough ? fmt(r.accuracy) : "—"}
+            </p>
+            <div className="space-y-1 text-[10px] sm:text-[11px] font-mono text-muted-foreground">
+              <div>n = <span className={hasEnough ? "text-foreground" : ""}>{r.n}</span>{!hasEnough && <span className="ml-1 opacity-60">(min {MINIMUM_SAMPLE})</span>}</div>
+              {hasEnough && r.avgConfidence !== null && <div>Avg conf: <span className="text-foreground">{r.avgConfidence}%</span></div>}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
 // ─── Generic breakdown table ─────────────────────────────────────────────────
 function BreakdownTable({
-  rows, columns,
+  rows, columns, minSample = MINIMUM_SAMPLE,
 }: {
   rows: Array<Record<string, unknown>>
   columns: Array<{ key: string; label: string; render?: (v: unknown, row: Record<string, unknown>) => React.ReactNode }>
+  minSample?: number
 }) {
   if (rows.length === 0) return <SectionError message="No data available yet." />
+
+  const qualified = rows.filter((r) => {
+    const n = r.n as number | undefined
+    return typeof n !== "number" || n >= minSample
+  })
+  const lowSample = rows.filter((r) => {
+    const n = r.n as number | undefined
+    return typeof n === "number" && n < minSample
+  })
+
+  if (qualified.length === 0) {
+    return <SectionError message={`No segments with ≥${minSample} graded samples yet. (${rows.length} segment${rows.length !== 1 ? "s" : ""} below threshold)`} />
+  }
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/50">
-      <table className="w-full text-sm">
-        <thead className="bg-secondary/20">
-          <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
-            {columns.map((c) => (
-              <th key={c.key} className="px-4 py-3">{c.label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/50">
-          {rows.map((row, i) => (
-            <tr key={i} className="hover:bg-secondary/20 transition-colors">
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-xl border border-border/50">
+        <table className="w-full min-w-[320px] text-sm">
+          <thead className="bg-secondary/20">
+            <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
               {columns.map((c) => (
-                <td key={c.key} className="px-4 py-3 font-mono">
-                  {c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "—")}
-                </td>
+                <th key={c.key} className="px-3 sm:px-4 py-3">{c.label}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {qualified.map((row, i) => (
+              <tr key={i} className="hover:bg-secondary/20 transition-colors">
+                {columns.map((c) => (
+                  <td key={c.key} className="px-3 sm:px-4 py-3 font-mono">
+                    {c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "—")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {lowSample.length > 0 && (
+        <p className="text-[10px] font-mono text-muted-foreground/50">
+          {lowSample.length} segment{lowSample.length !== 1 ? "s" : ""} hidden — fewer than {minSample} graded predictions.
+        </p>
+      )}
     </div>
   )
 }
@@ -501,23 +586,82 @@ function Section({
   )
 }
 
+// ─── Elite gate wrapper ───────────────────────────────────────────────────────
+function EliteSection({
+  icon, title, subtitle, isElite, lockTitle, lockDescription, children,
+}: {
+  icon: React.ReactNode; title: string; subtitle?: string
+  isElite: boolean; lockTitle: string; lockDescription: string
+  children: React.ReactNode
+}) {
+  return (
+    <Section icon={icon} title={title} subtitle={subtitle}>
+      {isElite ? children : (
+        <EliteLockedSection title={lockTitle} description={lockDescription} />
+      )}
+    </Section>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function ModelMonitoringPage() {
-  const { data, isLoading, isError, error } = useDashboard()
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDashboard()
+
+  // Derive tier from dashboard response (backend injects it from entitlement state)
+  const tier = data?.tier ?? "free"
+  const isElite = tier === "elite"
+  const isPro = tier === "pro" || isElite // pro sees pro-level sections
+
+  const lastRefreshed = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-6xl mx-auto">
+    <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-500 w-full overflow-x-hidden">
       {/* Page header */}
-      <div className="border-b border-border/50 pb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Monitor className="w-5 h-5 text-primary" />
+      <div className="border-b border-border/50 pb-5">
+        <div className="flex items-start gap-2 sm:gap-3 mb-2">
+          <div className="p-2 bg-primary/10 rounded-lg shrink-0 mt-0.5">
+            <Monitor className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
           </div>
-          <h1 className="text-4xl font-display font-bold tracking-tight">Model Monitoring</h1>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-2">
+              <h1 className="text-2xl sm:text-4xl font-display font-bold tracking-tight">Model Monitoring</h1>
+              {isElite && (
+                <Badge variant="success" className="font-mono text-[10px] tracking-widest gap-1">
+                  <Crown className="w-3 h-3" /> ELITE
+                </Badge>
+              )}
+              {isPro && !isElite && (
+                <Badge variant="outline" className="font-mono text-[10px] tracking-widest">PRO</Badge>
+              )}
+            </div>
+          </div>
+          {/* Refresh control */}
+          <div className="shrink-0 flex flex-col items-end gap-1">
+            <Button
+              variant="outline" size="sm"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="h-8 px-3 gap-1.5 font-mono text-xs"
+            >
+              <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+            {lastRefreshed && (
+              <span className="text-[9px] font-mono text-muted-foreground/60">{lastRefreshed}</span>
+            )}
+          </div>
         </div>
-        <p className="text-muted-foreground text-lg">
-          Live visibility into the health, reliability, calibration, and recent performance of Tennis Matrix AI.
+        <p className="text-sm sm:text-base text-muted-foreground leading-relaxed pl-9 sm:pl-11">
+          Live health, reliability, and accuracy of Tennis Matrix AI. Auto-refreshes every 12 hours.
         </p>
+        {isPro && !isElite && (
+          <p className="text-xs text-muted-foreground/70 mt-1.5 flex items-center gap-1.5 font-mono pl-9 sm:pl-11">
+            <Lock className="w-3 h-3 shrink-0" />
+            Upgrade to Elite to unlock calibration, recommendation performance &amp; model history.
+          </p>
+        )}
       </div>
 
       {/* Global error */}
@@ -533,14 +677,14 @@ export default function ModelMonitoringPage() {
         </Card>
       )}
 
-      {/* Overall Status */}
+      {/* Overall Status — always visible */}
       {isLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : data ? (
         <StatusCard status={data.status} />
       ) : null}
 
-      {/* Performance Summary */}
+      {/* Performance Summary — Pro + Elite */}
       <Section
         icon={<BarChart3 className="w-5 h-5 text-primary" />}
         title="Performance Summary"
@@ -549,7 +693,7 @@ export default function ModelMonitoringPage() {
         {isLoading ? <SectionSkeleton rows={2} /> : data ? <PerformanceSummary p={data.performance} /> : null}
       </Section>
 
-      {/* Accuracy Trend */}
+      {/* Accuracy Trend — Pro + Elite */}
       <Section
         icon={<Activity className="w-5 h-5 text-primary" />}
         title="Accuracy Trend"
@@ -558,28 +702,24 @@ export default function ModelMonitoringPage() {
         <AccuracyTrendChart />
       </Section>
 
-      {/* Confidence Calibration */}
-      <Section
+      {/* Confidence Calibration — Elite only */}
+      <EliteSection
         icon={<Zap className="w-5 h-5 text-primary" />}
         title="Confidence Calibration"
-        subtitle="How well the model's stated confidence matches real win rates across probability bands. 'Well Calibrated' means a 70% prediction wins 70% of the time."
+        subtitle="How well the model's stated confidence matches real win rates across probability bands."
+        isElite={isElite}
+        lockTitle="Confidence Calibration"
+        lockDescription="See how well the AI's stated probabilities match real outcomes across every confidence band. Available on Elite."
       >
         {isLoading ? <SectionSkeleton rows={6} /> : data ? <CalibrationTable buckets={data.calibration} /> : null}
-      </Section>
+      </EliteSection>
 
-      {/* Surface & Level */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Section
-          icon={<TrendingUp className="w-5 h-5 text-primary" />}
-          title="Accuracy by Surface"
-        >
+      {/* Surface & Level — Pro + Elite */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+        <Section icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Accuracy by Surface">
           {isLoading ? <SectionSkeleton rows={2} /> : data ? <SurfaceCards rows={data.bySurface} /> : null}
         </Section>
-
-        <Section
-          icon={<Layers className="w-5 h-5 text-primary" />}
-          title="Accuracy by Competition Level"
-        >
+        <Section icon={<Layers className="w-5 h-5 text-primary" />} title="Accuracy by Competition Level">
           {isLoading ? <SectionSkeleton rows={4} /> : data ? (
             <BreakdownTable
               rows={data.byLevel as unknown as Array<Record<string, unknown>>}
@@ -596,11 +736,14 @@ export default function ModelMonitoringPage() {
         </Section>
       </div>
 
-      {/* Recommendation Performance */}
-      <Section
+      {/* Recommendation Performance — Elite only */}
+      <EliteSection
         icon={<Shield className="w-5 h-5 text-primary" />}
         title="Recommendation Performance"
-        subtitle="Accuracy by confidence tier. High Confidence is the engine's most selective tier — it should show the highest accuracy. Lower tiers include more borderline predictions."
+        subtitle="Accuracy by confidence tier. High Confidence is the engine's most selective tier."
+        isElite={isElite}
+        lockTitle="Recommendation Performance"
+        lockDescription="Track how well each confidence tier (High Confidence, Moderate Lean, etc.) performs over real graded predictions. Available on Elite."
       >
         {isLoading ? <SectionSkeleton rows={5} /> : data ? (
           <BreakdownTable
@@ -615,10 +758,10 @@ export default function ModelMonitoringPage() {
             ]}
           />
         ) : null}
-      </Section>
+      </EliteSection>
 
-      {/* Upset Risk & Model Agreement */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Upset Risk & Model Agreement — Pro + Elite */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
         <Section
           icon={<AlertTriangle className="w-5 h-5 text-primary" />}
           title="Upset Risk Performance"
@@ -642,7 +785,7 @@ export default function ModelMonitoringPage() {
         <Section
           icon={<Activity className="w-5 h-5 text-primary" />}
           title="Model Agreement"
-          subtitle="When all internal signals agree, accuracy tends to be higher. High Disagreement signals conflicting evidence."
+          subtitle="When all internal signals agree, accuracy tends to be higher."
         >
           {isLoading ? <SectionSkeleton rows={4} /> : data ? (
             <BreakdownTable
@@ -660,11 +803,11 @@ export default function ModelMonitoringPage() {
         </Section>
       </div>
 
-      {/* Data Quality */}
+      {/* Data Quality — Pro + Elite */}
       <Section
         icon={<Shield className="w-5 h-5 text-primary" />}
         title="Data Quality"
-        subtitle="Distribution of data quality scores across recent predictions. Higher quality = more complete player history, rankings, and match data."
+        subtitle="Distribution of data quality scores across recent predictions."
       >
         {isLoading ? <SectionSkeleton rows={2} /> : data ? (
           <div className="space-y-4">
@@ -678,30 +821,36 @@ export default function ModelMonitoringPage() {
                 sub={`${data.dataQuality.lowCount} predictions`} highlight="text-destructive" />
             </div>
             <p className="text-xs font-mono text-muted-foreground/70">
-              High = ≥65% · Medium = 45–65% · Low = &lt;45%. Predictions with lower data quality are still shown but carry wider uncertainty margins.
+              High = ≥65% · Medium = 45–65% · Low = &lt;45%. Predictions with lower data quality carry wider uncertainty margins.
             </p>
           </div>
         ) : null}
       </Section>
 
-      {/* Recent Model Improvements */}
-      <Section
+      {/* Recent Model Improvements — Elite only */}
+      <EliteSection
         icon={<TrendingUp className="w-5 h-5 text-primary" />}
         title="Recent Model Improvements"
-        subtitle="A log of validated changes made to improve accuracy and calibration. Expand each item for a plain-language explanation."
+        subtitle="A log of validated changes made to improve accuracy and calibration."
+        isElite={isElite}
+        lockTitle="Model Improvements Log"
+        lockDescription="Review every validated improvement made to the prediction engine — what changed, when, and whether it improved accuracy. Available on Elite."
       >
         {isLoading ? <SectionSkeleton rows={4} /> : data ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {data.improvements.map((item) => <ImprovementCard key={item.title} item={item} />)}
           </div>
         ) : null}
-      </Section>
+      </EliteSection>
 
-      {/* Model Version History */}
-      <Section
+      {/* Model Version History — Elite only */}
+      <EliteSection
         icon={<Layers className="w-5 h-5 text-primary" />}
         title="Model Version History"
         subtitle="Current and previous versions of the prediction engine."
+        isElite={isElite}
+        lockTitle="Model Version History"
+        lockDescription="See which model version is currently running and the full history of deployed engine versions. Available on Elite."
       >
         {isLoading ? <SectionSkeleton rows={2} /> : data ? (
           <div className="space-y-4">
@@ -718,7 +867,7 @@ export default function ModelMonitoringPage() {
             ))}
           </div>
         ) : null}
-      </Section>
+      </EliteSection>
 
       {/* How to Read */}
       <HowToReadCard />

@@ -19,6 +19,11 @@ export function getStripePriceId(): string | null {
   return value ? value : null;
 }
 
+export function getStripeElitePriceId(): string | null {
+  const value = process.env.STRIPE_ELITE_PRICE_ID?.trim();
+  return value ? value : null;
+}
+
 export function getPaymentsPlanName(): string {
   return process.env.PAYMENTS_PLAN_NAME?.trim() || "Pro";
 }

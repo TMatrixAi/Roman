@@ -229,16 +229,6 @@ export default function PredictionResultPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             
             <div className="space-y-8">
-              {/* Event / tournament label — shown above player names in both paths */}
-              {prediction.tournamentName && (
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-4 bg-primary/40 rounded-full shrink-0" />
-                  <p className="text-[11px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate">
-                    {prediction.tournamentName} · {prediction.surface}
-                  </p>
-                </div>
-              )}
-
               {engine.tieBreakerApplied && !forceSignal ? (
                 /* ── TOO CLOSE TO CALL hero ─────────────────────────────────── */
                 <div>

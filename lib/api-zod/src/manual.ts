@@ -399,6 +399,15 @@ export const PaymentEntitlements = zod.object({
   eliteRecommendations: zod.boolean(),
   alerts: zod.boolean(),
   teamWorkspace: zod.boolean(),
+  // ── Elite-only ─────────────────────────────────────────────────────────
+  fullModelMonitoring: zod.boolean(),
+  confidenceCalibration: zod.boolean(),
+  recommendationPerformance: zod.boolean(),
+  historicalModelTrends: zod.boolean(),
+  monteCarlo: zod.boolean(),
+  eliteBadge: zod.boolean(),
+  advancedExplanation: zod.boolean(),
+  confidenceHistory: zod.boolean(),
 });
 
 export const PaymentWebhookEventSummary = zod.object({
@@ -443,10 +452,12 @@ export const GetPaymentsStatusResponse = zod.object({
   featureFlagEnabled: zod.boolean(),
   configured: zod.boolean(),
   active: zod.boolean(),
+  tier: zod.enum(["free", "pro", "elite"]),
   account: PaymentsStatusAccount.nullable(),
   entitlements: PaymentEntitlements,
   stripe: zod.object({
     priceId: zod.string().nullable(),
+    elitePriceId: zod.string().nullable().optional(),
     webhookSecretConfigured: zod.boolean(),
     secretKeyConfigured: zod.boolean(),
     planKey: zod.string(),
@@ -458,6 +469,7 @@ export const GetPaymentsStatusResponse = zod.object({
 export const CreatePaymentsCheckoutSessionBody = zod.object({
   returnPath: zod.string().optional(),
   customerEmail: zod.string().email().optional(),
+  plan: zod.enum(["pro", "elite"]).optional(),
 });
 
 export const CreatePaymentsCheckoutSessionResponse = zod.object({

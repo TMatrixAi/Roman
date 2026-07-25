@@ -8,7 +8,7 @@ import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
 import { TennisMatrixLogo } from "./TennisMatrixLogo"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 import { MatrixRain } from "./MatrixRain"
-import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut, Monitor } from "lucide-react"
+import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut, Monitor, CreditCard } from "lucide-react"
 
 // ── Subscriber navigation ───────────────────────────────────────────────────
 const NAV_LINKS = [
@@ -38,6 +38,7 @@ const MOBILE_PRIMARY_TABS = [
 // ── Mobile "More" sheet — subscriber items always shown, admin appended ─────
 const MOBILE_MORE_SUBSCRIBER = [
   { href: "/monitoring", label: "Model Monitoring", icon: Monitor, exact: false },
+  { href: "/payments", label: "Plans & Billing", icon: CreditCard, exact: false },
   { href: "/account", label: "Account", icon: UserCircle, exact: false },
 ]
 
