@@ -108,7 +108,7 @@ function SignInPage() {
 
       {/* Back button — top-left */}
       <button
-        onClick={() => window.history.length > 1 ? window.history.back() : (window.location.href = basePath || "/")}
+        onClick={() => { window.location.href = basePath || "/"; }}
         className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border/60 bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-all z-10 text-sm font-medium"
         aria-label="Go back"
       >
