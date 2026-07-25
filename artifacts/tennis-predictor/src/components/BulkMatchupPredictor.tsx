@@ -20,7 +20,7 @@ import {
 import { isGrandSlam } from "@/lib/grandSlam"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
-const MAX_FILES = 20
+const MAX_FILES = 40
 
 const STORAGE_KEY = "bulkMatchupPredictor.batch.v1"
 
@@ -582,19 +582,19 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
     for (const item of workItems) {
       if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
-      try {
+      const makePredictionRequest = () => {
         const requestMatchId = buildClientMatchId({
           source: "bulk",
-          player1Id: item.result.player1.player.id,
-          player2Id: item.result.player2.player.id,
+          player1Id: item.result!.player1.player!.id,
+          player2Id: item.result!.player2.player!.id,
           tournamentName: item.tournamentName,
           surface: item.surface,
           matchFormat: item.matchFormat,
         })
-        const prediction = await createPredictionWithIntegrity(
+        return createPredictionWithIntegrity(
           {
-            player1Id: item.result.player1.player.id,
-            player2Id: item.result.player2.player.id,
+            player1Id: item.result!.player1.player!.id,
+            player2Id: item.result!.player2.player!.id,
             surface: item.surface,
             matchFormat: item.matchFormat,
             tournamentLevel: item.level,
@@ -602,20 +602,43 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
           },
           {
             requestMatchId,
-            submittedPlayer1Name: item.result.player1.player.name,
-            submittedPlayer2Name: item.result.player2.player.name,
+            submittedPlayer1Name: item.result!.player1.player!.name,
+            submittedPlayer2Name: item.result!.player2.player!.name,
           },
         )
+      }
+
+      const isRateLimitError = (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        return msg === "Too many requests" || msg.includes("429") || msg.toLowerCase().includes("rate limit")
+      }
+
+      try {
+        let prediction
+        try {
+          prediction = await makePredictionRequest()
+        } catch (firstErr) {
+          // Auto-retry once on rate limit: wait 15 s then try again so the user
+          // never sees a rate-limit failure for a transient burst.
+          if (isRateLimitError(firstErr)) {
+            setItems((prev) =>
+              prev.map((it) =>
+                it.key === item.key ? { ...it, predictError: "Rate limit — retrying in 15 s…" } : it,
+              ),
+            )
+            await new Promise((r) => setTimeout(r, 15_000))
+            prediction = await makePredictionRequest()
+          } else {
+            throw firstErr
+          }
+        }
         successIds.push(prediction.id)
         setItems((prev) =>
-          prev.map((it) => (it.key === item.key ? { ...it, predictStatus: "success", predictionId: prediction.id } : it)),
+          prev.map((it) => (it.key === item.key ? { ...it, predictStatus: "success", predictionId: prediction!.id } : it)),
         )
       } catch (err) {
-        // Detect rate-limit (429) specifically so the user gets an actionable message.
         // The server returns { error: 'Too many requests', detail: '...' } on 429;
         // createPredictionWithIntegrity throws using the `error` field as the message.
-        const msg = err instanceof Error ? err.message : String(err)
-        const isRateLimit = msg === "Too many requests" || msg.includes("429") || msg.toLowerCase().includes("rate limit")
         failedKeys.push(item.key)
         setItems((prev) =>
           prev.map((it) =>
@@ -623,16 +646,17 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
               ? {
                   ...it,
                   predictStatus: "error",
-                  predictError: isRateLimit
-                    ? "Rate limit reached — wait a moment and retry."
+                  predictError: isRateLimitError(err)
+                    ? "Rate limit reached — this matchup could not be retried. Try again in a few minutes."
                     : "Prediction engine error — this matchup could not be predicted.",
                 }
               : it,
           ),
         )
       }
-      // Brief pause between sequential requests to avoid burst rate-limit exhaustion.
-      await new Promise((r) => setTimeout(r, 350))
+      // 500 ms pause between requests: spreads a 40-screenshot batch over ~3 min
+      // which keeps bursts well within the 100-req/5-min rate limit.
+      await new Promise((r) => setTimeout(r, 500))
     }
 
     setIsPredicting(false)

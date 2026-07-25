@@ -46,9 +46,6 @@ import { predictionLimiter } from "../middlewares/rateLimiter";
 import { searchKnownPlayers, normalizePlayerName } from "../services/tennisData/playerIdentity";
 import { isDoublesLikeName } from "./predictionRequestIntegrity";
 import {
-  canUseCompetitiveBalance,
-  canUseEliteRecommendations,
-  canUseEvidenceReliability,
   canUsePredictionHistory,
 } from "../services/payments/entitlementService";
 
@@ -228,9 +225,10 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
 });
 
 router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res): Promise<void> => {
-  if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
-  if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
-  if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
+  // Predictions are gated by Clerk auth + rate limit only. Subscription tiers control
+  // features within the result (Elite badge, deep explanations) — not whether the prediction
+  // runs. Hard-blocking authenticated users based on subscription state causes a confusing
+  // "engine error" when the Stripe webhook hasn't fired yet.
 
   const parsed = CreatePredictionBody.safeParse(req.body);
   if (!parsed.success) {

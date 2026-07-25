@@ -3,7 +3,7 @@
  *
  * Tiers:
  *   - authLimiter:        Login / admin-session endpoints (10 req / 15 min per IP)
- *   - predictionLimiter:  POST /api/predictions (40 req / 5 min per user or IP)
+ *   - predictionLimiter:  POST /api/predictions (100 req / 5 min per user or IP)
  *   - generalApiLimiter:  Everything else under /api (200 req / 1 min per IP)
  *   - adminLimiter:       Admin routes (30 req / 1 min per IP — logged, not hard-blocked)
  */
@@ -30,7 +30,7 @@ export const authLimiter = rateLimit({
 /** POST /api/predictions — per-user (Clerk userId header) or per-IP */
 export const predictionLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  limit: 40, // raised from 20 to accommodate bulk batch usage (up to 20 screenshots × 2 matchups each)
+  limit: 100, // accommodates bulk batches: up to 40 screenshots × 2+ matchups each
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   // validate: false on keyGeneratorIpFallback — we intentionally prefer the Clerk userId as a
