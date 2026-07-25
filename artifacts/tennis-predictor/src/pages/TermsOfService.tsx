@@ -25,6 +25,9 @@ export default function TermsOfServicePage() {
         <p className="text-xs text-muted-foreground leading-relaxed mt-2">
           Tennis Matrix AI is operated as a sole proprietorship in Georgia, United States.
         </p>
+        <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
+          Tennis Matrix AI is a trade name (DBA) tied to the legal owner on file.
+        </p>
       </section>
 
       <Card className="glass-panel border-border">
@@ -140,7 +143,7 @@ export default function TermsOfServicePage() {
         <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
           <p>Support contact: TennisMatrixAi@hotmail.com</p>
           <p>Privacy requests: privacy@tennismatrixai.com (until available, use support contact).</p>
-          <p>Business mailing address is maintained for legal notices and billing correspondence.</p>
+          <p>Business mailing address is maintained as an Atlanta-area commercial mailbox for legal notices and billing correspondence.</p>
         </CardContent>
       </Card>
 

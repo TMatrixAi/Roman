@@ -65,7 +65,11 @@ router.post("/public/contact", (req, res): void => {
         status: "open",
         sourceIp: ip,
         userAgent,
-        metadata: { destination: "TennisMatrixAi@hotmail.com" },
+        metadata: {
+          destination: "TennisMatrixAi@hotmail.com",
+          privacyDestination: "privacy@tennismatrixai.com",
+          transactionalProviderPlan: "resend-postmark-or-sendgrid",
+        },
       })
       .returning({ id: supportTicketsTable.id });
 

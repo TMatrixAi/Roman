@@ -52,7 +52,7 @@ export default function PortalContactPage() {
       <Card className="glass-panel">
         <CardHeader>
           <CardTitle>Send a message</CardTitle>
-          <CardDescription>Rate limited and validated for abuse protection. CAPTCHA is enforced through deployment security controls.</CardDescription>
+          <CardDescription>Rate limited and validated for abuse protection. CAPTCHA is enforced through deployment security controls, and delivery is queued to support ticketing.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-3">
