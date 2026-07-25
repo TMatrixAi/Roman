@@ -644,10 +644,29 @@ async function resolvePlayerMatch(
     return { match: { recognizedName, player: confident[0] }, status: "resolved" };
   }
 
-  // Zero or multiple matches: ALWAYS report as unresolved, NEVER substitute
-  // This strict behavior ensures OCR never silently picks the "most likely" player
-  // when the real player remains ambiguous or unidentified.
   if (confident.length > 1) {
+    // When every confident match shares the same normalized name they are the same player
+    // recorded under different MatchStat season IDs (e.g. "J. Monday" id=10071 and id=28099).
+    // Collapse to the single best candidate rather than surfacing a spurious "ambiguous" error.
+    // Only truly different names (different country codes / different players) remain ambiguous.
+    const firstNorm = normalizeName(confident[0]!.name);
+    const allSameName = confident.every((c) => normalizeName(c.name) === firstNorm);
+    if (allSameName) {
+      const best = confident.slice().sort((a, b) => {
+        // Prefer live standings over historical-match records
+        const aLive = a.source !== "historical-match" ? 0 : 1;
+        const bLive = b.source !== "historical-match" ? 0 : 1;
+        if (aLive !== bLive) return aLive - bLive;
+        // Prefer ranked players
+        const aR = a.currentRank != null ? 0 : 1;
+        const bR = b.currentRank != null ? 0 : 1;
+        if (aR !== bR) return aR - bR;
+        // Prefer lower rank number (higher-ranked player)
+        if (a.currentRank != null && b.currentRank != null) return a.currentRank - b.currentRank;
+        return 0;
+      })[0]!;
+      return { match: { recognizedName, player: best }, status: "resolved" };
+    }
     return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
     return { match: { recognizedName, player: null }, status: "not-found" };
