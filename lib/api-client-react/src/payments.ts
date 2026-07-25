@@ -42,7 +42,7 @@ export interface PaymentEntitlements {
   confidenceHistory: boolean;
 }
 
-export type SubscriptionTier = "free" | "pro" | "elite";
+export type SubscriptionTier = "free" | "pro" | "pro_annual" | "elite" | "elite_annual" | "team";
 
 export interface PaymentWebhookEventSummary {
   id: number;
@@ -101,7 +101,7 @@ export interface PaymentsStatusResponse {
 export interface CreatePaymentsCheckoutSessionBody {
   returnPath?: string;
   customerEmail?: string;
-  plan?: "pro" | "elite";
+  plan?: "pro" | "pro_annual" | "elite" | "elite_annual" | "team";
 }
 
 export interface CreatePaymentsCheckoutSessionResponse {
@@ -122,6 +122,8 @@ export interface PaymentsWebhookResponse {
   processed: boolean;
   duplicate?: boolean;
 }
+
+// ── Admin: workspace-wide status ─────────────────────────────────────────────
 
 export const getPaymentsStatus = async (options?: RequestInit): Promise<PaymentsStatusResponse> => {
   return customFetch<PaymentsStatusResponse>("/api/payments/status", {
@@ -154,6 +156,41 @@ export function useGetPaymentsStatus<TData = Awaited<ReturnType<typeof getPaymen
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+// ── User-specific: current signed-in user's billing status ───────────────────
+
+export const getMyPaymentsStatus = async (options?: RequestInit): Promise<PaymentsStatusResponse> => {
+  return customFetch<PaymentsStatusResponse>("/api/payments/me/status", {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getMyPaymentsStatusQueryKey = () => ["/api/payments/me/status"] as const;
+
+export const getMyPaymentsStatusQueryOptions = <TData = Awaited<ReturnType<typeof getMyPaymentsStatus>>, TError = ErrorType<unknown>>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getMyPaymentsStatus>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getMyPaymentsStatusQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPaymentsStatus>>> = ({ signal }) => getMyPaymentsStatus({ signal, ...requestOptions });
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<Awaited<ReturnType<typeof getMyPaymentsStatus>>, TError, TData> & { queryKey: QueryKey };
+};
+
+export type GetMyPaymentsStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getMyPaymentsStatus>>>;
+export type GetMyPaymentsStatusQueryError = ErrorType<unknown>;
+
+export function useGetMyPaymentsStatus<TData = Awaited<ReturnType<typeof getMyPaymentsStatus>>, TError = ErrorType<unknown>>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getMyPaymentsStatus>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getMyPaymentsStatusQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+// ── Checkout ─────────────────────────────────────────────────────────────────
+
 export const createPaymentsCheckoutSession = async (body: CreatePaymentsCheckoutSessionBody, options?: RequestInit): Promise<CreatePaymentsCheckoutSessionResponse> => {
   return customFetch<CreatePaymentsCheckoutSessionResponse>("/api/payments/checkout-session", {
     ...options,
@@ -179,6 +216,8 @@ export function useCreatePaymentsCheckoutSession<TError = ErrorType<unknown>, TC
 }): UseMutationResult<Awaited<ReturnType<typeof createPaymentsCheckoutSession>>, TError, { data: CreatePaymentsCheckoutSessionBody }, TContext> {
   return useMutation(createPaymentsCheckoutSessionMutationOptions(options));
 }
+
+// ── Billing Portal ────────────────────────────────────────────────────────────
 
 export const createBillingPortalSession = async (body: CreateBillingPortalSessionBody, options?: RequestInit): Promise<CreateBillingPortalSessionResponse> => {
   return customFetch<CreateBillingPortalSessionResponse>("/api/payments/billing-portal-session", {

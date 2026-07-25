@@ -24,6 +24,21 @@ export function getStripeElitePriceId(): string | null {
   return value ? value : null;
 }
 
+export function getStripeProAnnualPriceId(): string | null {
+  const value = process.env.STRIPE_PRO_ANNUAL_PRICE_ID?.trim();
+  return value ? value : null;
+}
+
+export function getStripeEliteAnnualPriceId(): string | null {
+  const value = process.env.STRIPE_ELITE_ANNUAL_PRICE_ID?.trim();
+  return value ? value : null;
+}
+
+export function getStripeTeamPriceId(): string | null {
+  const value = process.env.STRIPE_TEAM_PRICE_ID?.trim();
+  return value ? value : null;
+}
+
 export function getPaymentsPlanName(): string {
   return process.env.PAYMENTS_PLAN_NAME?.trim() || "Pro";
 }

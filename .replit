@@ -52,6 +52,11 @@ PAYMENTS_PLAN_NAME = "Pro"
 PAYMENTS_V2_ENABLED = "true"
 VITE_PAYMENTS_V2_ENABLED = "true"
 APP_PUBLIC_URL = "https://tennis-stats-engine.replit.app"
+STRIPE_ELITE_PRICE_ID = "price_1TwuumGYBq3EbAKF6TIir0BU"
+STRIPE_PRICE_ID = "price_1TwuteGYBq3EbAKFQb1xOqzy"
+STRIPE_ELITE_ANNUAL_PRICE_ID = "price_1TwuwCGYBq3EbAKFKj19qVAw"
+STRIPE_PRO_ANNUAL_PRICE_ID = "price_1Tx5jGGYBq3EbAKF3iDHIw52"
+STRIPE_TEAM_PRICE_ID = "price_1TwuxDGYBq3EbAKFyjKklp3D"
 
 [userenv.development]
 NODE_OPTIONS = "--max-old-space-size=6144"

@@ -452,7 +452,7 @@ export const GetPaymentsStatusResponse = zod.object({
   featureFlagEnabled: zod.boolean(),
   configured: zod.boolean(),
   active: zod.boolean(),
-  tier: zod.enum(["free", "pro", "elite"]),
+  tier: zod.enum(["free", "pro", "pro_annual", "elite", "elite_annual", "team"]),
   account: PaymentsStatusAccount.nullable(),
   entitlements: PaymentEntitlements,
   stripe: zod.object({
@@ -469,7 +469,7 @@ export const GetPaymentsStatusResponse = zod.object({
 export const CreatePaymentsCheckoutSessionBody = zod.object({
   returnPath: zod.string().optional(),
   customerEmail: zod.string().email().optional(),
-  plan: zod.enum(["pro", "elite"]).optional(),
+  plan: zod.enum(["pro", "pro_annual", "elite", "elite_annual", "team"]).optional(),
 });
 
 export const CreatePaymentsCheckoutSessionResponse = zod.object({

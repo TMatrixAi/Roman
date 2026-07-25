@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { db, paymentsAccountTable, paymentWebhookEventsTable, type PaymentsAccountRow, type PaymentWebhookEventRow } from "@workspace/db";
-import { isPaymentsV2Enabled, PAYMENTS_ACCOUNT_KEY, getPaymentsPlanKey, getPaymentsPlanName, getStripeElitePriceId } from "./config";
+import { isPaymentsV2Enabled, PAYMENTS_ACCOUNT_KEY, getPaymentsPlanKey, getPaymentsPlanName, getStripeElitePriceId, getStripeProAnnualPriceId, getStripeEliteAnnualPriceId, getStripeTeamPriceId } from "./config";
 
 export const PAYMENT_ENTITLEMENT_KEYS = [
   "predictionHistory",
@@ -26,7 +26,7 @@ export const PAYMENT_ENTITLEMENT_KEYS = [
 
 export type PaymentEntitlementKey = (typeof PAYMENT_ENTITLEMENT_KEYS)[number];
 export type PaymentEntitlements = Record<PaymentEntitlementKey, boolean>;
-export type SubscriptionTier = "free" | "pro" | "elite";
+export type SubscriptionTier = "free" | "pro" | "pro_annual" | "elite" | "elite_annual" | "team";
 
 export interface PaymentAccessState {
   featureFlagEnabled: boolean;
@@ -86,11 +86,10 @@ function proEntitlements(): PaymentEntitlements {
   };
 }
 
-/** Elite ($49.99) — "How trustworthy is the AI?" — everything in Pro plus deep analytics */
+/** Elite ($49.99/mo or $475/yr) — "How trustworthy is the AI?" — everything in Pro plus deep analytics */
 function eliteEntitlements(): PaymentEntitlements {
   return {
     ...proEntitlements(),
-    // Elite deep analytics
     fullModelMonitoring: true,
     confidenceCalibration: true,
     recommendationPerformance: true,
@@ -102,16 +101,46 @@ function eliteEntitlements(): PaymentEntitlements {
   };
 }
 
-/** Derive tier from the stored planKey. Existing rows without "elite" planKey default to "pro". */
-function tierFromPlanKey(planKey: string | null | undefined): "pro" | "elite" {
-  return planKey === "elite" ? "elite" : "pro";
+/** Team ($249/mo) — Elite entitlements + team workspace */
+function teamEntitlements(): PaymentEntitlements {
+  return { ...eliteEntitlements(), teamWorkspace: true };
 }
 
-/** Derive tier by comparing a Stripe price ID to the configured Elite price ID. */
-function resolveTierFromPriceId(stripePriceId: string | null | undefined): "pro" | "elite" {
-  const elitePriceId = getStripeElitePriceId();
-  if (elitePriceId && stripePriceId && stripePriceId === elitePriceId) return "elite";
-  return "pro";
+/** Derive tier from the stored planKey. Maps all planKey variants to their SubscriptionTier. */
+function tierFromPlanKey(planKey: string | null | undefined): SubscriptionTier {
+  switch (planKey) {
+    case "elite":        return "elite";
+    case "elite_annual": return "elite_annual";
+    case "pro_annual":   return "pro_annual";
+    case "team":         return "team";
+    default:             return "pro";
+  }
+}
+
+/** Derive tier and planKey by comparing a Stripe price ID to all configured price IDs. */
+function resolveTierFromPriceId(stripePriceId: string | null | undefined): { tier: SubscriptionTier; planKey: string; planName: string } {
+  if (stripePriceId) {
+    const elitePriceId       = getStripeElitePriceId();
+    const eliteAnnualPriceId = getStripeEliteAnnualPriceId();
+    const proAnnualPriceId   = getStripeProAnnualPriceId();
+    const teamPriceId        = getStripeTeamPriceId();
+    if (eliteAnnualPriceId && stripePriceId === eliteAnnualPriceId) return { tier: "elite_annual", planKey: "elite_annual", planName: "Elite Annual" };
+    if (elitePriceId       && stripePriceId === elitePriceId)       return { tier: "elite",        planKey: "elite",        planName: "Elite" };
+    if (proAnnualPriceId   && stripePriceId === proAnnualPriceId)   return { tier: "pro_annual",   planKey: "pro_annual",   planName: "Pro Annual" };
+    if (teamPriceId        && stripePriceId === teamPriceId)        return { tier: "team",          planKey: "team",         planName: "Team" };
+  }
+  return { tier: "pro", planKey: "pro", planName: "Pro" };
+}
+
+function entitlementsForTier(tier: SubscriptionTier): PaymentEntitlements {
+  switch (tier) {
+    case "team":         return teamEntitlements();
+    case "elite":
+    case "elite_annual": return eliteEntitlements();
+    case "pro":
+    case "pro_annual":   return proEntitlements();
+    default:             return getDefaultEntitlements();
+  }
 }
 
 /**
@@ -121,28 +150,44 @@ function resolveTierFromPriceId(stripePriceId: string | null | undefined): "pro"
  */
 function entitlementsForSubscriptionStatus(
   status: string | null | undefined,
-  tier: "pro" | "elite",
+  tier: SubscriptionTier,
 ): PaymentEntitlements {
   if (status === "active" || status === "trialing") {
-    return tier === "elite" ? eliteEntitlements() : proEntitlements();
+    return entitlementsForTier(tier);
   }
   return getDefaultEntitlements();
 }
 
-function isActiveSubscription(account: PaymentsAccountRow | null): boolean {
+function isActiveSubscription(account: Pick<PaymentsAccountRow, "subscriptionStatus"> | null): boolean {
   if (!account) return false;
   return account.subscriptionStatus === "active" || account.subscriptionStatus === "trialing";
 }
 
-async function ensureBillingAccount(): Promise<PaymentsAccountRow> {
-  const [existing] = await db.select().from(paymentsAccountTable).where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY)).limit(1);
+/**
+ * Derive the account key for a given user.
+ * - Per-user billing: "user_<clerkUserId>"
+ * - Legacy workspace billing: "workspace"
+ */
+function accountKeyForUser(clerkUserId?: string | null): string {
+  return clerkUserId ? `user_${clerkUserId}` : PAYMENTS_ACCOUNT_KEY;
+}
+
+async function ensureBillingAccount(clerkUserId?: string | null): Promise<PaymentsAccountRow> {
+  const accountKey = accountKeyForUser(clerkUserId);
+  const displayName = clerkUserId ? "User Subscription" : "Workspace Subscription";
+
+  const [existing] = await db
+    .select()
+    .from(paymentsAccountTable)
+    .where(eq(paymentsAccountTable.accountKey, accountKey))
+    .limit(1);
   if (existing) return existing;
 
   const [created] = await db
     .insert(paymentsAccountTable)
     .values({
-      accountKey: PAYMENTS_ACCOUNT_KEY,
-      displayName: "Workspace Subscription",
+      accountKey,
+      displayName,
       planKey: getPaymentsPlanKey(),
       planName: getPaymentsPlanName(),
       entitlementSnapshot: getDefaultEntitlements(),
@@ -151,8 +196,23 @@ async function ensureBillingAccount(): Promise<PaymentsAccountRow> {
   return created;
 }
 
-export async function getBillingAccount(): Promise<PaymentsAccountRow | null> {
-  const [existing] = await db.select().from(paymentsAccountTable).where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY)).limit(1);
+/** Look up a billing account by Stripe customer ID — used for webhook routing. */
+export async function getBillingAccountByStripeCustomer(stripeCustomerId: string): Promise<PaymentsAccountRow | null> {
+  const [existing] = await db
+    .select()
+    .from(paymentsAccountTable)
+    .where(eq(paymentsAccountTable.stripeCustomerId, stripeCustomerId))
+    .limit(1);
+  return existing ?? null;
+}
+
+export async function getBillingAccount(clerkUserId?: string | null): Promise<PaymentsAccountRow | null> {
+  const accountKey = accountKeyForUser(clerkUserId);
+  const [existing] = await db
+    .select()
+    .from(paymentsAccountTable)
+    .where(eq(paymentsAccountTable.accountKey, accountKey))
+    .limit(1);
   return existing ?? null;
 }
 
@@ -160,7 +220,7 @@ export async function getLatestWebhookEvents(limit = 10): Promise<PaymentWebhook
   return db.select().from(paymentWebhookEventsTable).orderBy(desc(paymentWebhookEventsTable.receivedAt)).limit(limit);
 }
 
-export async function getPaymentsAccessState(): Promise<PaymentAccessState> {
+export async function getPaymentsAccessState(clerkUserId?: string | null): Promise<PaymentAccessState> {
   if (!isPaymentsV2Enabled()) {
     return {
       featureFlagEnabled: false,
@@ -172,7 +232,7 @@ export async function getPaymentsAccessState(): Promise<PaymentAccessState> {
     };
   }
 
-  const account = await ensureBillingAccount();
+  const account = await ensureBillingAccount(clerkUserId);
   const tier = tierFromPlanKey(account.planKey);
   // Always compute fresh from tier + status — snapshot is audit only, not a gate input
   const entitlements = entitlementsForSubscriptionStatus(account.subscriptionStatus, tier);
@@ -187,6 +247,7 @@ export async function getPaymentsAccessState(): Promise<PaymentAccessState> {
   };
 }
 
+
 export async function upsertBillingAccountFromSubscription(input: {
   stripeCustomerId: string;
   stripeSubscriptionId: string;
@@ -199,50 +260,80 @@ export async function upsertBillingAccountFromSubscription(input: {
   canceledAt: Date | null;
   lastWebhookEventId: string;
   metadata?: Record<string, unknown>;
+  /** Clerk user ID extracted from Stripe subscription metadata — routes webhook to correct user. */
+  clerkUserId?: string | null;
 }): Promise<PaymentsAccountRow> {
-  const tier = resolveTierFromPriceId(input.stripePriceId);
-  const planKey = tier;
-  const planName = tier === "elite" ? "Elite" : "Pro";
+  const { tier, planKey, planName } = resolveTierFromPriceId(input.stripePriceId);
+  const updatedEntitlements = entitlementsForSubscriptionStatus(input.subscriptionStatus, tier);
 
-  const [existing] = await db.select().from(paymentsAccountTable).where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY)).limit(1);
-  if (existing) {
-    // Always recompute from tier + status — never carry forward stored booleans as overrides
-    const updatedEntitlements = entitlementsForSubscriptionStatus(input.subscriptionStatus, tier);
+  const sharedUpdate = {
+    stripeSubscriptionId: input.stripeSubscriptionId,
+    stripePriceId: input.stripePriceId,
+    subscriptionStatus: input.subscriptionStatus,
+    planKey,
+    planName,
+    currentPeriodStartAt: input.currentPeriodStartAt,
+    currentPeriodEndAt: input.currentPeriodEndAt,
+    trialEndAt: input.trialEndAt,
+    canceledAt: input.canceledAt,
+    cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+    lastWebhookEventId: input.lastWebhookEventId,
+    entitlementSnapshot: updatedEntitlements,
+    updatedAt: new Date(),
+  };
 
+  // ── 1. Look up by stripeCustomerId (most reliable for webhook routing) ───────
+  const [byCustomer] = await db
+    .select()
+    .from(paymentsAccountTable)
+    .where(eq(paymentsAccountTable.stripeCustomerId, input.stripeCustomerId))
+    .limit(1);
+
+  if (byCustomer) {
     const [updated] = await db
       .update(paymentsAccountTable)
       .set({
-        stripeCustomerId: input.stripeCustomerId,
-        stripeSubscriptionId: input.stripeSubscriptionId,
-        stripePriceId: input.stripePriceId,
-        subscriptionStatus: input.subscriptionStatus,
-        planKey,
-        planName,
-        currentPeriodStartAt: input.currentPeriodStartAt,
-        currentPeriodEndAt: input.currentPeriodEndAt,
-        trialEndAt: input.trialEndAt,
-        canceledAt: input.canceledAt,
-        cancelAtPeriodEnd: input.cancelAtPeriodEnd,
-        lastWebhookEventId: input.lastWebhookEventId,
-        entitlementSnapshot: updatedEntitlements,
-        metadata: { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) },
-        updatedAt: new Date(),
-        accessGrantedAt: isActiveSubscription({ ...existing, subscriptionStatus: input.subscriptionStatus })
-          ? (existing.accessGrantedAt ?? new Date())
-          : existing.subscriptionStatus === input.subscriptionStatus
-          ? existing.accessGrantedAt
-          : existing.accessGrantedAt,
+        ...sharedUpdate,
+        metadata: { ...(byCustomer.metadata ?? {}), ...(input.metadata ?? {}) },
+        accessGrantedAt: isActiveSubscription({ subscriptionStatus: input.subscriptionStatus })
+          ? (byCustomer.accessGrantedAt ?? new Date())
+          : byCustomer.accessGrantedAt,
       })
-      .where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY))
+      .where(eq(paymentsAccountTable.id, byCustomer.id))
       .returning();
     return updated;
   }
 
+  // ── 2. Look up by account key (new checkout for an existing user record) ─────
+  const accountKey = accountKeyForUser(input.clerkUserId);
+  const [byAccountKey] = await db
+    .select()
+    .from(paymentsAccountTable)
+    .where(eq(paymentsAccountTable.accountKey, accountKey))
+    .limit(1);
+
+  if (byAccountKey) {
+    const [updated] = await db
+      .update(paymentsAccountTable)
+      .set({
+        ...sharedUpdate,
+        stripeCustomerId: input.stripeCustomerId,
+        metadata: { ...(byAccountKey.metadata ?? {}), ...(input.metadata ?? {}) },
+        accessGrantedAt: isActiveSubscription({ subscriptionStatus: input.subscriptionStatus })
+          ? (byAccountKey.accessGrantedAt ?? new Date())
+          : byAccountKey.accessGrantedAt,
+      })
+      .where(eq(paymentsAccountTable.id, byAccountKey.id))
+      .returning();
+    return updated;
+  }
+
+  // ── 3. Create a new billing account for this user ─────────────────────────────
   const [created] = await db
     .insert(paymentsAccountTable)
     .values({
-      accountKey: PAYMENTS_ACCOUNT_KEY,
-      displayName: "Workspace Subscription",
+      accountKey,
+      displayName: input.clerkUserId ? "User Subscription" : "Workspace Subscription",
       planKey,
       planName,
       stripeCustomerId: input.stripeCustomerId,
@@ -255,9 +346,9 @@ export async function upsertBillingAccountFromSubscription(input: {
       canceledAt: input.canceledAt,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd,
       lastWebhookEventId: input.lastWebhookEventId,
-      entitlementSnapshot: entitlementsForSubscriptionStatus(input.subscriptionStatus, tier),
+      entitlementSnapshot: updatedEntitlements,
       metadata: input.metadata ?? {},
-      accessGrantedAt: isActiveSubscription({ accountKey: PAYMENTS_ACCOUNT_KEY, subscriptionStatus: input.subscriptionStatus } as PaymentsAccountRow) ? new Date() : null,
+      accessGrantedAt: isActiveSubscription({ subscriptionStatus: input.subscriptionStatus }) ? new Date() : null,
     })
     .returning();
   return created;
@@ -267,8 +358,9 @@ export async function recordCheckoutSession(input: {
   stripeCustomerId?: string | null;
   stripeCheckoutSessionId: string;
   metadata?: Record<string, unknown>;
+  clerkUserId?: string | null;
 }): Promise<void> {
-  const account = await ensureBillingAccount();
+  const account = await ensureBillingAccount(input.clerkUserId);
   await db
     .update(paymentsAccountTable)
     .set({
@@ -277,7 +369,7 @@ export async function recordCheckoutSession(input: {
       metadata: { ...(account.metadata ?? {}), ...(input.metadata ?? {}) },
       updatedAt: new Date(),
     })
-    .where(eq(paymentsAccountTable.accountKey, PAYMENTS_ACCOUNT_KEY));
+    .where(eq(paymentsAccountTable.accountKey, account.accountKey));
 }
 
 export async function markWebhookProcessing(eventId: string, payload: Record<string, unknown>, eventType: string, livemode: boolean, customerId?: string, subscriptionId?: string): Promise<boolean> {
@@ -317,12 +409,12 @@ export async function finalizeWebhookProcessing(input: {
     .where(eq(paymentWebhookEventsTable.stripeEventId, input.eventId));
 }
 
-export async function getPaymentsEntitlements(): Promise<PaymentEntitlements> {
-  const state = await getPaymentsAccessState();
+export async function getPaymentsEntitlements(clerkUserId?: string | null): Promise<PaymentEntitlements> {
+  const state = await getPaymentsAccessState(clerkUserId);
   return state.entitlements;
 }
 
-// ── Convenience helpers ────────────────────────────────────────────────────────
+// ── Convenience helpers (workspace-scoped — used by admin/system routes) ──────────────────────────
 export async function canUsePredictionHistory(): Promise<boolean> { return (await getPaymentsEntitlements()).predictionHistory; }
 export async function canUseWalkForward(): Promise<boolean> { return (await getPaymentsEntitlements()).walkForward; }
 export async function canUseShadowReplay(): Promise<boolean> { return (await getPaymentsEntitlements()).shadowReplay; }
