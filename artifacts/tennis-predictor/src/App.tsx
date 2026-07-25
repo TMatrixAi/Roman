@@ -13,6 +13,7 @@ import PredictBuilderPage from '@/pages/PredictBuilder';
 import HistoryPage from '@/pages/History';
 import PredictionLogPage from '@/pages/PredictionLog';
 import { ClerkProvider, SignIn, SignUp, Show, useClerk, useAuth } from '@clerk/react';
+import { useGetAdminAuthStatus } from '@/hooks/useGetAdminAuthStatus';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 
@@ -130,9 +131,17 @@ function SignUpPage() {
   );
 }
 
-/** Gate a route behind Clerk auth. Redirects to /sign-in when signed-out. */
+/** Gate a route behind Clerk auth. Redirects to /sign-in when signed-out.
+ *  Admin (owner) session bypasses Clerk entirely — if the admin cookie is valid
+ *  the route renders unconditionally, no Clerk account required. */
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isLoaded, userId } = useAuth();
+  const { data: adminAuth } = useGetAdminAuthStatus();
+
+  // Admin owner: bypass Clerk entirely
+  if (adminAuth?.authenticated) return <Component />;
+
+  // Clerk user: wait for Clerk to resolve, then check
   if (!isLoaded) return null;
   if (!userId) return <Redirect to="/sign-in" />;
   return <Component />;
