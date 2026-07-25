@@ -716,7 +716,13 @@ export class ApiTennisProvider implements TennisDataProvider {
       this.getTournamentSurfaceMap(),
     ]);
 
-    return (raw ?? []).filter((m) => m.event_winner === null).map((m) => this.mapUpcomingFixture(m, surfaceByTournamentKey));
+    return (raw ?? [])
+      .filter((m) => m.event_winner === null)
+      // Drop doubles fixtures — tournament names include "Doubles" and the
+      // prediction engine is singles-only.
+      .filter((m) => !/doubles/i.test(m.tournament_name ?? ""))
+      .filter((m) => !m.event_first_player?.includes("/") && !m.event_second_player?.includes("/"))
+      .map((m) => this.mapUpcomingFixture(m, surfaceByTournamentKey));
   }
 
   /**

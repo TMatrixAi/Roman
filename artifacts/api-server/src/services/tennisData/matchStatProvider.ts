@@ -163,17 +163,34 @@ function mapRound(roundId: number | undefined): string | null {
   }
 }
 
+/** Returns true when a player-name slot looks like a doubles pair ("A. Smith/B. Jones"). */
+function isDoublesName(name: string | undefined | null): boolean {
+  return typeof name === "string" && name.includes("/");
+}
+
 function mapMatchToFixture(m: RawMatch): Fixture | null {
   const p1 = m.player1;
   const p2 = m.player2;
   if (!p1?.id || !p2?.id) return null;
+
+  // Drop doubles fixtures — the prediction engine is singles-only and the
+  // rankId scale used for doubles events doesn't match the singles mapping.
+  if (isDoublesName(p1.name) || isDoublesName(p2.name)) return null;
+  const tournamentName = m.tournament?.name ?? "";
+  if (/doubles/i.test(tournamentName)) return null;
 
   const dateStr = m.date ? m.date.slice(0, 10) : null;
   if (!dateStr) return null;
 
   const courtStr = m.court ?? m.tournament?.court?.name;
   const surface = mapSurface(courtStr);
-  const level = mapLevel(m.rank ?? m.tournament?.rankId, m.type);
+  let level = mapLevel(m.rank ?? m.tournament?.rankId, m.type);
+
+  // Sanity-check: if the tournament name mentions "Challenger" but the level
+  // mapped to GrandSlam (rankId collision in doubles/ITF events), correct it.
+  if (level === "GrandSlam" && /challenger/i.test(tournamentName)) {
+    level = "Challenger";
+  }
 
   const id = `${str(m.tournament?.id)}:${str(p1.id)}:${str(p2.id)}`;
 
