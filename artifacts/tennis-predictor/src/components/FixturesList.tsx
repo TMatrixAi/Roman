@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyDataState } from "./DataWarning"
-import { Calendar, Clock, Swords, Trash2, Zap, RefreshCw, Wifi, XCircle } from "lucide-react"
+import { Calendar, Clock, Trash2, Zap, RefreshCw, Wifi, XCircle } from "lucide-react"
 import { formatEasternDateTime } from "@/lib/timezone"
 import { createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
@@ -112,15 +112,6 @@ function isStaleFixture(fixture: Fixture): boolean {
 
 function formatFixtureTime(fixture: Fixture): string {
   return formatEasternDateTime(fixture.scheduledStart)
-}
-
-function buildCustomMatchUrl(fixture: Fixture): string {
-  const params = new URLSearchParams({ p1: fixture.player1Id, p2: fixture.player2Id })
-  if (fixture.surface) params.set("surface", fixture.surface)
-  if (fixture.matchFormat) params.set("format", fixture.matchFormat)
-  if (fixture.tournamentLevel) params.set("level", fixture.tournamentLevel)
-  if (fixture.tournamentName) params.set("tournamentName", fixture.tournamentName)
-  return `/predict?${params.toString()}`
 }
 
 /** Level badge colour tiers */
@@ -650,15 +641,6 @@ export const FixturesList = forwardRef<
                         <Zap className="w-3 h-3" />
                       )}
                       PREDICT
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
-                      onClick={(e) => { e.stopPropagation(); setLocation(buildCustomMatchUrl(fixture)) }}
-                    >
-                      <Swords className="w-3 h-3" />
-                      CUSTOM
                     </Button>
                   </div>
                 </div>
