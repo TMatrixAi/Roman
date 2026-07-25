@@ -34,6 +34,7 @@ import { predictFromSnapshot, PredictionSnapshotResolutionError } from "../servi
 import { LIVE_MODEL_VERSION } from "../services/evaluation/types";
 import { defaultPredictionMode, derivePredictionStrategyIdentity, getCurrentProductionStrategyIdentity } from "../services/evaluation/strategyIdentity";
 import { enforceEntitlement } from "../lib/entitlements";
+import { isAdminSessionCookieValid } from "../lib/adminAuth";
 import { logger } from "../lib/logger";
 import { formatDatabaseError } from "../lib/databaseError";
 import {
@@ -150,9 +151,16 @@ router.get("/predictions", requireClerkUser, async (req, res): Promise<void> => 
   }
 
   const clerkUserId = getAuth(req).userId;
+  // Admin sessions (signed cookie, no Clerk JWT) have no clerkUserId — they see the full
+  // ledger for oversight. Clerk-authenticated users are always scoped to their own rows.
+  // If neither condition holds, requireClerkUser already rejected the request.
+  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
 
-  // Admin sessions have no Clerk userId — they see the full ledger.
-  // Clerk-authenticated users see only their own predictions.
+  if (!isAdmin && !clerkUserId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
   const query = db
     .select()
     .from(predictionsTable)

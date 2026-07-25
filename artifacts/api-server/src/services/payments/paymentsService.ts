@@ -83,7 +83,7 @@ export async function createCheckoutSession(
     customerEmail: body?.customerEmail ?? null,
     accountKey: clerkUserId ? `user_${clerkUserId}` : "workspace",
     planKey: plan,
-    planName: plan === "elite" ? "Elite" : "Pro",
+    planName: plan === "elite" || plan === "elite_annual" ? "Elite" : plan === "pro_annual" ? "Pro Annual" : plan === "team" ? "Team" : "Pro",
     plan,
     clerkUserId: clerkUserId ?? null,
   });

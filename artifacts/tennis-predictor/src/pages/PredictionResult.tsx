@@ -1,4 +1,4 @@
-import { useGetAdminAuthStatus, useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
+import { useGetAdminAuthStatus, useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome, useGetMyPaymentsStatus } from "@workspace/api-client-react"
 import { useParams, useSearch } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -132,6 +132,9 @@ export default function PredictionResultPage() {
     query: { queryKey: getGetPredictionQueryKey(id), enabled: !!id }
   })
   const { data: adminAuth } = useGetAdminAuthStatus()
+  const { data: billing } = useGetMyPaymentsStatus()
+  const subscriberTier = billing?.tier ?? null
+  const isEliteSubscriber = subscriberTier === "elite" || subscriberTier === "elite_annual"
   const { toast } = useToast()
 
   const recordOutcome = useRecordPredictionOutcome()
@@ -310,6 +313,15 @@ export default function PredictionResultPage() {
                         title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
                       >
                         <Crown className="w-4 h-4" /> ELITE TIER
+                      </Badge>
+                    )}
+                    {isEliteSubscriber && (
+                      <Badge
+                        variant="outline"
+                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md border-primary/40 bg-primary/5 text-primary"
+                        title="You're on the Elite plan — you have access to every prediction the engine produces."
+                      >
+                        <Crown className="w-4 h-4" /> ELITE MEMBER
                       </Badge>
                     )}
                     <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">

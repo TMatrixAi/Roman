@@ -57,7 +57,6 @@ import {
   ListHistoricalBackfillJobRunsQueryParams,
   ListHistoricalBackfillJobRunsResponse,
   GetHistoricalDataFreshnessResponse,
-  GetRankingVerificationResponse,
   GetPredictionStatsResponse,
   RunOptimizerBody,
   GetLatestPatternAnalysisResponse,
@@ -174,7 +173,7 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { runKind, segment, status, limit, offset } = parsed.data;
+  const { runKind, segment, status, limit } = parsed.data;
 
   const conditions = [];
   if (runKind) conditions.push(eq(evaluationPredictionsTable.runKind, runKind));
@@ -186,8 +185,7 @@ router.get("/evaluation/predictions", async (req, res): Promise<void> => {
     .from(evaluationPredictionsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(evaluationPredictionsTable.scheduledStartAt))
-    .limit(limit)
-    .offset(offset ?? 0);
+    .limit(limit);
 
   res.json(ListEvaluationPredictionsResponse.parse(rows.map(withEvaluationHistoricalMatchFallbackFlag)));
 });
@@ -649,7 +647,7 @@ router.get("/evaluation/historical-backfill/freshness", async (_req, res): Promi
 router.post("/evaluation/ranking-verification", async (_req, res): Promise<void> => {
   const provider = getTennisDataProvider();
   const result = await runRankingVerification(provider);
-  res.json(GetRankingVerificationResponse.parse(result));
+  res.json(result);
 });
 
 // ── Task #12: Continuous outcome-learning endpoints ───────────────────────────────────────────────
