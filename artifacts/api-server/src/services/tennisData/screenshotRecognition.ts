@@ -65,6 +65,31 @@ Rules:
 Respond with ONLY a strict JSON array, no markdown, no other text:
 [{"player1Name": string|null, "player2Name": string|null, "eventName": string|null}, ...]`;
 
+/**
+ * Fallback prompt used when the primary attempt returns zero matchups.
+ * Much more permissive: asks the model to look harder for any pair of tennis player names,
+ * covering odds apps, scoring apps, prediction apps, and non-standard layouts.
+ */
+const FALLBACK_SYSTEM_PROMPT = `You are a tennis name extractor. Your job is to find tennis player names in ANY type of screenshot — odds apps, scores apps, bracket apps, prediction tools, scheduling tools, or anything else.
+
+Look at the image carefully. Look for:
+- Pairs of names separated by "vs", "v", "def.", "-", or "/", or stacked one above the other
+- Player names in any language that could be tennis players
+- Names next to odds numbers, rankings, or match times (ignore the numbers, extract the names)
+- Abbreviated names like "N. Djokovic" or "C. Alcaraz" — these count as player names
+
+For each pair of players you find, return:
+- player1Name: the first/top/left player name exactly as written
+- player2Name: the second/bottom/right player name exactly as written  
+- eventName: any tournament/event/league name shown, or null
+
+Be INCLUSIVE not exclusive. Return every pair of human names that could plausibly be tennis players.
+If you see a name next to another name with odds/numbers/decorations around them, that pair is a matchup.
+Only return an empty array if the image contains zero player names whatsoever.
+
+Respond with ONLY a JSON array, no markdown:
+[{"player1Name": string|null, "player2Name": string|null, "eventName": string|null}, ...]`;
+
 // ---------------------------------------------------------------------------
 // Key / provider detection
 // ---------------------------------------------------------------------------
@@ -165,7 +190,12 @@ function cleanEntry(obj: unknown): RawMatchupEntry | null {
 
 function parseRecognitionResponse(raw: string | null | undefined): RawScreenshotRecognition {
   if (!raw) return EMPTY_RECOGNITION;
-  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const cleaned = raw.trim()
+    .replace(/^```(?:json)?\s*/i, "")  // strip opening ```json or ```
+    .replace(/\s*```\s*$/, "")          // strip closing ```
+    .trim();
+
+  // Primary: attempt full JSON parse
   try {
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) {
@@ -174,15 +204,46 @@ function parseRecognitionResponse(raw: string | null | undefined): RawScreenshot
         const entry = cleanEntry(item);
         if (entry) matchups.push(entry);
       }
-      return { matchups };
-    }
-    if (parsed && typeof parsed === "object") {
+      if (matchups.length > 0) return { matchups };
+    } else if (parsed && typeof parsed === "object") {
       const entry = cleanEntry(parsed);
-      return { matchups: entry ? [entry] : [] };
+      if (entry) return { matchups: [entry] };
     }
-  } catch (err) {
-    logger.warn({ err, rawPreview: raw.slice(0, 200) }, "Screenshot recognition model returned unparseable JSON -- treating as nothing recognized");
+  } catch {
+    // fall through to partial recovery below
   }
+
+  // Partial recovery: when JSON is truncated (token limit cut off the array mid-way),
+  // extract whatever complete "{...}" objects are present using a simple brace-balance scan.
+  // This lets us recover the first N matchups from a response that was cut off before the
+  // closing `]`.
+  const matchups: RawMatchupEntry[] = [];
+  let i = cleaned.indexOf("{");
+  while (i !== -1) {
+    let depth = 0;
+    let j = i;
+    for (; j < cleaned.length; j++) {
+      if (cleaned[j] === "{") depth++;
+      else if (cleaned[j] === "}") { depth--; if (depth === 0) break; }
+    }
+    if (depth === 0 && j < cleaned.length) {
+      try {
+        const obj = JSON.parse(cleaned.slice(i, j + 1));
+        const entry = cleanEntry(obj);
+        if (entry) matchups.push(entry);
+      } catch {
+        // skip malformed object
+      }
+    }
+    i = cleaned.indexOf("{", j + 1);
+  }
+
+  if (matchups.length > 0) {
+    logger.warn({ count: matchups.length, rawPreview: raw.slice(0, 200) }, "Screenshot recognition: recovered matchups from truncated JSON response");
+    return { matchups };
+  }
+
+  logger.warn({ rawPreview: raw.slice(0, 200) }, "Screenshot recognition model returned unparseable JSON -- treating as nothing recognized");
   return EMPTY_RECOGNITION;
 }
 
@@ -190,13 +251,13 @@ function parseRecognitionResponse(raw: string | null | undefined): RawScreenshot
 // Provider calls
 // ---------------------------------------------------------------------------
 
-async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<string | null> {
+async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string, systemPrompt = SYSTEM_PROMPT): Promise<string | null> {
   const client = new OpenAI({ apiKey: resolved.key, ...(resolved.baseUrl ? { baseURL: resolved.baseUrl } : {}) });
   const response = await client.chat.completions.create({
     model: "gpt-4o",
-    max_completion_tokens: 800,
+    max_completion_tokens: 2000,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: [
@@ -218,7 +279,7 @@ async function callOpenAI(resolved: ResolvedKey, imageDataUrl: string): Promise<
  *   - retryAfterMs < 30 000 → transient rate-limit, outer loop will retry with backoff
  *   - retryAfterMs >= 30 000 (or undefined) → daily quota exhausted, skip to next provider
  */
-async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
+async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif", systemPrompt = SYSTEM_PROMPT): Promise<string | null> {
   const GEMINI_MODELS = [
     "gemini-flash-latest",      // alias — always points to the current stable flash
     "gemini-flash-lite-latest", // lighter alias — separate quota bucket
@@ -234,7 +295,7 @@ async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${resolved.key}`;
 
     const body = {
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      system_instruction: { parts: [{ text: systemPrompt }] },
       contents: [{
         role: "user",
         parts: [
@@ -242,7 +303,7 @@ async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image
           { text: "Extract all matchups from this screenshot." },
         ],
       }],
-      generationConfig: { maxOutputTokens: 800 },
+      generationConfig: { maxOutputTokens: 2000 },
     };
 
     const res = await fetch(url, {
@@ -321,12 +382,12 @@ async function callGemini(resolved: ResolvedKey, data: string, mediaType: "image
   throw lastErr ?? new Error("Gemini: all models in fallback chain failed");
 }
 
-async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"): Promise<string | null> {
+async function callAnthropic(resolved: ResolvedKey, data: string, mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif", systemPrompt = SYSTEM_PROMPT): Promise<string | null> {
   const client = new Anthropic({ apiKey: resolved.key });
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 800,
-    system: SYSTEM_PROMPT,
+    max_tokens: 2000,
+    system: systemPrompt,
     messages: [
       {
         role: "user",
@@ -410,6 +471,15 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
   debugLog.push(`[IMAGE] mediaType=${mediaType} estimatedSize≈${imageSizeKb}KB`);
   logger.info({ mediaType, imageSizeKb, providerCount: providers.length }, "Screenshot recognition starting");
 
+  /** Call one provider with a given systemPrompt. Returns the parsed result or throws. */
+  async function callProvider(resolved: ResolvedKey, systemPrompt: string): Promise<string | null> {
+    return resolved.provider === "anthropic"
+      ? callAnthropic(resolved, data, mediaType, systemPrompt)
+      : resolved.provider === "gemini"
+        ? callGemini(resolved, data, mediaType, systemPrompt)
+        : callOpenAI(resolved, dataUrl, systemPrompt);
+  }
+
   for (const resolved of providers) {
     debugLog.push(`[TRY] ${resolved.label} provider=${resolved.provider}${resolved.baseUrl ? " (proxy)" : ""}`);
     logger.info({ provider: resolved.provider, label: resolved.label, hasProxy: !!resolved.baseUrl }, "Screenshot recognition: trying provider");
@@ -421,12 +491,7 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
     for (let attempt = 0; attempt <= RETRIES; attempt++) {
       triedAttempts = attempt;
       try {
-        const rawText =
-          resolved.provider === "anthropic"
-            ? await callAnthropic(resolved, data, mediaType)
-            : resolved.provider === "gemini"
-              ? await callGemini(resolved, data, mediaType)
-              : await callOpenAI(resolved, dataUrl);
+        const rawText = await callProvider(resolved, SYSTEM_PROMPT);
 
         const preview = rawText ? rawText.slice(0, 300).replace(/\n/g, "\\n") : "(null)";
         debugLog.push(`[RAW] attempt=${attempt} rawText="${preview}"`);
@@ -436,6 +501,34 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
         debugLog.push(`[PARSED] matchups=${result.matchups.length} entries parsed from rawText`);
         for (const m of result.matchups) {
           debugLog.push(`  • player1="${m.player1Name}" player2="${m.player2Name}" event="${m.eventName}"`);
+        }
+
+        // Content retry: when the model returned a valid response but found nothing,
+        // retry once with the permissive fallback prompt before giving up on this provider.
+        // This handles screenshots from odds apps / non-standard layouts that the strict
+        // prompt misses because it says "unrelated to tennis → return []".
+        if (result.matchups.length === 0) {
+          debugLog.push(`[FALLBACK] primary returned [] — retrying with permissive prompt`);
+          logger.info({ provider: resolved.provider, label: resolved.label }, "Screenshot recognition: primary returned empty; retrying with fallback prompt");
+          try {
+            const fallbackRaw = await callProvider(resolved, FALLBACK_SYSTEM_PROMPT);
+            const fallbackPreview = fallbackRaw ? fallbackRaw.slice(0, 300).replace(/\n/g, "\\n") : "(null)";
+            debugLog.push(`[FALLBACK-RAW] rawText="${fallbackPreview}"`);
+            const fallbackResult = parseRecognitionResponse(fallbackRaw);
+            debugLog.push(`[FALLBACK-PARSED] matchups=${fallbackResult.matchups.length} entries parsed`);
+            for (const m of fallbackResult.matchups) {
+              debugLog.push(`  • player1="${m.player1Name}" player2="${m.player2Name}" event="${m.eventName}"`);
+            }
+            if (fallbackResult.matchups.length > 0) {
+              return { ...fallbackResult, debugLog, rawText: fallbackRaw ?? undefined };
+            }
+          } catch (fallbackErr) {
+            debugLog.push(`[FALLBACK-FAIL] fallback prompt also failed — ${String(fallbackErr).slice(0, 80)}`);
+          }
+          // Both prompts returned empty — treat this provider as exhausted for content purposes
+          // and try the next provider (if any) rather than succeeding with [].
+          debugLog.push(`[NEXT] ${resolved.label} returned [] on both prompts, trying next provider`);
+          break;
         }
 
         return { ...result, debugLog, rawText: rawText ?? undefined };
