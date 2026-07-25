@@ -44,6 +44,7 @@ import {
 import { requireClerkUser } from "../middlewares/requireClerkUser";
 import { predictionLimiter } from "../middlewares/rateLimiter";
 import { getAuth } from "@clerk/express";
+import { openai } from "@workspace/integrations-openai-ai-server";
 import { searchKnownPlayers, normalizePlayerName } from "../services/tennisData/playerIdentity";
 import { isDoublesLikeName } from "./predictionRequestIntegrity";
 import {
@@ -429,6 +430,78 @@ router.get("/predictions/:predictionId", requireClerkUser, async (req, res): Pro
   }
 
   res.json(GetPredictionResponse.parse(row));
+});
+
+/**
+ * Task #35: plain-language explanation of a prediction pick.
+ * Calls OpenAI to narrate the key engine signals in 2 readable paragraphs.
+ * On-demand only (never pre-generated) so costs stay low — the user clicks a button to fetch.
+ */
+router.get("/predictions/:predictionId/explain", requireClerkUser, async (req, res): Promise<void> => {
+  const params = GetPredictionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const [row] = await db.select().from(predictionsTable).where(eq(predictionsTable.id, params.data.predictionId));
+  if (!row) {
+    res.status(404).json({ error: "Prediction not found" });
+    return;
+  }
+
+  try {
+    const engine = row.engine as Record<string, unknown>;
+    const loserName = row.predictedWinnerId === row.player1Id ? row.player2Name : row.player1Name;
+
+    const lines: string[] = [
+      `Match: ${row.player1Name} vs ${row.player2Name}`,
+      `Surface: ${row.surface}${row.tournamentName ? ` — ${row.tournamentName}` : ""}${row.tournamentLevel ? ` (${row.tournamentLevel})` : ""}`,
+      `Predicted winner: ${row.predictedWinnerName} at ${row.predictedWinnerProbability.toFixed(1)}% confidence (over ${loserName})`,
+      `Engine call: ${row.recommendation} · Upset risk: ${row.upsetRisk} · Data quality: ${row.dataQualityLabel}`,
+      `Model agreement: ${String(engine.modelAgreement ?? "unknown")}`,
+    ];
+
+    const reasons = engine.reasons as string[] | undefined;
+    const risks = engine.risks as string[] | undefined;
+    const disclosures = engine.disclosures as string[] | undefined;
+
+    if (reasons?.length) lines.push(`Key reasons:\n${reasons.map((r) => `- ${r}`).join("\n")}`);
+    if (risks?.length) lines.push(`Risk factors:\n${risks.map((r) => `- ${r}`).join("\n")}`);
+    if (disclosures?.length) lines.push(`Additional context:\n${disclosures.map((d) => `- ${d}`).join("\n")}`);
+    if (engine.disagreementNote) lines.push(`Model disagreement: ${String(engine.disagreementNote)}`);
+    if (engine.tieBreakerApplied) lines.push("Note: This is a coin-flip match — models sat within ±3% of 50/50.");
+    if (engine.isEliteTier) lines.push(`Elite tier: ${String(engine.eliteTierReason ?? "all strictest gates passed")}`);
+
+    const upsetBreakdown = engine.upsetRiskBreakdown as { note?: string } | undefined;
+    if (upsetBreakdown?.note) lines.push(`Upset risk detail: ${upsetBreakdown.note}`);
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.6-luna",
+      max_completion_tokens: 350,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a concise, honest tennis analyst explaining an AI prediction pick in plain English. " +
+            "Write exactly 2 short paragraphs — no headers, no markdown, no bullet points. " +
+            "Paragraph 1: explain WHY the engine picked this player, naming the actual signals provided (surface Elo, recent form, head-to-head, etc.). " +
+            "Paragraph 2: cover the risk factors, model caveats, and close with an honest note about uncertainty. " +
+            "Be specific and factual. Never fabricate statistics or imply certainty. Keep it under 200 words total.",
+        },
+        {
+          role: "user",
+          content: `Explain this AI tennis prediction in plain English:\n\n${lines.join("\n\n")}`,
+        },
+      ],
+    });
+
+    const explanation = response.choices[0]?.message?.content?.trim() ?? "Explanation unavailable.";
+    res.json({ explanation });
+  } catch (err) {
+    logger.error({ err }, "Failed to generate prediction explanation");
+    res.status(502).json({ error: "Failed to generate explanation" });
+  }
 });
 
 router.delete("/predictions/:predictionId", async (req, res): Promise<void> => {

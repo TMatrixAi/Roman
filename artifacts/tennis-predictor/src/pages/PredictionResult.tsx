@@ -11,8 +11,9 @@ import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type 
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
-import { useState } from "react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Sparkles, Loader2 } from "lucide-react"
+import { useState, useCallback } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
 import { useToast } from "@/hooks/use-toast"
 
@@ -433,6 +434,9 @@ export default function PredictionResultPage() {
                   </div>
                 </div>
               ) : null}
+
+              {/* Task #35: AI plain-language explanation — fetched on demand */}
+              <PredictionExplanation predictionId={id} />
 
               {!isResolved && (
                 <div className="pt-6 border-t border-border/50">
@@ -1220,6 +1224,79 @@ function DecisionTracePanel({ trace, player1Name, player2Name }: { trace: any; p
       </div>
     </div>
   );
+}
+
+/** Task #35: on-demand plain-language explanation fetched from the AI explain endpoint. */
+function PredictionExplanation({ predictionId }: { predictionId: number }) {
+  const [requested, setRequested] = useState(false)
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["predictions", predictionId, "explain"] as const,
+    queryFn: async () => {
+      const res = await fetch(`/api/predictions/${predictionId}/explain`)
+      if (!res.ok) throw new Error("Failed to fetch explanation")
+      const json = await res.json() as { explanation: string }
+      return json.explanation
+    },
+    enabled: requested,
+    staleTime: Infinity, // explanation won't change — cache forever once fetched
+    retry: 1,
+  })
+
+  const handleRequest = useCallback(() => setRequested(true), [])
+
+  return (
+    <div className="border-t border-border/50 pt-6 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+          AI SUMMARY
+        </p>
+        {!requested && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs gap-1.5 h-7 px-2.5"
+            onClick={handleRequest}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Explain This Pick
+          </Button>
+        )}
+      </div>
+
+      {!requested && (
+        <p className="text-xs text-muted-foreground/70 leading-relaxed">
+          Ask the AI to narrate the key signals behind this prediction in plain English.
+        </p>
+      )}
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono py-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Generating explanation…
+        </div>
+      )}
+
+      {isError && (
+        <p className="text-xs text-destructive font-mono">
+          Could not generate explanation. Try again later.
+        </p>
+      )}
+
+      {data && (
+        <div className="bg-secondary/30 border border-border/50 rounded-xl p-4 space-y-3">
+          {data.split("\n\n").map((para, i) => (
+            <p key={i} className="text-sm text-foreground/85 leading-relaxed">
+              {para}
+            </p>
+          ))}
+          <p className="text-[10px] font-mono text-muted-foreground/50 pt-1 border-t border-border/30">
+            AI-generated summary · not a guarantee · based on engine signals only
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Swords(props: any) {
