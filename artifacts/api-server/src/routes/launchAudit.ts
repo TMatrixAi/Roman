@@ -70,7 +70,7 @@ router.post('/launch-audit/providers/:name/test', requireAdmin, adminLimiter, au
   try {
     const card = testProviderByName(String(req.params.name));
     if (!card) {
-      res.status(404).json({ error: `Provider "${req.params.name}" not found` });
+      res.status(404).json({ error: `Provider "${String(req.params.name)}" not found` });
       return;
     }
     res.json({ provider: card, testedAt: new Date().toISOString() });

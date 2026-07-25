@@ -26,7 +26,7 @@ const ShadowReplayPage = lazy(() => import('@/pages/ShadowReplay'));
 const BacktestingPortalPage = lazy(() => import('@/pages/BacktestingPortal'));
 const BacktestResultsPage = lazy(() => import('@/pages/BacktestResults'));
 const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
-const LaunchAuditPage = lazy(() => import('@/pages/LaunchAudit'));
+const LiveAuditsPage = lazy(() => import('@/pages/LaunchAudit'));
 const PaymentsPage = lazy(() => import('@/pages/Payments'));
 const AdminLoginPage = lazy(() => import('@/pages/AdminLogin'));
 const ModelMonitoringPage = lazy(() => import('@/pages/ModelMonitoring'));
@@ -228,7 +228,6 @@ function Router() {
               <Route path="/history">
                 {() => <ProtectedRoute component={HistoryPage} />}
               </Route>
-              {/* Unprotected / admin-only routes */}
               {/* Subscriber pages */}
               <Route path="/monitoring">
                 {() => <ProtectedRoute component={ModelMonitoringPage} />}
