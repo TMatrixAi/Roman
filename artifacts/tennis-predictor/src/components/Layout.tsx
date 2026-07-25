@@ -174,7 +174,7 @@ function AdminAuthButton() {
       if (!res.ok) throw new Error("Logout failed")
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["adminAuthStatus"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/status"] })
       toast({ title: "Logged out", description: "Owner session cleared" })
     },
     onError: (error) => {
