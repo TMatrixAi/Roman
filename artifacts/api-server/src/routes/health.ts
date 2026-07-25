@@ -66,7 +66,7 @@ router.get("/health/model", async (_req, res) => {
       ageHours,
       stale,
       method: active.method,
-      knotCount: Array.isArray(active.knots) ? (active.knots as unknown[]).length : null,
+      knotCount: Array.isArray(active.mapping) ? (active.mapping as unknown[]).length : null,
       message: stale
         ? `Calibration model is ${ageHours}h old — a refit is recommended.`
         : `Calibration model is ${ageHours}h old.`,

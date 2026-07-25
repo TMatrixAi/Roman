@@ -68,7 +68,7 @@ router.post('/launch-audit/providers/test', requireAdmin, adminLimiter, auditAdm
  */
 router.post('/launch-audit/providers/:name/test', requireAdmin, adminLimiter, auditAdminWrite(), (req, res): void => {
   try {
-    const card = testProviderByName(req.params.name);
+    const card = testProviderByName(String(req.params.name));
     if (!card) {
       res.status(404).json({ error: `Provider "${req.params.name}" not found` });
       return;

@@ -163,6 +163,16 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
+/** Gate a route behind the admin session cookie. Redirects to /admin/login
+ *  for any request that lacks a valid admin cookie — including signed-in Clerk
+ *  users who are not the owner. Regular subscribers must never reach these pages. */
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { data: adminAuth, isLoading } = useGetAdminAuthStatus();
+  if (isLoading) return null;
+  if (!adminAuth?.authenticated) return <Redirect to="/admin/login" />;
+  return <Component />;
+}
+
 function PageFallback() {
   return (
     <div className="space-y-4">
@@ -226,14 +236,28 @@ function Router() {
               <Route path="/account">
                 {() => <ProtectedRoute component={AccountPage} />}
               </Route>
-              {/* Admin-only routes */}
-              <Route path="/evaluation/log" component={PredictionLogPage} />
-              <Route path="/evaluation/dashboard" component={AccuracyDashboardPage} />
-              <Route path="/force-signal" component={ForceSignalPage} />
-              <Route path="/shadow-replay" component={ShadowReplayPage} />
-              <Route path="/backtesting/:id" component={BacktestResultsPage} />
-              <Route path="/backtesting" component={BacktestingPortalPage} />
-              <Route path="/launch-audit" component={LaunchAuditPage} />
+              {/* Admin-only routes — require valid admin session cookie */}
+              <Route path="/evaluation/log">
+                {() => <AdminRoute component={PredictionLogPage} />}
+              </Route>
+              <Route path="/evaluation/dashboard">
+                {() => <AdminRoute component={AccuracyDashboardPage} />}
+              </Route>
+              <Route path="/force-signal">
+                {() => <AdminRoute component={ForceSignalPage} />}
+              </Route>
+              <Route path="/shadow-replay">
+                {() => <AdminRoute component={ShadowReplayPage} />}
+              </Route>
+              <Route path="/backtesting/:id">
+                {() => <AdminRoute component={BacktestResultsPage} />}
+              </Route>
+              <Route path="/backtesting">
+                {() => <AdminRoute component={BacktestingPortalPage} />}
+              </Route>
+              <Route path="/launch-audit">
+                {() => <AdminRoute component={LaunchAuditPage} />}
+              </Route>
               <Route path="/payments" component={PaymentsPage} />
               <Route path="/payments/pricing" component={PaymentsPage} />
               <Route path="/payments/billing" component={PaymentsPage} />

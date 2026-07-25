@@ -65,6 +65,14 @@ export const predictionsTable = pgTable(
      */
     decisionTrace: jsonb("decision_trace"),
 
+    /**
+     * Clerk user ID of the authenticated user who created this prediction.
+     * Nullable for rows inserted before this column was added (admin / pre-launch corpus).
+     * All new predictions from Clerk-authenticated users populate this field so the history
+     * endpoint can scope results to the requesting user's own predictions only.
+     */
+    clerkUserId: text("clerk_user_id"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
@@ -73,6 +81,8 @@ export const predictionsTable = pgTable(
     // `/predictions/stats` aggregation's full-table scan avoidance as row counts grow.
     index("predictions_created_at_idx").on(table.createdAt),
     index("predictions_recommendation_idx").on(table.recommendation),
+    // Backs per-user history scoping: WHERE clerk_user_id = $1 ORDER BY created_at DESC
+    index("predictions_clerk_user_id_idx").on(table.clerkUserId),
     // Enforces "same match, same resolved inputs -> at most one row" at the database level (see
     // the column doc above). A prediction submitted for the same match with different inputs gets
     // a different inputSnapshotHash and is free to insert a new row.

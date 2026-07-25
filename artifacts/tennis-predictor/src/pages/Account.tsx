@@ -1,15 +1,66 @@
 import { useUser, useClerk } from "@clerk/react"
-import { UserCircle, LogOut, Mail, CreditCard, Shield } from "lucide-react"
+import { UserCircle, LogOut, Mail, CreditCard, Shield, Crown, Zap, Users, CheckCircle2, AlertCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useGetMyPaymentsStatus, getMyPaymentsStatusQueryKey } from "@workspace/api-client-react"
+import type { SubscriptionTier } from "@workspace/api-client-react"
+import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag"
+import { useLocation } from "wouter"
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+function planIcon(tier: SubscriptionTier) {
+  if (tier === "team")                             return <Users className="w-4 h-4 text-primary" />
+  if (tier === "elite" || tier === "elite_annual") return <Crown className="w-4 h-4 text-primary" />
+  if (tier === "pro"   || tier === "pro_annual")   return <Zap   className="w-4 h-4 text-primary" />
+  return null
+}
+
+function planLabel(tier: SubscriptionTier, planKey?: string | null): string {
+  switch (tier) {
+    case "team":         return "Team"
+    case "elite_annual": return "Elite Annual"
+    case "elite":        return "Elite"
+    case "pro_annual":   return "Pro Annual"
+    case "pro":          return "Pro"
+    default:             return planKey ?? "Free"
+  }
+}
+
+type AccountRow = {
+  cancelAtPeriodEnd: boolean
+  subscriptionStatus: string | null
+  currentPeriodEndAt: string | null
+  trialEndAt: string | null
+} | null
+
+function getRenewalLabel(account: AccountRow): string {
+  if (!account) return "Renewal"
+  if (account.cancelAtPeriodEnd) return "Access ends"
+  if (account.subscriptionStatus === "trialing") return "Trial ends"
+  return "Renews"
+}
+
+function getRenewalDate(account: AccountRow): string {
+  if (!account) return "—"
+  const raw = account.subscriptionStatus === "trialing"
+    ? account.trialEndAt
+    : account.currentPeriodEndAt
+  if (!raw) return "—"
+  return new Date(raw).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
 
 export default function AccountPage() {
   const { user, isLoaded } = useUser()
   const { signOut } = useClerk()
+  const [, setLocation] = useLocation()
+  const paymentsEnabled = isPaymentsV2Enabled()
+
+  const { data: billing, isLoading: billingLoading } = useGetMyPaymentsStatus({
+    query: { queryKey: getMyPaymentsStatusQueryKey(), enabled: paymentsEnabled },
+  })
 
   if (!isLoaded) {
     return (
@@ -23,7 +74,13 @@ export default function AccountPage() {
 
   const email = user?.emailAddresses?.[0]?.emailAddress
   const displayName = user?.fullName ?? user?.firstName ?? email?.split("@")[0] ?? "Account"
-  const createdAt = user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : null
+  const createdAt = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })
+    : null
+
+  const tier: SubscriptionTier = billing?.tier ?? "free"
+  const isActive = billing?.active === true
+  const account = billing?.account ?? null
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-2xl mx-auto">
@@ -69,25 +126,65 @@ export default function AccountPage() {
       <Card>
         <CardContent className="p-6 space-y-4">
           <h2 className="text-sm font-mono font-bold text-muted-foreground tracking-widest uppercase">Subscription</h2>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <CreditCard className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Current plan</p>
-                <p className="text-sm text-muted-foreground">Manage billing and upgrades</p>
-              </div>
+
+          {billingLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-8 w-40" />
             </div>
-            <Badge variant="outline" className="font-mono text-xs shrink-0">Active</Badge>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono w-full sm:w-auto"
-            onClick={() => window.location.href = `${basePath}/payments/billing`}
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Manage Billing
-          </Button>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <div>
+                    {isActive ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          {planIcon(tier)}
+                          <p className="font-semibold">{planLabel(tier, account?.planKey)}</p>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                          {getRenewalLabel(account)} {getRenewalDate(account)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium">No active plan</p>
+                        <p className="text-sm text-muted-foreground">Subscribe to unlock all features</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {isActive ? (
+                  <Badge variant="success" className="font-mono text-xs gap-1 shrink-0">
+                    <CheckCircle2 className="w-3 h-3" /> Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="font-mono text-xs gap-1 shrink-0 text-muted-foreground">
+                    <AlertCircle className="w-3 h-3" /> Free
+                  </Badge>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {isActive ? (
+                  <Button variant="outline" size="sm" className="font-mono"
+                    onClick={() => setLocation("/payments/billing")}>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Manage Billing
+                  </Button>
+                ) : (
+                  <Button variant="default" size="sm" className="font-mono"
+                    onClick={() => setLocation("/payments")}>
+                    <Zap className="w-4 h-4 mr-2" />
+                    View Plans
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

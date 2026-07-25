@@ -43,6 +43,7 @@ import {
 } from "./predictionRequestIntegrity";
 import { requireClerkUser } from "../middlewares/requireClerkUser";
 import { predictionLimiter } from "../middlewares/rateLimiter";
+import { getAuth } from "@clerk/express";
 import { searchKnownPlayers, normalizePlayerName } from "../services/tennisData/playerIdentity";
 import { isDoublesLikeName } from "./predictionRequestIntegrity";
 import {
@@ -147,11 +148,19 @@ router.get("/predictions", requireClerkUser, async (req, res): Promise<void> => 
     return;
   }
 
-  const rows = await db
+  const clerkUserId = getAuth(req).userId;
+
+  // Admin sessions have no Clerk userId — they see the full ledger.
+  // Clerk-authenticated users see only their own predictions.
+  const query = db
     .select()
     .from(predictionsTable)
     .orderBy(desc(predictionsTable.createdAt))
     .limit(parsed.data.limit);
+
+  const rows = clerkUserId
+    ? await query.where(eq(predictionsTable.clerkUserId, clerkUserId))
+    : await query;
 
   res.json(ListPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
@@ -357,6 +366,9 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       decisionTrace: output.decisionTrace,
       matchIdentityKey,
       inputSnapshotHash,
+      // Stamp the requesting Clerk user ID so history is scoped per-user.
+      // Admin sessions have no Clerk userId — their predictions remain unscoped (null).
+      clerkUserId: getAuth(req).userId ?? null,
     });
 
     if (
