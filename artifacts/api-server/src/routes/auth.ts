@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { AdminLoginBody, AdminLoginResponse, GetAdminAuthStatusResponse, AdminLogoutResponse } from "@workspace/api-zod";
 import {
   getAdminAccessKey,
-  getOwnerAutoLoginToken,
   isOwnerAutoAuthenticated,
   isAdminSessionCookieValid,
   setAdminSessionCookie,
@@ -10,14 +9,6 @@ import {
 } from "../lib/adminAuth";
 
 const router: IRouter = Router();
-
-function getSafeRedirectPath(input: unknown): string {
-  if (typeof input !== "string") return "/app";
-  const trimmed = input.trim();
-  if (!trimmed.startsWith("/")) return "/app";
-  if (trimmed.startsWith("//")) return "/app";
-  return trimmed;
-}
 
 router.get("/auth/status", (req, res): void => {
   const authenticated = isAdminSessionCookieValid(req.signedCookies) || isOwnerAutoAuthenticated(req);
@@ -67,24 +58,6 @@ router.post("/auth/login", (req, res): void => {
 
   setAdminSessionCookie(res);
   res.json(AdminLoginResponse.parse({ authenticated: true }));
-});
-
-router.get("/auth/owner-auto-login", (req, res): void => {
-  const configuredToken = getOwnerAutoLoginToken();
-  if (!configuredToken) {
-    res.status(403).json({ error: "Owner auto-login is not configured on the server" });
-    return;
-  }
-
-  const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
-  if (!token || token !== configuredToken) {
-    res.status(401).json({ error: "Invalid owner auto-login token" });
-    return;
-  }
-
-  setAdminSessionCookie(res);
-  const next = getSafeRedirectPath(req.query.next);
-  res.redirect(302, next);
 });
 
 router.post("/auth/logout", (_req, res): void => {

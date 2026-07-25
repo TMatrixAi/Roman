@@ -43,21 +43,6 @@ export function getAdminAccessKey(): string | undefined {
   return undefined;
 }
 
-export function getOwnerAutoLoginToken(): string | undefined {
-  // Optional dedicated token for owner-only magic-link login.
-  // Falls back to ADMIN_ACCESS_KEY so existing deployments work without extra setup.
-  const candidates = [
-    process.env.OWNER_AUTO_LOGIN_TOKEN,
-    process.env.OWNER_MAGIC_LINK_TOKEN,
-    getAdminAccessKey(),
-  ];
-  for (const value of candidates) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
-}
-
 export function isAdminSessionCookieValid(signedCookies: Record<string, unknown> | undefined): boolean {
   return signedCookies?.[ADMIN_SESSION_COOKIE] === ADMIN_SESSION_VALUE;
 }
