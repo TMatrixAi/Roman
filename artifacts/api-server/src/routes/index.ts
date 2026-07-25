@@ -11,6 +11,7 @@ import authRouter from "./auth";
 import backtestsRouter from "./backtests";
 import launchAuditRouter from "./launchAudit";
 import paymentsRouter from "./payments";
+import monitoringRouter from "./monitoring";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(evaluationRouter);
 router.use(backtestsRouter);
 router.use(launchAuditRouter);
 router.use(paymentsRouter);
+router.use(monitoringRouter);
 
 export default router;
