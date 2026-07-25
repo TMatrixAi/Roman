@@ -351,7 +351,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="w-8 h-8 text-accent">
               <TennisMatrixLogo />
             </div>
-            <span className="uppercase tracking-[0.16em] text-emerald-300">TENNIS MATRIX AI</span>
           </Link>
 
           {/* Desktop nav */}
@@ -371,8 +370,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Right side controls: FORCE SIGNAL → ONLINE SIGNAL → [gap] → ADMIN → THEME */}
+          {/* Right side controls: THEME → FORCE SIGNAL → ONLINE SIGNAL → [gap] → ADMIN */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* Theme toggle */}
+            <ThemeToggle />
+
             {/* Force Signal — visually distinct (warning/amber) from Online Signal (primary) */}
             <Link
               href="/force-signal"
@@ -400,9 +402,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Admin Login/Logout */}
             <AdminAuthButton />
-
-            {/* Theme toggle */}
-            <ThemeToggle />
 
             {/* Mobile menu toggle */}
             <button

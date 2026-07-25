@@ -7,55 +7,69 @@ export function TennisMatrixLogo() {
       xmlns="http://www.w3.org/2000/svg"
       className="drop-shadow-lg"
     >
-      {/* Gradient background */}
       <defs>
-        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
-          <stop offset="100%" stopColor="#059669" stopOpacity={1} />
+        <radialGradient id="coreGlow" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stopColor="#34d399" stopOpacity={0.85} />
+          <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+        </radialGradient>
+        <linearGradient id="logoGrad" x1="8%" y1="8%" x2="92%" y2="92%">
+          <stop offset="0%" stopColor="#6ee7b7" stopOpacity={1} />
+          <stop offset="48%" stopColor="#10b981" stopOpacity={1} />
+          <stop offset="100%" stopColor="#047857" stopOpacity={1} />
+        </linearGradient>
+        <linearGradient id="spark" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#bbf7d0" />
+          <stop offset="100%" stopColor="#34d399" />
         </linearGradient>
       </defs>
 
-      {/* Main racket frame circle */}
-      <circle cx="24" cy="18" r="12" fill="none" stroke="url(#logoGrad)" strokeWidth="2.5" />
+      {/* Ambient glow */}
+      <circle cx="24" cy="24" r="21" fill="url(#coreGlow)" />
 
-      {/* Racket strings - horizontal */}
-      <line x1="14" y1="12" x2="34" y2="12" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.6" />
-      <line x1="13.5" y1="15" x2="34.5" y2="15" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="13" y1="18" x2="35" y2="18" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="13.5" y1="21" x2="34.5" y2="21" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="14" y1="24" x2="34" y2="24" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.6" />
+      {/* Main ring */}
+      <circle cx="24" cy="24" r="17" fill="none" stroke="url(#logoGrad)" strokeWidth="2.6" />
 
-      {/* Racket strings - vertical */}
-      <line x1="18" y1="8" x2="18" y2="28" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.6" />
-      <line x1="21" y1="7" x2="21" y2="29" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="24" y1="6.5" x2="24" y2="29.5" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="27" y1="7" x2="27" y2="29" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.5" />
-      <line x1="30" y1="8" x2="30" y2="28" stroke="url(#logoGrad)" strokeWidth="1" opacity="0.6" />
-
-      {/* Racket handle */}
-      <rect x="21.5" y="28" width="5" height="14" rx="2.5" fill="url(#logoGrad)" />
-
-      {/* Tennis ball - positioned off to the side */}
-      <circle cx="38" cy="32" r="6" fill="#FFEB3B" />
+      {/* Matrix M monogram */}
       <path
-        d="M 36 30 Q 38 31 40 30"
-        stroke="#FDD835"
+        d="M14 31V16l6 8 4-6 4 6 6-8v15"
+        fill="none"
+        stroke="url(#logoGrad)"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Orbit stroke */}
+      <path
+        d="M8 28c2.4 6.2 7.9 11 15.2 12.3C32.8 42 41.2 36.3 43 27"
+        fill="none"
+        stroke="url(#spark)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.95"
+      />
+
+      {/* Ball */}
+      <circle cx="37.5" cy="28.5" r="5.5" fill="#d9f99d" />
+      <path
+        d="M34.7 27.6q2.8 1.8 5.6 0"
+        stroke="#84cc16"
         strokeWidth="1.5"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M 36 34 Q 38 33 40 34"
-        stroke="#FDD835"
+        d="M34.7 29.4q2.8-1.8 5.6 0"
+        stroke="#84cc16"
         strokeWidth="1.5"
         fill="none"
         strokeLinecap="round"
       />
 
-      {/* Matrix accent dots */}
-      <circle cx="12" cy="34" r="1.5" fill="url(#logoGrad)" opacity="0.7" />
-      <circle cx="16" cy="36" r="1" fill="url(#logoGrad)" opacity="0.5" />
-      <circle cx="10" cy="40" r="1.2" fill="url(#logoGrad)" opacity="0.6" />
+      {/* Accent nodes */}
+      <circle cx="9" cy="13" r="1.2" fill="url(#spark)" opacity="0.9" />
+      <circle cx="12" cy="10" r="0.9" fill="url(#spark)" opacity="0.75" />
+      <circle cx="39" cy="11" r="1" fill="url(#spark)" opacity="0.8" />
     </svg>
   )
 }
