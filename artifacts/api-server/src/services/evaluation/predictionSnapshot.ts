@@ -24,6 +24,11 @@ export interface PredictionSnapshotInput {
   provider: TennisDataProvider;
   player1Id: string;
   player2Id: string;
+  /** Submitted player names (from fixture card headers). Used by resolution to recover the
+   *  correct provider ID via name-search when the submitted fixture ID is from a different
+   *  ID namespace (e.g. MatchStat IDs collide with unrelated API-Tennis records). */
+  player1SubmittedName?: string | null;
+  player2SubmittedName?: string | null;
   surface: Surface;
   matchFormat: MatchFormat;
   tournamentName?: string | null;
@@ -51,8 +56,8 @@ export interface PredictionSnapshotResult {
  */
 export async function predictFromSnapshot(input: PredictionSnapshotInput): Promise<PredictionSnapshotResult> {
   const [player1Resolution, player2Resolution] = await Promise.all([
-    resolvePlayerProfileForPrediction(input.provider, input.player1Id),
-    resolvePlayerProfileForPrediction(input.provider, input.player2Id),
+    resolvePlayerProfileForPrediction(input.provider, input.player1Id, input.player1SubmittedName ?? undefined),
+    resolvePlayerProfileForPrediction(input.provider, input.player2Id, input.player2SubmittedName ?? undefined),
   ]);
 
   const player1Raw = player1Resolution.profile;

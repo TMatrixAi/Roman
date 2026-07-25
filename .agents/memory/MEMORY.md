@@ -1,4 +1,5 @@
 - [API-Tennis provider quirks](api-tennis-provider.md) — real API-Tennis responses violate its own docs (numeric keys, null surfaces/levels); design for it, don't trust the docs literally.
+- [MatchStat/API-Tennis ID collision fix](matchstat-api-tennis-id-collision.md) — MatchStat fixture IDs collide with API-Tennis doubles-team IDs; three-layer fix: skip doubles from getPlayer, prefer abbreviated search candidates, abbreviation-tolerant integrity check.
 - [Orval + zod codegen pitfalls](orval-zod-codegen-pitfalls.md) — zod.coerce.string() silently defeats required-field validation; generated react-query hook option types require queryKey.
 - [Historical backfill cross-run state continuity](historical-backfill-state-continuity.md) — chronological importers with running state (Elo, form) must hydrate from persisted records, not just in-process memory, or later runs silently cold-start.
 - [Prediction engine calibration architecture](predictionengine-calibration-architecture.md) — engine stays sync/DB-free, caller-resolved inputs "absent not faked"; gates must work identically live vs. backtest (don't gate on caller-supplied-or-not).

@@ -43,12 +43,78 @@ import {
 } from "./predictionRequestIntegrity";
 import { requireClerkUser } from "../middlewares/requireClerkUser";
 import { predictionLimiter } from "../middlewares/rateLimiter";
+import { searchKnownPlayers, normalizePlayerName } from "../services/tennisData/playerIdentity";
+import { isDoublesLikeName } from "./predictionRequestIntegrity";
 import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
   canUseEvidenceReliability,
   canUsePredictionHistory,
 } from "../services/payments/entitlementService";
+
+/**
+ * Fixture cards from MatchStat carry MatchStat player IDs, which do NOT share an ID space with
+ * API-Tennis. Calling getPlayer(<matchstat-id>) on API-Tennis returns an unrelated player (often
+ * a doubles team). When submitted player names are available we can do a name-based search to
+ * recover the correct canonical API-Tennis ID before running the prediction engine.
+ */
+async function resolveCanonicalPlayerIdFromName(
+  provider: ReturnType<typeof getTennisDataProvider>,
+  submittedName: string,
+  fallbackId: string,
+): Promise<string> {
+  try {
+    const candidates = await searchKnownPlayers(provider, submittedName);
+    const normalizedQuery = normalizePlayerName(submittedName);
+    const queryWords = normalizedQuery.split(" ").filter(Boolean);
+
+    // Collect all qualifying candidates — both exact and abbreviated matches.
+    // searchKnownPlayers merges live API-Tennis results with historical DB (MatchStat) entries.
+    // When the same player appears twice:
+    //   - historical entry: full name ("Tereza Valentova"), MatchStat ID
+    //   - live entry: abbreviated name ("T. Valentova"), API-Tennis ID  ← correct one
+    // We must prefer the abbreviated (live) candidate over the exact-full-name (historical)
+    // because the MatchStat ID space collides with unrelated API-Tennis IDs.
+    let exactMatch: { id: string; name: string } | null = null;
+    let abbreviatedMatch: { id: string; name: string } | null = null;
+
+    for (const c of candidates) {
+      if (isDoublesLikeName(c.name)) continue;
+      const cn = normalizePlayerName(c.name);
+
+      if (cn === normalizedQuery && !exactMatch) {
+        exactMatch = c;
+      }
+      // Full-name query ("tereza valentova") matching abbreviated provider entry ("t valentova")
+      // after normalizePlayerName strips the dot — so check single-letter first word, not "t."
+      if (queryWords.length >= 2 && !abbreviatedMatch) {
+        const initial = queryWords[0]![0]!;
+        const surnames = queryWords.slice(1);
+        const cnWords = cn.split(" ").filter(Boolean);
+        if (
+          cnWords.length === surnames.length + 1 &&
+          cnWords[0]!.length === 1 &&
+          cnWords[0] === initial &&
+          surnames.every((s, i) => cnWords[i + 1] === s)
+        ) {
+          abbreviatedMatch = c;
+        }
+      }
+    }
+
+    // Prefer the abbreviated (live API-Tennis) match; fall back to exact (may be historical/MatchStat).
+    const best = abbreviatedMatch ?? exactMatch;
+    if (best) {
+      logger.info({ submittedName, resolvedId: best.id, resolvedName: best.name, viaAbbreviated: !!abbreviatedMatch }, "resolveCanonicalPlayerIdFromName: resolved");
+      return best.id;
+    }
+
+    logger.warn({ submittedName, fallbackId, candidates: candidates.slice(0, 5).map(c => ({ id: c.id, name: c.name })) }, "resolveCanonicalPlayerIdFromName: no match found, using fallback");
+  } catch (err) {
+    logger.warn({ err, submittedName, fallbackId }, "resolveCanonicalPlayerIdFromName: error, using fallback");
+  }
+  return fallbackId;
+}
 
 const router: IRouter = Router();
 
@@ -190,6 +256,19 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       strategyFingerprint: currentProductionIdentity.strategyFingerprint ?? LIVE_MODEL_VERSION,
     };
 
+    // When submitted player names are present (fixture card predictions), pre-resolve IDs by name.
+    // MatchStat fixture IDs do not share an ID space with API-Tennis — calling getPlayer(<matchstat-id>)
+    // returns an unrelated player (often a doubles team). Name-based lookup recovers the correct
+    // canonical API-Tennis ID before the prediction engine runs.
+    const [resolvedPlayer1Id, resolvedPlayer2Id] = await Promise.all([
+      integrity.submittedPlayer1Name
+        ? resolveCanonicalPlayerIdFromName(provider, integrity.submittedPlayer1Name, body.player1Id)
+        : Promise.resolve(body.player1Id),
+      integrity.submittedPlayer2Name
+        ? resolveCanonicalPlayerIdFromName(provider, integrity.submittedPlayer2Name, body.player2Id)
+        : Promise.resolve(body.player2Id),
+    ]);
+
     const {
       player1,
       player2,
@@ -202,8 +281,10 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       output,
     } = await predictFromSnapshot({
       provider,
-      player1Id: body.player1Id,
-      player2Id: body.player2Id,
+      player1Id: resolvedPlayer1Id,
+      player2Id: resolvedPlayer2Id,
+      player1SubmittedName: integrity.submittedPlayer1Name ?? undefined,
+      player2SubmittedName: integrity.submittedPlayer2Name ?? undefined,
       surface: body.surface,
       matchFormat: body.matchFormat,
       tournamentName: body.tournamentName ?? null,
@@ -220,6 +301,7 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
     const canonicalBody = { ...body, player1Id: player1.id, player2Id: player2.id };
     const identityViolation = assertPredictionIdentityIntegrity(canonicalBody, integrity, player1, player2);
     if (identityViolation) {
+      logger.warn({ identityViolation, bodyP1: body.player1Id, bodyP2: body.player2Id, resolvedP1: player1.id, resolvedP2: player2.id, p1Name: player1.name, p2Name: player2.name, submittedP1Name: integrity.submittedPlayer1Name, submittedP2Name: integrity.submittedPlayer2Name }, "409: assertPredictionIdentityIntegrity failed");
       res.status(identityViolation.code === "BAD_REQUEST" ? 400 : 409).json({ error: identityViolation.message });
       return;
     }
@@ -275,11 +357,13 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       saved.matchFormat !== body.matchFormat ||
       (saved.tournamentName ?? null) !== (body.tournamentName ?? null)
     ) {
+      logger.warn({ savedP1: saved.player1Id, savedP2: saved.player2Id, resolvedP1: player1.id, resolvedP2: player2.id, savedSurface: saved.surface, bodySurface: body.surface, savedFormat: saved.matchFormat, bodyFormat: body.matchFormat, savedTournament: saved.tournamentName, bodyTournament: body.tournamentName }, "409: post-save player/surface/format check failed");
       res.status(409).json({ error: "Integrity check failed: saved prediction no longer matches the submitted request context" });
       return;
     }
 
     if ((saved.externalFixtureId ?? null) !== getExternalFixtureIdFromRequestMatchId(integrity.requestMatchId)) {
+      logger.warn({ savedFixtureId: saved.externalFixtureId, requestMatchId: integrity.requestMatchId, extracted: getExternalFixtureIdFromRequestMatchId(integrity.requestMatchId) }, "409: fixture lineage check failed");
       res.status(409).json({ error: "Integrity check failed: saved fixture lineage no longer matches the submitted request context" });
       return;
     }

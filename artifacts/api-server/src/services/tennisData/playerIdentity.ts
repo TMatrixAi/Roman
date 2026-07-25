@@ -425,20 +425,109 @@ export interface PredictionPlayerResolution {
 }
 
 /**
+ * Resolves a player profile purely by name when a direct ID lookup is unavailable or unreliable.
+ * Searches the provider, finds the best singles-name match, and returns the resolved profile.
+ * Falls through to a constructed minimal profile when the provider has an abbreviated form only.
+ */
+async function resolvePlayerProfileByName(
+  provider: TennisDataProvider,
+  submittedName: string,
+  requestedPlayerId: string,
+): Promise<PlayerProfile | null> {
+  const normalizedQuery = normalizePlayerName(submittedName);
+  const queryWords = normalizedQuery.split(" ").filter(Boolean);
+  const candidates = await provider.searchPlayers(submittedName);
+
+  for (const c of candidates) {
+    if (/\s\/\s|\//.test(c.name ?? "")) continue; // skip doubles
+    const cn = normalizePlayerName(c.name);
+    if (cn === normalizedQuery) {
+      const profile = await resolvePlayerProfile(provider, c.id);
+      if (profile && !/\s\/\s|\//.test(profile.name ?? "")) return profile;
+    }
+  }
+
+  // Abbreviated-form fallback: submitted "Daria Snigur" → provider entry "D. Snigur"
+  if (queryWords.length >= 2) {
+    const initial = queryWords[0]![0]!;
+    const surnames = queryWords.slice(1);
+    const abbreviated = candidates.find((c) => {
+      if (/\s\/\s|\//.test(c.name ?? "")) return false;
+      const cw = normalizePlayerName(c.name).split(" ").filter(Boolean);
+      return (
+        cw.length === queryWords.length &&
+        cw[0]!.length === 1 &&
+        cw[0] === initial &&
+        surnames.every((s, i) => cw[i + 1] === s)
+      );
+    });
+    if (abbreviated) {
+      const profile = await resolvePlayerProfile(provider, abbreviated.id);
+      if (profile && !/\s\/\s|\//.test(profile.name ?? "")) return profile;
+      // If getPlayer is also broken for this abbreviated candidate, construct a minimal profile
+      // from the search result so prediction can proceed with what we know.
+      if (abbreviated) {
+        logger.warn(
+          { requestedPlayerId, submittedName, candidateId: abbreviated.id },
+          "resolvePlayerProfileByName: getPlayer broken for abbreviated candidate — constructing minimal profile from search result",
+        );
+        const minimalProfile: PlayerProfile = {
+          id: abbreviated.id,
+          name: abbreviated.name,
+          fullName: submittedName,
+          countryCode: null,
+          currentRank: null,
+          tour: abbreviated.tour ?? null,
+          age: null,
+          plays: null,
+          source: "historical-match",
+        };
+        return minimalProfile;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Prediction-time player resolution that starts from an input player id and attempts stable
  * remapping when that id exists only in historical rows but no longer resolves in the provider.
  */
 export async function resolvePlayerProfileForPrediction(
   provider: TennisDataProvider,
   requestedPlayerId: string,
+  submittedName?: string,
 ): Promise<PredictionPlayerResolution> {
   const direct = await resolvePlayerProfile(provider, requestedPlayerId);
   if (direct) {
-    return { profile: direct, resolvedPlayerId: direct.id, detail: null };
+    // If the provider returns a doubles/team name for this ID, the ID spaces have collided
+    // (e.g. a MatchStat singles player ID happens to match an API-Tennis doubles team ID).
+    // Treat it as a failed direct lookup and fall through to the historical-sighting / name-search
+    // fallback chain so we can find the correct canonical singles player ID.
+    const doublesLike = /\s\/\s|\//.test(direct.name ?? "");
+    if (!doublesLike) {
+      return { profile: direct, resolvedPlayerId: direct.id, detail: null };
+    }
+    logger.warn({ requestedPlayerId, resolvedName: direct.name }, "resolvePlayerProfileForPrediction: direct lookup returned doubles/team name — skipping, falling back to historical-sighting name search");
   }
 
   const sighting = await findMostRecentHistoricalSighting(requestedPlayerId);
   if (!sighting) {
+    // When no historical sighting exists but a submitted name was provided (e.g. from the fixture
+    // card header), fall back to name-based search to construct a minimal profile. This recovers
+    // players whose MatchStat fixture ID collides with an API-Tennis doubles-team record but who
+    // also lack any historical_matches rows (e.g. newly-active players).
+    if (submittedName) {
+      const nameProfile = await resolvePlayerProfileByName(provider, submittedName, requestedPlayerId);
+      if (nameProfile) {
+        logger.info(
+          { requestedPlayerId, submittedName, resolvedId: nameProfile.id },
+          "resolvePlayerProfileForPrediction: resolved via submitted-name search (no historical sighting)",
+        );
+        return { profile: nameProfile, resolvedPlayerId: nameProfile.id, detail: null };
+      }
+    }
     return {
       profile: null,
       resolvedPlayerId: requestedPlayerId,
