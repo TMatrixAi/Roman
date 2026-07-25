@@ -572,7 +572,7 @@ export const FixturesList = forwardRef<
                         {fixture.tournamentLevel || 'TOURNAMENT'}
                       </Badge>
                       {fixture.tournamentName && (
-                        <span className="truncate max-w-[42vw] sm:max-w-[180px] text-muted-foreground/80">
+                        <span className="truncate min-w-0 sm:max-w-[180px] text-muted-foreground/80">
                           {fixture.tournamentName}
                         </span>
                       )}
@@ -650,15 +650,6 @@ export const FixturesList = forwardRef<
                         <Zap className="w-3 h-3" />
                       )}
                       PREDICT
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 sm:w-full font-mono font-bold text-[0.6875rem] h-9 gap-1.5"
-                      onClick={(e) => { e.stopPropagation(); setLocation(buildCustomMatchUrl(fixture)) }}
-                    >
-                      <Swords className="w-3 h-3" />
-                      CUSTOM
                     </Button>
                   </div>
                 </div>

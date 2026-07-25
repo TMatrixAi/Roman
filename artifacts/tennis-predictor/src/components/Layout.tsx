@@ -65,15 +65,8 @@ function ThemeToggle() {
 
   return (
     <>
-      <button
-        className="sm:hidden p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-        onClick={cycleTheme}
-        aria-label="Cycle theme"
-      >
-        {activeTheme === "light" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-      </button>
       <div
-        className="hidden sm:inline-flex items-center rounded-lg border border-border/60 bg-secondary/50 p-0.5"
+        className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/50 p-0.5"
         role="group"
         aria-label="Theme selector"
       >
@@ -193,11 +186,11 @@ function AdminAuthButton() {
     return (
       <Link
         href="/admin/login"
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:text-primary hover:border-primary/40"
-        title="Owner login"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/50 shadow-sm"
+        title="Admin login — enter your admin password"
       >
         <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-        <span className="hidden sm:inline">Login</span>
+        <span>ADMIN</span>
       </Link>
     )
   }
@@ -206,11 +199,11 @@ function AdminAuthButton() {
     <button
       onClick={() => logoutMutation.mutate()}
       disabled={logoutMutation.isPending}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-accent/10 text-accent border-accent/20 hover:bg-accent/20 hover:text-accent hover:border-accent/40 disabled:opacity-50"
-      title="Owner logout"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 hover:border-amber-500/60 disabled:opacity-50 shadow-sm"
+      title="Admin — click to log out"
     >
       <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-      <span className="hidden sm:inline">{logoutMutation.isPending ? "..." : "Logout"}</span>
+      <span>{logoutMutation.isPending ? "..." : "ADMIN ✓"}</span>
     </button>
   )
 }

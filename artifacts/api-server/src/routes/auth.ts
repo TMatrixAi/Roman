@@ -6,6 +6,8 @@ import {
   setAdminSessionCookie,
   clearAdminSessionCookie,
 } from "../lib/adminAuth";
+import { authLimiter } from "../middlewares/rateLimiter";
+import { auditLog } from "../middlewares/auditLog";
 
 const router: IRouter = Router();
 
@@ -13,7 +15,7 @@ router.get("/auth/status", (req, res): void => {
   res.json(GetAdminAuthStatusResponse.parse({ authenticated: isAdminSessionCookieValid(req.signedCookies) }));
 });
 
-router.post("/auth/login", (req, res): void => {
+router.post("/auth/login", authLimiter, auditLog("admin.login"), (req, res): void => {
   const parsed = AdminLoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

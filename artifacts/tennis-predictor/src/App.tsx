@@ -1,4 +1,5 @@
 import { useEffect, useRef, Suspense, lazy } from 'react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/toaster';
@@ -251,7 +252,9 @@ function App() {
     >
       {/* WouterRouter must wrap ClerkProvider so routerPush can call useLocation */}
       <WouterRouter base={basePath}>
-        <ClerkProviderWithRoutes />
+        <ErrorBoundary>
+          <ClerkProviderWithRoutes />
+        </ErrorBoundary>
       </WouterRouter>
     </ThemeProvider>
   );

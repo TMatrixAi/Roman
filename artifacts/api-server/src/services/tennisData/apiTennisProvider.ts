@@ -1,4 +1,6 @@
 import { logger } from "../../lib/logger";
+import { withRetry, isTransientError } from "../../lib/retry";
+import { CircuitBreaker } from "../../lib/circuitBreaker";
 import { TtlCache } from "./cache";
 import { inferLevelFromEventType, normalizeProviderSurface, resolveSurfaceAndLevel } from "./surfaceMap";
 import { resolveTournamentTimezone } from "./timezoneMap";
@@ -368,6 +370,11 @@ export class ApiTennisProvider implements TennisDataProvider {
   private cache = new TtlCache();
   private lastSuccessfulCallAt: string | null = null;
   private lastError: string | null = null;
+  private readonly breaker = new CircuitBreaker("api-tennis", {
+    failureThreshold: 5,
+    openDurationMs: 30_000,
+    windowMs: 60_000,
+  });
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -391,17 +398,36 @@ export class ApiTennisProvider implements TennisDataProvider {
     }
 
     try {
-      const response = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) {
-        throw new Error(`API-Tennis responded with HTTP ${response.status}`);
-      }
-      const body = (await response.json()) as ApiTennisEnvelope<T>;
-      if (body.success !== 1) {
-        throw new Error("API-Tennis reported an unsuccessful response");
-      }
+      const result = await this.breaker.execute(() =>
+        withRetry(
+          async () => {
+            const response = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+            if (!response.ok) {
+              const statusErr = Object.assign(
+                new Error(`API-Tennis responded with HTTP ${response.status}`),
+                { status: response.status },
+              );
+              throw statusErr;
+            }
+            const body = (await response.json()) as ApiTennisEnvelope<T>;
+            if (body.success !== 1) {
+              throw new Error("API-Tennis reported an unsuccessful response");
+            }
+            return body.result;
+          },
+          {
+            attempts: 3,
+            baseDelayMs: 500,
+            maxDelayMs: 5_000,
+            retryOn: (err) => isTransientError(err),
+            onRetry: (err, attempt) =>
+              logger.warn({ err, method, attempt }, "API-Tennis call retrying"),
+          },
+        ),
+      );
       this.lastSuccessfulCallAt = new Date().toISOString();
       this.lastError = null;
-      return body.result;
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error calling API-Tennis";
       this.lastError = message;

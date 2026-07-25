@@ -36,6 +36,7 @@
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.6.0",
     "http-proxy-middleware": "^4.2.0",
     "openai": "^6.46.0",
     "pino": "^9.14.0",

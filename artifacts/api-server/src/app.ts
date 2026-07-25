@@ -8,6 +8,7 @@ import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from "./mid
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { formatDatabaseError } from "./lib/databaseError";
+import { generalApiLimiter } from "./middlewares/rateLimiter";
 
 const app: Express = express();
 
@@ -72,6 +73,10 @@ const bodyParserErrorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   next(err);
 };
 app.use(bodyParserErrorHandler);
+
+// Broad per-IP rate limiter applied to every /api route before routing.
+// Specific tighter limiters (auth, predictions) are mounted at the route level.
+app.use("/api", generalApiLimiter);
 
 app.use("/api", router);
 

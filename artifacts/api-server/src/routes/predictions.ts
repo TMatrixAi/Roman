@@ -42,6 +42,7 @@ import {
   parsePredictionRequestIntegrityHeaders,
 } from "./predictionRequestIntegrity";
 import { requireClerkUser } from "../middlewares/requireClerkUser";
+import { predictionLimiter } from "../middlewares/rateLimiter";
 import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
@@ -151,7 +152,7 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
   res.json(GetLedgerPlayerPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
 
-router.post("/predictions", requireClerkUser, async (req, res): Promise<void> => {
+router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res): Promise<void> => {
   if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
   if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
   if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
