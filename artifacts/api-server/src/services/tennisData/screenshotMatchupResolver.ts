@@ -51,7 +51,15 @@ export interface ScreenshotMatchupResult {
 
 interface PlayerResolveOutcome {
   match: ScreenshotPlayerMatch;
-  status: "resolved" | "unreadable" | "ambiguous" | "not-found";
+  /**
+   * - resolved    — exactly one confident match.
+   * - best-guess  — zero confident matches, but OCR fuzzy fallback found exactly one surname
+   *                 within edit-distance ≤1. Player is set but a disclaimer warning is emitted.
+   * - ambiguous   — multiple distinct confident matches.
+   * - not-found   — no match at all (no fuzzy candidate either).
+   * - unreadable  — the name field was null/empty in the OCR result.
+   */
+  status: "resolved" | "best-guess" | "unreadable" | "ambiguous" | "not-found";
 }
 
 interface FixtureCandidate {
@@ -570,6 +578,103 @@ function isConfidentMatch(recognizedNorm: string, candidateNorm: string): boolea
   return false;
 }
 
+// ── OCR fuzzy fallback ─────────────────────────────────────────────────────
+
+/**
+ * Levenshtein edit distance between two strings.
+ * Used only on short surname tokens (≤30 chars each) so the O(m·n) allocation is fine.
+ */
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const prev: number[] = Array.from({ length: n + 1 }, (_, j) => j);
+  const curr: number[] = new Array(n + 1) as number[];
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1]!
+        : 1 + Math.min(prev[j]!, curr[j - 1]!, prev[j - 1]!);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j]!;
+  }
+  return prev[n]!;
+}
+
+/**
+ * Extract the surname token from an OCR name.
+ * Skips leading initials ("P. Badosa" → "Badosa") and returns the last substantive word.
+ */
+function extractOcrSurname(searchName: string): string | null {
+  const words = searchName.trim().split(/\s+/).filter(Boolean);
+  // Filter out single-letter initials with optional dot
+  const nonInitials = words.filter((w) => w.replace(/\.$/, "").length > 1);
+  const surname = nonInitials[nonInitials.length - 1] ?? null;
+  return surname && surname.length >= 3 ? surname : null;
+}
+
+/**
+ * Common OCR misread substitutions applied to a surname to widen the search pool.
+ * Each entry generates one alternative search term (not all combinations — targeted swaps only).
+ */
+function ocrVariants(surname: string): string[] {
+  const variants = new Set<string>();
+  variants.add(surname.replace(/l/g, "I"));      // lowercase-l → capital-I
+  variants.add(surname.replace(/I/g, "l"));      // capital-I → lowercase-l
+  variants.add(surname.replace(/0/g, "O"));      // digit-zero → letter-O
+  variants.add(surname.replace(/O/g, "0"));      // letter-O → digit-zero
+  variants.add(surname.replace(/rn/g, "m"));     // OCR "rn" fused as "m"
+  variants.add(surname.replace(/m/g, "rn"));     // OCR "m" split as "rn"
+  variants.add(surname.replace(/VV/g, "W"));     // double-V → W
+  variants.delete(surname);                       // already searched — no-op if unchanged
+  return Array.from(variants).filter((v) => v !== surname && v.length >= 3);
+}
+
+/**
+ * When the primary resolution finds zero confident matches, attempt a lenient OCR-error
+ * recovery by:
+ *   1. Extracting the surname token from the OCR name.
+ *   2. Generating common misread variants (l↔I, 0↔O, rn↔m, VV→W).
+ *   3. Searching for each variant via searchKnownPlayers.
+ *   4. Keeping candidates whose normalized surname is within edit-distance ≤1 of the OCR surname.
+ *   5. Returning the single match if unambiguous; null otherwise.
+ *
+ * Only triggers on surnames ≥3 characters to avoid false positives on very short names.
+ */
+async function ocrFuzzyFallback(
+  provider: TennisDataProvider,
+  searchName: string,
+): Promise<PlayerSummary | null> {
+  const surname = extractOcrSurname(searchName);
+  if (!surname) return null;
+
+  const surnameNorm = normalizeName(surname);
+
+  const variantResults = await Promise.all(
+    ocrVariants(surname).map((v) => searchKnownPlayers(provider, v)),
+  );
+
+  // Deduplicate across all variant searches
+  const pool = new Map<string, PlayerSummary>();
+  for (const results of variantResults) {
+    for (const p of results) {
+      if (!pool.has(p.id)) pool.set(p.id, p);
+    }
+  }
+
+  if (pool.size === 0) return null;
+
+  // Filter to candidates whose surname is within edit-distance ≤1
+  const fuzzyMatches = Array.from(pool.values()).filter((p) => {
+    const pWords = normalizeName(p.name).split(/\s+/).filter(Boolean);
+    const pSurname = pWords[pWords.length - 1] ?? "";
+    return pSurname.length >= 3 && levenshtein(surnameNorm, pSurname) <= 1;
+  });
+
+  // Exactly one unambiguous best-guess — multiple still means "don't guess"
+  return fuzzyMatches.length === 1 ? fuzzyMatches[0]! : null;
+}
+
 // ── Candidate gathering ────────────────────────────────────────────────────
 
 /**
@@ -716,6 +821,11 @@ async function resolvePlayerMatch(
 
     return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
+    // OCR misread recovery: try edit-distance ≤1 on the surname before giving up entirely.
+    const fuzzyMatch = await ocrFuzzyFallback(provider, searchName);
+    if (fuzzyMatch) {
+      return { match: { recognizedName, player: fuzzyMatch }, status: "best-guess" };
+    }
     return { match: { recognizedName, player: null }, status: "not-found" };
   }
 }
@@ -854,6 +964,19 @@ async function resolveOneMatchup(
         `[resolver-debug] Resolved via ${rule}: ${winner.fixture.player1Name} vs ${winner.fixture.player2Name} (score ${winner.score.toFixed(2)}).`,
       );
     }
+  }
+
+  // Best-guess disclaimer: player IS set but may be wrong — OCR may have misread a character.
+  // The warning is emitted before the prediction proceeds so the user can correct it.
+  if (player1Outcome.status === "best-guess" && player1.player) {
+    warnings.push(
+      `Read "${entry.player1Name}" for Player 1 — OCR may have misread a character. Best guess: ${player1.player.name}. Please confirm via Search Players.`,
+    );
+  }
+  if (player2Outcome.status === "best-guess" && player2.player) {
+    warnings.push(
+      `Read "${entry.player2Name}" for Player 2 — OCR may have misread a character. Best guess: ${player2.player.name}. Please confirm via Search Players.`,
+    );
   }
 
   if (!player1.player) {
