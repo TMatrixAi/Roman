@@ -105,7 +105,20 @@ function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_top,_hsl(var(--primary)/0.06),_transparent_55%)] pointer-events-none" />
-      {/* Admin bypass — top-right corner of the sign-in page */}
+
+      {/* Back button — top-left */}
+      <button
+        onClick={() => window.history.length > 1 ? window.history.back() : (window.location.href = basePath || "/")}
+        className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border/60 bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-all z-10 text-sm font-medium"
+        aria-label="Go back"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+        Back
+      </button>
+
+      {/* Admin bypass — top-right corner */}
       <a
         href={`${basePath}/admin/login`}
         className="absolute top-4 right-4 p-2 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/50 transition-all z-10"
@@ -116,6 +129,7 @@ function SignInPage() {
           <path d="m9 12 2 2 4-4"/>
         </svg>
       </a>
+
       {/* path must be the full browser path — Clerk reads window.location.pathname directly */}
       <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
     </div>
