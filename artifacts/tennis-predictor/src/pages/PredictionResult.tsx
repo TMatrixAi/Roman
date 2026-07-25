@@ -519,49 +519,60 @@ export default function PredictionResultPage() {
               </div>
             )}
             
-            <div className="space-y-3 pt-2">
-              <div className="hidden md:flex text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase px-4 pb-2 border-b border-border/50">
-                <span className="flex-1" title="Model used in this prediction">Model Name</span>
-                <span className="w-16 text-right" title="Player 1 raw probability from this model">Raw Prob</span>
-                <span className="w-28 text-right" title="Final contribution weight used in the ensemble">Effective Weight</span>
-                <span className="w-28 text-right" title="Raw probability multiplied by effective weight">Weighted Contribution</span>
-                <span className="w-20 text-right" title="Reliability score (0-100)">Reliability</span>
-                <span className="w-24 text-right" title="Whether this model materially influenced the final pick">Status</span>
+            {/* Compact bar chart — one row per model, no detail expansion */}
+            <div className="space-y-1 pt-2">
+              {/* Column headers */}
+              <div className="flex items-center gap-3 px-1 pb-1 border-b border-border/40">
+                <span className="w-28 shrink-0 text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Model</span>
+                <span className="text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate">{prediction.player1Name}</span>
+                <span className="ml-auto text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate text-right">{prediction.player2Name}</span>
+                <span className="w-10 shrink-0" />
               </div>
+
               {engine.models
                 .filter((vote) => typeof vote.modelName === "string" && vote.modelName.trim().length > 0)
                 .map((vote, i) => {
                   const modelName = toVisibleModelName(vote.modelName)
-                  const effectiveWeightPct = vote.weightUsed * 100
-                  const weightedContribution = (vote.player1Probability * vote.weightUsed)
-                  const favored = vote.player1Probability >= 50 ? prediction.player1Name : prediction.player2Name
-                  const status = vote.weightUsed < 0.01 ? "Excluded" : vote.reliability < 25 ? "Limited" : "Active"
-                  const availability = vote.weightUsed < 0.01 ? "Unavailable" : "Available"
-                  const sampleDepth = vote.reliability >= 75 ? "High" : vote.reliability >= 45 ? "Medium" : "Low"
+                  const prob = vote.player1Probability          // 0–100, P1 perspective
+                  const excluded = vote.weightUsed < 0.01
+                  const p1Leads = prob >= 50
 
                   return (
-                    <div key={i} className="p-3 rounded-lg hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/50 space-y-2">
-                      <div className="md:flex md:items-center md:gap-3 md:text-sm">
-                        <span className="md:flex-1 font-medium truncate">{modelName}</span>
-                        <span className="md:w-16 md:text-right font-mono font-bold text-primary tabular-nums">{vote.player1Probability.toFixed(1)}%</span>
-                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{effectiveWeightPct.toFixed(1)}%</span>
-                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{weightedContribution.toFixed(1)}</span>
-                        <span className="hidden md:block md:w-20 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.reliability.toFixed(0)}</span>
-                        <span className="hidden md:block md:w-24 md:text-right text-xs font-mono">{status}</span>
+                    <div key={i} className={`flex items-center gap-3 px-1 py-1.5 rounded-lg transition-opacity ${excluded ? "opacity-35" : ""}`}>
+                      {/* Model name */}
+                      <span className="w-28 shrink-0 text-[11px] font-mono font-medium text-foreground/80 truncate" title={modelName}>
+                        {modelName}
+                      </span>
+
+                      {/* Bar track */}
+                      <div className="flex-1 relative h-3.5 bg-secondary rounded-full overflow-hidden">
+                        {/* Center divider */}
+                        <div className="absolute inset-y-0 left-1/2 w-px bg-border/70 z-10" />
+                        {/* Probability fill — always anchored to the leading side */}
+                        {p1Leads ? (
+                          <div
+                            className="absolute inset-y-0 left-0 bg-primary/75 rounded-full transition-all duration-300"
+                            style={{ width: `${prob}%` }}
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-y-0 right-0 bg-warning/75 rounded-full transition-all duration-300"
+                            style={{ width: `${100 - prob}%` }}
+                          />
+                        )}
                       </div>
-                      <div className="grid grid-cols-2 md:hidden gap-2 text-[11px] font-mono text-muted-foreground">
-                        <span>Favored: <span className="text-foreground">{favored}</span></span>
-                        <span>Effective Weight: <span className="text-foreground">{effectiveWeightPct.toFixed(1)}%</span></span>
-                        <span>Weighted Contribution: <span className="text-foreground">{weightedContribution.toFixed(1)}</span></span>
-                        <span>Reliability: <span className="text-foreground">{vote.reliability.toFixed(0)}</span></span>
-                        <span>Data Availability: <span className="text-foreground">{availability}</span></span>
-                        <span>Sample Depth: <span className="text-foreground">{sampleDepth}</span></span>
-                        <span>Status: <span className="text-foreground">{status}</span></span>
-                        <span>Explanation: <span className="text-foreground">{status === "Excluded" ? "Near-zero effect in final ensemble." : "Contributed to final probability."}</span></span>
-                      </div>
+
+                      {/* Probability label */}
+                      <span className={`w-10 shrink-0 text-right text-[11px] font-mono font-bold tabular-nums ${excluded ? "text-muted-foreground" : p1Leads ? "text-primary" : "text-warning"}`}>
+                        {p1Leads ? prob.toFixed(0) : (100 - prob).toFixed(0)}%
+                      </span>
                     </div>
                   )
                 })}
+
+              <p className="pt-1 text-[10px] font-mono text-muted-foreground text-center">
+                bar length = confidence · green = {prediction.player1Name} · amber = {prediction.player2Name} · faded = excluded
+              </p>
             </div>
           </CardContent>
         </Card>
