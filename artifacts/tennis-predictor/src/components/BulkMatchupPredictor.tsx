@@ -292,6 +292,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const [selectionWarning, setSelectionWarning] = useState<string | null>(null)
   const [isPredicting, setIsPredicting] = useState(false)
   const [batchError, setBatchError] = useState<string | null>(null)
+  const [predictSummary, setPredictSummary] = useState<{ successIds: number[]; failedCount: number } | null>(null)
   const [resumableBatch, setResumableBatch] = useState<BatchItem[] | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
@@ -560,13 +561,26 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   // ---------------------------------------------------------------------------
   // Predict
   // ---------------------------------------------------------------------------
-  const handlePredict = async (): Promise<number[]> => {
-    setBatchError(null); setIsPredicting(true)
-    const readyKeys = items.filter(needsPredicting).map((i) => i.key)
-    setItems((prev) => prev.map((it) => (readyKeys.includes(it.key) ? { ...it, predictStatus: "pending" } : it)))
-    const createdIdsThisRun: number[] = []
 
-    for (const item of items) {
+  /**
+   * Runs predictions for all ready, not-yet-predicted items.
+   * Accepts an optional `snapshot` so callers (e.g. retry) can pass a pre-reset
+   * items list without waiting for a React state flush.
+   * Returns the IDs of successfully created predictions and the keys of failed ones.
+   */
+  const handlePredict = async (
+    snapshot?: BatchItem[],
+  ): Promise<{ successIds: number[]; failedKeys: string[] }> => {
+    setBatchError(null)
+    setIsPredicting(true)
+    const workItems = snapshot ?? items
+    const readyKeys = workItems.filter(needsPredicting).map((i) => i.key)
+    setItems((prev) => prev.map((it) => (readyKeys.includes(it.key) ? { ...it, predictStatus: "pending" } : it)))
+
+    const successIds: number[] = []
+    const failedKeys: string[] = []
+
+    for (const item of workItems) {
       if (!needsPredicting(item) || !item.result?.player1.player || !item.result?.player2.player) continue
       try {
         const requestMatchId = buildClientMatchId({
@@ -592,34 +606,82 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
             submittedPlayer2Name: item.result.player2.player.name,
           },
         )
-        createdIdsThisRun.push(prediction.id)
+        successIds.push(prediction.id)
         setItems((prev) =>
           prev.map((it) => (it.key === item.key ? { ...it, predictStatus: "success", predictionId: prediction.id } : it)),
         )
-      } catch {
+      } catch (err) {
+        // Detect rate-limit (429) specifically so the user gets an actionable message.
+        // The server returns { error: 'Too many requests', detail: '...' } on 429;
+        // createPredictionWithIntegrity throws using the `error` field as the message.
+        const msg = err instanceof Error ? err.message : String(err)
+        const isRateLimit = msg === "Too many requests" || msg.includes("429") || msg.toLowerCase().includes("rate limit")
+        failedKeys.push(item.key)
         setItems((prev) =>
           prev.map((it) =>
-            it.key === item.key ? { ...it, predictStatus: "error", predictError: "Prediction engine failed for this matchup." } : it,
+            it.key === item.key
+              ? {
+                  ...it,
+                  predictStatus: "error",
+                  predictError: isRateLimit
+                    ? "Rate limit reached — wait a moment and retry."
+                    : "Prediction engine error — this matchup could not be predicted.",
+                }
+              : it,
           ),
         )
       }
+      // Brief pause between sequential requests to avoid burst rate-limit exhaustion.
+      await new Promise((r) => setTimeout(r, 350))
     }
+
     setIsPredicting(false)
-    return createdIdsThisRun
+    return { successIds, failedKeys }
   }
 
-  const navigateToResults = (createdIds: number[]) => {
-    if (createdIds.length > 0) {
+  /** Navigate to the batch results page. Only called when all predictions succeeded. */
+  const navigateToResults = (successIds: number[]) => {
+    if (successIds.length > 0) {
       clearStoredBatch()
-      setLocation(`/predictions/${createdIds[0]}?batch=${createdIds.join(",")}`)
-      return
+      setLocation(`/predictions/${successIds[0]}?batch=${successIds.join(",")}`)
     }
-    setBatchError("None of the matchups in this batch could be predicted. Check the errors below and try again.")
+  }
+
+  /**
+   * Shared post-predict handler: decides whether to navigate (all success),
+   * show a partial-success summary, or show an all-failed error.
+   */
+  const handlePredictOutcome = (successIds: number[], failedKeys: string[]) => {
+    if (failedKeys.length === 0) {
+      // All succeeded — auto-navigate as before
+      navigateToResults(successIds)
+    } else if (successIds.length === 0) {
+      // All failed — stay on page with a clear error
+      setBatchError("None of the matchups in this batch could be predicted. Check the error badges below and try again.")
+    } else {
+      // Partial success — show an inline summary with action buttons
+      setPredictSummary({ successIds, failedCount: failedKeys.length })
+    }
   }
 
   const handlePredictClick = async () => {
-    const createdIds = await handlePredict()
-    navigateToResults(createdIds)
+    setPredictSummary(null)
+    const { successIds, failedKeys } = await handlePredict()
+    handlePredictOutcome(successIds, failedKeys)
+  }
+
+  /** Resets failed items to idle and re-runs predictions for them. */
+  const handleRetryFailed = async () => {
+    setPredictSummary(null)
+    setBatchError(null)
+    // Reset failed items to idle; pass the reset snapshot directly so handlePredict
+    // doesn't read stale state before the React flush.
+    const resetItems = items.map((it) =>
+      it.predictStatus === "error" ? { ...it, predictStatus: "idle" as PredictStatus, predictError: null } : it,
+    )
+    setItems(resetItems)
+    const { successIds, failedKeys } = await handlePredict(resetItems)
+    handlePredictOutcome(successIds, failedKeys)
   }
 
   // ---------------------------------------------------------------------------
@@ -944,6 +1006,45 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         <div className="p-3 border border-destructive/30 bg-destructive/10 text-destructive text-sm rounded-md font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <div>{batchError}</div>
+        </div>
+      )}
+
+      {/* Partial-success summary — shown when some predictions succeeded and some failed */}
+      {predictSummary && (
+        <div className="p-3 border border-warning/30 bg-warning/10 rounded-md font-mono space-y-2.5">
+          <div className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+            <span>
+              <span className="font-bold text-foreground">{predictSummary.successIds.length}</span> of{" "}
+              <span className="font-bold text-foreground">
+                {predictSummary.successIds.length + predictSummary.failedCount}
+              </span>{" "}
+              predictions succeeded.{" "}
+              <span className="text-destructive font-bold">{predictSummary.failedCount} failed</span> — see error
+              badges below for details.
+            </span>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="accent"
+              className="font-mono"
+              onClick={() => navigateToResults(predictSummary.successIds)}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+              VIEW {predictSummary.successIds.length} RESULT{predictSummary.successIds.length === 1 ? "" : "S"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="font-mono"
+              disabled={isPredicting}
+              onClick={handleRetryFailed}
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+              RETRY {predictSummary.failedCount} FAILED
+            </Button>
+          </div>
         </div>
       )}
 
