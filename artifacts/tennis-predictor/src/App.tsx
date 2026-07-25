@@ -104,6 +104,17 @@ function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4 relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_top,_hsl(var(--primary)/0.06),_transparent_55%)] pointer-events-none" />
+      {/* Admin bypass — top-right corner of the sign-in page */}
+      <a
+        href={`${basePath}/admin/login`}
+        className="absolute top-4 right-4 p-2 rounded-lg border bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/50 transition-all z-10"
+        title="Admin login — bypass user sign-in"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+      </a>
       {/* path must be the full browser path — Clerk reads window.location.pathname directly */}
       <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
     </div>

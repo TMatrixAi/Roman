@@ -186,11 +186,10 @@ function AdminAuthButton() {
     return (
       <Link
         href="/admin/login"
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/50 shadow-sm"
-        title="Admin login — enter your admin password"
+        className="p-1.5 rounded-lg transition-all border bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/50"
+        title="Admin login"
       >
-        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-        <span>ADMIN</span>
+        <ShieldCheck className="w-4 h-4" />
       </Link>
     )
   }
@@ -199,11 +198,10 @@ function AdminAuthButton() {
     <button
       onClick={() => logoutMutation.mutate()}
       disabled={logoutMutation.isPending}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 hover:border-amber-500/60 disabled:opacity-50 shadow-sm"
+      className="p-1.5 rounded-lg transition-all border bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 hover:border-amber-500/60 disabled:opacity-50"
       title="Admin — click to log out"
     >
-      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-      <span>{logoutMutation.isPending ? "..." : "ADMIN ✓"}</span>
+      <ShieldCheck className="w-4 h-4" />
     </button>
   )
 }
@@ -272,21 +270,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1 shrink-0">
             {/* Theme toggle — sits to the left of Force Signal */}
             <ThemeToggle />
-
-            {/* Force Signal — visually distinct (warning/amber) from Online Signal (primary) */}
-            <Link
-              href="/force-signal"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border ${
-                isForceSignalActive
-                  ? "bg-warning/20 text-warning border-warning/40"
-                  : "bg-warning/10 text-warning/80 border-warning/20 hover:bg-warning/20 hover:text-warning hover:border-warning/40"
-              }`}
-              title="Force Signal — show a directional pick even on close matches"
-            >
-              <Zap className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">FORCE</span>
-              <span className="sm:hidden">FS</span>
-            </Link>
 
             {/* Online Signal (existing) */}
             <ProviderStatusIndicator />
