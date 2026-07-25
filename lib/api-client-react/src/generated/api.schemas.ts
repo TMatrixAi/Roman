@@ -631,6 +631,8 @@ export interface EngineBreakdown {
   disclosures?: string[];
   /** Aggregated low-sample/low-coverage warnings from every module */
   warnings?: string[];
+  /** Structural coverage gaps (zero match history, venue not in coverage, etc.) grouped by root cause -- separate from warnings. Absent on predictions made before this field existed. */
+  coverageGaps?: string[];
   availabilityNote?: string;
   conditionsNote?: string;
   weather?: WeatherConditions | null;

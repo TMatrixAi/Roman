@@ -744,6 +744,17 @@ export default function PredictionResultPage() {
           </div>
         )}
 
+        {!!engine.coverageGaps?.length && (
+          <div className="mb-6 p-5 border border-border/50 bg-muted/20 rounded-2xl space-y-3 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-1">Coverage Gaps</p>
+            {engine.coverageGaps.map((g, i) => (
+              <div key={i} className="flex gap-3 text-sm text-foreground/60">
+                <Info className="w-5 h-5 text-muted-foreground shrink-0" /> <span className="leading-snug">{g}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {!!engine.disclosures?.length && (
           <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
             {engine.disclosures.map((d, i) => (

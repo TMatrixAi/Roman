@@ -48,6 +48,15 @@ export interface EngineBreakdown {
    */
   disclosures: string[];
   warnings: string[];
+  /**
+   * Structural coverage gaps: data that is unavailable for structural reasons (a player has
+   * no recorded match history, a venue isn't in our coverage, an external feed isn't connected)
+   * rather than because the model evidence is thin. Unlike `warnings`, these don't increase
+   * upset risk -- they explain WHY certain signals fall back to global defaults. Grouped by
+   * root cause so one missing player doesn't produce a wall of identical-root bullets.
+   * Absent on predictions made before this field existed.
+   */
+  coverageGaps: string[];
   availabilityNote: string;
   conditionsNote: string;
   weather: WeatherConditions | null;
@@ -483,8 +492,29 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // (it still votes in the ensemble above) -- see `EXCLUDED_FROM_DATA_QUALITY`'s rationale: the
   // common "no prior meetings" case isn't a fixable data gap, so it shouldn't be able to drag the
   // score down.
+  // Detect zero-history players before the DQ blend -- needed both for the structural-gap
+  // floor below and for the warning-grouping pass later.
+  const p1ZeroHistory = input.player1Matches.length === 0;
+  const p2ZeroHistory = input.player2Matches.length === 0;
+
+  // Structural gap floor: when a player has zero recorded match history, surfaceElo, recentForm,
+  // and serveReturn all collapse to their individual reliability floors (~0-10) for the SAME root
+  // cause, compounding into a catastrophic DQ score (e.g. 24%) even when the opponent is
+  // well-documented and the engine still has a valid opinion from rankings/tour context. Cap the
+  // combined drag by flooring each of those three modules at ZERO_HISTORY_MODULE_FLOOR so one
+  // structural data gap doesn't count five times in the weighted blend.
+  const ZERO_HISTORY_MODULE_FLOOR = 40;
   const { score: dataQuality, label: dataQualityLabel } = computeDataQuality(
-    allModuleEdgesForDataQuality.map((m) => ({ reliability: m.reliability, importance: m.importance })),
+    allModuleEdgesForDataQuality.map((m) => {
+      let reliability = m.reliability;
+      if (
+        (p1ZeroHistory || p2ZeroHistory) &&
+        (m.key === "surfaceElo" || m.key === "recentForm" || m.key === "serveReturn")
+      ) {
+        reliability = Math.max(reliability, ZERO_HISTORY_MODULE_FLOOR);
+      }
+      return { reliability, importance: m.importance };
+    }),
   );
 
   // Requirement 2 of this phase: expose the surface sample-depth count that `surfaceElo.ts`
@@ -815,13 +845,32 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // style), not evidence of real risk in this specific match -- disclosed, not risk-styled.
   disclosures.push(...styleMatchup.warnings);
 
+  // Zero-history structural gap: when a player has no recorded matches every signal module
+  // independently reports low reliability for the same root cause, producing a wall of
+  // identical-root warnings. Detect the root cause once and emit ONE grouped coverageGap note;
+  // suppress the individual module bullets that trace to zero match history.
+  const isZeroHistoryWarning = (w: string): boolean =>
+    w.includes("0 match") || w.includes("no prior match history") || w.includes("blended 100%");
+
+  const coverageGaps: string[] = [];
+  if (p1ZeroHistory || p2ZeroHistory) {
+    const noHistoryNames = [
+      p1ZeroHistory ? input.player1.name : null,
+      p2ZeroHistory ? input.player2.name : null,
+    ].filter((n): n is string => n !== null);
+    const them = noHistoryNames.length === 1 ? "this player" : "these players";
+    coverageGaps.push(
+      `${noHistoryNames.join(" and ")} ${noHistoryNames.length === 1 ? "has" : "have"} no recorded match history in our database — surface Elo, recent form, serve/return, and travel distance all fall back to global baselines for ${them}.`,
+    );
+  }
+
   const warnings = [
     ...surfaceElo.warnings,
     ...serveReturn.warnings,
     ...recentForm.warnings,
     ...fatigue.warnings,
     ...availability.warnings,
-  ];
+  ].filter((w) => !(p1ZeroHistory || p2ZeroHistory) || !isZeroHistoryWarning(w));
 
   const weather = input.weather ?? null;
 
@@ -875,6 +924,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks,
     disclosures,
     warnings,
+    coverageGaps,
     availabilityNote: buildAvailabilityNote(availability),
     conditionsNote: weather
       ? `Forecast conditions for ${weather.venueName}: ${weather.temperatureC}°C, wind ${weather.windSpeedKph} km/h, ${weather.precipitationProbability}% chance of precipitation. ${weather.note}`

@@ -337,8 +337,8 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
       requestNonce: integrity.requestId,
     });
 
-    output.engine.warnings.push(`REQUEST_ID:${integrity.requestId}`);
-    output.engine.warnings.push(`REQUEST_MATCH_ID:${integrity.requestMatchId}`);
+    // Request IDs are internal integrity tokens stored via inputSnapshotHash above -- never
+    // surface them as user-facing warning bullets.
 
     const saved = await saveOrUpdatePrediction({
       player1Id: player1.id,
