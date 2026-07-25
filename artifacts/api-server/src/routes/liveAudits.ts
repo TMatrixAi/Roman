@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from 'express';
-import { isAdminSessionCookieValid } from '../lib/adminAuth';
+import { isAdminSessionCookieValid, isOwnerAutoAuthenticated } from '../lib/adminAuth';
 import { getLaunchAuditSummary, getLiveStatus, runLaunchAudit } from '../services/launchAudit';
 
 /**
@@ -109,7 +109,7 @@ function mergePermissions(role: LiveAuditsRole, partial: Partial<LiveAuditsPermi
  * Extensible for future multi-user/OAuth systems via x-user-role header.
  */
 function extractUserAuth(req: Request): { authenticated: boolean; role: string | undefined } {
-  const authenticated = isAdminSessionCookieValid(req.signedCookies);
+  const authenticated = isAdminSessionCookieValid(req.signedCookies) || isOwnerAutoAuthenticated(req);
   // For now, authenticated users are always owners in this single-owner system
   // Future enhancement: read from header, database, or OAuth provider
   const role = authenticated ? 'owner' : undefined;

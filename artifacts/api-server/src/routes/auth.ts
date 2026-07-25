@@ -3,6 +3,7 @@ import { AdminLoginBody, AdminLoginResponse, GetAdminAuthStatusResponse, AdminLo
 import {
   getAdminAccessKey,
   getOwnerAutoLoginToken,
+  isOwnerAutoAuthenticated,
   isAdminSessionCookieValid,
   setAdminSessionCookie,
   clearAdminSessionCookie,
@@ -19,7 +20,7 @@ function getSafeRedirectPath(input: unknown): string {
 }
 
 router.get("/auth/status", (req, res): void => {
-  const authenticated = isAdminSessionCookieValid(req.signedCookies);
+  const authenticated = isAdminSessionCookieValid(req.signedCookies) || isOwnerAutoAuthenticated(req);
   // Single-owner system: authenticated users are owners
   const role = authenticated ? 'owner' : 'user';
   res.json({ 
