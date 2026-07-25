@@ -114,6 +114,25 @@ async function resolveCanonicalPlayerIdFromName(
     const best = liveExact ?? liveAbbrev ?? histExact ?? histAbbrev;
     if (best) {
       const via = liveExact ? "live-exact" : liveAbbrev ? "live-abbrev" : histExact ? "hist-exact" : "hist-abbrev";
+      // Task #24: detect when multiple candidates tied at the winning level — silent disambiguation
+      // risk. Count how many candidates share the same priority tier as `best`.
+      const tiebreakerPool = liveExact
+        ? candidates.filter(c => !(c as { source?: string }).source?.startsWith("historical") && !isDoublesLikeName(c.name) && normalizePlayerName(c.name) === normalizedQuery)
+        : liveAbbrev
+          ? candidates.filter(c => {
+              if ((c as { source?: string }).source?.startsWith("historical") || isDoublesLikeName(c.name)) return false;
+              const cn = normalizePlayerName(c.name).split(" ").filter(Boolean);
+              if (queryWords.length < 2 || cn.length !== queryWords.length) return false;
+              const init = queryWords[0]![0]!;
+              return cn[0]!.length === 1 && cn[0] === init && queryWords.slice(1).every((s, i) => cn[i + 1] === s);
+            })
+          : [];
+      if (tiebreakerPool.length > 1) {
+        logger.warn(
+          { submittedName, resolvedId: best.id, resolvedName: best.name, via, ambiguousCandidates: tiebreakerPool.slice(0, 5).map(c => ({ id: c.id, name: c.name })) },
+          "resolveCanonicalPlayerIdFromName: ambiguous — multiple equally-scored candidates, picked first",
+        );
+      }
       logger.info({ submittedName, resolvedId: best.id, resolvedName: best.name, via }, "resolveCanonicalPlayerIdFromName: resolved");
       return best.id;
     }

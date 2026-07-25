@@ -461,7 +461,7 @@ export const FixturesList = forwardRef<
         },
       )
       setPredictNowFixtureId(null)
-      setLocation(`/predictions/${prediction.id}`)
+      setLocation(`/predictions/${prediction.id}?from=home`)
     } catch {
       setPredictNowFixtureId(null)
       setPredictNowError(fixture.id)

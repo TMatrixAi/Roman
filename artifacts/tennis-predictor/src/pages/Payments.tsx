@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import {
   AlertCircle, BadgeDollarSign, CalendarDays, Check, CheckCircle2,
@@ -19,7 +20,6 @@ import {
   getPaymentsStatusQueryKey,
 } from "@workspace/api-client-react";
 import type { SubscriptionTier } from "@workspace/api-client-react";
-import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag";
 import { useQueryClient } from "@tanstack/react-query";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,9 +52,6 @@ const FEATURES: Feature[] = [
   { label: "Historical model trends & version history", pro: false, elite: true,  team: true  },
   { label: "20,000-run Monte Carlo simulation",         pro: false, elite: true,  team: true  },
   { label: "Elite Tier badge on top predictions",       pro: false, elite: true,  team: true  },
-  { label: "Advanced AI explanation",                   pro: false, elite: true,  team: true,  comingSoon: true },
-  { label: "Confidence history per prediction",         pro: false, elite: true,  team: true,  comingSoon: true },
-  { label: "Priority support",                         pro: false, elite: true,  team: true  },
   { label: "Team workspace (shared predictions)",       pro: false, elite: false, team: true  },
 ];
 
@@ -171,10 +168,10 @@ const PLANS: PlanConfig[] = [
     tier: "elite",
     label: "Elite",
     monthlyPrice: "$49.99",
-    annualPrice: "$475",
+    annualPrice: "$450",
     annualPriceId: "elite_annual",
     monthlyCents: 4999,
-    annualCents: 47500,
+    annualCents: 45000,
     tagline: "Everything in Pro plus deep model analytics — calibration, monitoring, and confidence tracking. Answers: how trustworthy is the AI?",
     icon: <Crown className="w-5 h-5 text-primary" />,
     accent: true,
@@ -448,7 +445,6 @@ function BillingCard({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PaymentsPage() {
-  const paymentsEnabled = isPaymentsV2Enabled();
   const queryClient = useQueryClient();
   const [interval, setInterval] = useState<BillingInterval>("monthly");
 
@@ -457,11 +453,11 @@ export default function PaymentsPage() {
     isLoading: myLoading,
     refetch: myRefetch,
   } = useGetMyPaymentsStatus({
-    query: { queryKey: getMyPaymentsStatusQueryKey(), enabled: paymentsEnabled },
+    query: { queryKey: getMyPaymentsStatusQueryKey() },
   });
 
   const { data: adminData, isLoading: adminLoading } = useGetPaymentsStatus({
-    query: { queryKey: getPaymentsStatusQueryKey(), enabled: paymentsEnabled },
+    query: { queryKey: getPaymentsStatusQueryKey() },
   });
 
   const createCheckout = useCreatePaymentsCheckoutSession();
@@ -469,6 +465,7 @@ export default function PaymentsPage() {
   const [location, setLocation] = useLocation();
   const { data: adminAuth } = useGetAdminAuthStatus();
   const isAdmin = adminAuth?.authenticated === true;
+  const { toast } = useToast();
 
   const view = useMemo<"pricing" | "billing" | "admin">(() => {
     if (location.startsWith("/payments/billing")) return "billing";
@@ -480,40 +477,29 @@ export default function PaymentsPage() {
   const isLoading = view === "admin" ? adminLoading : myLoading;
   const currentTier: SubscriptionTier = data?.tier ?? "free";
 
-  async function startCheckout(planId: PlanId) {
-    const result = await createCheckout.mutateAsync({ data: { returnPath: "/payments", plan: planId } });
-    if (result.url) window.location.assign(result.url);
-  }
+  const startCheckout = useCallback(async (planId: PlanId) => {
+    try {
+      const result = await createCheckout.mutateAsync({ data: { returnPath: "/payments", plan: planId } });
+      if (result.url) window.location.assign(result.url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to start checkout. Please try again.";
+      toast({ title: "Checkout unavailable", description: message, variant: "destructive" });
+    }
+  }, [createCheckout, toast]);
 
-  async function openPortal() {
-    const result = await createPortal.mutateAsync({ data: { returnPath: "/payments" } });
-    window.location.assign(result.url);
-  }
+  const openPortal = useCallback(async () => {
+    try {
+      const result = await createPortal.mutateAsync({ data: { returnPath: "/payments" } });
+      window.location.assign(result.url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to open billing portal. Please try again.";
+      toast({ title: "Billing portal unavailable", description: message, variant: "destructive" });
+    }
+  }, [createPortal, toast]);
 
   async function handleRefresh() {
     await myRefetch();
     if (isAdmin) await queryClient.invalidateQueries({ queryKey: getPaymentsStatusQueryKey() });
-  }
-
-  if (!paymentsEnabled) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center gap-3 border-b border-border/50 pb-4">
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-            <CreditCard className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-display font-bold tracking-tight">Payments</h1>
-            <p className="text-muted-foreground">Payments V2 is currently disabled.</p>
-          </div>
-        </div>
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            The payments module is present but hidden behind <span className="font-mono">VITE_PAYMENTS_V2_ENABLED=false</span>.
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   const isPending = createCheckout.isPending || createPortal.isPending;

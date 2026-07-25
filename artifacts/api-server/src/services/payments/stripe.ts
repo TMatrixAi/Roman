@@ -117,7 +117,7 @@ export function resolveStripeProAnnualPriceId(): string {
 
 export function resolveStripeEliteAnnualPriceId(): string {
   const priceId = getStripeEliteAnnualPriceId();
-  if (!priceId) throw new Error("STRIPE_ELITE_ANNUAL_PRICE_ID must be configured to offer the Elite Annual plan");
+  if (!priceId) throw new Error("Elite Annual plan is not yet available. Please choose the monthly Elite plan or contact support.");
   return priceId;
 }
 

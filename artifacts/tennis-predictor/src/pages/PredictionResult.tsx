@@ -50,6 +50,60 @@ const MODEL_NAME_LABELS: Record<string, string> = {
   "Calibrated Ensemble": "Calibrated Ensemble",
 }
 
+/** Renders engine warnings with a "Show more" collapse after the first 3. */
+function WarningsList({ warnings }: { warnings: string[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const LIMIT = 3
+  const visible = expanded ? warnings : warnings.slice(0, LIMIT)
+  const hidden = warnings.length - LIMIT
+  return (
+    <div className="mb-6 p-5 border-2 border-warning/30 bg-warning/5 rounded-2xl space-y-3 shadow-sm">
+      {visible.map((w, i) => (
+        <div key={i} className="flex gap-3 text-sm text-foreground/80">
+          <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+          <span className="leading-snug">{w}</span>
+        </div>
+      ))}
+      {!expanded && hidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-xs font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 pt-1 transition-colors"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+          {hidden} more notice{hidden !== 1 ? "s" : ""}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Renders informational disclosures with a "Show more" collapse after the first 3. */
+function DisclosuresList({ disclosures }: { disclosures: string[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const LIMIT = 3
+  const visible = expanded ? disclosures : disclosures.slice(0, LIMIT)
+  const hidden = disclosures.length - LIMIT
+  return (
+    <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
+      {visible.map((d, i) => (
+        <div key={i} className="flex gap-3 text-sm text-foreground/80">
+          <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <span className="leading-snug">{d}</span>
+        </div>
+      ))}
+      {!expanded && hidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-xs font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 pt-1 transition-colors"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+          {hidden} more note{hidden !== 1 ? "s" : ""}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function toVisibleModelName(name: string): string {
   const exact = MODEL_NAME_LABELS[name]
   if (exact) return exact
@@ -747,13 +801,7 @@ export default function PredictionResultPage() {
         )}
 
         {!!engine.warnings?.length && (
-          <div className="mb-6 p-5 border-2 border-warning/30 bg-warning/5 rounded-2xl space-y-3 shadow-sm">
-            {engine.warnings.map((w, i) => (
-              <div key={i} className="flex gap-3 text-sm text-foreground/80">
-                <AlertTriangle className="w-5 h-5 text-warning shrink-0" /> <span className="leading-snug">{w}</span>
-              </div>
-            ))}
-          </div>
+          <WarningsList warnings={engine.warnings} />
         )}
 
         {!!engine.coverageGaps?.length && (
@@ -768,13 +816,7 @@ export default function PredictionResultPage() {
         )}
 
         {!!engine.disclosures?.length && (
-          <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
-            {engine.disclosures.map((d, i) => (
-              <div key={i} className="flex gap-3 text-sm text-foreground/80">
-                <Info className="w-5 h-5 text-primary shrink-0" /> <span className="leading-snug">{d}</span>
-              </div>
-            ))}
-          </div>
+          <DisclosuresList disclosures={engine.disclosures} />
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">

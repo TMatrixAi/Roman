@@ -5,8 +5,10 @@
  */
 import { Router } from "express";
 import { eq, inArray, sql } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
 import { db, evaluationPredictionsTable, calibrationModelsTable } from "@workspace/db";
 import { requireClerkUser } from "../middlewares/requireClerkUser";
+import { isAdminSessionCookieValid } from "../lib/adminAuth";
 import { getPaymentsAccessState } from "../services/payments/entitlementService";
 import {
   computeCalibrationBuckets,
@@ -127,16 +129,26 @@ const VERSION_HISTORY = [
 ];
 
 // ─── GET /monitoring/dashboard ───────────────────────────────────────────────
-router.get("/monitoring/dashboard", requireClerkUser, async (_req, res): Promise<void> => {
+router.get("/monitoring/dashboard", requireClerkUser, async (req, res): Promise<void> => {
   try {
+    // Admin session → always grant full elite-tier access
+    const isAdmin = isAdminSessionCookieValid(req.signedCookies);
+    const clerkUserId = isAdmin ? null : (getAuth(req).userId ?? null);
+
+    const adminAccessState = {
+      tier: "elite" as const,
+      entitlements: { confidenceCalibration: true, recommendationPerformance: true, historicalModelTrends: true },
+    };
+
     const [rows, calibrationRows, accessState] = await Promise.all([
       db.select().from(evaluationPredictionsTable).where(inArray(evaluationPredictionsTable.runKind, [...LIVE_KINDS])),
       db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
-      // Fail-closed: on any entitlement error, treat caller as free-tier (locked)
-      getPaymentsAccessState().catch((err) => {
-        logger.warn({ err }, "Monitoring: entitlement lookup failed — defaulting to free tier (fail-closed)");
-        return { tier: "free" as const, entitlements: { confidenceCalibration: false, recommendationPerformance: false, historicalModelTrends: false } };
-      }),
+      isAdmin
+        ? Promise.resolve(adminAccessState)
+        : getPaymentsAccessState(clerkUserId).catch((err) => {
+            logger.warn({ err }, "Monitoring: entitlement lookup failed — defaulting to free tier (fail-closed)");
+            return { tier: "free" as const, entitlements: { confidenceCalibration: false, recommendationPerformance: false, historicalModelTrends: false } };
+          }),
     ]);
 
     const activeCalibration = calibrationRows[0] ?? null;

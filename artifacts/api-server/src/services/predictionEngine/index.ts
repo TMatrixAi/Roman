@@ -586,7 +586,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const usingRealCalibration = !generalEnsembleExcluded && (input.activeCalibration?.length ?? 0) > 0;
   const segmentTour = segment?.segmentKey.split("-")[0] ?? null;
   const tourDiscount = !specialistApplied && !usingRealCalibration && segmentTour ? TOUR_RELIABILITY_DISCOUNT[segmentTour] ?? 1 : 1;
-  const surfaceSampleDiscount = !specialistApplied && surfaceSampleDepth.label === "Low" ? LOW_SURFACE_SAMPLE_DISCOUNT : 1;
+  // Task #33: also skip the surface-sample noise discount when real isotonic calibration is active —
+  // the pooled calibration knots are fitted on raw_probability → actual_outcome across the full
+  // corpus and already account for per-match data sparsity at scale. Applying the ×0.75 shrink on
+  // top double-corrects and contributes to systematic underconfidence in low-sample-surface matches.
+  const surfaceSampleDiscount = !specialistApplied && !usingRealCalibration && surfaceSampleDepth.label === "Low" ? LOW_SURFACE_SAMPLE_DISCOUNT : 1;
   const reliabilityDiscount = Math.round(tourDiscount * surfaceSampleDiscount * 1000) / 1000;
   const preSimulatorProbability = reliabilityDiscount < 1
     ? Math.round((50 + (blendedProbability - 50) * reliabilityDiscount) * 10) / 10

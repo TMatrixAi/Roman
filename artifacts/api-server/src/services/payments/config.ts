@@ -1,7 +1,8 @@
 export const PAYMENTS_ACCOUNT_KEY = "workspace";
 
+/** Payments V2 is unconditionally live — Stripe is fully configured. */
 export function isPaymentsV2Enabled(): boolean {
-  return process.env.PAYMENTS_V2_ENABLED === "true";
+  return true;
 }
 
 export function getStripeSecretKey(): string | null {

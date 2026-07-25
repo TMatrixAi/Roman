@@ -107,7 +107,7 @@ function accuracyColor(acc: number | null): string {
 
 const STATUS_CONFIG: Record<string, { icon: React.ReactNode; variant: "success" | "warning" | "destructive" | "outline" }> = {
   "Operating Normally": { icon: <CheckCircle2 className="w-4 h-4" />, variant: "success" },
-  "Monitoring Required": { icon: <AlertTriangle className="w-4 h-4" />, variant: "warning" },
+  "Monitoring Required": { icon: <Activity className="w-4 h-4" />, variant: "outline" },
   "Performance Degraded": { icon: <AlertCircle className="w-4 h-4" />, variant: "destructive" },
   "Data Delay": { icon: <Clock className="w-4 h-4" />, variant: "warning" },
   "Validation Required": { icon: <Info className="w-4 h-4" />, variant: "outline" },
@@ -609,7 +609,7 @@ export default function ModelMonitoringPage() {
 
   // Derive tier from dashboard response (backend injects it from entitlement state)
   const tier = data?.tier ?? "free"
-  const isElite = tier === "elite"
+  const isElite = tier === "elite" || tier === "elite_annual"
   const isPro = tier === "pro" || isElite // pro sees pro-level sections
 
   const lastRefreshed = dataUpdatedAt
@@ -703,16 +703,15 @@ export default function ModelMonitoringPage() {
       </Section>
 
       {/* Confidence Calibration — Elite only */}
-      <EliteSection
+      <Section
         icon={<Zap className="w-5 h-5 text-primary" />}
         title="Confidence Calibration"
         subtitle="How well the model's stated confidence matches real win rates across probability bands."
-        isElite={isElite}
-        lockTitle="Confidence Calibration"
-        lockDescription="See how well the AI's stated probabilities match real outcomes across every confidence band. Available on Elite."
       >
-        {isLoading ? <SectionSkeleton rows={6} /> : data ? <CalibrationTable buckets={data.calibration} /> : null}
-      </EliteSection>
+        {!isElite ? (
+          <EliteLockedSection title="Confidence Calibration" description="See how well the AI's stated probabilities match real outcomes across every confidence band. Available on Elite." />
+        ) : isLoading ? <SectionSkeleton rows={6} /> : data ? <CalibrationTable buckets={data.calibration} /> : null}
+      </Section>
 
       {/* Surface & Level — Pro + Elite */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -737,15 +736,14 @@ export default function ModelMonitoringPage() {
       </div>
 
       {/* Recommendation Performance — Elite only */}
-      <EliteSection
+      <Section
         icon={<Shield className="w-5 h-5 text-primary" />}
         title="Recommendation Performance"
         subtitle="Accuracy by confidence tier. High Confidence is the engine's most selective tier."
-        isElite={isElite}
-        lockTitle="Recommendation Performance"
-        lockDescription="Track how well each confidence tier (High Confidence, Moderate Lean, etc.) performs over real graded predictions. Available on Elite."
       >
-        {isLoading ? <SectionSkeleton rows={5} /> : data ? (
+        {!isElite ? (
+          <EliteLockedSection title="Recommendation Performance" description="Track how well each confidence tier (High Confidence, Moderate Lean, etc.) performs over real graded predictions. Available on Elite." />
+        ) : isLoading ? <SectionSkeleton rows={5} /> : data ? (
           <BreakdownTable
             rows={data.byRecommendation.map((r) => ({ ...r, label: REC_LABEL[r.recommendation] ?? r.recommendation })) as unknown as Array<Record<string, unknown>>}
             columns={[
@@ -758,7 +756,7 @@ export default function ModelMonitoringPage() {
             ]}
           />
         ) : null}
-      </EliteSection>
+      </Section>
 
       {/* Upset Risk & Model Agreement — Pro + Elite */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -828,31 +826,29 @@ export default function ModelMonitoringPage() {
       </Section>
 
       {/* Recent Model Improvements — Elite only */}
-      <EliteSection
+      <Section
         icon={<TrendingUp className="w-5 h-5 text-primary" />}
         title="Recent Model Improvements"
         subtitle="A log of validated changes made to improve accuracy and calibration."
-        isElite={isElite}
-        lockTitle="Model Improvements Log"
-        lockDescription="Review every validated improvement made to the prediction engine — what changed, when, and whether it improved accuracy. Available on Elite."
       >
-        {isLoading ? <SectionSkeleton rows={4} /> : data ? (
+        {!isElite ? (
+          <EliteLockedSection title="Model Improvements Log" description="Review every validated improvement made to the prediction engine — what changed, when, and whether it improved accuracy. Available on Elite." />
+        ) : isLoading ? <SectionSkeleton rows={4} /> : data ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {data.improvements.map((item) => <ImprovementCard key={item.title} item={item} />)}
           </div>
         ) : null}
-      </EliteSection>
+      </Section>
 
       {/* Model Version History — Elite only */}
-      <EliteSection
+      <Section
         icon={<Layers className="w-5 h-5 text-primary" />}
         title="Model Version History"
         subtitle="Current and previous versions of the prediction engine."
-        isElite={isElite}
-        lockTitle="Model Version History"
-        lockDescription="See which model version is currently running and the full history of deployed engine versions. Available on Elite."
       >
-        {isLoading ? <SectionSkeleton rows={2} /> : data ? (
+        {!isElite ? (
+          <EliteLockedSection title="Model Version History" description="See which model version is currently running and the full history of deployed engine versions. Available on Elite." />
+        ) : isLoading ? <SectionSkeleton rows={2} /> : data ? (
           <div className="space-y-4">
             {data.versionHistory.map((v) => (
               <div key={v.version} className="border border-border/50 bg-background rounded-xl p-5 shadow-sm space-y-2">
@@ -867,7 +863,7 @@ export default function ModelMonitoringPage() {
             ))}
           </div>
         ) : null}
-      </EliteSection>
+      </Section>
 
       {/* How to Read */}
       <HowToReadCard />
