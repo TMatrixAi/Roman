@@ -252,11 +252,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="app-container min-h-[3.75rem] py-2.5 flex items-center justify-between gap-2">
 
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 font-display font-bold tracking-tight text-[1.05rem] hover:opacity-80 transition-opacity shrink-0">
-            <div className="w-8 h-8 text-accent">
+          <Link href="/" className="flex items-center hover:opacity-80 transition-opacity shrink-0">
+            <div className="w-11 h-11">
               <TennisMatrixLogo />
             </div>
-            <span className="uppercase tracking-[0.16em] text-emerald-300">TENNIS MATRIX AI</span>
           </Link>
 
           {/* Desktop nav */}
@@ -276,8 +275,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Right side controls: FORCE SIGNAL → ONLINE SIGNAL → [gap] → ADMIN → THEME */}
+          {/* Right side controls: THEME → FORCE SIGNAL → ONLINE SIGNAL → [gap] → CLERK → ADMIN */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* Theme toggle — sits to the left of Force Signal */}
+            <ThemeToggle />
+
             {/* Force Signal — visually distinct (warning/amber) from Online Signal (primary) */}
             <Link
               href="/force-signal"
@@ -300,7 +302,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {dateTag}
             </span>
 
-            {/* Visual gap to keep theme toggle separate */}
+            {/* Visual gap */}
             <div className="w-px h-5 bg-border/50 mx-1 hidden sm:block" />
 
             {/* Clerk user — sign-out button when authenticated */}
@@ -308,9 +310,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Admin Login/Logout */}
             <AdminAuthButton />
-
-            {/* Theme toggle */}
-            <ThemeToggle />
 
             {/* Mobile menu toggle */}
             <button

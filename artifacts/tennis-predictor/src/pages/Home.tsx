@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { FixturesList, type FixturesListHandle, type TourFilter } from "@/components/FixturesList"
 import { Select } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { ActivitySquare, ArrowRight, BarChart2, PlaySquare, Swords } from "lucide-react"
+import { ActivitySquare, ArrowRight, PlaySquare, Swords } from "lucide-react"
 
 const WTA_LEVELS = new Set(["WTA1000", "WTA500", "WTA250"])
 const ATP_LEVELS = new Set(["Masters1000", "ATP500", "ATP250"])
@@ -66,37 +66,23 @@ export default function Home() {
           <ActivitySquare className="w-[400px] h-[400px]" />
         </div>
         <div className="relative z-10 max-w-3xl space-y-6">
-          <p className="text-sm md:text-base font-mono font-bold tracking-[0.24em] uppercase text-emerald-100">TENNIS MATRIX AI</p>
-          <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight leading-[1.05] break-words">
-            <span className="text-emerald-50 drop-shadow-[0_2px_12px_rgba(16,185,129,0.2)]">PROBABILITY</span>
+          <h1 className="text-5xl sm:text-6xl md:text-8xl font-display font-bold tracking-tight leading-[1.02] break-words">
+            <span className="text-emerald-50 drop-shadow-[0_2px_20px_rgba(16,185,129,0.3)]">PROBABILITY</span>
             <br />
             <span className="text-emerald-100">NOT</span>
             <br />
-            <span className="text-emerald-50 drop-shadow-[0_2px_12px_rgba(16,185,129,0.2)]">SENTIMENT.</span>
+            <span className="text-emerald-50 drop-shadow-[0_2px_20px_rgba(16,185,129,0.3)]">SENTIMENT.</span>
           </h1>
           <p className="text-emerald-100/95 text-lg md:text-xl font-medium max-w-2xl leading-relaxed">
             Multi-model prediction engine based on real ATP/WTA data. Surface Elo, serve/return strength, fatigue, and head-to-head.
           </p>
           <div className="pt-6 flex flex-wrap items-center gap-4">
             <button
-              onClick={() => setLocation("/history")}
-              className="bg-background/10 backdrop-blur-sm text-foreground hover:bg-background/20 border border-border/30 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all hover:-translate-y-1"
-            >
-              PREDICTION HISTORY
-            </button>
-            <button
               onClick={() => setLocation("/predict")}
               className="bg-primary text-primary-foreground px-8 py-4 rounded-xl font-bold font-mono text-sm hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center gap-2 hover:-translate-y-1"
             >
               <PlaySquare className="w-4 h-4" />
               RUN MODEL
-            </button>
-            <button
-              onClick={() => setLocation("/shadow-replay")}
-              className="bg-background/10 backdrop-blur-sm text-foreground hover:bg-background/20 border border-border/30 px-8 py-4 rounded-xl font-bold font-mono text-sm transition-all flex items-center gap-2 hover:-translate-y-1"
-            >
-              <BarChart2 className="w-4 h-4" />
-              PAPER TRADING
             </button>
           </div>
           <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-border/40 mt-8">
