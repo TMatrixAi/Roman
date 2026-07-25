@@ -1269,10 +1269,10 @@ export default function AccuracyDashboardPage() {
   const { data: settings } = useGetEvaluationSettings()
   const { data: shadowDashboard } = useGetShadowReplayDashboard()
   const { data: optimizerSummary } = useGetOptimizerAccuracySummary({
-    query: { refetchInterval: 10000 },
+    query: { queryKey: getGetOptimizerAccuracySummaryQueryKey(), refetchInterval: 10000 },
   })
   const { data: candidateConfigs } = useGetCandidateConfigs({
-    query: { refetchInterval: 10000 },
+    query: { queryKey: getCandidateConfigsQueryKey(), refetchInterval: 10000 },
   })
   // Task #12: pattern analysis and threshold evaluation data
   const { data: patternAnalysis } = useGetLatestPatternAnalysis()

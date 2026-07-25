@@ -177,6 +177,11 @@ export default function PredictBuilderPage() {
   const wasAutoDetected = !!(prefillSurface || prefillFormat || prefillLevel)
 
   // Match Conditions collapsed/expanded state — persisted to localStorage so it survives refreshes.
+  const [isPredictionPending, setIsPredictionPending] = useState(false)
+  const [isPredictionError, setIsPredictionError] = useState(false)
+  // Expose mutation-like shape so JSX can reference createPrediction.isPending / isError
+  const createPrediction = { isPending: isPredictionPending, isError: isPredictionError }
+
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("matchConditionsExpanded") === "true" } catch { return false }
   })
@@ -210,6 +215,8 @@ export default function PredictBuilderPage() {
       matchFormat: format,
     })
 
+    setIsPredictionPending(true)
+    setIsPredictionError(false)
     try {
       const prediction = await createPredictionWithIntegrity(
         {
@@ -228,7 +235,9 @@ export default function PredictBuilderPage() {
       )
       setLocation(`/predictions/${prediction.id}`)
     } catch {
-      // Integrity failures and provider issues are surfaced by the route's error UI.
+      setIsPredictionError(true)
+    } finally {
+      setIsPredictionPending(false)
     }
   }
 

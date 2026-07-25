@@ -2,11 +2,17 @@ import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
+import { clerkMiddleware } from "@clerk/express";
+import { publishableKeyFromHost } from "@clerk/shared/keys";
+import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { formatDatabaseError } from "./lib/databaseError";
 
 const app: Express = express();
+
+// Clerk proxy must be mounted before body parsers (streams raw bytes)
+app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 app.use(
   pinoHttp({
@@ -41,6 +47,17 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Task #143: signs the admin-session cookie set by POST /api/auth/login so `req.signedCookies`
 // is available to `requireAdmin`. Reuses SESSION_SECRET rather than introducing a second secret.
 app.use(cookieParser(process.env.SESSION_SECRET));
+
+// Clerk session middleware — resolves auth from session cookie.
+// getClerkProxyHost ensures dev and prod use the same canonical host.
+app.use(
+  clerkMiddleware((req) => ({
+    publishableKey: publishableKeyFromHost(
+      getClerkProxyHost(req) ?? "",
+      process.env.CLERK_PUBLISHABLE_KEY,
+    ),
+  })),
+);
 
 // Without this, a malformed body or an over-limit upload (e.g. too-large screenshot on
 // POST /matchups/from-screenshot) falls through to Express's default handler, which returns an

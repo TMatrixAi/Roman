@@ -3,11 +3,12 @@ import { Link, useLocation } from "wouter"
 import { useTheme } from "next-themes"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/hooks/use-toast"
+import { useUser, useClerk, Show } from "@clerk/react"
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
 import { TennisMatrixLogo } from "./TennisMatrixLogo"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 import { MatrixRain } from "./MatrixRain"
-import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck } from "lucide-react"
+import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut } from "lucide-react"
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -144,6 +145,31 @@ function MatrixWordmark() {
   )
 }
 
+/** Shows current Clerk user with a sign-out button. Renders nothing when signed out. */
+function UserClerkButton() {
+  const { user, isLoaded } = useUser()
+  const { signOut } = useClerk()
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+  return (
+    <Show when="signed-in">
+      {isLoaded && user && (
+        <button
+          onClick={() => signOut({ redirectUrl: basePath || "/" })}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.7rem] font-mono font-bold uppercase tracking-widest transition-all border bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:border-primary/40"
+          title={`Signed in as ${user.emailAddresses[0]?.emailAddress ?? user.firstName ?? "user"} — click to sign out`}
+        >
+          <UserCircle className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden sm:inline max-w-[8rem] truncate">
+            {user.firstName ?? user.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "Account"}
+          </span>
+          <LogOut className="w-3 h-3 shrink-0 opacity-60" />
+        </button>
+      )}
+    </Show>
+  )
+}
+
 function AdminAuthButton() {
   const { data: adminAuth } = useGetAdminAuthStatus()
   const { toast } = useToast()
@@ -271,6 +297,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Visual gap to keep theme toggle separate */}
             <div className="w-px h-5 bg-border/50 mx-1 hidden sm:block" />
+
+            {/* Clerk user — sign-out button when authenticated */}
+            <UserClerkButton />
 
             {/* Admin Login/Logout */}
             <AdminAuthButton />

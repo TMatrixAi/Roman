@@ -41,6 +41,7 @@ import {
   getExternalFixtureIdFromRequestMatchId,
   parsePredictionRequestIntegrityHeaders,
 } from "./predictionRequestIntegrity";
+import { requireClerkUser } from "../middlewares/requireClerkUser";
 import {
   canUseCompetitiveBalance,
   canUseEliteRecommendations,
@@ -62,7 +63,7 @@ function withHistoricalMatchFallbackFlag<T extends { engine: unknown }>(row: T):
   return { ...row, usedHistoricalMatchFallback: usedHistoricalMatchFallback(warnings) };
 }
 
-router.get("/predictions", async (req, res): Promise<void> => {
+router.get("/predictions", requireClerkUser, async (req, res): Promise<void> => {
   if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
 
   const parsed = ListPredictionsQueryParams.safeParse(req.query);
@@ -150,7 +151,7 @@ router.get("/predictions/players/:playerId", async (req, res): Promise<void> => 
   res.json(GetLedgerPlayerPredictionsResponse.parse(rows.map(withHistoricalMatchFallbackFlag)));
 });
 
-router.post("/predictions", async (req, res): Promise<void> => {
+router.post("/predictions", requireClerkUser, async (req, res): Promise<void> => {
   if (!(await enforceEntitlement(res, canUseCompetitiveBalance, "competitiveBalance"))) return;
   if (!(await enforceEntitlement(res, canUseEvidenceReliability, "evidenceReliability"))) return;
   if (!(await enforceEntitlement(res, canUseEliteRecommendations, "eliteRecommendations"))) return;
@@ -302,7 +303,7 @@ router.post("/predictions", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/predictions/:predictionId", async (req, res): Promise<void> => {
+router.get("/predictions/:predictionId", requireClerkUser, async (req, res): Promise<void> => {
   if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
 
   const params = GetPredictionParams.safeParse(req.params);

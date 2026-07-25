@@ -40,16 +40,16 @@ export function computeRecommendation(
   if (tieBreakerApplied) return "NO_STRONG_SIGNAL";
   if (margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement")) return "NO_STRONG_SIGNAL";
   if (upsetRisk === "EXTREME") return "HIGH_RISK";
-  // Phase 7 fix: at ≥85% confidence (margin≥35), non-extreme risk, and no active model
-  // disagreement, always return STRONG_RECOMMENDATION — a 92% prediction mislabeled "LEAN"
-  // due to modelAgreement not being exactly "Strong" is confusing and misleading. This gate
-  // applies ONLY going forward; saved records are never retroactively mutated.
+  // Phase 7 fix: at ≥85% confidence (margin≥35), non-extreme risk, and Strong model agreement,
+  // always return STRONG_RECOMMENDATION. Restricted to Strong-only (not just non-Mixed/non-HighDisagreement)
+  // so that Moderate agreement is never silently promoted to STRONG_RECOMMENDATION — a match where
+  // models only partially agree should reach MODERATE_LEAN at best, regardless of raw confidence.
+  // This gate applies ONLY going forward; saved records are never retroactively mutated.
   if (
     margin >= 35 &&
     dataQuality >= 45 &&
     (upsetRisk === "LOW" || upsetRisk === "MODERATE") &&
-    modelAgreement !== "Mixed" &&
-    modelAgreement !== "HighDisagreement"
+    modelAgreement === "Strong"
   )
     return "STRONG_RECOMMENDATION";
   // Task #75: the dataQuality>=55 floor here was tuned before Task #68 excluded Head-to-Head from
