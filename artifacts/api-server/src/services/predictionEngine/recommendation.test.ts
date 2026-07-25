@@ -20,9 +20,12 @@ test("STRONG_RECOMMENDATION is withheld when model agreement is Mixed, even with
   assert.notEqual(result, "STRONG_RECOMMENDATION", "Mixed agreement must block STRONG_RECOMMENDATION regardless of margin/data quality/risk");
 });
 
-test("at very high confidence, Moderate agreement can still qualify for STRONG_RECOMMENDATION (Phase 7 >=85% gate)", () => {
+test("at very high confidence, Moderate agreement is capped at MODERATE_LEAN (not STRONG_RECOMMENDATION -- Strong agreement required)", () => {
+  // The Phase 7 >=85% gate (margin>=35) is restricted to Strong agreement only; Moderate never
+  // silently promotes to STRONG_RECOMMENDATION. The expected result is MODERATE_LEAN via the
+  // margin>=12 / non-Mixed / non-HighDisagreement path.
   const result = computeRecommendation(85, 70, "Strong", "LOW", "Moderate");
-  assert.equal(result, "STRONG_RECOMMENDATION");
+  assert.equal(result, "MODERATE_LEAN");
 });
 
 test("DO_NOT_RECOMMEND still takes priority over everything else on poor data quality", () => {
