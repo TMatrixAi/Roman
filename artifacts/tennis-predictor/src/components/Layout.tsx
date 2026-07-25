@@ -11,14 +11,14 @@ import { MatrixRain } from "./MatrixRain"
 import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut } from "lucide-react"
 
 const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/predict", label: "Run Model", icon: PlaySquare, exact: false },
-  { href: "/history", label: "History", icon: History, exact: false },
-  { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
-  { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
-  { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
-  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
-  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, adminOnly: false },
+  { href: "/predict", label: "Run Model", icon: PlaySquare, exact: false, adminOnly: false },
+  { href: "/history", label: "History", icon: History, exact: false, adminOnly: false },
+  { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false, adminOnly: false },
+  { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false, adminOnly: true },
+  { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false, adminOnly: true },
+  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false, adminOnly: true },
+  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false, adminOnly: true },
 ]
 
 const MOBILE_PRIMARY_TABS = [
@@ -28,12 +28,12 @@ const MOBILE_PRIMARY_TABS = [
 ] as const
 
 const MOBILE_MORE_LINKS = [
-  { href: "/evaluation/log", label: "Log", icon: ClipboardList, exact: false },
-  { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
-  { href: "/backtesting", label: "Backtest", icon: FlaskConical, exact: false },
-  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false },
-  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false },
-] as const
+  { href: "/evaluation/log", label: "Log", icon: ClipboardList, exact: false, adminOnly: false },
+  { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false, adminOnly: true },
+  { href: "/backtesting", label: "Backtest", icon: FlaskConical, exact: false, adminOnly: true },
+  { href: "/shadow-replay", label: "Paper Trading", icon: Ghost, exact: false, adminOnly: true },
+  { href: "/launch-audit", label: "Launch Audit", icon: ShieldCheck, exact: false, adminOnly: true },
+]
 
 function isActive(href: string, location: string, exact: boolean) {
   if (exact) return location === href
@@ -219,6 +219,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const isAdmin = adminAuth?.authenticated === true
+
+  const visibleNavLinks = NAV_LINKS.filter((l) => !l.adminOnly || isAdmin)
+  const visibleMobileMoreLinks = MOBILE_MORE_LINKS.filter((l) => !l.adminOnly || isAdmin)
 
   useEffect(() => {
     setMobileOpen(false)
@@ -256,7 +261,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-6 text-[0.8125rem] font-medium">
-            {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+            {visibleNavLinks.map(({ href, label, icon: Icon, exact }) => {
               const active = isActive(href, location, exact)
               return (
                 <Link
@@ -331,7 +336,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <Zap className="w-4 h-4 shrink-0" />
                 Force Signal
               </Link>
-              {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+              {visibleNavLinks.map(({ href, label, icon: Icon, exact }) => {
                 const active = isActive(href, location, exact)
                 return (
                   <Link
@@ -389,7 +394,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {mobileMoreOpen && (
         <div className="md:hidden fixed bottom-[4.25rem] left-3 right-3 z-50 rounded-2xl border border-border/70 bg-background shadow-xl p-2">
-          {MOBILE_MORE_LINKS.map(({ href, label, icon: Icon, exact }) => {
+          {visibleMobileMoreLinks.map(({ href, label, icon: Icon, exact }) => {
             const active = isActive(href, location, exact)
             return (
               <Link

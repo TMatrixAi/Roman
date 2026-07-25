@@ -77,6 +77,7 @@ import { getLatestThresholdEvaluation } from "../services/evaluation/thresholdEv
 import { getOptimizerAccuracySummary } from "../services/evaluation/optimizerSummary";
 import { computeRecommendation, type Recommendation } from "../services/predictionEngine/recommendation";
 import { enforceEntitlement } from "../lib/entitlements";
+import { requireAdmin } from "../lib/adminAuth";
 import {
   canUseCompetitiveBalance,
   canUseDeveloperAnalytics,
@@ -444,6 +445,21 @@ router.get("/paper-trading/job-runs", async (req, res): Promise<void> => {
     .limit(parsed.data.limit);
 
   res.json(ListPaperTradingJobRunsResponse.parse(rows));
+});
+
+/**
+ * Task #33: Admin-only trigger for a full calibration refit (walk-forward with evaluationOnly=false).
+ * Protected by requireAdmin (bypasses the subscription entitlement gate) so the owner can always
+ * refit the model regardless of payment status. Runs in the background — poll
+ * GET /evaluation/walk-forward/status to track progress.
+ *
+ * This exists separately from POST /evaluation/walk-forward/run (entitlement-gated, defaults
+ * evaluationOnly=true via the HTTP body schema) so the admin can refit without navigating the
+ * subscription UI and without accidentally triggering an evaluationOnly run.
+ */
+router.post("/evaluation/calibration-refit", requireAdmin, async (_req, res): Promise<void> => {
+  const result = startWalkForwardJob({ evaluationOnly: false });
+  res.json(result);
 });
 
 router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<void> => {
