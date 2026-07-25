@@ -445,6 +445,7 @@ export const CreatePredictionResponse = zod.object({
   "risks": zod.array(zod.string()).optional(),
   "disclosures": zod.array(zod.string()).optional().describe('Informational disclosures that are real and worth showing but are NOT evidence this specific match is more upset-prone or lower-quality -- e.g. \"no prior head-to-head meetings\" (the normal case for most matchups) or \"not enough matches to tag a surface specialist\" (a coverage gap, not a red flag). Added 2026-07-13 so this information keeps showing up without being styled\/counted like a real risk. Absent on predictions made before this field existed.'),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
+  "coverageGaps": zod.array(zod.string()).optional().describe('Structural coverage gaps (zero match history, venue not in coverage, etc.) grouped by root cause -- separate from warnings. Absent on predictions made before this field existed.'),
   "availabilityNote": zod.string().optional(),
   "conditionsNote": zod.string().optional(),
   "weather": zod.union([zod.object({
@@ -717,6 +718,7 @@ export const GetPredictionResponse = zod.object({
   "risks": zod.array(zod.string()).optional(),
   "disclosures": zod.array(zod.string()).optional().describe('Informational disclosures that are real and worth showing but are NOT evidence this specific match is more upset-prone or lower-quality -- e.g. \"no prior head-to-head meetings\" (the normal case for most matchups) or \"not enough matches to tag a surface specialist\" (a coverage gap, not a red flag). Added 2026-07-13 so this information keeps showing up without being styled\/counted like a real risk. Absent on predictions made before this field existed.'),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
+  "coverageGaps": zod.array(zod.string()).optional().describe('Structural coverage gaps (zero match history, venue not in coverage, etc.) grouped by root cause -- separate from warnings. Absent on predictions made before this field existed.'),
   "availabilityNote": zod.string().optional(),
   "conditionsNote": zod.string().optional(),
   "weather": zod.union([zod.object({
@@ -996,6 +998,7 @@ export const RecordPredictionOutcomeResponse = zod.object({
   "risks": zod.array(zod.string()).optional(),
   "disclosures": zod.array(zod.string()).optional().describe('Informational disclosures that are real and worth showing but are NOT evidence this specific match is more upset-prone or lower-quality -- e.g. \"no prior head-to-head meetings\" (the normal case for most matchups) or \"not enough matches to tag a surface specialist\" (a coverage gap, not a red flag). Added 2026-07-13 so this information keeps showing up without being styled\/counted like a real risk. Absent on predictions made before this field existed.'),
   "warnings": zod.array(zod.string()).optional().describe('Aggregated low-sample\/low-coverage warnings from every module'),
+  "coverageGaps": zod.array(zod.string()).optional().describe('Structural coverage gaps (zero match history, venue not in coverage, etc.) grouped by root cause -- separate from warnings. Absent on predictions made before this field existed.'),
   "availabilityNote": zod.string().optional(),
   "conditionsNote": zod.string().optional(),
   "weather": zod.union([zod.object({
