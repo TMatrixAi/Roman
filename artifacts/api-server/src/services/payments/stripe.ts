@@ -12,8 +12,8 @@ function assertStripeSecretKey(): string {
   if (!secretKey) {
     throw new Error("Stripe secret key is not configured");
   }
-  if (!secretKey.startsWith("sk_test_")) {
-    throw new Error("Payments V2 requires Stripe test mode keys (sk_test_...)");
+  if (!secretKey.startsWith("sk_test_") && !secretKey.startsWith("sk_live_")) {
+    throw new Error("Stripe secret key must start with sk_test_ or sk_live_");
   }
   return secretKey;
 }
@@ -176,7 +176,7 @@ export function verifyStripeWebhookSignature(params: {
     throw new Error("Stripe webhook secret is not configured");
   }
   if (!secret.startsWith("whsec_")) {
-    throw new Error("Payments V2 requires a Stripe test-mode webhook secret (whsec_...)");
+    throw new Error("Stripe webhook secret must start with whsec_");
   }
 
   const headerValue = Array.isArray(params.signatureHeader) ? params.signatureHeader[0] : params.signatureHeader;

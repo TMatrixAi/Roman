@@ -47,6 +47,11 @@ channel = "stable-25_05"
 [userenv.shared]
 AI_INTEGRATIONS_OPENAI_BASE_URL = "https://api.openai.com/v1"
 RAPIDAPI_HOST = "tennis-api-atp-wta-itf.p.rapidapi.com"
+PAYMENTS_PLAN_KEY = "pro"
+PAYMENTS_PLAN_NAME = "Pro"
+PAYMENTS_V2_ENABLED = "true"
+VITE_PAYMENTS_V2_ENABLED = "true"
+APP_PUBLIC_URL = "https://tennis-stats-engine.replit.app"
 
 [userenv.development]
 NODE_OPTIONS = "--max-old-space-size=6144"
