@@ -137,7 +137,9 @@ function withHistoricalMatchFallbackFlag<T extends { engine: unknown }>(row: T):
 }
 
 router.get("/predictions", requireClerkUser, async (req, res): Promise<void> => {
-  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+  // Prediction history is gated by Clerk auth only — same reasoning as POST /predictions.
+  // Removing the subscription check prevents "not found" on results pages when the workspace
+  // subscription_status is null (no active Stripe webhook yet).
 
   const parsed = ListPredictionsQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -401,8 +403,6 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
 });
 
 router.get("/predictions/:predictionId", requireClerkUser, async (req, res): Promise<void> => {
-  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
-
   const params = GetPredictionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

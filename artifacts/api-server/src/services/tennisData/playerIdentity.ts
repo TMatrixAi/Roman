@@ -836,6 +836,25 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     if (validated === null) continue;
 
     if (validated) {
+      // Guard: if the provider returned a DOUBLES player for this ID (name contains "/"),
+      // the ID has been recycled or was misidentified — fall back to the historical row data
+      // instead of poisoning the result set with a doubles entry that isConfidentMatch will
+      // always reject, causing the real single-name player to appear as "not found".
+      // Seen in practice: id=421 ("C. O'Connell", ATP) resolved by provider to a doubles team.
+      const isDoublesValidation = (validated.name ?? "").includes("/");
+      if (isDoublesValidation) {
+        if (!historicalNameIsWeak) {
+          historicalSummaries.push({
+            id: row.id,
+            name: row.name,
+            countryCode: null,
+            currentRank: null,
+            tour: row.tour,
+            source: "historical-match",
+          });
+        }
+        continue;
+      }
       // Don't skip abbreviated validated names — the downstream confidence check handles
       // disambiguation. Skipping them blocked real players stored as "T. Kokkinakis" etc.
       historicalSummaries.push({

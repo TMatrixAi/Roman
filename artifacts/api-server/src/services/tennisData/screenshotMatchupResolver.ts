@@ -590,7 +590,8 @@ async function gatherCandidates(provider: TennisDataProvider, searchName: string
   if (primaryConfident.length > 0) return primary;
 
   // Word-by-word fallback (surname first — most distinctive, fewest false positives)
-  const words = searchName.trim().split(/\s+/).filter((w) => w.length >= 3).reverse();
+  // Min length of 2 catches very short surnames (e.g. "Lea Ma" → "Ma" is 2 chars).
+  const words = searchName.trim().split(/\s+/).filter((w) => w.length >= 2).reverse();
   const accumulated = new Map<string, PlayerSummary>();
   for (const p of primary) accumulated.set(p.id, p);
 
@@ -696,6 +697,23 @@ async function resolvePlayerMatch(
       }
     }
 
+    // Tour-based tie-break: "ATP Washington" → only ATP candidates; "WTA Memphis" → WTA only.
+    // The tour prefix in the event name is an unambiguous signal that narrows common-name
+    // ambiguity (e.g. "Jordan Lee" ATP vs. WTA, "A. Sharma" ATP vs. WTA) without guessing.
+    if (eventName) {
+      const eventUpper = eventName.toUpperCase();
+      const inferredTour: "ATP" | "WTA" | null =
+        /\batp\b/.test(eventUpper) ? "ATP" :
+        /\bwta\b/.test(eventUpper) ? "WTA" :
+        null;
+      if (inferredTour) {
+        const tourFiltered = confident.filter((c) => c.tour === inferredTour);
+        if (tourFiltered.length === 1) {
+          return { match: { recognizedName, player: tourFiltered[0]! }, status: "resolved" };
+        }
+      }
+    }
+
     return { match: { recognizedName, player: null }, status: "ambiguous" };
   } else {
     return { match: { recognizedName, player: null }, status: "not-found" };
@@ -718,7 +736,22 @@ async function resolveEventMatch(
     const found = await provider.findTournamentSurfaceByName(eventName);
     if (found) {
       surface = found.surface;
-      level = found.level ?? level;
+      // Suppress a provider-returned level that contradicts the event's known tour.
+      // The provider's tournament DB sometimes returns a stale ATP-era label (e.g. "ATP250")
+      // for a city that now hosts a WTA event (Memphis, Vancouver). The event name prefix is
+      // a stronger signal than the provider's coarse category label.
+      let providerLevel = found.level ?? level;
+      if (providerLevel && eventName) {
+        const eUpper = eventName.toUpperCase();
+        const isWtaEvent = /\bwta\b/.test(eUpper);
+        const isAtpEvent = /\batp\b/.test(eUpper);
+        const isAtpLevel = providerLevel === "ATP250" || providerLevel === "ATP500" || providerLevel === "Masters1000";
+        const isWtaLevel = providerLevel === "WTA250" || providerLevel === "WTA500" || providerLevel === "WTA1000";
+        if ((isWtaEvent && isAtpLevel) || (isAtpEvent && isWtaLevel)) {
+          providerLevel = null; // tour mismatch — drop the stale label
+        }
+      }
+      level = providerLevel;
     }
   }
 
