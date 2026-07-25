@@ -622,41 +622,57 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   const normalizedQuery = normalizePlayerName(query.trim());
   const expandedName = WELL_KNOWN_NICKNAMES[normalizedQuery];
 
-  const [primaryResults, expandedResults] = await Promise.all([
+  // Surname supplement: for multi-word queries like "Thanasi Kokkinakis", also search
+  // by surname alone so that abbreviated provider entries ("T. Kokkinakis") are found.
+  const queryWords = query.trim().split(/\s+/).filter(Boolean);
+  const surnameSupplement =
+    queryWords.length >= 2 && queryWords[queryWords.length - 1]!.length >= 3
+      ? queryWords[queryWords.length - 1]!
+      : null;
+
+  const [primaryResults, expandedResults, surnameResults] = await Promise.all([
     provider.searchPlayers(query),
     expandedName ? provider.searchPlayers(expandedName) : Promise.resolve([] as PlayerSummary[]),
+    surnameSupplement ? provider.searchPlayers(surnameSupplement) : Promise.resolve([] as PlayerSummary[]),
   ]);
 
+  const existingIds = new Set(primaryResults.map((p) => p.id));
   const liveResults = [...primaryResults];
-  if (expandedResults.length > 0) {
-    const existingIds = new Set(primaryResults.map((p) => p.id));
-    for (const p of expandedResults) {
-      if (!existingIds.has(p.id)) { liveResults.push(p); existingIds.add(p.id); }
-    }
+  for (const p of [...expandedResults, ...surnameResults]) {
+    if (!existingIds.has(p.id)) { liveResults.push(p); existingIds.add(p.id); }
   }
 
-  // Filter abbreviated/weak names from live results (e.g. "M. Uchijima" from provider standings).
-  // These are not stable identity keys -- they're ambiguous across multiple full-name players
-  // sharing the same initial+surname (e.g. Maiko vs. Moyuka Uchijima). Historical filtering
-  // already blocks weak names from the historical fallback; this closes the same gap for live.
-  const filteredLiveResults = liveResults.filter((p) => !isWeakIdentityNameKey(normalizePlayerName(p.name)));
+  // Keep abbreviated names (e.g. "T. Kokkinakis") in live results — the bijective isConfidentMatch
+  // downstream already handles disambiguation correctly. Filtering them here prevents the resolver
+  // from ever finding players whose provider-stored name is abbreviated, which caused false
+  // "not-found" results for real players like Thanasi Kokkinakis, Kyrian Jacquet, etc.
+  const filteredLiveResults = liveResults;
 
   const seenIds = new Set(filteredLiveResults.map((p) => p.id));
 
   const lowerQuery = query.toLowerCase().trim();
   const likePattern = `%${lowerQuery}%`;
+  // Also build a surname-only LIKE pattern for multi-word queries so abbreviated historical
+  // entries like "T. Kokkinakis" are matched when the query is "Thanasi Kokkinakis".
+  const surnameLikePattern = surnameSupplement ? `%${surnameSupplement.toLowerCase()}%` : null;
+
   let historicalRows: HistoricalPlayerRow[] = [];
   try {
+    const nameFilter = (col: Parameters<typeof sql>[0]) =>
+      surnameLikePattern
+        ? sql`(lower(${col}) like ${likePattern} or lower(${col}) like ${surnameLikePattern})`
+        : sql`lower(${col}) like ${likePattern}`;
+
     const [asPlayer1Rows, asPlayer2Rows] = await Promise.all([
       db
         .select({ id: historicalMatchesTable.player1Id, name: historicalMatchesTable.player1Name, tour: historicalMatchesTable.tour })
         .from(historicalMatchesTable)
-        .where(and(sql`lower(${historicalMatchesTable.player1Name}) like ${likePattern}`, sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
+        .where(and(nameFilter(historicalMatchesTable.player1Name), sql`${historicalMatchesTable.player1Name} not like '%/%'`, sql`${historicalMatchesTable.player1Name} !~ ' [A-Z]$'`))
         .limit(100),
       db
         .select({ id: historicalMatchesTable.player2Id, name: historicalMatchesTable.player2Name, tour: historicalMatchesTable.tour })
         .from(historicalMatchesTable)
-        .where(and(sql`lower(${historicalMatchesTable.player2Name}) like ${likePattern}`, sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
+        .where(and(nameFilter(historicalMatchesTable.player2Name), sql`${historicalMatchesTable.player2Name} not like '%/%'`, sql`${historicalMatchesTable.player2Name} !~ ' [A-Z]$'`))
         .limit(100),
     ]);
     historicalRows = [...asPlayer1Rows, ...asPlayer2Rows];
@@ -683,8 +699,8 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     if (validated === null) continue;
 
     if (validated) {
-      const validatedNameIsWeak = isWeakIdentityNameKey(normalizePlayerName(validated.name));
-      if (validatedNameIsWeak) continue;
+      // Don't skip abbreviated validated names — the downstream confidence check handles
+      // disambiguation. Skipping them blocked real players stored as "T. Kokkinakis" etc.
       historicalSummaries.push({
         id: validated.id,
         name: validated.name,

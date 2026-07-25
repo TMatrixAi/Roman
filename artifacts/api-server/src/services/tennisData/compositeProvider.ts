@@ -78,11 +78,26 @@ export class CompositeTennisProvider implements TennisDataProvider {
   }
 
   async getPlayerMatches(playerId: string): Promise<MatchRecord[]> {
-    return this.withFallback(
-      "getPlayerMatches",
-      () => this.primary.getPlayerMatches(playerId),
-      () => this.fallback.getPlayerMatches(playerId),
-    );
+    // Match history is enrichment data — the prediction engine degrades gracefully to a
+    // lower data-quality score when history is absent. If BOTH providers are unavailable
+    // (MatchStat has no history endpoint; API-Tennis times out under load), return [] so
+    // the prediction still runs rather than surfacing a 502 to the user.
+    try {
+      return await this.withFallback(
+        "getPlayerMatches",
+        () => this.primary.getPlayerMatches(playerId),
+        () => this.fallback.getPlayerMatches(playerId),
+      );
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        logger.warn(
+          { playerId, err: err.message },
+          "Both providers unavailable for getPlayerMatches — returning empty match history; prediction will proceed with lower data quality",
+        );
+        return [];
+      }
+      throw err;
+    }
   }
 
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {

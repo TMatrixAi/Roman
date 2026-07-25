@@ -106,6 +106,7 @@ async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummar
 
       // 3. Initial-aware match: split off leading "X." tokens, match on remaining words,
       //    then verify any initials match the candidate's first name letter.
+      //    Handles query="A. Smith" / candidate="Alexander Smith".
       const initialPattern = /^[a-z]\.?$/
       const initials = words.filter((w) => initialPattern.test(w)).map((w) => w.replace(".", ""))
       const substantive = words.filter((w) => !initialPattern.test(w))
@@ -121,6 +122,26 @@ async function resolvePlayerByName(name: string): Promise<{ player: PlayerSummar
         })
         if (bySubstantive.length === 1) return bySubstantive[0]
         if (bySubstantive.length > 1) return "ambiguous"
+      }
+
+      // 4. Reverse-initial match: the candidate's first name is an initial ("T. Kokkinakis")
+      //    but the query provides the full name ("Thanasi Kokkinakis"). Match when:
+      //    - Candidate first token is a single letter (with optional period)
+      //    - Query first word starts with that same letter
+      //    - All remaining candidate words appear as query words
+      if (words.length >= 2) {
+        const byReverseInitial = candidates.filter((c) => {
+          const cWords = normName(c.name).split(" ").filter(Boolean)
+          if (cWords.length < 2) return false
+          const cFirst = cWords[0]!.replace(".", "")
+          if (cFirst.length !== 1) return false // candidate first token must be a single-letter initial
+          if (!words[0] || words[0][0] !== cFirst) return false // query first word must start with it
+          // All remaining candidate words must be present in the query
+          const qWordSet = new Set(words)
+          return cWords.slice(1).every((w) => qWordSet.has(w))
+        })
+        if (byReverseInitial.length === 1) return byReverseInitial[0]
+        if (byReverseInitial.length > 1) return "ambiguous"
       }
 
       return null
