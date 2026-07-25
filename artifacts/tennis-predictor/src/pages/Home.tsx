@@ -66,12 +66,13 @@ export default function Home() {
           <ActivitySquare className="w-[400px] h-[400px]" />
         </div>
         <div className="relative z-10 max-w-3xl space-y-6">
-          <h1 className="text-5xl sm:text-6xl md:text-8xl font-display font-bold tracking-tight leading-[1.02] break-words">
-            <span className="text-emerald-50 drop-shadow-[0_2px_20px_rgba(16,185,129,0.3)]">PROBABILITY</span>
+          <p className="text-2xl md:text-3xl font-mono font-bold tracking-[0.2em] uppercase text-emerald-300">TENNIS MATRIX AI</p>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-display font-bold tracking-tight leading-[1.05] break-words">
+            <span className="text-emerald-50 drop-shadow-[0_2px_12px_rgba(16,185,129,0.2)]">PROBABILITY</span>
             <br />
             <span className="text-emerald-100">NOT</span>
             <br />
-            <span className="text-emerald-50 drop-shadow-[0_2px_20px_rgba(16,185,129,0.3)]">SENTIMENT.</span>
+            <span className="text-emerald-50 drop-shadow-[0_2px_12px_rgba(16,185,129,0.2)]">SENTIMENT.</span>
           </h1>
           <p className="text-emerald-100/95 text-lg md:text-xl font-medium max-w-2xl leading-relaxed">
             Multi-model prediction engine based on real ATP/WTA data. Surface Elo, serve/return strength, fatigue, and head-to-head.
