@@ -8,7 +8,7 @@ import { ProviderStatusIndicator } from "./ProviderStatusIndicator"
 import { TennisMatrixLogo } from "./TennisMatrixLogo"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 import { MatrixRain } from "./MatrixRain"
-import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut, Monitor, CreditCard } from "lucide-react"
+import { History, PlaySquare, ClipboardList, LineChart, Menu, X, LayoutDashboard, Moon, Sun, FlaskConical, Zap, Ghost, ShieldCheck, UserCircle, LogOut, Monitor, CreditCard, Users, Layers } from "lucide-react"
 
 // ── Subscriber navigation ───────────────────────────────────────────────────
 const NAV_LINKS = [
@@ -16,11 +16,13 @@ const NAV_LINKS = [
   { href: "/predict", label: "Run Model", icon: PlaySquare, exact: false },
   { href: "/history", label: "Prediction History", icon: History, exact: false },
   { href: "/monitoring", label: "Model Monitoring", icon: Monitor, exact: false },
-  { href: "/account", label: "Account", icon: UserCircle, exact: false },
+  { href: "/account", label: "Account/Support", icon: UserCircle, exact: false },
 ]
 
 // ── Admin-only navigation ───────────────────────────────────────────────────
 const ADMIN_NAV_LINKS = [
+  { href: "/admin/users", label: "Users & Subs", icon: Users, exact: false },
+  { href: "/admin/parlay-builder", label: "Parlay Builder", icon: Layers, exact: false },
   { href: "/evaluation/dashboard", label: "Accuracy Dashboard", icon: LineChart, exact: false },
   { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },
@@ -39,10 +41,12 @@ const MOBILE_PRIMARY_TABS = [
 const MOBILE_MORE_SUBSCRIBER = [
   { href: "/monitoring", label: "Model Monitoring", icon: Monitor, exact: false },
   { href: "/payments", label: "Plans & Billing", icon: CreditCard, exact: false },
-  { href: "/account", label: "Account", icon: UserCircle, exact: false },
+  { href: "/account", label: "Account/Support", icon: UserCircle, exact: false },
 ]
 
 const MOBILE_MORE_ADMIN = [
+  { href: "/admin/users", label: "Users & Subs", icon: Users, exact: false },
+  { href: "/admin/parlay-builder", label: "Parlay Builder", icon: Layers, exact: false },
   { href: "/evaluation/dashboard", label: "Accuracy", icon: LineChart, exact: false },
   { href: "/evaluation/log", label: "Prediction Log", icon: ClipboardList, exact: false },
   { href: "/backtesting", label: "Backtesting", icon: FlaskConical, exact: false },

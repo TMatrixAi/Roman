@@ -233,47 +233,59 @@ function buildRecommendationTrace(
   calibratedProbability: number,
   dataQuality: number,
   dataQualityLabel: string,
-  upsetRisk: string,
   modelAgreement: string,
   result: string,
   tieBreakerApplied: boolean,
+  coreSignalsAlign: boolean,
 ): DecisionTrace["recommendation"] {
   const margin = Math.abs(calibratedProbability - 50);
   const rules: Array<{ rule: string; matched: boolean; decided: boolean }> = [];
 
   const r1 = dataQualityLabel === "Poor" || dataQuality < 25;
-  rules.push({ rule: `DQ < 25 or label "Poor" → DO_NOT_RECOMMEND (DQ=${dataQuality}, label="${dataQualityLabel}")`, matched: r1, decided: r1 });
+  rules.push({ rule: `DQ < 25 or label "Poor" → INSUFFICIENT_EDGE (DQ=${dataQuality}, label="${dataQualityLabel}")`, matched: r1, decided: r1 });
   if (r1) return { result, margin, rulesChecked: rules };
 
   const r1b = tieBreakerApplied;
-  rules.push({ rule: `tieBreakerApplied → NO_STRONG_SIGNAL (raw ensemble within TIE_BAND of 50, no validated directional edge)`, matched: r1b, decided: r1b });
+  rules.push({ rule: `tieBreakerApplied → INSUFFICIENT_EDGE (raw ensemble within TIE_BAND of 50, no validated directional edge)`, matched: r1b, decided: r1b });
   if (r1b) return { result, margin, rulesChecked: rules };
 
   const r2 = margin < 8 && (modelAgreement === "Mixed" || modelAgreement === "HighDisagreement");
-  rules.push({ rule: `margin < 8 AND (Mixed|HighDisagreement) → NO_STRONG_SIGNAL (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r2, decided: r2 });
+  rules.push({ rule: `margin < 8 AND (Mixed|HighDisagreement) → INSUFFICIENT_EDGE (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r2, decided: r2 });
   if (r2) return { result, margin, rulesChecked: rules };
 
-  const r3 = upsetRisk === "EXTREME";
-  rules.push({ rule: `upsetRisk === "EXTREME" → HIGH_RISK`, matched: r3, decided: r3 });
+  const r3 = margin >= 35 && dataQuality >= 45 && modelAgreement === "Strong" && coreSignalsAlign;
+  rules.push({ rule: `margin ≥ 35 AND DQ ≥ 45 AND Strong AND coreSignalsAlign → HIGHEST_CONFIDENCE (margin=${margin.toFixed(1)}, DQ=${dataQuality}, coreSignalsAlign=${coreSignalsAlign})`, matched: r3, decided: r3 });
   if (r3) return { result, margin, rulesChecked: rules };
 
-  const r4 = margin >= 26 && dataQuality >= 50 && upsetRisk === "LOW" && modelAgreement === "Strong";
-  rules.push({ rule: `margin ≥ 26 AND DQ ≥ 50 AND LOW upset risk AND Strong agreement → STRONG_RECOMMENDATION (margin=${margin.toFixed(1)}, DQ=${dataQuality}, agreement="${modelAgreement}")`, matched: r4, decided: r4 });
+  const r4 = margin >= 26 && dataQuality >= 50 && modelAgreement === "Strong" && coreSignalsAlign;
+  rules.push({ rule: `margin ≥ 26 AND DQ ≥ 50 AND Strong AND coreSignalsAlign → HIGHEST_CONFIDENCE (margin=${margin.toFixed(1)}, DQ=${dataQuality}, agreement="${modelAgreement}")`, matched: r4, decided: r4 });
   if (r4) return { result, margin, rulesChecked: rules };
 
-  const r5 = margin >= 12 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
-  rules.push({ rule: `margin ≥ 12 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r5, decided: r5 });
+  const r5 = margin >= 20 && modelAgreement === "Strong";
+  rules.push({ rule: `margin ≥ 20 AND Strong → HIGH_CONFIDENCE (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r5, decided: r5 });
   if (r5) return { result, margin, rulesChecked: rules };
 
-  const r6 = margin >= 9 && (upsetRisk === "LOW" || upsetRisk === "MODERATE") && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
-  rules.push({ rule: `margin ≥ 9 AND LOW/MODERATE AND not Mixed/HighDisagreement → MODERATE_LEAN (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r6, decided: r6 });
+  const r6 = margin >= 12 && (modelAgreement === "Strong" || modelAgreement === "Moderate");
+  rules.push({ rule: `margin ≥ 12 AND (Strong|Moderate) → HIGH_CONFIDENCE (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r6, decided: r6 });
   if (r6) return { result, margin, rulesChecked: rules };
 
-  const r7 = margin >= 40 && upsetRisk !== "EXTREME" && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
-  rules.push({ rule: `margin ≥ 40 AND upsetRisk ≠ EXTREME AND not Mixed/HighDisagreement → MODERATE_LEAN (high-confidence guardrail)`, matched: r7, decided: r7 });
+  const r7 = margin >= 9 && modelAgreement === "Strong";
+  rules.push({ rule: `margin ≥ 9 AND Strong → HIGH_CONFIDENCE (margin=${margin.toFixed(1)}, agreement="${modelAgreement}")`, matched: r7, decided: r7 });
   if (r7) return { result, margin, rulesChecked: rules };
 
-  rules.push({ rule: `fallthrough → HIGH_RISK`, matched: true, decided: true });
+  const r8 = margin >= 40 && modelAgreement !== "Mixed" && modelAgreement !== "HighDisagreement";
+  rules.push({ rule: `margin ≥ 40 AND not Mixed/HighDisagreement → HIGH_CONFIDENCE (high-confidence guardrail, margin=${margin.toFixed(1)})`, matched: r8, decided: r8 });
+  if (r8) return { result, margin, rulesChecked: rules };
+
+  const r9 = margin >= 9 && modelAgreement === "Moderate";
+  rules.push({ rule: `margin ≥ 9 AND Moderate → MODERATE_CONFIDENCE (margin=${margin.toFixed(1)})`, matched: r9, decided: r9 });
+  if (r9) return { result, margin, rulesChecked: rules };
+
+  const r10 = margin >= 12;
+  rules.push({ rule: `margin ≥ 12 (Mixed|HighDisagreement with real margin) → MODERATE_CONFIDENCE (margin=${margin.toFixed(1)})`, matched: r10, decided: r10 });
+  if (r10) return { result, margin, rulesChecked: rules };
+
+  rules.push({ rule: `fallthrough → LOW_CONFIDENCE`, matched: true, decided: true });
   return { result, margin, rulesChecked: rules };
 }
 
@@ -755,7 +767,18 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     tournamentLevel: input.tournamentLevel ?? null,
   });
   const upsetRisk = upsetRiskBreakdown.upsetRisk;
-  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, tieBreaker.applied);
+
+  // Compute the three core-signal vote directions here so we can:
+  //  1. Derive coreSignalsAlign for computeRecommendation (the same bar Elite tier uses)
+  //  2. Reuse the extracted values inside computeEliteTier below (avoids calling
+  //     voteFavorsPlayer1 a second time for the same three signals at lines ~838-840)
+  //  3. Re-use them again in the decisionTrace eliteTier gates assembly at lines ~1024-1027
+  const surfaceEloFavorsP1 = voteFavorsPlayer1(featureModels, "Surface Elo");
+  const serveReturnFavorsP1 = voteFavorsPlayer1(featureModels, "Serve & Return");
+  const recentFormFavorsP1 = voteFavorsPlayer1(featureModels, "Recent Form");
+  const coreSignalsAlign = surfaceEloFavorsP1 === serveReturnFavorsP1 && serveReturnFavorsP1 === recentFormFavorsP1;
+
+  const recommendation = computeRecommendation(calibratedProbability, dataQuality, dataQualityLabel, modelAgreement, tieBreaker.applied, coreSignalsAlign);
 
   const favorsPlayer1 = calibratedProbability >= 50;
   const predictedWinnerId = favorsPlayer1 ? input.player1.id : input.player2.id;
@@ -814,8 +837,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     risks.push(disagreementNote);
   }
 
-  if (recommendation === "NO_STRONG_SIGNAL") {
-    risks.push("Probability is close to a coin flip and the underlying models don't agree -- there is no strong signal either way for this matchup.");
+  if (recommendation === "INSUFFICIENT_EDGE") {
+    risks.push("Available evidence does not support a reliable directional edge for this matchup — this may be due to thin data, conflicted models, or a probability close to a coin flip.");
   }
 
   // Auditable upset-risk explanation (2026-07-13 spec, Part 2D) -- named top contributors, never
@@ -835,9 +858,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const { isEliteTier: eliteTierBeforeGuard, reason: eliteTierReasonBeforeGuard } = computeEliteTier({
     dataQuality,
     calibratedProbability,
-    surfaceEloFavorsPlayer1: voteFavorsPlayer1(featureModels, "Surface Elo"),
-    serveReturnFavorsPlayer1: voteFavorsPlayer1(featureModels, "Serve & Return"),
-    recentFormFavorsPlayer1: voteFavorsPlayer1(featureModels, "Recent Form"),
+    // Reuse the vars extracted earlier for the recommendation computation — avoids calling
+    // voteFavorsPlayer1 again for the same three signals.
+    surfaceEloFavorsPlayer1: surfaceEloFavorsP1,
+    serveReturnFavorsPlayer1: serveReturnFavorsP1,
+    recentFormFavorsPlayer1: recentFormFavorsP1,
     specialistApplied,
     segmentLabel: segment?.label ?? null,
     modelConflict,
@@ -901,6 +926,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     dataQualityLabel,
     simulationPlayer1WinProbability: simulation.player1WinProbability,
     tieBreakerApplied: tieBreaker.applied,
+    coreSignalsAlign,
   });
   const isEliteTier = consistencyViolations.length === 0 && eliteTierBeforeGuard;
   const eliteTierReason =
@@ -992,9 +1018,8 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   });
 
   const calibratedMarginForTrace = Math.abs(calibratedProbability - 50);
-  const surfaceEloFavorsP1 = voteFavorsPlayer1(featureModels, "Surface Elo");
-  const serveReturnFavorsP1 = voteFavorsPlayer1(featureModels, "Serve & Return");
-  const recentFormFavorsP1 = voteFavorsPlayer1(featureModels, "Recent Form");
+  // surfaceEloFavorsP1, serveReturnFavorsP1, recentFormFavorsP1 are computed earlier near the
+  // recommendation call — they're already in scope, no need to recompute here.
 
   const decisionTrace: DecisionTrace = {
     pipeline: {
@@ -1014,7 +1039,7 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       afterSimulator: calibratedProbability,
     },
     modules: moduleTraces,
-    recommendation: buildRecommendationTrace(calibratedProbability, dataQuality, dataQualityLabel, upsetRisk, modelAgreement, recommendation, tieBreaker.applied),
+    recommendation: buildRecommendationTrace(calibratedProbability, dataQuality, dataQualityLabel, modelAgreement, recommendation, tieBreaker.applied, coreSignalsAlign),
     eliteTier: {
       isElite: isEliteTier,
       gates: {

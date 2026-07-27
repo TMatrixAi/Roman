@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
-import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown } from "lucide-react"
+import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown, FolderOpen } from "lucide-react"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 
 function PlayerCard({ 
@@ -272,20 +272,48 @@ export default function PredictBuilderPage() {
       <Card className="border-border shadow-md glass-panel">
         <CardContent className="p-4 pt-4">
           <Tabs defaultValue="search">
-            <TabsList className="mb-3 w-full">
-              <TabsTrigger value="search" className="font-mono gap-1.5 flex-1">
-                <Search className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">PLAYER </span>SEARCH
-              </TabsTrigger>
-              <TabsTrigger value="paste" className="font-mono gap-1.5 flex-1">
-                <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                PASTE<span className="hidden sm:inline"> SEARCH</span>
-              </TabsTrigger>
-              <TabsTrigger value="bulk" className="font-mono gap-1.5 flex-1">
-                <Layers className="w-3.5 h-3.5 shrink-0" />
-                BULK<span className="hidden sm:inline"> UPLOAD</span>
-              </TabsTrigger>
-            </TabsList>
+            <div className="mb-3 flex items-center gap-2">
+              <TabsList className="flex-1">
+                <TabsTrigger value="search" className="font-mono gap-1.5 flex-1">
+                  <Search className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">PLAYER </span>SEARCH
+                </TabsTrigger>
+                <TabsTrigger value="paste" className="font-mono gap-1.5 flex-1">
+                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                  PASTE<span className="hidden sm:inline"> SEARCH</span>
+                </TabsTrigger>
+                <TabsTrigger value="bulk" className="font-mono gap-1.5 flex-1">
+                  <Layers className="w-3.5 h-3.5 shrink-0" />
+                  BULK<span className="hidden sm:inline"> UPLOAD</span>
+                </TabsTrigger>
+              </TabsList>
+              {/* Saved Prediction Cards — opens the most recent completed bulk batch */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono gap-1.5 shrink-0 h-9 text-xs border-primary/40 text-primary hover:bg-primary/10"
+                onClick={() => {
+                  try {
+                    const raw = localStorage.getItem("savedBulkPredictionBatch.v1")
+                    if (!raw) {
+                      alert("No Saved Prediction Cards yet.\n\nRun a Bulk Screenshot batch to save one automatically.")
+                      return
+                    }
+                    const batch = JSON.parse(raw) as { ids: number[] }
+                    if (!batch.ids?.length) {
+                      alert("No Saved Prediction Cards yet.")
+                      return
+                    }
+                    setLocation(`/predictions/${batch.ids[0]}?batch=${batch.ids.join(",")}`)
+                  } catch {
+                    alert("Could not open saved batch. Try running a new bulk prediction.")
+                  }
+                }}
+              >
+                <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xs:inline">SAVED </span>CARDS
+              </Button>
+            </div>
 
             <TabsContent value="search">
               <PlayerSearch 

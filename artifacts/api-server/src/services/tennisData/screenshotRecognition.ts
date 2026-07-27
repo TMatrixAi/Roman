@@ -38,6 +38,8 @@ export interface RawScreenshotRecognitionWithDebug extends RawScreenshotRecognit
   /** The raw text string the vision model returned before JSON parsing. Useful when the model
    *  found something but the JSON was malformed or the player names weren't resolved. */
   rawText?: string;
+  /** Label of the provider that produced a successful result (e.g. "GEMINI_API_KEY"). */
+  providerUsed?: string;
 }
 
 const EMPTY_RECOGNITION: RawScreenshotRecognition = { matchups: [] };
@@ -51,16 +53,30 @@ For each matchup, extract:
 - player2Name: second tennis player name in that pair
 - eventName: tournament or event name for that matchup (null if not visible; use the same event name for all matchups if they share one card/image)
 
-Rules:
-- Ignore betting odds, probability percentages, prices, team logos, country flags, decorative elements, and sponsored content. Extract player names only.
+PLAYER NAME RULES — a player name is a PERSON's name (first name, last name, or both). It is NOT any of the following:
+- Betting market type labels: MONEYLINE, SPREAD, TOTAL, OVER, UNDER, PARLAY, COMBO, TEASER, PROP, FUTURES, HANDICAP, LIVE, SGP, SAME GAME PARLAY, or any phrase containing these words
+- Sport names used as bet labels: PRO BASEBALL, NFL, NBA, NHL, MLB, MLS, PGA, MMA, UFC, SOCCER, FOOTBALL, BASKETBALL, BASEBALL, HOCKEY, GOLF, TENNIS (the word "TENNIS" alone is not a player name)
+- Number of markets descriptors: "COMBO 5 MARKETS", "3 MARKETS", "X LEG PARLAY", etc.
+- App navigation or UI button text: TODAY, TOMORROW, CONTINUE, BACK, NEXT, MORE, HOME, ADD, REMOVE, CONFIRM, SUBMIT, BET NOW, VIEW, OPEN, CLOSE, SGP+
+- Time references or fragments: anything containing "@", "EDT", "EST", "PST", "PT", "AM", "PM" followed by a timezone, or date/time strings like "4:20PM EDT" or "/ @ 4:20PM EDT"
+- Odds or price labels: "+150", "-110", "1.5", "EVEN", "PUSH"
+- Tour or competition labels that appear as header text rather than player names: "ATP250", "WTA", "ITF", "MASTERS", "SLAM"
+
+If a word that IS normally a sport name (e.g. "TENNIS") appears as part of a player's actual name, include it — but "TENNIS" alone on a betting card is a market label, not a player.
+
+General rules:
+- Ignore betting odds, probability percentages, prices, team logos, country flags, decorative elements, and sponsored content.
 - Ignore match times, court numbers, seed numbers in brackets (e.g. "(1)"), rankings, scores, and score-related numbers.
 - If the image shows a full bracket or schedule, return EACH individual matchup row/card as a separate entry.
 - For long scroll-images with multiple match cards stacked vertically, return each card as a separate entry.
 - Player names may appear on separate lines (e.g. one player above the other, separated by a divider, "vs", "v", or a dash). Treat consecutive player names as a pair.
-- Only include entries where you can read at least one player name. Set unreadable fields to null.
+- Only include entries where you can read at least one PERSON's name. Set unreadable fields to null.
 - If both players in a matchup are unclear or unreadable, omit that matchup from the array.
-- If the image is unrelated to tennis or completely unreadable, return an empty array.
+- If the image shows a sportsbook parlay slip with multiple sports, only extract the TENNIS matchup rows — identify them by the presence of actual player surnames, not by sport labels.
+- If the image is unrelated to tennis or contains no recognisable player names, return an empty array.
 - Prefer null over guessing for any field you cannot confidently read.
+- ORIENTATION: Some screenshots contain text that is rotated, upside-down (180°), or mirrored/backwards. Mentally correct for any rotation or mirroring and extract the actual player name as it would normally read.
+- NAME FORMATS: Player names appear in many formats — full name ("Rafael Nadal"), last name only ("Nadal"), abbreviated ("R. Nadal"), initials + surname. Return the name exactly as it appears; the system will resolve abbreviations.
 
 Respond with ONLY a strict JSON array, no markdown, no other text:
 [{"player1Name": string|null, "player2Name": string|null, "eventName": string|null}, ...]`;
@@ -97,13 +113,20 @@ Respond with ONLY a JSON array, no markdown:
 type Provider = "openai" | "anthropic" | "gemini";
 
 /**
- * Detect provider from key prefix for keys that aren't coming from a named Gemini env var.
- * sk-ant-* → Anthropic; everything else → OpenAI.
- * Gemini keys MUST be registered via GEMINI_API_KEY / GOOGLE_API_KEY in resolveAllKeys()
- * where the env var name is authoritative — never inferred from key prefix.
+ * Detect provider from key prefix.
+ * sk-ant-* → Anthropic
+ * AIza* or AQ.* (Google AI Studio formats) → Gemini
+ * Everything else → OpenAI
+ *
+ * Note: Gemini keys registered via GEMINI_API_KEY are added with explicit provider="gemini"
+ * in resolveAllKeys(). This function also handles the case where a Gemini key is stored
+ * in SCREENSHOT_AI_KEY or ANTHROPIC_API_KEY, which is common practice.
  */
-function detectProviderFromPrefix(key: string): "openai" | "anthropic" {
-  return key.startsWith("sk-ant-") ? "anthropic" : "openai";
+function detectProviderFromPrefix(key: string): "openai" | "anthropic" | "gemini" {
+  if (key.startsWith("sk-ant-")) return "anthropic";
+  // Google AI Studio keys: "AIza..." or "AQ." prefix (API key format used by Gemini)
+  if (key.startsWith("AIza") || /^AQ\.[A-Za-z0-9_-]/.test(key)) return "gemini";
+  return "openai";
 }
 
 interface ResolvedKey {
@@ -130,24 +153,24 @@ function resolveAllKeys(): ResolvedKey[] {
     }
   }
 
-  // 1. Dedicated override key (any provider, detected by prefix — NOT Gemini, which needs named env var)
+  // 1. Dedicated override key — provider auto-detected from key prefix (includes Gemini AQ.*/AIza*)
   const dedicated = process.env.SCREENSHOT_AI_KEY;
   if (dedicated) add({ key: dedicated, provider: detectProviderFromPrefix(dedicated), label: "SCREENSHOT_AI_KEY" });
 
-  // 2. User-provided key stored as ANTHROPIC_API_KEY (may actually be OpenAI sk-proj-)
+  // 2. User-provided key stored as ANTHROPIC_API_KEY (may actually be OpenAI or Gemini)
   const userKey = process.env.ANTHROPIC_API_KEY;
   if (userKey) add({ key: userKey, provider: detectProviderFromPrefix(userKey), label: "ANTHROPIC_API_KEY" });
 
-  // 3. Replit OpenAI integration proxy
+  // 3. Google Gemini (free tier; always tried before paid proxy to conserve budget)
+  const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  if (geminiKey) add({ key: geminiKey, provider: "gemini", label: "GEMINI_API_KEY" });
+
+  // 4. Replit OpenAI integration proxy (paid usage — fallback last)
   const replitKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   const replitBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   if (replitKey && replitBase) {
     add({ key: replitKey, provider: "openai", baseUrl: replitBase, label: "AI_INTEGRATIONS_OPENAI" });
   }
-
-  // 4. Google Gemini (free tier available at aistudio.google.com; keys start with "AIza")
-  const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
-  if (geminiKey) add({ key: geminiKey, provider: "gemini", label: "GEMINI_API_KEY" });
 
   return keys;
 }
@@ -178,10 +201,59 @@ function parseImageBase64(imageBase64: string): {
 // Response parsing (shared)
 // ---------------------------------------------------------------------------
 
+/**
+ * Words/phrases that are sportsbook UI labels, betting market types, sport names used as bet
+ * labels, or navigation text. When the vision model returns one of these as a player name it
+ * means it misread a UI element — discard it.
+ *
+ * Matching is case-insensitive and checks whether the extracted "name" equals one of these
+ * terms exactly OR starts with one (e.g. "COMBO 5 MARKETS" starts with "COMBO").
+ */
+const SPORTSBOOK_JUNK_TERMS = new Set([
+  // Betting market types
+  "moneyline", "spread", "total", "over", "under", "parlay", "combo", "teaser",
+  "prop", "futures", "handicap", "live", "sgp", "same game parlay",
+  // Sport names that appear as bet-slip labels (not player names)
+  "pro baseball", "nfl", "nba", "nhl", "mlb", "mls", "pga", "mma", "ufc",
+  "soccer", "football", "basketball", "baseball", "hockey", "golf",
+  // NOTE: "tennis" alone can appear as a market label on multi-sport parlays
+  "tennis",
+  // App navigation / UI buttons
+  "today", "tomorrow", "continue", "back", "next", "more", "home",
+  "add", "remove", "confirm", "submit", "bet now", "view", "open", "close",
+  "sgp+", "bet slip", "place bet",
+  // Odds / status
+  "even", "push",
+  // Market count descriptors (prefix — matched differently below)
+  "markets",
+]);
+
+/** Returns true when the string is clearly a sportsbook UI label rather than a player name. */
+function isSportsbookJunk(name: string): boolean {
+  const lower = name.toLowerCase().trim();
+  // Exact match in blocklist
+  if (SPORTSBOOK_JUNK_TERMS.has(lower)) return true;
+  // "COMBO 5 MARKETS", "3 LEG PARLAY", "X MARKETS" etc.
+  if (/\bmarkets?\b/.test(lower)) return true;
+  if (/\bleg\s+parlay\b/.test(lower)) return true;
+  // Time references: strings containing "@", or matching common time patterns
+  if (/@/.test(lower)) return true;
+  if (/\b(am|pm)\b.*\b(edt|est|pst|mst|cst|pt|ct|et|mt)\b/.test(lower)) return true;
+  if (/^\s*\/\s*@/.test(lower)) return true;
+  // Pure odds fragments like "+150", "-110"
+  if (/^[+-]?\d+(\.\d+)?$/.test(lower)) return true;
+  return false;
+}
+
 function cleanEntry(obj: unknown): RawMatchupEntry | null {
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
-  const clean = (v: unknown): string | null => (typeof v === "string" && v.trim().length > 0 ? v.trim() : null);
+  const clean = (v: unknown): string | null => {
+    if (typeof v !== "string" || v.trim().length === 0) return null;
+    const t = v.trim();
+    // Reject sportsbook UI labels that the vision model may have mistakenly returned
+    return isSportsbookJunk(t) ? null : t;
+  };
   const player1Name = clean(o.player1Name);
   const player2Name = clean(o.player2Name);
   if (player1Name === null && player2Name === null) return null;
@@ -453,12 +525,29 @@ export class ScreenshotRecognitionUnavailableError extends Error {
   }
 }
 
-export async function recognizeMatchupScreenshot(imageBase64: string): Promise<RawScreenshotRecognitionWithDebug> {
-  const providers = resolveAllKeys();
+export interface RecognizeMatchupOptions {
+  /**
+   * Provider labels to skip without attempting (e.g. already-known quota-exhausted providers
+   * as tracked by ScreenshotImportService's health monitor). Labels match `ResolvedKey.label`.
+   */
+  skipLabels?: Set<string>;
+}
+
+export async function recognizeMatchupScreenshot(
+  imageBase64: string,
+  options?: RecognizeMatchupOptions,
+): Promise<RawScreenshotRecognitionWithDebug> {
+  const allProviders = resolveAllKeys();
+  // Pre-filter out any providers the caller has already flagged as unhealthy
+  const providers = options?.skipLabels?.size
+    ? allProviders.filter((p) => !options.skipLabels!.has(p.label))
+    : allProviders;
+  const skippedCount = allProviders.length - providers.length;
+
   const debugLog: string[] = [];
 
   const providerLabels = providers.map((p) => `${p.label}(${p.provider})`).join(", ");
-  debugLog.push(`[INIT] ${providers.length} provider(s): ${providerLabels || "NONE"}`);
+  debugLog.push(`[INIT] ${providers.length} provider(s): ${providerLabels || "NONE"}${skippedCount > 0 ? ` (${skippedCount} pre-skipped by health monitor)` : ""}`);
 
   if (providers.length === 0) {
     const msg = "No vision AI key configured (set SCREENSHOT_AI_KEY, ANTHROPIC_API_KEY, or the Replit OpenAI integration)";
@@ -520,7 +609,7 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
               debugLog.push(`  • player1="${m.player1Name}" player2="${m.player2Name}" event="${m.eventName}"`);
             }
             if (fallbackResult.matchups.length > 0) {
-              return { ...fallbackResult, debugLog, rawText: fallbackRaw ?? undefined };
+              return { ...fallbackResult, debugLog, rawText: fallbackRaw ?? undefined, providerUsed: resolved.label };
             }
           } catch (fallbackErr) {
             debugLog.push(`[FALLBACK-FAIL] fallback prompt also failed — ${String(fallbackErr).slice(0, 80)}`);
@@ -531,7 +620,7 @@ export async function recognizeMatchupScreenshot(imageBase64: string): Promise<R
           break;
         }
 
-        return { ...result, debugLog, rawText: rawText ?? undefined };
+        return { ...result, debugLog, rawText: rawText ?? undefined, providerUsed: resolved.label };
       } catch (err: unknown) {
         lastErr = err;
         const e = err as { status?: number; code?: string; message?: string };

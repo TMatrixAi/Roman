@@ -19,10 +19,27 @@ import {
 } from "lucide-react"
 import { isGrandSlam } from "@/lib/grandSlam"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
+import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 
 const MAX_FILES = 40
 
 const STORAGE_KEY = "bulkMatchupPredictor.batch.v1"
+
+// ---------------------------------------------------------------------------
+// Parlay draft handoff — written here, read by AdminParlayBuilder on mount.
+// Contains only neutral match identity: player names/IDs, tournament, surface.
+// No prediction engine fields (calibratedProbability, grade, etc.) are included.
+// ---------------------------------------------------------------------------
+const PARLAY_DRAFT_KEY = "parlayDraft.pending.v1"
+
+interface ParlayDraftLeg {
+  player1Name: string
+  player1Id: string | null
+  player2Name: string
+  player2Id: string | null
+  tournamentName: string | null
+  surface: string | null
+}
 
 // ---------------------------------------------------------------------------
 // Extended result type — the backend returns these alongside the standard fields
@@ -295,6 +312,9 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const [predictSummary, setPredictSummary] = useState<{ successIds: number[]; failedCount: number } | null>(null)
   const [resumableBatch, setResumableBatch] = useState<BatchItem[] | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const isAdmin = adminAuth?.authenticated === true
 
   useEffect(() => { setResumableBatch(readStoredBatch()) }, [])
   useEffect(() => { if (items.length > 0) writeStoredBatch(items) }, [items])
@@ -651,6 +671,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
                   predictStatus: "error",
                   predictError: isRateLimitError(err)
                     ? "Rate limit reached — this matchup could not be retried. Try again in a few minutes."
+                    : err instanceof Error && err.message && !err.message.startsWith("Integrity check")
+                    ? err.message
                     : "Prediction engine error — this matchup could not be predicted.",
                 }
               : it,
@@ -669,6 +691,16 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   /** Navigate to the batch results page. Only called when all predictions succeeded. */
   const navigateToResults = (successIds: number[]) => {
     if (successIds.length > 0) {
+      // Auto-save this batch so the user can retrieve it later from "Saved Prediction Cards"
+      // without re-running the prediction engine. Always overwrites — only one batch is kept.
+      try {
+        localStorage.setItem(
+          "savedBulkPredictionBatch.v1",
+          JSON.stringify({ ids: successIds, savedAt: Date.now() }),
+        )
+      } catch {
+        // localStorage unavailable (private-browse quota) — continue silently
+      }
       clearStoredBatch()
       setLocation(`/predictions/${successIds[0]}?batch=${successIds.join(",")}`)
     }
@@ -1075,25 +1107,62 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         </div>
       )}
 
-      {/* Primary action button */}
+      {/* Primary action button(s) */}
       {hasItems && (
-        <Button
-          size="lg" className="w-full font-bold font-mono h-12" variant="accent"
-          disabled={anyResolving || isPredicting || resolvedCount === 0}
-          onClick={
-            !isPredicting && pendingPredictCount === 0
-              ? () => navigateToResults(donePredictionIds)
-              : handlePredictClick
-          }
-        >
-          {isPredicting ? (
-            <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
-          ) : pendingPredictCount === 0 ? (
-            <><CheckCircle2 className="w-5 h-5 mr-2" /> VIEW {alreadyPredictedCount} PREDICTED RESULT{alreadyPredictedCount === 1 ? "" : "S"}</>
-          ) : (
-            <><Activity className="w-5 h-5 mr-2" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
+        <div className={isAdmin && donePredictionIds.length > 0 ? "grid grid-cols-2 gap-2" : ""}>
+          <Button
+            size="lg" className="w-full font-bold font-mono h-12" variant="accent"
+            disabled={anyResolving || isPredicting || resolvedCount === 0}
+            onClick={
+              !isPredicting && pendingPredictCount === 0
+                ? () => navigateToResults(donePredictionIds)
+                : handlePredictClick
+            }
+          >
+            {isPredicting ? (
+              <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> RUNNING {pendingPredictCount} PREDICTION{pendingPredictCount === 1 ? "" : "S"}...</>
+            ) : pendingPredictCount === 0 ? (
+              <><CheckCircle2 className="w-5 h-5 mr-2" /> VIEW {alreadyPredictedCount} RESULT{alreadyPredictedCount === 1 ? "" : "S"}</>
+            ) : (
+              <><Activity className="w-5 h-5 mr-2" /> PREDICT {pendingPredictCount} MATCHUP{pendingPredictCount === 1 ? "" : "S"}</>
+            )}
+          </Button>
+
+          {/* Admin-only: Build Parlay shortcut — only shown after predictions exist */}
+          {isAdmin && donePredictionIds.length > 0 && (
+            <Button
+              size="lg"
+              className="w-full font-bold font-mono h-12 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:border-amber-400"
+              variant="outline"
+              disabled={isPredicting}
+              onClick={() => {
+                // Write neutral match data only — no prediction engine fields.
+                // AdminParlayBuilder reads this on mount and populates legs as an idle draft.
+                const draftLegs: ParlayDraftLeg[] = items
+                  .filter(i => i.status === "resolved" && i.result !== null)
+                  .map(i => {
+                    const r = i.result!
+                    return {
+                      player1Name: r.player1.recognizedName ?? "",
+                      player1Id: r.player1.player?.id ?? null,
+                      player2Name: r.player2.recognizedName ?? "",
+                      player2Id: r.player2.player?.id ?? null,
+                      tournamentName: i.tournamentName,
+                      surface: i.surface,
+                    }
+                  })
+                  .filter(d => d.player1Name || d.player2Name) // skip fully-blank legs
+                try {
+                  sessionStorage.setItem(PARLAY_DRAFT_KEY, JSON.stringify(draftLegs))
+                } catch { /* sessionStorage unavailable — page will open empty */ }
+                setLocation("/admin/parlay-builder?draft=1")
+              }}
+            >
+              <Layers className="w-5 h-5 mr-2" />
+              BUILD PARLAY
+            </Button>
           )}
-        </Button>
+        </div>
       )}
       {hasItems && alreadyPredictedCount > 0 && pendingPredictCount > 0 && !anyResolving && (
         <p className="text-xs text-muted-foreground font-mono text-center">

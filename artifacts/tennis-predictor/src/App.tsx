@@ -29,8 +29,14 @@ const ForceSignalPage = lazy(() => import('@/pages/ForceSignal'));
 const LiveAuditsPage = lazy(() => import('@/pages/LaunchAudit'));
 const PaymentsPage = lazy(() => import('@/pages/Payments'));
 const AdminLoginPage = lazy(() => import('@/pages/AdminLogin'));
-const ModelMonitoringPage = lazy(() => import('@/pages/ModelMonitoring'));
+const ModelMonitoringPage = lazy(() => import('@/pages/ModelMonitoring'))
+const RecommendationCalibrationPage = lazy(() => import('@/pages/RecommendationCalibration'));
 const AccountPage = lazy(() => import('@/pages/Account'));
+const SupportPage = lazy(() => import('@/pages/SupportPage'));
+const SupportTicketPage = lazy(() => import('@/pages/SupportTicketPage'));
+const AdminSupportCenter = lazy(() => import('@/pages/AdminSupportCenter'));
+const AdminUsersPage = lazy(() => import('@/pages/AdminUsers'));
+const AdminParlayBuilder = lazy(() => import('@/pages/AdminParlayBuilder'));
 
 const queryClient = new QueryClient();
 
@@ -255,7 +261,25 @@ function Router() {
                 {() => <AdminRoute component={BacktestingPortalPage} />}
               </Route>
               <Route path="/launch-audit">
-                {() => <AdminRoute component={LaunchAuditPage} />}
+                {() => <AdminRoute component={LiveAuditsPage} />}
+              </Route>
+              <Route path="/admin/recommendation-calibration">
+                {() => <AdminRoute component={RecommendationCalibrationPage} />}
+              </Route>
+              <Route path="/admin/support">
+                {() => <AdminRoute component={AdminSupportCenter} />}
+              </Route>
+              <Route path="/admin/users">
+                {() => <AdminRoute component={AdminUsersPage} />}
+              </Route>
+              <Route path="/admin/parlay-builder">
+                {() => <AdminRoute component={AdminParlayBuilder} />}
+              </Route>
+              <Route path="/support/tickets/:id">
+                {() => <ProtectedRoute component={SupportTicketPage} />}
+              </Route>
+              <Route path="/support">
+                {() => <ProtectedRoute component={SupportPage} />}
               </Route>
               <Route path="/payments" component={PaymentsPage} />
               <Route path="/payments/pricing" component={PaymentsPage} />

@@ -13,6 +13,9 @@ import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
 import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Sparkles, Loader2 } from "lucide-react"
 import { useState, useCallback } from "react"
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
+const api = (path: string) => `${BASE}${path}`
 import { useQuery } from "@tanstack/react-query"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
 import { useToast } from "@/hooks/use-toast"
@@ -190,7 +193,6 @@ export default function PredictionResultPage() {
   const subscriberTier = billing?.tier ?? null
   const isEliteSubscriber = subscriberTier === "elite" || subscriberTier === "elite_annual"
   const { toast } = useToast()
-
   const recordOutcome = useRecordPredictionOutcome()
 
   if (isLoading) {
@@ -346,14 +348,22 @@ export default function PredictionResultPage() {
                   <div className="mt-6 flex flex-wrap gap-3">
                     <Badge
                       variant={
-                        prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
-                        prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
-                        prediction.recommendation === 'HIGH_RISK' ? 'warning' :
-                        prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
+                        (prediction.recommendation as string) === 'HIGHEST_CONFIDENCE' ? 'success' :
+                        (prediction.recommendation as string) === 'HIGH_CONFIDENCE' ? 'success' :
+                        (prediction.recommendation as string) === 'MODERATE_CONFIDENCE' ? 'secondary' :
+                        (prediction.recommendation as string) === 'LOW_CONFIDENCE' ? 'warning' :
+                        (prediction.recommendation as string) === 'INSUFFICIENT_EDGE' ? 'outline' :
+                        // Legacy stored values for predictions made before the rename
+                        (prediction.recommendation as string) === 'STRONG_RECOMMENDATION' ? 'success' :
+                        (prediction.recommendation as string) === 'MODERATE_LEAN' ? 'secondary' :
+                        (prediction.recommendation as string) === 'HIGH_RISK' ? 'warning' :
+                        (prediction.recommendation as string) === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
                       }
                       className="text-sm px-3 py-1.5 font-bold shadow-md"
                       title={
-                        prediction.recommendation === 'STRONG_RECOMMENDATION'
+                        (prediction.recommendation as string) === 'HIGHEST_CONFIDENCE'
+                          ? "Highest Confidence: all three core signals independently agree, the margin is strong, and model consensus is high. Still an early, small-sample tier — see the Accuracy Dashboard."
+                          : (prediction.recommendation as string) === 'STRONG_RECOMMENDATION'
                           ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
                           : undefined
                       }
@@ -396,12 +406,16 @@ export default function PredictionResultPage() {
                       Raw ensemble was within 3% of 50/50. Force Signal mode is active — this pick was forced at your request. Backtesting shows calls in this range perform at or below chance.
                     </p>
                   )}
-                  {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
+                  {((prediction.recommendation as string) === 'HIGHEST_CONFIDENCE' || (prediction.recommendation as string) === 'HIGH_CONFIDENCE' || (prediction.recommendation as string) === 'STRONG_RECOMMENDATION') && (
                     <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
-                      "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
-                      validation on real outcomes is still early-stage, and this tier hasn't yet been shown to beat
-                      other tiers. See the Accuracy Dashboard for current backtest sample counts.
-                      Treat it as one input, not a proven edge.
+                      {(prediction.recommendation as string) === 'HIGHEST_CONFIDENCE'
+                        ? "Highest Confidence: Surface Elo, Serve & Return, and Recent Form all independently favour the same player, the probability margin is strong, and model agreement is high. Still an early, small-sample tier — not yet proven to outperform High Confidence. See the Accuracy Dashboard."
+                        : "High Confidence marks the engine's well-supported calls. Backtesting is still early-stage — treat this as one input, not a proven edge. See the Accuracy Dashboard for current sample counts."}
+                    </p>
+                  )}
+                  {(prediction.recommendation as string) === 'INSUFFICIENT_EDGE' && (
+                    <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
+                      Insufficient Edge: available evidence does not reliably separate these players. This may be due to thin data, conflicted models, or a probability close to a coin flip.
                     </p>
                   )}
                   {engine.isEliteTier && (
@@ -409,6 +423,10 @@ export default function PredictionResultPage() {
                       {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
                       Elite is an early, small-sample tier -- directionally promising but not yet statistically proven
                       to outperform non-Elite predictions. See the Accuracy Dashboard for current sample counts.
+                      {((prediction.recommendation as string) === 'LOW_CONFIDENCE' ||
+                        (prediction.recommendation as string) === 'MODERATE_CONFIDENCE') &&
+                        ' Elite Tier and Confidence are independent dimensions: Elite reflects evidence alignment quality (all signals agree, specialist confirmed, no model conflict); Confidence reflects probability magnitude (edge size). A genuine but thin margin can satisfy Elite\'s alignment gates while not clearing the Confidence thresholds for High or Highest.'
+                      }
                     </p>
                   )}
                 </div>

@@ -564,6 +564,33 @@ export async function resolvePlayerProfileForPrediction(
         );
         return { profile: nameProfile, resolvedPlayerId: nameProfile.id, detail: null };
       }
+      // Last-resort stub: the player appears in a fixture but is absent from the provider's player
+      // database AND has no historical records in our DB (e.g. a newly-active WTA/Challenger player
+      // whose API-Tennis fixture entry exists but whose get_players lookup returns null, and who
+      // is not yet in the standings that searchPlayers queries).
+      // Constructing a stub from the submitted fixture name is safe here because:
+      //   1. getPlayer(requestedPlayerId) returned null → no wrong-player collision risk
+      //   2. No historical sighting → no alias confusion
+      // The prediction proceeds with empty match history; Data Quality will be very low and the
+      // recommendation will be INSUFFICIENT_EDGE / LOW_CONFIDENCE, never HIGHEST_CONFIDENCE.
+      logger.warn(
+        { requestedPlayerId, submittedName },
+        "resolvePlayerProfileForPrediction: constructing stub profile from fixture name (player absent from provider DB and history); prediction will have low data quality",
+      );
+      return {
+        profile: {
+          id: requestedPlayerId,
+          name: submittedName,
+          fullName: null,
+          countryCode: null,
+          currentRank: null,
+          tour: null,
+          age: null,
+          plays: null,
+        },
+        resolvedPlayerId: requestedPlayerId,
+        detail: null,
+      };
     }
     return {
       profile: null,

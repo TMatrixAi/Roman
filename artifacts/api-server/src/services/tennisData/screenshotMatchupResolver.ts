@@ -19,6 +19,10 @@ import type { RawScreenshotRecognition, RawMatchupEntry } from "./screenshotReco
 export interface ScreenshotPlayerMatch {
   recognizedName: string | null;
   player: PlayerSummary | null;
+  /** "resolved" | "best-guess" | "ambiguous" | "not-found" | "unreadable". Included in API response for UI disambiguation. */
+  status?: string;
+  /** Populated when status === "ambiguous". The confident candidates the resolver couldn't narrow to one. */
+  candidates?: PlayerSummary[];
 }
 
 export interface ScreenshotEventMatch {
@@ -60,6 +64,12 @@ interface PlayerResolveOutcome {
    * - unreadable  — the name field was null/empty in the OCR result.
    */
   status: "resolved" | "best-guess" | "unreadable" | "ambiguous" | "not-found";
+  /**
+   * Populated when status === "ambiguous".
+   * The confident candidates that caused the tie — used by the caller to attempt
+   * opponent-fixture cross-disambiguation before giving up.
+   */
+  candidates?: PlayerSummary[];
 }
 
 interface FixtureCandidate {
@@ -793,7 +803,11 @@ async function resolvePlayerMatch(
         });
         if (tournamentFixtures.length > 0) {
           const inFixture = confident.filter((c) =>
-            tournamentFixtures.some((f) => f.player1Id === c.id || f.player2Id === c.id),
+            tournamentFixtures.some(
+              (f) =>
+                resolvedPlayerFitsFixtureSlot(c, f.player1Id, f.player1Name) ||
+                resolvedPlayerFitsFixtureSlot(c, f.player2Id, f.player2Name),
+            ),
           );
           if (inFixture.length === 1) {
             return { match: { recognizedName, player: inFixture[0]! }, status: "resolved" };
@@ -819,7 +833,19 @@ async function resolvePlayerMatch(
       }
     }
 
-    return { match: { recognizedName, player: null }, status: "ambiguous" };
+    // Auto-pick the best candidate rather than surfacing an ambiguous error.
+    // Prefer: live-standings > historical-match; ranked > unranked; lower rank number (higher-ranked).
+    const autoPick = confident.slice().sort((a, b) => {
+      const aLive = a.source !== "historical-match" ? 0 : 1;
+      const bLive = b.source !== "historical-match" ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      const aR = a.currentRank != null ? 0 : 1;
+      const bR = b.currentRank != null ? 0 : 1;
+      if (aR !== bR) return aR - bR;
+      if (a.currentRank != null && b.currentRank != null) return a.currentRank - b.currentRank;
+      return 0;
+    })[0]!;
+    return { match: { recognizedName, player: autoPick }, status: "best-guess", candidates: confident };
   } else {
     // OCR misread recovery: try edit-distance ≤1 on the surname before giving up entirely.
     const fuzzyMatch = await ocrFuzzyFallback(provider, searchName);
@@ -892,7 +918,73 @@ async function resolveOneMatchup(
 
   let player1 = player1Outcome.match;
   let player2 = player2Outcome.match;
-  const hasAmbiguousSide = player1Outcome.status === "ambiguous" || player2Outcome.status === "ambiguous";
+  let hasAmbiguousSide = player1Outcome.status === "ambiguous" || player2Outcome.status === "ambiguous";
+
+  // ── Opponent-context disambiguation ──────────────────────────────────────────
+  // When one player is "ambiguous" (multiple confident candidates) but the other
+  // player IS resolved, use live fixtures to pick the one candidate that actually
+  // appears in a scheduled match alongside the resolved opponent. This is the only
+  // reliable way to resolve compound names (Hong Yi Cody Wong, Aran Teixido Garcia)
+  // and tour collisions (Astra Sharma ATP vs WTA) without guessing.
+  //
+  // We use resolvedPlayerFitsFixtureSlot (name+ID) rather than ID equality so that
+  // MatchStat local IDs and API-Tennis fixture IDs are interchangeable.
+  if (hasAmbiguousSide) {
+    const p1Ambiguous = player1Outcome.status === "ambiguous" && !player1.player;
+    const p2Ambiguous = player2Outcome.status === "ambiguous" && !player2.player;
+
+    /**
+     * Looks for the unique candidate from `ambiguousCandidates` that shares a live
+     * fixture with `resolvedPlayer`.  Returns null if 0 or ≥2 distinct candidates match.
+     */
+    const tryFixtureDisambiguate = (
+      resolvedPlayer: PlayerSummary,
+      ambiguousCandidates: PlayerSummary[],
+    ): PlayerSummary | null => {
+      const byId = new Map<string, PlayerSummary>();
+
+      for (const fixture of todayFixtures) {
+        const fitsSlot1 = resolvedPlayerFitsFixtureSlot(resolvedPlayer, fixture.player1Id, fixture.player1Name);
+        const fitsSlot2 = resolvedPlayerFitsFixtureSlot(resolvedPlayer, fixture.player2Id, fixture.player2Name);
+        if (!fitsSlot1 && !fitsSlot2) continue;
+
+        const opponentSlotId   = fitsSlot1 ? fixture.player2Id   : fixture.player1Id;
+        const opponentSlotName = fitsSlot1 ? fixture.player2Name : fixture.player1Name;
+
+        for (const c of ambiguousCandidates) {
+          if (resolvedPlayerFitsFixtureSlot(c, opponentSlotId, opponentSlotName)) {
+            byId.set(c.id, c);
+          }
+        }
+      }
+
+      return byId.size === 1 ? [...byId.values()][0]! : null;
+    };
+
+    if (p2Ambiguous && player1.player && player2Outcome.candidates?.length) {
+      const resolved = tryFixtureDisambiguate(player1.player, player2Outcome.candidates);
+      if (resolved) {
+        player2 = { recognizedName: player2.recognizedName, player: resolved };
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 2"));
+        warnings.push(`[resolver-debug] P2 opponent-fixture disambiguated → ${resolved.name}.`);
+      }
+    }
+
+    if (p1Ambiguous && player2.player && player1Outcome.candidates?.length) {
+      const resolved = tryFixtureDisambiguate(player2.player, player1Outcome.candidates);
+      if (resolved) {
+        player1 = { recognizedName: player1.recognizedName, player: resolved };
+        warnings.splice(0, warnings.length, ...prunePlayerWarningsForLabel(warnings, "Player 1"));
+        warnings.push(`[resolver-debug] P1 opponent-fixture disambiguated → ${resolved.name}.`);
+      }
+    }
+
+    // Recalculate: if disambiguation resolved the ambiguous side, lift the gate so the
+    // downstream fixture inference can handle any remaining "not-found" side normally.
+    hasAmbiguousSide =
+      (player1Outcome.status === "ambiguous" && !player1.player) ||
+      (player2Outcome.status === "ambiguous" && !player2.player);
+  }
 
   if ((!player1.player || !player2.player) && !hasAmbiguousSide) {
     const singleSideInference = inferUniqueOpponentFromSingleResolvedSide({
@@ -1019,6 +1111,19 @@ async function resolveOneMatchup(
   if (player1.player && player2.player && player1.player.id === player2.player.id) {
     warnings.push(`Player 2 resolved to the same player as Player 1 -- please pick Player 2 manually from Search Players.`);
     player2 = { recognizedName: player2.recognizedName, player: null };
+  }
+
+  // Attach resolution status + candidates to each player object so the API response
+  // can expose them for UI disambiguation (e.g. parlay builder candidate picker).
+  if (player1Outcome.status === "ambiguous" && !player1.player) {
+    player1 = { ...player1, status: "ambiguous", candidates: player1Outcome.candidates };
+  } else if (!player1.player) {
+    player1 = { ...player1, status: player1Outcome.status };
+  }
+  if (player2Outcome.status === "ambiguous" && !player2.player) {
+    player2 = { ...player2, status: "ambiguous", candidates: player2Outcome.candidates };
+  } else if (!player2.player) {
+    player2 = { ...player2, status: player2Outcome.status };
   }
 
   const resolved = !!player1.player && !!player2.player;

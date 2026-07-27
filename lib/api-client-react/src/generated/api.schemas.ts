@@ -751,6 +751,14 @@ export type Recommendation = typeof Recommendation[keyof typeof Recommendation];
 
 
 export const Recommendation = {
+  // Current v2 Evidence Confidence Score tiers
+  HIGHEST_CONFIDENCE: 'HIGHEST_CONFIDENCE',
+  HIGH_CONFIDENCE: 'HIGH_CONFIDENCE',
+  MODERATE_CONFIDENCE: 'MODERATE_CONFIDENCE',
+  LOW_CONFIDENCE: 'LOW_CONFIDENCE',
+  INSUFFICIENT_EDGE: 'INSUFFICIENT_EDGE',
+  // Legacy values — kept for stored rows predating the v2 rename; displayed correctly via
+  // recommendationLabels.ts fallback. These will not appear on new predictions.
   STRONG_RECOMMENDATION: 'STRONG_RECOMMENDATION',
   MODERATE_LEAN: 'MODERATE_LEAN',
   HIGH_RISK: 'HIGH_RISK',
@@ -1468,6 +1476,10 @@ export type ListPredictionsParams = {
  * @maximum 100
  */
 limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };
 
 export type SearchLedgerPlayersParams = {

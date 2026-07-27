@@ -34,7 +34,6 @@ interface Feature {
   pro: boolean;
   elite: boolean;
   team: boolean;
-  comingSoon?: boolean;
 }
 
 const FEATURES: Feature[] = [
@@ -126,9 +125,6 @@ function FeatureRow({ feature, tier }: { feature: Feature; tier: "pro" | "elite"
         <X className="w-4 h-4 text-muted-foreground/25 shrink-0" />
       )}
       <span className={!included ? "line-through decoration-muted-foreground/20" : ""}>{feature.label}</span>
-      {included && feature.comingSoon && (
-        <Badge variant="outline" className="text-[9px] font-mono tracking-widest ml-auto shrink-0">SOON</Badge>
-      )}
     </div>
   );
 }

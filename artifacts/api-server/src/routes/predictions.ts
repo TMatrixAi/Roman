@@ -184,7 +184,8 @@ router.get("/predictions", requireClerkUser, async (req, res): Promise<void> => 
     .select()
     .from(predictionsTable)
     .orderBy(desc(predictionsTable.createdAt))
-    .limit(parsed.data.limit);
+    .limit(parsed.data.limit)
+    .offset(parsed.data.offset);
 
   const rows = clerkUserId
     ? await query.where(eq(predictionsTable.clerkUserId, clerkUserId))

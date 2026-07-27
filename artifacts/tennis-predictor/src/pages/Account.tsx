@@ -1,5 +1,5 @@
 import { useUser, useClerk } from "@clerk/react"
-import { UserCircle, LogOut, Mail, CreditCard, Shield, Crown, Zap, Users, CheckCircle2, AlertCircle } from "lucide-react"
+import { UserCircle, LogOut, Mail, CreditCard, Shield, Crown, Zap, Users, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,8 +8,11 @@ import { useGetMyPaymentsStatus, getMyPaymentsStatusQueryKey } from "@workspace/
 import type { SubscriptionTier } from "@workspace/api-client-react"
 import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag"
 import { useLocation } from "wouter"
+import { useEffect, useState } from "react"
 
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "")
+const api = (path: string) => `${BASE}${path}`
 
 function planIcon(tier: SubscriptionTier) {
   if (tier === "team")                             return <Users className="w-4 h-4 text-primary" />
@@ -55,12 +58,22 @@ function getRenewalDate(account: AccountRow): string {
 export default function AccountPage() {
   const { user, isLoaded } = useUser()
   const { signOut } = useClerk()
-  const [, setLocation] = useLocation()
+  const [location, setLocation] = useLocation()
   const paymentsEnabled = isPaymentsV2Enabled()
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const { data: billing, isLoading: billingLoading } = useGetMyPaymentsStatus({
     query: { queryKey: getMyPaymentsStatusQueryKey(), enabled: paymentsEnabled },
   })
+
+  // Fetch unread support message count for badge
+  useEffect(() => {
+    if (!isLoaded || !user) return
+    fetch(api("/api/support/unread-count"), { credentials: "include" })
+      .then(r => r.ok ? r.json() : { count: 0 })
+      .then(d => setUnreadCount(d.count ?? 0))
+      .catch(() => {})
+  }, [isLoaded, user])
 
   if (!isLoaded) {
     return (
@@ -81,6 +94,12 @@ export default function AccountPage() {
   const tier: SubscriptionTier = billing?.tier ?? "free"
   const isActive = billing?.active === true
   const account = billing?.account ?? null
+
+  const handleSupportClick = () => {
+    // Save current page so Support's Back button can return here
+    sessionStorage.setItem("support-from", location)
+    setLocation("/support")
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-2xl mx-auto">
@@ -185,6 +204,36 @@ export default function AccountPage() {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Support */}
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <h2 className="text-sm font-mono font-bold text-muted-foreground tracking-widest uppercase">Support</h2>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <MessageSquare className="w-5 h-5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium text-sm">Contact Support</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Report a problem, request a feature, or ask a question.</p>
+              </div>
+            </div>
+            {unreadCount > 0 && (
+              <Badge className="bg-primary text-primary-foreground font-mono text-xs gap-1 shrink-0">
+                {unreadCount} new
+              </Badge>
+            )}
+          </div>
+          <Button variant="outline" size="sm" className="font-mono gap-2" onClick={handleSupportClick}>
+            <MessageSquare className="w-4 h-4" />
+            Open Support
+            {unreadCount > 0 && (
+              <span className="ml-1 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center font-bold">
+                {unreadCount}
+              </span>
+            )}
+          </Button>
         </CardContent>
       </Card>
 

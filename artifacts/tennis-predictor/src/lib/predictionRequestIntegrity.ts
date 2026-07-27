@@ -77,8 +77,11 @@ export async function createPredictionWithIntegrity(
   }
 
   if (!res.ok) {
-    const msg = typeof body === "object" && body && "error" in body && typeof (body as { error?: unknown }).error === "string"
-      ? (body as { error: string }).error
+    const bodyObj = typeof body === "object" && body ? (body as Record<string, unknown>) : {}
+    const errorMsg = typeof bodyObj["error"] === "string" ? bodyObj["error"] : null
+    const detailMsg = typeof bodyObj["detail"] === "string" ? bodyObj["detail"] : null
+    const msg = errorMsg
+      ? (detailMsg ? `${errorMsg} ${detailMsg}` : errorMsg)
       : `Prediction request failed (HTTP ${res.status})`
     throw new Error(msg)
   }

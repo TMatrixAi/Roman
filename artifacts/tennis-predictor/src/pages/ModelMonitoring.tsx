@@ -1,8 +1,8 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +13,7 @@ import {
   Monitor, Activity, CheckCircle2, AlertTriangle, Clock, AlertCircle,
   TrendingUp, TrendingDown, Minus, Info, ChevronDown, ChevronUp,
   BarChart3, Shield, Zap, Layers, BookOpen, Lock, Crown, RefreshCw,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react"
 
 /** Minimum graded predictions required to display a metric as reliable. */
@@ -42,6 +43,7 @@ interface PerformanceMetrics {
 interface CalibrationBucket {
   label: string; min: number; max: number; n: number
   avgPredicted: number | null; observedAccuracy: number | null
+  calibrationError: number | null
 }
 interface SurfaceRow { surface: string; accuracy: number | null; n: number; avgConfidence: number | null }
 interface LevelRow { level: string; accuracy: number | null; n: number }
@@ -357,26 +359,160 @@ function AccuracyTrendChart() {
   )
 }
 
+// ─── Calibration helpers ──────────────────────────────────────────────────────
+
+/** Minimum sample a bucket needs to count toward "best tier" selection. */
+const CALIBRATION_BEST_TIER_MIN = 30
+
+type CalibrationRating = { emoji: string; label: string; variant: "success" | "warning" | "destructive" | "outline" }
+
+function getCalibrationRating(error: number | null): CalibrationRating {
+  if (error === null) return { emoji: "", label: "No Data", variant: "outline" }
+  if (error < 2)  return { emoji: "⭐", label: "Excellent",     variant: "success" }
+  if (error < 4)  return { emoji: "✅", label: "Very Good",     variant: "success" }
+  if (error < 6)  return { emoji: "✓",  label: "Good",          variant: "outline" }
+  if (error < 8)  return { emoji: "⚠",  label: "Fair",          variant: "warning" }
+  return           { emoji: "⚠",  label: "Overconfident", variant: "destructive" }
+}
+
+type SortKey = "min" | "n" | "avgPredicted" | "observedAccuracy" | "calibrationError"
+
+// ─── Calibration bar chart ────────────────────────────────────────────────────
+function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
+  // Include all buckets that have at least some data — grey out low-sample ones
+  const chartData = buckets
+    .filter((b) => b.avgPredicted !== null || b.observedAccuracy !== null)
+    .map((b) => ({
+      label: b.label,
+      predicted: b.avgPredicted,
+      actual: b.observedAccuracy,
+      n: b.n,
+      lowSample: b.n < CALIBRATION_BEST_TIER_MIN,
+    }))
+
+  if (chartData.length === 0) {
+    return <div className="h-48 flex items-center justify-center text-sm text-muted-foreground font-mono">Not enough graded data for chart.</div>
+  }
+
+  return (
+    <div className="space-y-1">
+      <ResponsiveContainer width="100%" height={210}>
+        <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }} barCategoryGap="25%" barGap={2}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.4)" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 9, fontFamily: "monospace", fill: "hsl(var(--muted-foreground))" }}
+            interval={0}
+            tickLine={false}
+            angle={-35}
+            textAnchor="end"
+            height={42}
+          />
+          <YAxis
+            domain={[0, 100]}
+            tick={{ fontSize: 10, fontFamily: "monospace", fill: "hsl(var(--muted-foreground))" }}
+            tickFormatter={(v: number) => `${v}%`}
+            width={38}
+            tickLine={false}
+          />
+          <RechartsTooltip
+            contentStyle={{
+              background: "hsl(var(--background))",
+              border: "1px solid hsl(var(--border))",
+              borderRadius: 8,
+              fontFamily: "monospace",
+              fontSize: 11,
+            }}
+            formatter={(value: number | null, name: string, item: { payload?: { n?: number } }) => {
+              const n = item?.payload?.n ?? 0
+              return value !== null ? [`${value.toFixed(1)}% (n=${n})`, name] : ["—", name]
+            }}
+            labelFormatter={(label: string) => `Band: ${label}`}
+          />
+          <Legend
+            wrapperStyle={{ fontFamily: "monospace", fontSize: 10, paddingTop: 4 }}
+            iconType="rect"
+          />
+          <Bar dataKey="predicted" name="Predicted Win %" fill="hsl(var(--primary))" opacity={0.85} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="actual"    name="Actual Win %"    fill="hsl(var(--chart-2, 220 70% 60%))" opacity={0.85} radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="text-[9px] font-mono text-muted-foreground/60 text-center">
+        Closer bars = better calibration. Each pair shows stated confidence vs real win rate for that probability band.
+      </p>
+    </div>
+  )
+}
+
 // ─── Calibration table ────────────────────────────────────────────────────────
 function CalibrationTable({ buckets }: { buckets: CalibrationBucket[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>("min")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    else { setSortKey(key); setSortDir("asc") }
+  }
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-0.5 opacity-40" />
+    return sortDir === "asc"
+      ? <ArrowUp className="inline w-3 h-3 ml-0.5 text-primary" />
+      : <ArrowDown className="inline w-3 h-3 ml-0.5 text-primary" />
+  }
+
+  // Best-tier: qualified bucket with lowest calibration error
+  const bestLabel = useMemo(() => {
+    const qualified = buckets.filter((b) => b.n >= CALIBRATION_BEST_TIER_MIN && b.calibrationError !== null)
+    if (qualified.length === 0) return null
+    return qualified.reduce((best, b) => (b.calibrationError! < best.calibrationError! ? b : best)).label
+  }, [buckets])
+
+  const sorted = useMemo(() => {
+    return [...buckets].sort((a, b) => {
+      const av = a[sortKey] ?? (sortDir === "asc" ? Infinity : -Infinity)
+      const bv = b[sortKey] ?? (sortDir === "asc" ? Infinity : -Infinity)
+      return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number)
+    })
+  }, [buckets, sortKey, sortDir])
+
   if (buckets.length === 0) return <SectionError message="No calibration data yet." />
+
+  const ThBtn = ({ col, label, right = false }: { col: SortKey; label: string; right?: boolean }) => (
+    <th className={`px-3 sm:px-4 py-3 ${right ? "text-right" : ""}`}>
+      <button
+        onClick={() => handleSort(col)}
+        className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+      >
+        {label}<SortIcon col={col} />
+      </button>
+    </th>
+  )
+
   return (
     <div className="space-y-3">
+      {/* Bar chart above the table */}
+      <CalibrationChart buckets={buckets} />
+
       <div className="overflow-x-auto rounded-xl border border-border/50">
-        <table className="w-full min-w-[520px] text-sm">
+        <table className="w-full min-w-[580px] text-sm">
           <thead className="bg-secondary/20">
             <tr className="text-left text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase border-b border-border/50">
-              <th className="px-3 sm:px-4 py-3">Confidence Range</th>
-              <th className="px-3 sm:px-4 py-3 text-right">Sample</th>
-              <th className="px-3 sm:px-4 py-3 text-right">Avg Stated</th>
-              <th className="px-3 sm:px-4 py-3 text-right">Actual Rate</th>
-              <th className="px-3 sm:px-4 py-3 text-right">Gap</th>
-              <th className="px-3 sm:px-4 py-3">Status</th>
+              <ThBtn col="min"              label="Prediction Range" />
+              <ThBtn col="n"               label="Sample"           right />
+              <ThBtn col="avgPredicted"    label="Predicted %"      right />
+              <ThBtn col="observedAccuracy" label="Actual Win %"    right />
+              <ThBtn col="calibrationError" label="Error"           right />
+              <th className="px-3 sm:px-4 py-3">Rating</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {buckets.map((b) => {
-              if (b.n < MINIMUM_SAMPLE) {
+            {sorted.map((b) => {
+              const isBest = b.label === bestLabel
+              const lowSample = b.n < CALIBRATION_BEST_TIER_MIN
+              const rating = getCalibrationRating(lowSample ? null : b.calibrationError)
+
+              if (lowSample) {
                 return (
                   <tr key={b.label} className="opacity-40">
                     <td className="px-3 sm:px-4 py-3 font-mono font-bold">{b.label}</td>
@@ -388,25 +524,42 @@ function CalibrationTable({ buckets }: { buckets: CalibrationBucket[] }) {
                   </tr>
                 )
               }
-              const diff = b.avgPredicted !== null && b.observedAccuracy !== null ? b.observedAccuracy - b.avgPredicted : null
-              const statusLabel = diff === null ? "No Data"
-                : Math.abs(diff) < 2 ? "Well Calibrated"
-                : diff > 0 ? "Underconfident"
-                : Math.abs(diff) > 8 ? "Overconfident"
-                : "Slightly Over"
-              const statusVariant = statusLabel === "Well Calibrated" ? "success"
-                : statusLabel === "Overconfident" ? "destructive" : "warning"
+
               return (
-                <tr key={b.label} className="hover:bg-secondary/20 transition-colors">
-                  <td className="px-3 sm:px-4 py-3 font-mono font-bold">{b.label}</td>
-                  <td className="px-3 sm:px-4 py-3 font-mono text-right text-muted-foreground">n={b.n}</td>
-                  <td className="px-3 sm:px-4 py-3 font-mono text-right">{fmt(b.avgPredicted)}</td>
-                  <td className={`px-3 sm:px-4 py-3 font-mono font-bold text-right ${accuracyColor(b.observedAccuracy)}`}>{fmt(b.observedAccuracy)}</td>
-                  <td className={`px-3 sm:px-4 py-3 font-mono text-right ${diff !== null && diff > 0 ? "text-success" : diff !== null && diff < -3 ? "text-destructive" : "text-muted-foreground"}`}>
-                    {diff !== null ? `${diff > 0 ? "+" : ""}${diff.toFixed(1)}%` : "—"}
+                <tr
+                  key={b.label}
+                  className={`hover:bg-secondary/20 transition-colors ${isBest ? "ring-1 ring-inset ring-amber-400/40 bg-amber-400/5" : ""}`}
+                >
+                  <td className="px-3 sm:px-4 py-3 font-mono font-bold">
+                    {b.label}
+                    {isBest && (
+                      <span className="ml-1.5 text-[9px] font-mono text-amber-500 font-bold">🏆 BEST</span>
+                    )}
+                  </td>
+                  <td className="px-3 sm:px-4 py-3 font-mono text-right text-muted-foreground">
+                    {b.n.toLocaleString()}
+                  </td>
+                  <td className="px-3 sm:px-4 py-3 font-mono text-right">
+                    {b.avgPredicted !== null ? `${b.avgPredicted.toFixed(1)}%` : "—"}
+                  </td>
+                  <td className={`px-3 sm:px-4 py-3 font-mono font-bold text-right ${accuracyColor(b.observedAccuracy)}`}>
+                    {b.observedAccuracy !== null ? `${b.observedAccuracy.toFixed(1)}%` : "—"}
+                  </td>
+                  <td className={`px-3 sm:px-4 py-3 font-mono text-right ${
+                    b.calibrationError !== null && b.calibrationError < 2 ? "text-success"
+                    : b.calibrationError !== null && b.calibrationError >= 8 ? "text-destructive"
+                    : b.calibrationError !== null && b.calibrationError >= 4 ? "text-warning"
+                    : "text-muted-foreground"
+                  }`}>
+                    {b.calibrationError !== null ? `${b.calibrationError.toFixed(1)}%` : "—"}
                   </td>
                   <td className="px-3 sm:px-4 py-3">
-                    <Badge variant={statusVariant as "success" | "warning" | "destructive" | "outline"} className="font-mono text-[9px] tracking-widest whitespace-nowrap">{statusLabel.toUpperCase()}</Badge>
+                    <Badge
+                      variant={rating.variant}
+                      className="font-mono text-[9px] tracking-wide whitespace-nowrap gap-1"
+                    >
+                      {rating.emoji} {rating.label}
+                    </Badge>
                   </td>
                 </tr>
               )
@@ -415,7 +568,8 @@ function CalibrationTable({ buckets }: { buckets: CalibrationBucket[] }) {
         </table>
       </div>
       <p className="text-[10px] font-mono text-muted-foreground/60 leading-relaxed">
-        Bands require ≥{MINIMUM_SAMPLE} graded predictions to display. "Overconfident" = stated probability &gt;8% above actual win rate.
+        Buckets use 5% bands (50–55%, 55–60%, …, 95–100%). Rows with n&lt;{CALIBRATION_BEST_TIER_MIN} are dimmed and excluded from Best Tier.
+        Click column headers to sort. "Error" = |stated probability − actual win rate| — lower is better.
         A calibration refit (scheduled periodically) adjusts stated probabilities toward real outcomes without changing pick direction.
       </p>
     </div>
@@ -684,6 +838,17 @@ export default function ModelMonitoringPage() {
         <StatusCard status={data.status} />
       ) : null}
 
+      {/* Confidence Calibration — front and centre, Elite only */}
+      <Section
+        icon={<Zap className="w-5 h-5 text-primary" />}
+        title="Confidence Calibration"
+        subtitle="Projected win % vs actual win rate per confidence band — shows exactly which probability ranges the model has earned the most trust in."
+      >
+        {!isElite ? (
+          <EliteLockedSection title="Confidence Calibration" description="See how well the AI's stated probabilities match real outcomes across every confidence band. Available on Elite." />
+        ) : isLoading ? <SectionSkeleton rows={6} /> : data ? <CalibrationTable buckets={data.calibration} /> : null}
+      </Section>
+
       {/* Performance Summary — Pro + Elite */}
       <Section
         icon={<BarChart3 className="w-5 h-5 text-primary" />}
@@ -700,17 +865,6 @@ export default function ModelMonitoringPage() {
         subtitle="Day-by-day accuracy across graded live predictions. Days with fewer than 3 graded predictions are excluded to avoid single-match noise."
       >
         <AccuracyTrendChart />
-      </Section>
-
-      {/* Confidence Calibration — Elite only */}
-      <Section
-        icon={<Zap className="w-5 h-5 text-primary" />}
-        title="Confidence Calibration"
-        subtitle="How well the model's stated confidence matches real win rates across probability bands."
-      >
-        {!isElite ? (
-          <EliteLockedSection title="Confidence Calibration" description="See how well the AI's stated probabilities match real outcomes across every confidence band. Available on Elite." />
-        ) : isLoading ? <SectionSkeleton rows={6} /> : data ? <CalibrationTable buckets={data.calibration} /> : null}
       </Section>
 
       {/* Surface & Level — Pro + Elite */}
