@@ -102,6 +102,7 @@ export interface DataSourceDiagnostics {
 export interface BuilderResult {
   validationScore: number;   // 0–100
   riskScore: number;         // 0–100, higher = more risk
+  matchupCloseness: number;  // 0–100, higher = more evenly matched; used as a risk floor
   reliabilityGrade: "A" | "B" | "C" | "D" | "F";
   parlayGrade: "Elite" | "Strong" | "Moderate" | "Weak" | "Reject";
   removalProbability: number; // 0–100%
@@ -732,6 +733,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     return {
       validationScore: 0,
       riskScore: 0,
+      matchupCloseness: 50,
       reliabilityGrade: "F",
       parlayGrade: "Reject",
       removalProbability: 0,
@@ -1117,7 +1119,59 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   if (marketOdds != null && 1 / marketOdds > 0.60) risk -= 12;
   if (selRank != null && oppRank != null && selRank < oppRank * 0.5) risk -= 8;
 
-  const riskScore = clamp(Math.round(risk), 0, 100);
+  const preClosenessRisk = clamp(Math.round(risk), 0, 100);
+
+  // ── 5b. Matchup Closeness Floor ─────────────────────────────────────────
+  //
+  // Bug found 2026-07 (K. Day vs. M. Hontama, WTA 125 Vancouver): the risk formula above only
+  // rewards "conventional favorite" stats (win rate, market odds, source agreement) and never
+  // asks how far apart the two players actually are. A player can clear several of the
+  // risk-reducing bonuses above and still be in a genuine coin-flip matchup, producing an
+  // unearned near-zero risk score. This section computes an independent closeness signal from
+  // data this service already has (win rate gap, surface win rate gap, market-implied
+  // probability, ranking gap) and uses it as a FLOOR — not an offsettable addition — so a
+  // genuinely close matchup can never be scored as low-risk no matter how favorable the other
+  // signals look.
+  //
+  // Threshold constants below (0.65/0.80 closeness bands, 40/55 floors) are a first-pass,
+  // reasoned estimate, NOT walk-forward validated against real outcomes. Per this file's own
+  // convention (see predictionEngine/upsetRisk.ts, calibration.ts), these should be re-tuned
+  // against real graded parlay-leg outcomes once enough data exists, not left as permanent
+  // hand-picked constants.
+
+  const closenessSignals: number[] = [];
+
+  // Win rate gap: 0 gap = maximally close (100), 0.4+ gap = clearly separated (0)
+  const winRateGap = Math.abs(sel.winRate - opp.winRate);
+  closenessSignals.push(clamp(Math.round((1 - winRateGap / 0.4) * 100), 0, 100));
+
+  // Surface win rate gap, only when both players have a real surface sample
+  if (surface && sel.surfaceTotal >= 5 && opp.surfaceTotal >= 5) {
+    const surfaceGap = Math.abs(sel.surfaceWinRate - opp.surfaceWinRate);
+    closenessSignals.push(clamp(Math.round((1 - surfaceGap / 0.4) * 100), 0, 100));
+  }
+
+  // Market-implied probability distance from a coin flip: 50% implied = maximally close (100)
+  if (marketOdds != null) {
+    const impliedProb = 1 / marketOdds;
+    closenessSignals.push(clamp(Math.round((1 - Math.abs(impliedProb - 0.5) * 2) * 100), 0, 100));
+  }
+
+  // Ranking gap, relative to the lower (better) rank so the scale is comparable across tiers
+  if (selRank != null && oppRank != null) {
+    const relGap = Math.abs(selRank - oppRank) / Math.max(selRank, oppRank);
+    closenessSignals.push(clamp(Math.round((1 - relGap) * 100), 0, 100));
+  }
+
+  const closenessScore = closenessSignals.length > 0
+    ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length)
+    : 50; // no independent signals available -- neutral, no floor applied beyond the default below
+
+  let riskFloor = 0;
+  if (closenessScore >= 80) riskFloor = 55;
+  else if (closenessScore >= 65) riskFloor = 40;
+
+  const riskScore = clamp(Math.max(preClosenessRisk, riskFloor), 0, 100);
 
   // ── 6. Critical flags & data source diagnostics ──────────────────────────────
   //
@@ -1212,6 +1266,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   return {
     validationScore,
     riskScore,
+    matchupCloseness: closenessScore, // new -- surface this on the card so it's not a silent internal-only number
     reliabilityGrade,
     parlayGrade,
     removalProbability,
