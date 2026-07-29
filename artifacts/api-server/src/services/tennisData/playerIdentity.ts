@@ -812,10 +812,23 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
       ? queryWords[queryWords.length - 1]!
       : null;
 
+  // Wrap each live-provider call so a circuit-breaker open or provider unavailability
+  // gracefully returns an empty list rather than throwing and aborting the whole search.
+  // Historical-DB results below will still run and are the primary fallback when the
+  // provider is down.
+  const searchSafely = async (q: string): Promise<PlayerSummary[]> => {
+    try {
+      return await provider.searchPlayers(q);
+    } catch (err) {
+      logger.warn({ err, query: q }, "searchKnownPlayers: provider.searchPlayers unavailable — falling back to historical-only results");
+      return [];
+    }
+  };
+
   const [primaryResults, expandedResults, surnameResults] = await Promise.all([
-    provider.searchPlayers(query),
-    expandedName ? provider.searchPlayers(expandedName) : Promise.resolve([] as PlayerSummary[]),
-    surnameSupplement ? provider.searchPlayers(surnameSupplement) : Promise.resolve([] as PlayerSummary[]),
+    searchSafely(query),
+    expandedName ? searchSafely(expandedName) : Promise.resolve([] as PlayerSummary[]),
+    surnameSupplement ? searchSafely(surnameSupplement) : Promise.resolve([] as PlayerSummary[]),
   ]);
 
   const existingIds = new Set(primaryResults.map((p) => p.id));

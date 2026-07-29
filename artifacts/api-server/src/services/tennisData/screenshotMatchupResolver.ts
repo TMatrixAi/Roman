@@ -151,6 +151,11 @@ function normalizeName(name: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // strip combining diacritics (accents, etc.)
     .toLowerCase()
+    // Expand dot-separated multi-initial patterns ("j.j." → "j j ") so each initial
+    // becomes a separate token. Without this, "J.J. Wolf" collapses to "jj wolf" and
+    // the bijective initial-expansion in wordsMatch (which only handles 1-char tokens)
+    // can't match it against "jeffrey john wolf".
+    .replace(/\b([a-z])\.([a-z])\./g, "$1 $2 ")
     .replace(/[^a-z0-9\s]/g, "")    // keep only ASCII letters, digits, spaces
     .replace(/\s+/g, " ")
     .trim();
@@ -869,7 +874,12 @@ async function resolveEventMatch(
   // because live fixtures get a tournament_key → surface lookup instead.
   // A screenshot import has no tournament_key, so fall back to a real name search.
   if (eventName && surface === null && provider.findTournamentSurfaceByName) {
-    const found = await provider.findTournamentSurfaceByName(eventName);
+    let found: Awaited<ReturnType<NonNullable<typeof provider.findTournamentSurfaceByName>>> | null = null;
+    try {
+      found = await provider.findTournamentSurfaceByName(eventName);
+    } catch {
+      // Provider unavailable (e.g. circuit breaker open) — surface stays null, not an error.
+    }
     if (found) {
       surface = found.surface;
       // Suppress a provider-returned level that contradicts the event's known tour.

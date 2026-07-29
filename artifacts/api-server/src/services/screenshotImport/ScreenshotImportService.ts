@@ -240,9 +240,11 @@ class ScreenshotImportService {
     void ocrDebugLog; // already merged into debugLog above
 
     let resolved: ScreenshotMatchupResult;
+    let resolutionThrew = false;
     try {
       resolved = await resolveScreenshotMatchup(getTennisDataProvider(), rawForResolver);
     } catch (resolveErr) {
+      resolutionThrew = true;
       logger.warn({ err: resolveErr }, "ScreenshotImportService: player resolution failed");
       resolved = {
         player1: { recognizedName: null, player: null, status: "not-found" },
@@ -268,8 +270,13 @@ class ScreenshotImportService {
       },
     };
 
-    // 6. Cache the result
-    cacheSet(hash, result);
+    // 6. Cache the result — but skip caching when the resolver itself threw (likely a transient
+    //    provider failure such as a circuit-breaker open). Caching a "resolution failed" result
+    //    would cause every subsequent upload of the same image to instantly return null names
+    //    even after the provider recovers.
+    if (!resolutionThrew) {
+      cacheSet(hash, result);
+    }
     logger.info(
       { provider: ocrProvider, durationMs: totalDurationMs, matchupCount: resolved.matchups?.length ?? 0 },
       "ScreenshotImportService: import complete",
