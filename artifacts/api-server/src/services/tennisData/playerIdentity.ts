@@ -642,7 +642,12 @@ export async function resolvePlayerProfileForPrediction(
   }
 
   const normalizedName = normalizePlayerName(sighting.name);
-  const byNameCandidates = await provider.searchPlayers(sighting.name);
+  let byNameCandidates: PlayerSummary[];
+  try {
+    byNameCandidates = await provider.searchPlayers(sighting.name);
+  } catch {
+    byNameCandidates = [];
+  }
   const exactNameCandidates = byNameCandidates.filter((c) => normalizePlayerName(c.name) === normalizedName);
 
   if (exactNameCandidates.length === 1) {
@@ -702,7 +707,12 @@ export async function resolvePlayerProfileForPrediction(
     const surnameWords = words.slice(1);
     const surnameQuery = surnameWords.join(" ");
 
-    const surnameCandidates = await provider.searchPlayers(surnameQuery);
+    let surnameCandidates: PlayerSummary[];
+    try {
+      surnameCandidates = await provider.searchPlayers(surnameQuery);
+    } catch {
+      surnameCandidates = [];
+    }
     const narrowed = surnameCandidates.filter((candidate) => {
       const candidateWords = normalizePlayerName(candidate.name).split(" ").filter(Boolean);
       if (candidateWords.length < 2) return false;
@@ -774,7 +784,15 @@ export async function resolvePlayerProfileForPrediction(
  * case that really is "not found", unchanged from before.
  */
 export async function resolvePlayerProfile(provider: TennisDataProvider, playerId: string): Promise<PlayerProfile | null> {
-  const player = await provider.getPlayer(playerId);
+  let player: PlayerProfile | null;
+  try {
+    player = await provider.getPlayer(playerId);
+  } catch (err) {
+    // Circuit-breaker open or provider temporarily unavailable — treat as "not in live provider".
+    // The caller's fallback chain (historical sightings, name search, stub profiles) handles null.
+    logger.warn({ playerId, err: (err as Error).message }, "resolvePlayerProfile: provider.getPlayer threw — falling back to historical data");
+    player = null;
+  }
   if (!player) return null;
   if (player.tour !== null) return player; // already resolved from live standings
 
