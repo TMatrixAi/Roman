@@ -60,6 +60,14 @@ export interface PredictionEngineInput {
    */
   tournamentLevel?: string | null;
   /**
+   * Task #107 (Phase 5): Optional real-time web-research result for this matchup (injury status,
+   * fatigue, recent news), fetched by the caller via `researchPlayerMatchup` from
+   * `services/shared/webResearchProvider`. The engine itself stays synchronous/external-API-free;
+   * the caller decides whether the prediction context warrants the Gemini call (e.g. close
+   * predictions near 50%, or explicit user requests). Omit/null to skip entirely.
+   */
+  webResearch?: import("../shared/webResearchProvider.js").MatchupResearch | null;
+  /**
    * The currently active Phase 4 isotonic calibration mapping (fitted from real walk-forward
    * validation data), pre-fetched by the caller. When present, this is used in place of the
    * engine's own dataQuality-based heuristic shrink -- a real, data-validated calibration beats a

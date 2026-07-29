@@ -46,8 +46,10 @@ import { validateAndStoreSimulator } from "../services/evaluation/simulatorValid
 import { predictionSettingsTable, simulatorValidationTable } from "@workspace/db";
 import { startAblationJob, getAblationJobStatus } from "../services/evaluation/ablationJob";
 import { runShadowPaperTradingReplay, listShadowReplayBatches } from "../services/evaluation/shadowReplay";
+import { isPipelineQuiet, PAPER_TRADE_QUIET_WINDOW_HOURS, sendPipelineQuietAlert, resetAlertCooldown } from "../services/evaluation/paperTradingQuiet";
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
+import { runSackmannBackfill, SACKMANN_PROVIDER } from "../services/historicalData/sackmannBackfill";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
@@ -428,6 +430,107 @@ router.post("/paper-trading/run-cycle", async (_req, res): Promise<void> => {
   res.json(RunPaperTradingCycleResponse.parse(summary));
 });
 
+/**
+ * GET /evaluation/paper-trading/status — Task #110
+ * Returns last-run time, graded count, and pipeline-quiet alert state.
+ * Safe to poll from the admin UI without triggering any side effects.
+ */
+router.get("/paper-trading/status", async (_req, res): Promise<void> => {
+  try {
+
+    // Latest completed paper-trading cycle (from job_runs table)
+    const [lastRun] = await db
+      .select({ finishedAt: jobRunsTable.finishedAt, status: jobRunsTable.status })
+      .from(jobRunsTable)
+      .where(and(eq(jobRunsTable.jobName, PAPER_TRADING_JOB_NAME), isNotNull(jobRunsTable.finishedAt)))
+      .orderBy(desc(jobRunsTable.finishedAt))
+      .limit(1);
+
+    // Fallback: if no job_runs row exists yet, derive last-run from the newest locked prediction
+    const [latestLock] = lastRun
+      ? [null]
+      : await db
+          .select({ lockedAt: evaluationPredictionsTable.lockedAt })
+          .from(evaluationPredictionsTable)
+          .where(eq(evaluationPredictionsTable.runKind, "paper_trade"))
+          .orderBy(desc(evaluationPredictionsTable.lockedAt))
+          .limit(1);
+
+    const lastRunAt: Date | null = lastRun?.finishedAt ?? latestLock?.lockedAt ?? null;
+
+    const [counts] = await db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        graded: sql<number>`COUNT(*) FILTER (WHERE ${evaluationPredictionsTable.status} = 'graded')::int`,
+      })
+      .from(evaluationPredictionsTable)
+      .where(eq(evaluationPredictionsTable.runKind, "paper_trade"));
+
+    const quiet = isPipelineQuiet(lastRunAt, PAPER_TRADE_QUIET_WINDOW_HOURS);
+    const hoursSinceLastRun = lastRunAt
+      ? Math.round(((Date.now() - lastRunAt.getTime()) / (1000 * 60 * 60)) * 10) / 10
+      : null;
+
+    // Fire the operator alert (if wired) whenever the status endpoint detects silence.
+    // sendPipelineQuietAlert has a built-in cooldown so it won't spam on every poll.
+    let alertOutcome: string | undefined;
+    if (quiet) {
+      const outcome = await sendPipelineQuietAlert(lastRunAt);
+      alertOutcome = outcome;
+      if (outcome === "fired") {
+        logger.warn({ lastRunAt: lastRunAt?.toISOString() ?? null, hoursSinceLastRun }, "Pipeline-quiet alert fired");
+      } else if (outcome.startsWith("error:")) {
+        logger.error({ outcome, lastRunAt: lastRunAt?.toISOString() ?? null }, "Pipeline-quiet alert send failed");
+      }
+    }
+
+    res.json({
+      lastRunAt: lastRunAt?.toISOString() ?? null,
+      hoursSinceLastRun,
+      quietWindowHours: PAPER_TRADE_QUIET_WINDOW_HOURS,
+      pipelineQuiet: quiet,
+      alertOutcome: alertOutcome ?? null,
+      gradedCount: counts?.graded ?? 0,
+      totalCount: counts?.total ?? 0,
+    });
+  } catch (e) {
+    logger.error({ err: e }, "paper-trading/status query failed");
+    res.status(500).json({ error: e instanceof Error ? e.message : "Status query failed" });
+  }
+});
+
+/**
+ * POST /evaluation/paper-trading/test-quiet-alert  (admin-only)
+ * Forces a pipeline-quiet alert to fire immediately, bypassing the cooldown.
+ * Use this for the live test in Item 2: confirm the alert reaches the webhook,
+ * then call this again after a successful cycle to confirm it stops firing.
+ */
+router.post("/paper-trading/test-quiet-alert", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    // Fetch the real last-run timestamp so the alert message has accurate data
+    const [lastRun] = await db
+      .select({ finishedAt: jobRunsTable.finishedAt })
+      .from(jobRunsTable)
+      .where(and(eq(jobRunsTable.jobName, PAPER_TRADING_JOB_NAME), isNotNull(jobRunsTable.finishedAt)))
+      .orderBy(desc(jobRunsTable.finishedAt))
+      .limit(1);
+
+    const lastRunAt: Date | null = lastRun?.finishedAt ?? null;
+
+    resetAlertCooldown();
+    const outcome = await sendPipelineQuietAlert(lastRunAt, /* force */ true);
+
+    res.json({
+      outcome,
+      webhookConfigured: Boolean(process.env.QUIET_PIPELINE_ALERT_WEBHOOK_URL?.trim()),
+      lastRunAt: lastRunAt?.toISOString() ?? null,
+      firedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Test alert failed" });
+  }
+});
+
 router.get("/paper-trading/job-runs", async (req, res): Promise<void> => {
   const parsed = ListPaperTradingJobRunsQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -483,6 +586,89 @@ router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Prom
   const provider = getTennisDataProvider();
   const result = await runIncrementalHistoricalBackfill(provider);
   res.json(RunHistoricalBackfillCycleResponse.parse(result));
+});
+
+/**
+ * Sackmann CSV backfill (Task #107 Phase 1) — downloads Jeff Sackmann's tennis_atp / tennis_wta
+ * GitHub CSVs and inserts match history into historical_matches via the same infrastructure as
+ * the live-provider backfill. Runs in the background; outcome written to job_runs.
+ *
+ * POST /evaluation/sackmann-backfill/run
+ * Body (all optional): { startYear?: number, endYear?: number, tours?: ("atp"|"wta")[] }
+ */
+router.post("/evaluation/sackmann-backfill/run", async (req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
+  const startYear = typeof req.body?.startYear === "number" ? req.body.startYear : 2010;
+  const endYear   = typeof req.body?.endYear   === "number" ? req.body.endYear   : new Date().getFullYear();
+  const tours     = Array.isArray(req.body?.tours) ? req.body.tours : ["atp", "wta"];
+
+  // Respond immediately — the backfill is long-running.
+  res.json({ started: true, startYear, endYear, tours, jobName: `${SACKMANN_PROVIDER}-backfill` });
+
+  const startedAt = new Date();
+  runSackmannBackfill({ startYear, endYear, tours })
+    .then(async (result) => {
+      await db.insert(jobRunsTable).values({
+        jobName: `${SACKMANN_PROVIDER}-backfill`,
+        startedAt,
+        finishedAt: new Date(),
+        status: "success",
+        attempts: 1,
+        summary: {
+          fixturesLoaded: result.fixturesLoaded,
+          atpYearsLoaded: result.atpYearsLoaded,
+          wtaYearsLoaded: result.wtaYearsLoaded,
+          matchesInserted: result.backfill.matchesInserted,
+          featureRowsInserted: result.backfill.featureRowsInserted,
+          matchesSkippedDuplicate: result.backfill.matchesSkippedDuplicate,
+        },
+        errorMessage: null,
+      });
+      logger.info({ result }, "sackmann-backfill: completed");
+    })
+    .catch(async (err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "sackmann-backfill: failed");
+      await db.insert(jobRunsTable).values({
+        jobName: `${SACKMANN_PROVIDER}-backfill`,
+        startedAt,
+        finishedAt: new Date(),
+        status: "failed",
+        attempts: 1,
+        summary: null,
+        errorMessage,
+      });
+    });
+});
+
+/**
+ * GET /evaluation/sackmann-backfill/status
+ * Returns the most recent sackmann-backfill job_runs row so the admin UI can show
+ * whether a backfill has run, when it finished, and how many matches were imported.
+ */
+router.get("/evaluation/sackmann-backfill/status", async (_req, res): Promise<void> => {
+  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+
+  const [latest] = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, `${SACKMANN_PROVIDER}-backfill`))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(1);
+
+  res.json({
+    hasRun: !!latest,
+    lastRun: latest
+      ? {
+          status: latest.status,
+          startedAt: latest.startedAt?.toISOString() ?? null,
+          finishedAt: latest.finishedAt?.toISOString() ?? null,
+          summary: latest.summary ?? null,
+          errorMessage: latest.errorMessage ?? null,
+        }
+      : null,
+  });
 });
 
 /**

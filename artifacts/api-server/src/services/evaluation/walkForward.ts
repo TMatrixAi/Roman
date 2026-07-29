@@ -1,5 +1,5 @@
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, historicalMatchesTable } from "@workspace/db";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import { fitBestCalibration, applyCalibration, isKnownBadCascadeRow, type CalibrationPoint } from "./calibration";
 import { scoreHistoricalMatch, type HistoricalScoringContext } from "./historicalScoring";
@@ -29,6 +29,13 @@ export interface WalkForwardOptions {
    * Defaults to false for backward compatibility, but the dashboard wires it as true.
    */
   evaluationOnly?: boolean;
+  /**
+   * When provided, restricts the walk-forward to only these historical match IDs. The scoring
+   * context (Elo index, match history) is built only from these rows too, which makes the
+   * run fast. Intended for integration tests that seed a small synthetic corpus — never use
+   * this in production (omit the field entirely, or pass undefined).
+   */
+  matchIds?: number[];
 }
 
 export interface WalkForwardSummary {
@@ -66,6 +73,7 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const warmupFraction = options.warmupFraction ?? 0.4;
   const evaluationOnly = options.evaluationOnly ?? false;
   const optimizerRunId = options.optimizerRunId ?? null;
+  const scopedMatchIds = options.matchIds && options.matchIds.length > 0 ? options.matchIds : null;
   if (foldCount < 1) throw new Error("foldCount must be >= 1");
   if (warmupFraction <= 0 || warmupFraction >= 1) throw new Error("warmupFraction must be between 0 and 1 (exclusive)");
 
@@ -83,17 +91,32 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   const allMatches = await db
     .select()
     .from(historicalMatchesTable)
+    .where(scopedMatchIds ? inArray(historicalMatchesTable.id, scopedMatchIds) : undefined)
     .orderBy(asc(historicalMatchesTable.scheduledStartAt), asc(historicalMatchesTable.id));
 
-  const eligible = allMatches.filter((m) => !m.cancelled); // cancelled matches never even reach scoring; walkovers/retirements are scored but voided/flagged downstream
+  // Task #109: append-only fold preservation — never wipe prior walk-forward results.
+  // Build the set of historical match IDs already scored in a prior run so this run skips
+  // them (idempotent). Prior evaluation_runs / evaluation_predictions rows are NEVER deleted;
+  // each run only adds new folds for matches not yet covered.
+  const alreadyScoredIds = new Set<number>(
+    (await db
+      .select({ historicalMatchId: evaluationPredictionsTable.historicalMatchId })
+      .from(evaluationPredictionsTable)
+      .where(and(
+        eq(evaluationPredictionsTable.runKind, "historical_test"),
+        isNotNull(evaluationPredictionsTable.historicalMatchId),
+      ))
+    ).map(r => r.historicalMatchId as number)
+  );
+
+  const eligible = allMatches.filter(
+    // cancelled matches never reach scoring; already-scored matches are preserved across runs
+    (m) => !m.cancelled && !alreadyScoredIds.has(m.id),
+  );
   if (eligible.length < 20) {
-    logger.warn({ count: eligible.length }, "Not enough historical matches to run a meaningful walk-forward evaluation");
+    logger.warn({ count: eligible.length, alreadyScored: alreadyScoredIds.size }, "Not enough new historical matches to run a meaningful walk-forward evaluation");
     return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [], evaluationOnly };
   }
-
-  // Wipe prior historical_test evaluation state so a re-run never mixes fold generations.
-  await db.delete(evaluationPredictionsTable).where(eq(evaluationPredictionsTable.runKind, "historical_test"));
-  await db.delete(evaluationRunsTable);
 
   // Task #77: run-scoped fallback tracker, reset here so this run's rate never mixes with a
   // prior run's (e.g. a live prediction request scored moments before).

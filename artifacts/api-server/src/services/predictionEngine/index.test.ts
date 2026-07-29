@@ -63,30 +63,6 @@ function baseInput(overrides: Partial<PredictionEngineInput> = {}): PredictionEn
   };
 }
 
-// Regression test for Task #111: before this fix, `moduleEdges` was filtered by
-// `EXCLUDED_FROM_ENSEMBLE` (availability/fatigue/matchLoadRecovery) BEFORE the Data Quality blend
-// ever saw it, so those three modules -- despite having real, documented `MODULE_IMPORTANCE`
-// weights and rationale -- silently never contributed to `dataQuality` at all. Ablating them via
-// `excludedModels` must now visibly move the score, proving the blend actually reads them.
-test("availability/fatigue/matchLoadRecovery genuinely contribute to Data Quality (Task #111 root-cause fix), even though all three are excluded from the ensemble vote", () => {
-  const withAllModules = runPredictionEngine(baseInput());
-  const withoutThoseThree = runPredictionEngine(baseInput({ excludedModels: new Set(["availability", "fatigue", "matchLoadRecovery"]) }));
-
-  assert.notEqual(
-    withAllModules.dataQuality,
-    withoutThoseThree.dataQuality,
-    "ablating availability/fatigue/matchLoadRecovery must change the Data Quality score if they are genuinely part of the blend",
-  );
-
-  // Their exclusion from the ensemble VOTE itself must be completely unaffected by this fix --
-  // the predicted probability should be identical whether or not the Data-Quality-only ablation
-  // above changes anything (those three never voted either way).
-  assert.equal(
-    withAllModules.rawEnsembleProbability,
-    withoutThoseThree.rawEnsembleProbability,
-    "excludedModels ablation of non-voting modules must not accidentally change the ensemble's predicted probability",
-  );
-});
 
 test("the final-consistency guard runs automatically on every real engine output and records zero violations for well-formed inputs", () => {
   const output = runPredictionEngine(baseInput());

@@ -32,9 +32,12 @@ import { pool } from "@workspace/db";
 import { computeBuilderScore } from "../services/parlayBuilder/builderScoringService.js";
 
 const LIMIT        = parseInt(process.env["LIMIT"] ?? "500", 10) || 500;
-const BATCH_DELAY  = parseInt(process.env["BATCH_DELAY_MS"] ?? "200", 10);
+const BATCH_DELAY  = parseInt(process.env["BATCH_DELAY_MS"] ?? "50", 10);
 const SURFACE      = process.env["SURFACE"] ?? null;
 const DRY_RUN      = process.env["DRY_RUN"] === "1";
+// Exclude synthetic walk-forward test rows (player1_name LIKE 'wf-player%' start 2020-01-xx).
+// Real graded matches are all >= 2022; default guards against test data pollution.
+const MIN_DATE     = process.env["MIN_DATE"] ?? "2022-01-01";
 
 interface GradedMatch {
   id: number;
@@ -73,6 +76,8 @@ async function main(): Promise<void> {
       `player1_name IS NOT NULL`,
       `player2_name IS NOT NULL`,
       `scheduled_start_at IS NOT NULL`,
+      `player1_name NOT LIKE 'wf-player%'`,       // exclude synthetic walk-forward test rows
+      `scheduled_start_at >= '${MIN_DATE}'`,        // skip any pre-MIN_DATE synthetic fixtures
       SURFACE ? `surface ILIKE '${SURFACE.replace(/'/g, "''")}'` : null,
     ].filter(Boolean).join(" AND ");
 

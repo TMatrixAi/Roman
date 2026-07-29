@@ -2,6 +2,7 @@ import { and, desc, eq, sql, type SQLWrapper } from "drizzle-orm";
 import { db, historicalMatchesTable } from "@workspace/db";
 import { logger } from "../../lib/logger";
 import type { PlayerProfile, PlayerSummary, TennisDataProvider } from "./types";
+import { resolveWikidataAliases } from "./wikidataResolver.js";
 
 /**
  * Real cross-source player identity resolution (Task #22). API-Tennis (the only reachable tennis
@@ -506,6 +507,34 @@ async function resolvePlayerProfileByName(
     }
   }
 
+  // 3. Wikidata alias fallback: look up alternative name forms (transliterations without
+  //    diacritics, birth names, nicknames) e.g. "Galán" → "Galan", "Feistl" → "Feistel".
+  //    Non-fatal: a Wikidata timeout or parse error just skips this step.
+  try {
+    const wikidataAliases = await resolveWikidataAliases(submittedName);
+    for (const alias of wikidataAliases) {
+      const aliasNorm = normalizePlayerName(alias);
+      if (aliasNorm === normalizedQuery) continue; // same as original, already tried above
+      const aliasCandidates = await provider.searchPlayers(alias);
+      for (const c of aliasCandidates) {
+        if (/\s\/\s|\//.test(c.name ?? "")) continue;
+        const cn = normalizePlayerName(c.name);
+        if (cn === aliasNorm || cn === normalizedQuery) {
+          const profile = await resolvePlayerProfile(provider, c.id);
+          if (profile && !/\s\/\s|\//.test(profile.name ?? "")) {
+            logger.debug(
+              { submittedName, alias, resolvedName: profile.name },
+              "playerIdentity: resolved via Wikidata alias",
+            );
+            return profile;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug({ err, submittedName }, "playerIdentity: Wikidata alias lookup failed (non-fatal)");
+  }
+
   return null;
 }
 
@@ -854,6 +883,11 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   }
 
   const historicalSummaries: PlayerSummary[] = [];
+  // Abbreviated names whose provider validation was unavailable (transient error) are collected
+  // here separately and only merged into results when the complete candidate set is empty —
+  // i.e. as a genuine last-resort fallback rather than polluting normal searches. See comment
+  // below where they are added for the full rationale.
+  const abbreviatedTransientFallback: PlayerSummary[] = [];
   for (const row of historicalById.values()) {
     const historicalNorm = normalizePlayerName(row.name);
     const historicalNameIsWeak = isWeakIdentityNameKey(historicalNorm);
@@ -897,8 +931,23 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
 
     // Provider validation unavailable (transient provider error): keep the historical row,
     // clearly labeled, rather than dropping all fallback coverage. Weak abbreviated names are
-    // still excluded because they are not stable identity records.
-    if (historicalNameIsWeak) continue;
+    // still excluded here — they are collected separately as a last-resort fallback (see
+    // `abbreviatedTransientFallback` below) and only added to results when the complete candidate
+    // set would otherwise be empty. This prevents "M. Uchijima" from creating spurious ambiguity
+    // when both Maiko and Moyuka Uchijima appear via live standings, while still resolving
+    // WTA 125K / ITF players (e.g. "M. Hontama") that exist only as abbreviated historical rows
+    // and never appear in live standings.
+    if (historicalNameIsWeak) {
+      abbreviatedTransientFallback.push({
+        id: row.id,
+        name: row.name,
+        countryCode: null,
+        currentRank: null,
+        tour: row.tour,
+        source: "historical-match",
+      });
+      continue;
+    }
     historicalSummaries.push({
       id: row.id,
       name: row.name,
@@ -937,8 +986,20 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
 
   const filteredHistorical = historicalSummaries.filter((p) => !isShadowedByLive(p.name));
 
+  // Last-resort abbreviated fallback: if both live results and validated historical results are
+  // empty (player not in standings, no validated singles history), merge in the abbreviated
+  // transient-error entries collected above. This resolves WTA 125K / ITF players like
+  // "M. Hontama" or "N. Hibino" whose only DB footprint is abbreviated historical rows and who
+  // never appear in the live standings feed. The fallback is gated on the whole set being empty
+  // so it never introduces ambiguity when both "Maiko Uchijima" and "Moyuka Uchijima" already
+  // resolved correctly via standings — those cases skip this block entirely.
+  const baseResultsEmpty = filteredLiveResults.length === 0 && filteredHistorical.length === 0;
+  const fallbackEntries = baseResultsEmpty
+    ? abbreviatedTransientFallback.filter((p) => !isShadowedByLive(p.name))
+    : [];
+
   const deduped = new Map<string, PlayerSummary>();
-  for (const player of [...filteredLiveResults, ...filteredHistorical]) {
+  for (const player of [...filteredLiveResults, ...filteredHistorical, ...fallbackEntries]) {
     if (!deduped.has(player.id)) deduped.set(player.id, player);
   }
   const results = Array.from(deduped.values()).slice(0, 25);

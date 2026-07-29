@@ -402,6 +402,7 @@ router.post("/admin/parlay/validate", requireAdmin, async (req, res): Promise<vo
           surface: leg.surface ?? null,
           validationScore: 50,
           riskScore: 65,
+          matchupCloseness: 50,
           reliabilityGrade: "D" as const,
           parlayGrade: "Weak" as const,
           removalProbability: 65,
@@ -599,6 +600,262 @@ router.post("/admin/parlay/backtest", requireAdmin, async (req, res): Promise<vo
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Backtest failed" });
   }
+});
+
+// ── GET /admin/parlay/calibration ─────────────────────────────────────────────
+//
+// Returns calibration bucket data from parlay_leg_outcomes for the UI dashboard.
+// Includes per-decile validation-score buckets, per-decision-tier stats,
+// per-parlay-grade stats, and a before/after REMOVE-filter comparison.
+
+router.get("/admin/parlay/calibration", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const { rows } = await pool.query<{
+      id: number;
+      selected_player_id: string;
+      validation_score: number;
+      risk_score: number;
+      decision: string;
+      parlay_grade: string;
+      reliability_grade: string;
+      data_coverage: number;
+      source_agreement: number;
+      actual_winner_id: string | null;
+      source: string;
+    }>(`
+      SELECT id, selected_player_id, validation_score, risk_score,
+             decision, parlay_grade, reliability_grade,
+             data_coverage, source_agreement, actual_winner_id, source
+      FROM parlay_leg_outcomes
+      WHERE actual_winner_id IS NOT NULL
+      ORDER BY created_at ASC
+    `);
+
+    if (rows.length === 0) {
+      res.json({
+        summary: null,
+        buckets: [],
+        decisionTiers: [],
+        parlayGrades: [],
+        message: "No resolved legs yet — run the historical backfill first.",
+      });
+      return;
+    }
+
+    const legs = rows.map(r => ({
+      ...r,
+      won: r.actual_winner_id === r.selected_player_id,
+    }));
+
+    const total = legs.length;
+    const wins = legs.filter(l => l.won).length;
+    const overallWinRate = parseFloat(((wins / total) * 100).toFixed(1));
+
+    // Per validation-score decile (0–10, 10–20, …, 90–100)
+    const buckets = [];
+    for (let lo = 0; lo < 100; lo += 10) {
+      const hi = lo + 10;
+      const bucket = legs.filter(l => l.validation_score >= lo && l.validation_score < hi);
+      const bWins = bucket.filter(l => l.won).length;
+      buckets.push({
+        range: `${lo}–${hi}`,
+        lo, hi,
+        count: bucket.length,
+        wins: bWins,
+        losses: bucket.length - bWins,
+        winRate: bucket.length > 0 ? parseFloat(((bWins / bucket.length) * 100).toFixed(1)) : null,
+        expected: lo + 5, // midpoint as % — visual diagonal reference
+      });
+    }
+
+    // Per decision tier
+    const decisionTiers = (["KEEP", "BORDERLINE", "REMOVE"] as const).map(tier => {
+      const g = legs.filter(l => l.decision === tier);
+      const gWins = g.filter(l => l.won).length;
+      return {
+        decision: tier,
+        count: g.length,
+        wins: gWins,
+        losses: g.length - gWins,
+        winRate: g.length > 0 ? parseFloat(((gWins / g.length) * 100).toFixed(1)) : null,
+        avgValidation: g.length > 0 ? Math.round(g.reduce((s, l) => s + l.validation_score, 0) / g.length) : null,
+        avgRisk: g.length > 0 ? Math.round(g.reduce((s, l) => s + l.risk_score, 0) / g.length) : null,
+      };
+    });
+
+    // Per parlay grade
+    const parlayGrades = (["Elite", "Strong", "Moderate", "Weak", "Reject"] as const).map(grade => {
+      const g = legs.filter(l => l.parlay_grade === grade);
+      const gWins = g.filter(l => l.won).length;
+      return {
+        grade,
+        count: g.length,
+        wins: gWins,
+        losses: g.length - gWins,
+        winRate: g.length > 0 ? parseFloat(((gWins / g.length) * 100).toFixed(1)) : null,
+      };
+    });
+
+    // Before vs after REMOVE filter
+    const kept = legs.filter(l => l.decision !== "REMOVE");
+    const removed = legs.filter(l => l.decision === "REMOVE");
+    const keptWins = kept.filter(l => l.won).length;
+    const removedWins = removed.filter(l => l.won).length;
+    const filteredWinRate = kept.length > 0 ? parseFloat(((keptWins / kept.length) * 100).toFixed(1)) : null;
+    const removedWinRate = removed.length > 0 ? parseFloat(((removedWins / removed.length) * 100).toFixed(1)) : null;
+    const keepTier = decisionTiers.find(t => t.decision === "KEEP");
+    const removeTier = decisionTiers.find(t => t.decision === "REMOVE");
+    const keepVsRemoveSeparation =
+      keepTier?.winRate != null && removeTier?.winRate != null
+        ? parseFloat((keepTier.winRate - removeTier.winRate).toFixed(1))
+        : null;
+
+    // REMOVE-filter loss-capture rate: what fraction of losses are REMOVE decisions?
+    const losses = legs.filter(l => !l.won);
+    const removedLosses = removed.filter(l => !l.won);
+    const lossCaptureRate = losses.length > 0 ? parseFloat(((removedLosses.length / losses.length) * 100).toFixed(1)) : null;
+    const falseRemovalRate = removed.length > 0 ? parseFloat(((removedWins / removed.length) * 100).toFixed(1)) : null;
+
+    // Backfill vs live split
+    const backfillCount = legs.filter(l => l.source === "backfill").length;
+    const liveCount = legs.filter(l => l.source !== "backfill").length;
+
+    res.json({
+      summary: {
+        totalLegs: total,
+        backfillLegs: backfillCount,
+        liveLegs: liveCount,
+        overallWinRate,
+        filteredWinRate,
+        removedWinRate,
+        removeFilterImprovement: filteredWinRate != null ? parseFloat((filteredWinRate - overallWinRate).toFixed(1)) : null,
+        keepVsRemoveSeparation,
+        lossCaptureRate,
+        falseRemovalRate,
+        keepCount: keepTier?.count ?? 0,
+        borderlineCount: decisionTiers.find(t => t.decision === "BORDERLINE")?.count ?? 0,
+        removeCount: removeTier?.count ?? 0,
+      },
+      buckets,
+      decisionTiers,
+      parlayGrades,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Calibration query failed" });
+  }
+});
+
+// ── POST /admin/parlay/backfill ────────────────────────────────────────────────
+//
+// Triggers the historical parlay backfill in the background (responds immediately).
+// Scores graded evaluation_predictions through the Parlay Builder engine and
+// inserts results into parlay_leg_outcomes with temporal isolation (asOfDate).
+
+let parlayBackfillRunning = false;
+let parlayBackfillLastResult: { inserted: number; skipped: number; errors: number; finishedAt: string } | null = null;
+
+router.post("/admin/parlay/backfill", requireAdmin, (req, res): void => {
+  if (parlayBackfillRunning) {
+    res.json({ started: false, message: "Backfill already running" });
+    return;
+  }
+
+  const limit  = typeof req.body?.limit  === "number" ? req.body.limit  : 500;
+  const minDate = typeof req.body?.minDate === "string" ? req.body.minDate : "2022-01-01";
+
+  parlayBackfillRunning = true;
+  res.json({ started: true, limit, minDate });
+
+  // Run fully in the background — import lazily to avoid circular deps
+  void (async () => {
+    const { computeBuilderScore } = await import("../services/parlayBuilder/builderScoringService.js");
+    const client = await pool.connect();
+    let inserted = 0, skipped = 0, errors = 0;
+    try {
+      const { rows: existing } = await client.query<{ backfill_match_id: number }>(
+        `SELECT backfill_match_id FROM parlay_leg_outcomes WHERE backfill_match_id IS NOT NULL`
+      );
+      const alreadyDone = new Set(existing.map(r => r.backfill_match_id));
+
+      const { rows: candidates } = await client.query(`
+        SELECT id, player1_id, player2_id, player1_name, player2_name,
+               actual_winner_id, scheduled_start_at, surface, tournament_name,
+               odds_player1_decimal, odds_player2_decimal,
+               calibrated_probability
+        FROM evaluation_predictions
+        WHERE actual_winner_id IS NOT NULL
+          AND player1_id IS NOT NULL AND player2_id IS NOT NULL
+          AND player1_name IS NOT NULL AND player2_name IS NOT NULL
+          AND scheduled_start_at IS NOT NULL
+          AND player1_name NOT LIKE 'wf-player%'
+          AND scheduled_start_at >= $1
+          AND calibrated_probability IS NOT NULL
+          AND calibrated_probability != 50
+        ORDER BY scheduled_start_at ASC
+        LIMIT $2
+      `, [minDate, limit + alreadyDone.size]);
+
+      const toProcess = candidates.filter((r: { id: number }) => !alreadyDone.has(r.id)).slice(0, limit);
+      logger.info({ total: toProcess.length }, "Parlay backfill started (using model-predicted winner as selected player)");
+
+      for (const match of toProcess) {
+        const asOfDate = new Date(match.scheduled_start_at);
+        try {
+          const { rows: dup } = await client.query(
+            `SELECT 1 FROM parlay_leg_outcomes WHERE backfill_match_id = $1 LIMIT 1`, [match.id]
+          );
+          if (dup.length > 0) { skipped++; continue; }
+
+          // Use the model's predicted winner as the selected player (calibrated_probability > 50 → player1 wins).
+          // This gives a realistic baseline: the calibration test is "does our KEEP filter help
+          // when the user backs the model's recommended pick?"
+          const modelPicksP1 = (match.calibrated_probability ?? 50) > 50;
+          const selectedPlayerId   = modelPicksP1 ? match.player1_id   : match.player2_id;
+          const selectedPlayerName = modelPicksP1 ? match.player1_name : match.player2_name;
+          const opponentId         = modelPicksP1 ? match.player2_id   : match.player1_id;
+          const opponentName       = modelPicksP1 ? match.player2_name : match.player1_name;
+          const marketOdds         = modelPicksP1 ? (match.odds_player1_decimal ?? null)
+                                                  : (match.odds_player2_decimal ?? null);
+
+          const result = await computeBuilderScore({
+            selectedPlayerId, selectedPlayerName,
+            opponentId, opponentName,
+            surface: match.surface, tournamentName: match.tournament_name,
+            marketOdds,
+            asOfDate,
+          });
+
+          await client.query(
+            `INSERT INTO parlay_leg_outcomes
+               (session_id, selected_player_id, opponent_id, selected_player_name, opponent_name,
+                tournament_name, surface, validation_score, risk_score, reliability_grade,
+                parlay_grade, decision, data_coverage, source_agreement, factor_scores,
+                market_odds, actual_winner_id, resolved_at, source, backfill_match_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,'backfill',$19)`,
+            [null, selectedPlayerId, opponentId, selectedPlayerName, opponentName,
+             match.tournament_name ?? null, match.surface ?? null,
+             result.validationScore, result.riskScore, result.reliabilityGrade,
+             result.parlayGrade, result.decision, result.dataCoverage, result.sourceAgreement,
+             JSON.stringify(result.factorScores), marketOdds,
+             match.actual_winner_id, asOfDate, match.id]
+          );
+          inserted++;
+        } catch (err) {
+          logger.warn({ matchId: match.id, err }, "Parlay backfill row error");
+          errors++;
+        }
+      }
+    } finally {
+      client.release();
+      parlayBackfillRunning = false;
+      parlayBackfillLastResult = { inserted, skipped, errors, finishedAt: new Date().toISOString() };
+      logger.info(parlayBackfillLastResult, "Parlay backfill complete");
+    }
+  })();
+});
+
+router.get("/admin/parlay/backfill/status", requireAdmin, (_req, res): void => {
+  res.json({ running: parlayBackfillRunning, lastResult: parlayBackfillLastResult });
 });
 
 // ── Screenshot Import Service — Health & Cache endpoints ─────────────────────

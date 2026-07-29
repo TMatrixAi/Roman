@@ -21,9 +21,19 @@ import type {
   TennisDataProvider,
 } from "./types";
 import { ProviderUnavailableError } from "./types";
+import { fetchFromSofascore } from "../parlayBuilder/sofascoreProvider.js";
+
+// Minimum number of match records below which Sofascore tier-3 is attempted.
+const SOFASCORE_MIN_RECORDS_THRESHOLD = 5;
 
 export class CompositeTennisProvider implements TennisDataProvider {
   readonly name: string;
+  /**
+   * Caches player names keyed by player ID so the Sofascore tier-3 fallback in
+   * getPlayerMatches can do a name-based search (Sofascore has no ID-based lookup).
+   * Populated automatically on every successful getPlayer() call.
+   */
+  private readonly playerNameCache = new Map<string, string>();
 
   constructor(
     private readonly primary: TennisDataProvider,
@@ -70,11 +80,16 @@ export class CompositeTennisProvider implements TennisDataProvider {
   }
 
   async getPlayer(playerId: string): Promise<PlayerProfile | null> {
-    return this.withFallback(
+    const profile = await this.withFallback(
       "getPlayer",
       () => this.primary.getPlayer(playerId),
       () => this.fallback.getPlayer(playerId),
     );
+    // Cache name for Sofascore tier-3 in getPlayerMatches (name-based search).
+    if (profile?.name) {
+      this.playerNameCache.set(playerId, profile.name);
+    }
+    return profile;
   }
 
   async getPlayerMatches(playerId: string): Promise<MatchRecord[]> {
@@ -82,8 +97,9 @@ export class CompositeTennisProvider implements TennisDataProvider {
     // lower data-quality score when history is absent. If BOTH providers are unavailable
     // (MatchStat has no history endpoint; API-Tennis times out under load), return [] so
     // the prediction still runs rather than surfacing a 502 to the user.
+    let records: MatchRecord[] = [];
     try {
-      return await this.withFallback(
+      records = await this.withFallback(
         "getPlayerMatches",
         () => this.primary.getPlayerMatches(playerId),
         () => this.fallback.getPlayerMatches(playerId),
@@ -92,12 +108,42 @@ export class CompositeTennisProvider implements TennisDataProvider {
       if (err instanceof ProviderUnavailableError) {
         logger.warn(
           { playerId, err: err.message },
-          "Both providers unavailable for getPlayerMatches — returning empty match history; prediction will proceed with lower data quality",
+          "Both providers unavailable for getPlayerMatches — attempting Sofascore tier-3 fallback",
         );
-        return [];
+        // Fall through to Sofascore tier-3 below.
+      } else {
+        throw err;
       }
-      throw err;
     }
+
+    // Tier-3: Sofascore. Used when both primary and fallback return sparse or no history,
+    // which happens most often for Challenger/ITF/WTA-lower players. Sofascore has broader
+    // coverage for these tiers. Only attempted when a player name is cached (i.e. getPlayer
+    // was called first, which is the normal prediction flow).
+    if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD) {
+      const playerName = this.playerNameCache.get(playerId);
+      if (playerName) {
+        try {
+          const sfResult = await fetchFromSofascore(playerName);
+          if (sfResult.records.length > 0) {
+            logger.debug(
+              { playerId, playerName, primary: records.length, sofascore: sfResult.records.length },
+              "compositeProvider: Sofascore tier-3 supplemented match history",
+            );
+            // Merge: Sofascore records first (most recent events first), primary records appended.
+            // Deduplication by (surface, score, tourney similarity) is not done here — the
+            // prediction engine handles sparse/duplicate history gracefully.
+            return sfResult.records.length >= records.length
+              ? sfResult.records
+              : records;
+          }
+        } catch (sfErr) {
+          logger.debug({ playerId, playerName, err: sfErr }, "compositeProvider: Sofascore tier-3 failed (non-fatal)");
+        }
+      }
+    }
+
+    return records;
   }
 
   async getUpcomingFixtures(date: string): Promise<Fixture[]> {

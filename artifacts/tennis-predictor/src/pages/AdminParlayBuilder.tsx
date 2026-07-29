@@ -9,8 +9,12 @@ import {
   Layers, ImagePlus, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
   ChevronDown, ChevronUp, Trash2, RotateCcw, Search, Play, FlaskConical,
   Shield, ShieldAlert, ShieldOff, TrendingUp, Activity, BarChart2, ArrowLeftRight,
-  Wifi, WifiOff, Server,
+  Wifi, WifiOff, Server, Database,
 } from "lucide-react"
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+  Cell, ResponsiveContainer, ComposedChart, Line, Legend,
+} from "recharts"
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
 const api = (path: string) => `${BASE}${path}`
@@ -104,6 +108,7 @@ interface BuilderLegResult {
   tournamentName: string | null; surface: string | null
   validationScore: number       // 0–100
   riskScore: number             // 0–100
+  matchupCloseness?: number     // 0–100, higher = more evenly matched; drives risk floor
   reliabilityGrade: "A" | "B" | "C" | "D" | "F"
   parlayGrade: "Elite" | "Strong" | "Moderate" | "Weak" | "Reject"
   removalProbability: number    // 0–100
@@ -557,6 +562,15 @@ function ValidationLegCard({ leg, isAutoSelected }: {
           ) : (
             <span className="text-muted-foreground">Agreement: <span className="text-warning/80">No data</span></span>
           )}
+          {leg.matchupCloseness != null && (
+            <span className="text-muted-foreground">
+              Closeness:{" "}
+              <span className={`font-bold ${leg.matchupCloseness >= 80 ? "text-destructive" : leg.matchupCloseness >= 65 ? "text-warning" : "text-success"}`}>
+                {leg.matchupCloseness}
+              </span>
+              {leg.matchupCloseness >= 80 && <span className="text-destructive/70 ml-0.5">⚑</span>}
+            </span>
+          )}
           {leg.surface && <span className="text-muted-foreground">Surface: <span className="text-foreground">{leg.surface}</span></span>}
         </div>
 
@@ -869,10 +883,352 @@ interface ParlayDraftLeg {
   surface: string | null
 }
 
+// ── Calibration Dashboard ─────────────────────────────────────────────────────
+
+interface CalibrationBucket { range: string; lo: number; hi: number; count: number; wins: number; losses: number; winRate: number | null; expected: number }
+interface DecisionTier { decision: string; count: number; wins: number; losses: number; winRate: number | null; avgValidation: number | null; avgRisk: number | null }
+interface ParlayGradeRow { grade: string; count: number; wins: number; winRate: number | null }
+interface CalibrationSummary {
+  totalLegs: number; backfillLegs: number; liveLegs: number
+  overallWinRate: number; filteredWinRate: number | null; removedWinRate: number | null
+  removeFilterImprovement: number | null; keepVsRemoveSeparation: number | null
+  lossCaptureRate: number | null; falseRemovalRate: number | null
+  keepCount: number; borderlineCount: number; removeCount: number
+}
+interface CalibrationData {
+  summary: CalibrationSummary | null
+  buckets: CalibrationBucket[]
+  decisionTiers: DecisionTier[]
+  parlayGrades: ParlayGradeRow[]
+  message?: string
+}
+
+type PipelineStatus = {
+  lastRunAt: string | null
+  hoursSinceLastRun: number | null
+  quietWindowHours: number
+  pipelineQuiet: boolean
+  gradedCount: number
+  totalCount: number
+}
+
+function CalibrationDashboard() {
+  const [data, setData] = useState<CalibrationData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [backfillStatus, setBackfillStatus] = useState<{ running: boolean; lastResult: { inserted: number; skipped: number; errors: number; finishedAt: string } | null } | null>(null)
+  const [triggering, setTriggering] = useState(false)
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null)
+  const { toast } = useToast()
+
+  const fetchCalibration = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await fetch(api("/api/admin/parlay/calibration"), { credentials: "include" })
+      if (!r.ok) throw new Error(await r.text())
+      setData(await r.json())
+    } catch (e) {
+      toast({ title: "Failed to load calibration", description: String(e), variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  const fetchBackfillStatus = useCallback(async () => {
+    try {
+      const r = await fetch(api("/api/admin/parlay/backfill/status"), { credentials: "include" })
+      if (r.ok) setBackfillStatus(await r.json())
+    } catch { /* silent */ }
+  }, [])
+
+  const fetchPipelineStatus = useCallback(async () => {
+    try {
+      const r = await fetch(api("/api/evaluation/paper-trading/status"), { credentials: "include" })
+      if (r.ok) setPipelineStatus(await r.json())
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => {
+    void fetchCalibration()
+    void fetchBackfillStatus()
+    void fetchPipelineStatus()
+  }, [fetchCalibration, fetchBackfillStatus, fetchPipelineStatus])
+
+  // Poll while backfill is running
+  useEffect(() => {
+    if (!backfillStatus?.running) return
+    const id = setInterval(() => { void fetchBackfillStatus() }, 4000)
+    return () => clearInterval(id)
+  }, [backfillStatus?.running, fetchBackfillStatus])
+
+  // Refresh calibration data when backfill finishes
+  const prevRunning = useRef(false)
+  useEffect(() => {
+    if (prevRunning.current && backfillStatus && !backfillStatus.running) {
+      void fetchCalibration()
+    }
+    prevRunning.current = backfillStatus?.running ?? false
+  }, [backfillStatus, fetchCalibration])
+
+  const triggerBackfill = async () => {
+    setTriggering(true)
+    try {
+      const r = await fetch(api("/api/admin/parlay/backfill"), {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 1000, minDate: "2022-01-01" }),
+      })
+      const j = await r.json()
+      if (j.started) {
+        toast({ title: "Backfill started", description: "Scoring 1,000 historical matches in the background" })
+        setBackfillStatus({ running: true, lastResult: null })
+      } else {
+        toast({ title: j.message ?? "Already running" })
+      }
+    } catch (e) {
+      toast({ title: "Failed to start backfill", description: String(e), variant: "destructive" })
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const tierColor = (decision: string) =>
+    decision === "KEEP" ? "#22c55e" : decision === "REMOVE" ? "#ef4444" : "#94a3b8"
+
+  const bucketColor = (winRate: number | null, expected: number) => {
+    if (winRate == null) return "#334155"
+    const gap = winRate - expected
+    if (gap > 8) return "#22c55e"
+    if (gap < -8) return "#ef4444"
+    return "#6366f1"
+  }
+
+  if (loading && !data) {
+    return <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono py-12 justify-center"><RefreshCw className="w-4 h-4 animate-spin" /> Loading calibration data…</div>
+  }
+
+  const s = data?.summary
+
+  return (
+    <div className="space-y-5">
+      {/* Paper-trading pipeline status banner (Task #110) */}
+      {pipelineStatus && (
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border text-[11px] font-mono ${
+          pipelineStatus.pipelineQuiet
+            ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+            : "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+        }`}>
+          <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${pipelineStatus.pipelineQuiet ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+          <span>
+            {pipelineStatus.pipelineQuiet
+              ? `⚠ Paper-trading pipeline quiet — last run ${pipelineStatus.hoursSinceLastRun != null ? `${pipelineStatus.hoursSinceLastRun}h ago` : "never"} (alert threshold: >${pipelineStatus.quietWindowHours}h)`
+              : `✓ Paper-trading pipeline active — last run ${pipelineStatus.hoursSinceLastRun}h ago`
+            }
+          </span>
+          <span className="ml-auto text-muted-foreground">
+            {pipelineStatus.gradedCount.toLocaleString()} graded / {pipelineStatus.totalCount.toLocaleString()} total legs
+          </span>
+        </div>
+      )}
+
+      {/* Header + controls */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-display font-semibold text-base">Calibration Report</h2>
+          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+            {s ? `${s.totalLegs.toLocaleString()} resolved legs (${s.backfillLegs} backfill · ${s.liveLegs} live)` : "No data yet — run the historical backfill first"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {backfillStatus?.running && (
+            <span className="flex items-center gap-1.5 text-[11px] font-mono text-amber-400">
+              <RefreshCw className="w-3 h-3 animate-spin" /> Backfill running…
+            </span>
+          )}
+          {backfillStatus?.lastResult && !backfillStatus.running && (
+            <span className="text-[11px] font-mono text-muted-foreground">
+              Last run: +{backfillStatus.lastResult.inserted} rows
+            </span>
+          )}
+          <button onClick={triggerBackfill} disabled={triggering || backfillStatus?.running}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-40">
+            <Database className="w-3.5 h-3.5" />
+            {backfillStatus?.running ? "Running…" : "Run Backfill"}
+          </button>
+          <button onClick={() => { void fetchCalibration(); void fetchBackfillStatus() }}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-40">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {!s ? (
+        <Card className="border-dashed bg-secondary/20">
+          <CardContent className="py-12 text-center space-y-3">
+            <Database className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+            <p className="text-sm font-mono text-muted-foreground">No resolved legs found</p>
+            <p className="text-xs text-muted-foreground/60 font-mono">Run the historical backfill to generate calibration data</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Summary stat cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Overall Win Rate", value: `${s.overallWinRate}%`, sub: `${s.totalLegs} legs` },
+              { label: "KEEP Win Rate", value: s.filteredWinRate != null ? `${s.filteredWinRate}%` : "—", sub: `${s.keepCount} KEEP legs` },
+              { label: "REMOVE Win Rate", value: s.removedWinRate != null ? `${s.removedWinRate}%` : "—", sub: `${s.removeCount} removed` },
+              { label: "KEEP–REMOVE Gap", value: s.keepVsRemoveSeparation != null ? `${s.keepVsRemoveSeparation > 0 ? "+" : ""}${s.keepVsRemoveSeparation}pp` : "—",
+                sub: s.keepVsRemoveSeparation != null ? (s.keepVsRemoveSeparation >= 15 ? "✓ Strong separation" : s.keepVsRemoveSeparation >= 5 ? "⚠ Moderate" : "✗ Weak") : "" },
+            ].map(c => (
+              <Card key={c.label} className="bg-secondary/20">
+                <CardContent className="p-3">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">{c.label}</p>
+                  <p className="text-2xl font-display font-bold tabular-nums mt-1">{c.value}</p>
+                  <p className="text-[10px] font-mono text-muted-foreground/70 mt-0.5">{c.sub}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Before/After REMOVE filter row */}
+          <Card className="bg-secondary/20">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Remove Filter Impact</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                <div>
+                  <p className="text-lg font-display font-bold tabular-nums">{s.overallWinRate}%</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">Win rate (all legs)</p>
+                </div>
+                <div>
+                  <p className={`text-lg font-display font-bold tabular-nums ${(s.removeFilterImprovement ?? 0) > 0 ? "text-success" : "text-destructive"}`}>
+                    {s.filteredWinRate ?? "—"}% {s.removeFilterImprovement != null ? `(${s.removeFilterImprovement > 0 ? "+" : ""}${s.removeFilterImprovement}pp)` : ""}
+                  </p>
+                  <p className="text-[10px] font-mono text-muted-foreground">After removing REMOVE legs</p>
+                </div>
+                <div>
+                  <p className="text-lg font-display font-bold tabular-nums">{s.lossCaptureRate ?? "—"}%</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">Losses captured by REMOVE</p>
+                </div>
+                <div>
+                  <p className="text-lg font-display font-bold tabular-nums">{s.falseRemovalRate ?? "—"}%</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">REMOVE rows that won (false removals)</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Validation Score Calibration Chart */}
+          <Card className="bg-secondary/20">
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Validation Score Calibration</p>
+                <p className="text-[10px] font-mono text-muted-foreground/60 mt-0.5">Actual win rate per 10-point score bucket vs expected diagonal. Bars above the line = better than expected.</p>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={data!.buckets} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="range" tick={{ fontSize: 10, fontFamily: "monospace", fill: "#64748b" }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fontFamily: "monospace", fill: "#64748b" }} tickFormatter={v => `${v}%`} />
+                  <Tooltip
+                    contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6, fontSize: 12, fontFamily: "monospace" }}
+                    formatter={(value: number, name: string) => [`${value}%`, name === "winRate" ? "Actual win rate" : name === "expected" ? "Expected (diagonal)" : name]}
+                    labelFormatter={l => `Score bucket: ${l}`}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10, fontFamily: "monospace" }} />
+                  <Bar dataKey="winRate" name="Actual win rate" radius={[2, 2, 0, 0]} maxBarSize={32}>
+                    {data!.buckets.map((b, i) => <Cell key={i} fill={bucketColor(b.winRate, b.expected)} fillOpacity={0.85} />)}
+                  </Bar>
+                  <Line type="monotone" dataKey="expected" name="Expected" stroke="#475569" strokeDasharray="4 2" dot={false} strokeWidth={1.5} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Decision tier table */}
+          <div className="grid md:grid-cols-2 gap-3">
+            <Card className="bg-secondary/20">
+              <CardContent className="p-4 space-y-3">
+                <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Per Decision Tier</p>
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="text-muted-foreground/60 text-[10px]">
+                      <th className="text-left pb-2">Decision</th>
+                      <th className="text-right pb-2">n</th>
+                      <th className="text-right pb-2">Win %</th>
+                      <th className="text-right pb-2">Avg Val</th>
+                      <th className="text-right pb-2">Avg Risk</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data!.decisionTiers.filter(t => t.count > 0).map(t => (
+                      <tr key={t.decision} className="border-t border-border/30">
+                        <td className="py-1.5 pr-2">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ background: tierColor(t.decision) }} />
+                            {t.decision}
+                          </span>
+                        </td>
+                        <td className="text-right text-muted-foreground">{t.count}</td>
+                        <td className="text-right font-bold" style={{ color: tierColor(t.decision) }}>
+                          {t.winRate != null ? `${t.winRate}%` : "—"}
+                        </td>
+                        <td className="text-right text-muted-foreground">{t.avgValidation ?? "—"}</td>
+                        <td className="text-right text-muted-foreground">{t.avgRisk ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <ResponsiveContainer width="100%" height={100}>
+                  <BarChart data={data!.decisionTiers.filter(t => t.count > 0)} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <XAxis dataKey="decision" tick={{ fontSize: 9, fontFamily: "monospace", fill: "#64748b" }} />
+                    <YAxis domain={[0, 100]} hide />
+                    <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", fontSize: 11, fontFamily: "monospace" }} formatter={(v: number) => [`${v}%`, "Win rate"]} />
+                    <Bar dataKey="winRate" radius={[2, 2, 0, 0]} maxBarSize={36}>
+                      {data!.decisionTiers.filter(t => t.count > 0).map((t, i) => <Cell key={i} fill={tierColor(t.decision)} fillOpacity={0.85} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-secondary/20">
+              <CardContent className="p-4 space-y-3">
+                <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Per Parlay Grade</p>
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="text-muted-foreground/60 text-[10px]">
+                      <th className="text-left pb-2">Grade</th>
+                      <th className="text-right pb-2">n</th>
+                      <th className="text-right pb-2">Wins</th>
+                      <th className="text-right pb-2">Win %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data!.parlayGrades.filter(g => g.count > 0).map(g => (
+                      <tr key={g.grade} className="border-t border-border/30">
+                        <td className="py-1.5 pr-2 font-semibold">{g.grade}</td>
+                        <td className="text-right text-muted-foreground">{g.count}</td>
+                        <td className="text-right text-muted-foreground">{g.wins}</td>
+                        <td className="text-right font-bold">{g.winRate != null ? `${g.winRate}%` : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function AdminParlayBuilder() {
   const { toast } = useToast()
   const search = useSearch()
-  const [mode, setMode] = useState<"live" | "backtest">("live")
+  const [mode, setMode] = useState<"live" | "backtest" | "calibration">("live")
   const resultsRef = useRef<HTMLDivElement>(null)
 
   // Input-phase state
@@ -1202,6 +1558,10 @@ export default function AdminParlayBuilder() {
             className={`px-3 py-1.5 text-xs font-mono border-l border-border transition-colors ${mode === "backtest" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             BACKTEST
           </button>
+          <button onClick={() => setMode("calibration")}
+            className={`px-3 py-1.5 text-xs font-mono border-l border-border transition-colors ${mode === "calibration" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            CALIBRATION
+          </button>
         </div>
       </div>
 
@@ -1210,7 +1570,7 @@ export default function AdminParlayBuilder() {
         <ProviderHealthPanel onClose={() => setShowHealthPanel(false)} />
       )}
 
-      {mode === "backtest" ? <BacktestMode /> : (
+      {mode === "calibration" ? <CalibrationDashboard /> : mode === "backtest" ? <BacktestMode /> : (
         <div className="grid lg:grid-cols-2 gap-5 items-start">
 
           {/* ── Input column ── always first on desktop; on mobile goes below results when results exist */}
