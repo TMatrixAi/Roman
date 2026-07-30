@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
-import { useGetMyPaymentsStatus } from "@workspace/api-client-react"
+import { useGetMyPaymentsStatus, getMyPaymentsStatusQueryKey } from "@workspace/api-client-react"
 import { isPaymentsV2Enabled } from "@/lib/paymentsFeatureFlag"
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
@@ -402,7 +402,7 @@ export default function SupportPage() {
   const [loadingTickets, setLoadingTickets] = useState(true)
   const paymentsEnabled = isPaymentsV2Enabled()
   const { data: billing } = useGetMyPaymentsStatus({
-    query: { enabled: paymentsEnabled },
+    query: { queryKey: getMyPaymentsStatusQueryKey(), enabled: paymentsEnabled },
   })
 
   const subscriptionPlan = (() => {

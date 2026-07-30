@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { type ReactElement, useState, useCallback } from "react"
 import { useLocation } from "wouter"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -109,7 +109,7 @@ function statusBadge(status: string | null, accountStatus: string) {
   if (accountStatus === "banned") return <Badge variant="destructive" className="text-[10px]">BANNED</Badge>
   if (accountStatus === "suspended") return <Badge className="text-[10px] bg-warning/20 text-warning border-warning/30">SUSPENDED</Badge>
   const s = status ?? "none"
-  const map: Record<string, JSX.Element> = {
+  const map: Record<string, ReactElement> = {
     active: <Badge className="text-[10px] bg-success/20 text-success border-success/30">ACTIVE</Badge>,
     trialing: <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">TRIALING</Badge>,
     past_due: <Badge variant="destructive" className="text-[10px]">PAST DUE</Badge>,
@@ -259,7 +259,7 @@ function UserDetailPanel({ userId, onClose }: { userId: string; onClose: () => v
         <Section title="Account Information">
           <Row label="Clerk User ID"><code className="text-xs break-all">{u?.clerkUserId}</code></Row>
           <Row label="Stripe Customer"><code className="text-xs">{fmt(account?.stripeCustomerId)}</code>
-            {account?.stripeCustomerId && (
+            {!!account?.stripeCustomerId && (
               <a href={`https://dashboard.stripe.com/customers/${account.stripeCustomerId}`} target="_blank" rel="noreferrer" className="ml-1 text-primary"><ExternalLink className="inline w-3 h-3" /></a>
             )}
           </Row>
@@ -392,7 +392,7 @@ function UserDetailPanel({ userId, onClose }: { userId: string; onClose: () => v
               </Button>
             ) : null}
 
-            {account?.stripeSubscriptionId && (
+            {!!account?.stripeSubscriptionId && (
               <Button size="sm" variant="destructive" className="font-mono gap-1.5 text-xs"
                 onClick={() => confirm_({
                   title: "Cancel Immediately",
@@ -480,7 +480,7 @@ function UserDetailPanel({ userId, onClose }: { userId: string; onClose: () => v
           </div>
 
           {/* Refund */}
-          {account?.stripeCustomerId && (
+          {!!account?.stripeCustomerId && (
             <div className="mt-3 pt-3 border-t border-border/40">
               <p className="text-[10px] font-mono font-bold text-muted-foreground mb-2">INITIATE REFUND</p>
               <div className="flex gap-2 items-center">
@@ -503,7 +503,7 @@ function UserDetailPanel({ userId, onClose }: { userId: string; onClose: () => v
             </div>
           )}
 
-          {account?.stripeCustomerId && (
+          {!!account?.stripeCustomerId && (
             <div className="mt-3">
               <a href={`https://dashboard.stripe.com/customers/${account.stripeCustomerId}`} target="_blank" rel="noreferrer">
                 <Button size="sm" variant="outline" className="font-mono gap-1.5 text-xs">
@@ -634,7 +634,7 @@ export default function AdminUsersPage() {
     <div className="space-y-5 pb-16">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="font-mono gap-1.5 shrink-0">
+        <Button variant="ghost" size="sm" onClick={() => window.history.back()} className="font-mono gap-1.5 shrink-0">
           <ChevronLeft className="w-4 h-4" /> Back
         </Button>
         <div className="flex-1 min-w-0">

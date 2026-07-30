@@ -3,7 +3,7 @@ import { useLocation } from "wouter"
 import {
   recognizeMatchupScreenshot,
   type ScreenshotMatchupResult,
-  type ScreenshotMatchupEntry,
+  type ScreenshotMatchupInput,
   type Surface,
   type TournamentLevel,
   type MatchFormat,
@@ -42,11 +42,24 @@ interface ParlayDraftLeg {
 }
 
 // ---------------------------------------------------------------------------
-// Extended result type — the backend returns these alongside the standard fields
+// Extended result type — the backend returns these alongside the standard fields.
+// from-text-names returns a bulk { matchups: [...] } wrapper; from-screenshot
+// returns a single ScreenshotMatchupResult (no matchups array).
+// ScreenshotMatchupEntry was renamed to ScreenshotMatchupInput in the generated
+// schema; we keep a local alias here to represent one entry in a bulk response.
 // ---------------------------------------------------------------------------
+type ScreenshotMatchupEntry = ScreenshotMatchupInput & {
+  player1: ScreenshotMatchupResult["player1"]
+  player2: ScreenshotMatchupResult["player2"]
+  event: ScreenshotMatchupResult["event"]
+  warnings: ScreenshotMatchupResult["warnings"]
+  resolved?: boolean
+}
 type ScreenshotResultExtended = ScreenshotMatchupResult & {
   debugLog?: string[]
   rawText?: string
+  /** Present when the endpoint returns multiple matchups (e.g. from-text-names). */
+  matchups?: ScreenshotMatchupEntry[]
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +174,7 @@ function needsPredicting(item: BatchItem): boolean {
   return isReady(item) && item.predictStatus !== "success"
 }
 
-function entryToResult(m: ScreenshotMatchupEntry): ScreenshotMatchupResult {
+function entryToResult(m: Pick<ScreenshotMatchupResult, "player1" | "player2" | "event" | "warnings">): ScreenshotMatchupResult {
   return { player1: m.player1, player2: m.player2, event: m.event, warnings: m.warnings }
 }
 
@@ -405,8 +418,9 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
         console.log(`[SCREENSHOT] [5/13] Sending OCR request — base64 length=${imageBase64.length}`)
 
         const rawResult = await recognizeMatchupScreenshot({ imageBase64 }) as ScreenshotResultExtended
-        const result = rawResult as ScreenshotMatchupResult
         const { debugLog, rawText } = rawResult
+        // Use rawResult (which carries the extended matchups field) rather than re-casting.
+        const result = rawResult
 
         console.log(`[SCREENSHOT] [8/13] OCR response received — matchups=${result.matchups?.length ?? 0} warnings=${result.warnings.length}`)
         if (debugLog) console.log(`[SCREENSHOT] Pipeline log:\n${debugLog.join("\n")}`)

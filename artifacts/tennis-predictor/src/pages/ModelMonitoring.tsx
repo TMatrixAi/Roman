@@ -60,7 +60,7 @@ interface MonitoringDashboard {
   byAgreement: AgreementRow[]; byUpsetRisk: UpsetRiskRow[]; byRecommendation: RecommendationRow[]
   dataQuality: DataQuality
   improvements: ModelImprovement[]; versionHistory: ModelVersion[]
-  tier?: "free" | "pro" | "elite"
+  tier?: "free" | "pro" | "pro_annual" | "elite" | "elite_annual" | "team"
 }
 interface TrendPoint { date: string; count: number; accuracy: number | null }
 
@@ -423,9 +423,11 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
               fontFamily: "monospace",
               fontSize: 11,
             }}
-            formatter={(value: number | null, name: string, item: { payload?: { n?: number } }) => {
-              const n = item?.payload?.n ?? 0
-              return value !== null ? [`${value.toFixed(1)}% (n=${n})`, name] : ["—", name]
+            formatter={(value, name, item) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const n = (item as any)?.payload?.n ?? 0
+              const v = typeof value === "number" ? value : null
+              return v !== null ? [`${v.toFixed(1)}% (n=${n})`, name] : ["—", name]
             }}
             labelFormatter={(label: string) => `Band: ${label}`}
           />
