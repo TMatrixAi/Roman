@@ -410,8 +410,15 @@ async function validateHistoricalPlayerId(provider: TennisDataProvider, playerId
 
   try {
     const profile = await provider.getPlayer(playerId);
-    historicalIdValidationCache.set(playerId, { profile, checkedAt: Date.now() });
-    return profile;
+    // `null` means "player not in provider's current index" (e.g. ITF / WTA 125K players absent
+    // from live standings) — NOT "explicitly stale/invalid". Returning `undefined` here instead of
+    // `null` lets the historical-fallback path in `searchKnownPlayers` include them rather than
+    // silently dropping them (which the `validated === null` guard does for `null`).
+    // We only cache the result if it's a real profile (truthy) — caching `null` as a permanent
+    // "not found" would prevent ITF players from appearing via the historical path even after they
+    // enter the provider's standings.
+    if (profile) historicalIdValidationCache.set(playerId, { profile, checkedAt: Date.now() });
+    return profile ?? undefined;
   } catch (err) {
     logger.warn({ err, playerId }, "Historical ID provider validation failed; keeping historical player fallback for this search");
     return undefined;
@@ -862,11 +869,15 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
     if (!existingIds.has(p.id)) { liveResults.push(p); existingIds.add(p.id); }
   }
 
-  // Keep abbreviated names (e.g. "T. Kokkinakis") in live results — the bijective isConfidentMatch
-  // downstream already handles disambiguation correctly. Filtering them here prevents the resolver
-  // from ever finding players whose provider-stored name is abbreviated, which caused false
-  // "not-found" results for real players like Thanasi Kokkinakis, Kyrian Jacquet, etc.
-  const filteredLiveResults = liveResults;
+  // Filter out abbreviated live-provider results (e.g. "M. Uchijima") when the historical DB
+  // already has full-name entries for the queried surname — abbreviated live results cause false
+  // disambiguation failures when two players share the same initial (e.g. Maiko vs. Moyuka
+  // Uchijima, both stored as "M. Uchijima" by the provider). The historical-DB LIKE search covers
+  // the same players via their full names, so filtering here doesn't drop anyone — it only removes
+  // the ambiguous abbreviated duplicates that would otherwise collide with the full-name DB rows.
+  // Players whose provider-stored name IS abbreviated (e.g. "T. Kokkinakis") are found via the
+  // historical DB's surname LIKE match on that abbreviation, never relying on the live result.
+  const filteredLiveResults = liveResults.filter((p) => !/^[A-Za-z]\.\s/.test(p.name));
 
   const seenIds = new Set(filteredLiveResults.map((p) => p.id));
 

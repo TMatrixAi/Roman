@@ -1,17 +1,26 @@
 /**
- * Sackmann historical backfill (Task #107 Phase 1).
+ * Sackmann historical backfill.
  *
  * Downloads Jeff Sackmann's tennis_atp / tennis_wta GitHub CSVs and inserts their match records
  * into historical_matches via the existing backfill infrastructure (so feature snapshots, Elo
  * state, and idempotency all work exactly as they do for API-Tennis data).
  *
- * Sources:
+ * Sources (main-draw):
  *  ATP: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_YYYY.csv
  *  WTA: https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_matches_YYYY.csv
  *
- * External calls made per run: one HTTP GET per CSV file (year × tour). No auth required.
- * All CSV data is fetched up-front and cached in memory for the duration of the run; the
- * provider's `getCompletedMatchesByDateRange` simply filters the in-memory array, so the
+ * Sources (Challenger / qualifying / ITF — enabled by default via includeChallengerItf option):
+ *  ATP: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_qual_chall_YYYY.csv
+ *  WTA: https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_matches_qual_itf_YYYY.csv
+ *
+ * These supplementary files share the same schema as the main-draw files so the same parser
+ * applies. The ATP file contains ATP Challenger events AND qualifying-round matches at main-tour
+ * events (tagged by the parent tournament's level code). The WTA file contains WTA ITF events
+ * AND qualifying rounds.
+ *
+ * External calls made per run: one HTTP GET per CSV file (year × tour × file variant). No auth
+ * required. All CSV data is fetched up-front and cached in memory for the duration of the run;
+ * the provider's `getCompletedMatchesByDateRange` simply filters the in-memory array, so the
  * existing 5-day-chunk pattern in runHistoricalBackfill stays fully intact.
  */
 import { runHistoricalBackfill } from "./backfill";
@@ -108,11 +117,17 @@ function mapWtaLevel(level: string): TournamentLevel | null {
   switch (level) {
     case "G":  return "GrandSlam";
     case "P":
-    case "PM": return "WTA1000";   // Premier / Premier Mandatory
-    case "I":  return "WTA500";    // International
-    case "F":  return "WTA1000";   // WTA Finals
+    case "PM": return "WTA1000";    // Premier / Premier Mandatory
+    case "I":  return "WTA500";     // International (main-draw file usage)
+    case "F":  return "WTA1000";    // WTA Finals
     case "C":  return "Challenger";
     case "S":  return "ITF";
+    // Codes that appear in the wta_matches_qual_itf files:
+    // "ITF" prefix levels (e.g. "ITF", "Q") — stored as the tournament type in those files.
+    // Map them to ITF; any unrecognised code returns null but the match is still imported.
+    case "Q":  return "ITF";        // Qualifying events / ITF circuits in WTA qual file
+    case "2":  return "ITF";        // ITF W15/W25 level codes used in older qual files
+    case "3":  return "ITF";        // ITF W40/W60
     default:   return null;
   }
 }
@@ -262,11 +277,24 @@ export interface SackmannBackfillOptions {
   endYear?: number;
   /** Which tours to include. Defaults to both. */
   tours?: Array<"atp" | "wta">;
+  /**
+   * Also fetch Challenger/qualifying (ATP: atp_matches_qual_chall_YYYY.csv) and
+   * ITF/qualifying (WTA: wta_matches_qual_itf_YYYY.csv) files from the same repos.
+   *
+   * These files contain match history for Challenger-level and ITF players who rarely appear
+   * in the main-draw file — the exact population that drives "Limited/Poor Data Quality" and
+   * "Extreme Upset Risk" flags. Defaults to `true`.
+   */
+  includeChallengerItf?: boolean;
 }
 
 export interface SackmannBackfillSummary {
   atpYearsLoaded: number;
   wtaYearsLoaded: number;
+  /** Years successfully loaded from atp_matches_qual_chall_YYYY.csv (0 if includeChallengerItf was false). */
+  atpChallengerYearsLoaded: number;
+  /** Years successfully loaded from wta_matches_qual_itf_YYYY.csv (0 if includeChallengerItf was false). */
+  wtaItfYearsLoaded: number;
   fixturesLoaded: number;
   backfill: BackfillSummary;
 }
@@ -279,53 +307,103 @@ export interface SackmannBackfillSummary {
 export async function runSackmannBackfill(
   options: SackmannBackfillOptions = {},
 ): Promise<SackmannBackfillSummary> {
-  const currentYear = new Date().getFullYear();
-  const startYear   = options.startYear ?? 2010;
-  const endYear     = options.endYear   ?? currentYear;
-  const tours       = options.tours     ?? ["atp", "wta"];
+  const currentYear       = new Date().getFullYear();
+  const startYear         = options.startYear          ?? 2010;
+  const endYear           = options.endYear            ?? currentYear;
+  const tours             = options.tours              ?? ["atp", "wta"];
+  const includeChallengerItf = options.includeChallengerItf ?? true;
 
   if (startYear > endYear) throw new Error(`startYear (${startYear}) > endYear (${endYear})`);
 
   const allFixtures: HistoricalFixture[] = [];
-  let atpYearsLoaded = 0;
-  let wtaYearsLoaded = 0;
+  let atpYearsLoaded          = 0;
+  let wtaYearsLoaded          = 0;
+  let atpChallengerYearsLoaded = 0;
+  let wtaItfYearsLoaded        = 0;
 
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
 
-  // Fetch all CSV files in parallel (capped to avoid hammering GitHub)
-  const concurrency = 5;
+  /**
+   * Fetches one CSV URL, maps rows to HistoricalFixture[], and appends to allFixtures.
+   * Returns the number of valid fixtures loaded (0 on 404 or error).
+   */
+  async function fetchAndAppend(url: string, tourLabel: "ATP" | "WTA", context: string): Promise<number> {
+    try {
+      const rows = await fetchCsvYear(url);
+      if (rows.length === 0) return 0;
+      const fixtures = rows
+        .map((r) => rowToFixture(r, tourLabel))
+        .filter((f): f is HistoricalFixture => f !== null);
+      allFixtures.push(...fixtures);
+      logger.info({ url: context, rows: rows.length, fixtures: fixtures.length }, "sackmannBackfill: file loaded");
+      return fixtures.length;
+    } catch (err) {
+      logger.warn({ err, url: context }, "sackmannBackfill: failed to load file (non-fatal)");
+      return 0;
+    }
+  }
+
+  // Fetch all CSV files in parallel (capped to avoid hammering GitHub).
+  // For each (year, tour) pair we fetch:
+  //   1. The main-draw file: atp_matches_YYYY.csv / wta_matches_YYYY.csv
+  //   2. (if includeChallengerItf) The supplementary file:
+  //        ATP: atp_matches_qual_chall_YYYY.csv — ATP Challengers + qualifying rounds
+  //        WTA: wta_matches_qual_itf_YYYY.csv   — WTA ITF events + qualifying rounds
+  const concurrency = 4; // slightly lower to be courteous to GitHub with 2× the file requests
   for (let i = 0; i < years.length; i += concurrency) {
     const batch = years.slice(i, i + concurrency);
     await Promise.all(
       batch.flatMap((year) =>
-        tours.map(async (tour) => {
-          const base = tour === "atp" ? ATP_BASE_URL : WTA_BASE_URL;
-          const prefix = tour === "atp" ? "atp" : "wta";
-          const url  = `${base}/${prefix}_matches_${year}.csv`;
-          try {
-            const rows = await fetchCsvYear(url);
-            if (rows.length === 0) return;
-            const fixtures = rows
-              .map((r) => rowToFixture(r, tour === "atp" ? "ATP" : "WTA"))
-              .filter((f): f is HistoricalFixture => f !== null);
-            allFixtures.push(...fixtures);
-            if (tour === "atp") atpYearsLoaded++;
-            else wtaYearsLoaded++;
-            logger.info({ tour, year, rows: rows.length, fixtures: fixtures.length }, "sackmannBackfill: year loaded");
-          } catch (err) {
-            logger.warn({ err, tour, year, url }, "sackmannBackfill: failed to load year (non-fatal)");
+        tours.flatMap((tour) => {
+          const base     = tour === "atp" ? ATP_BASE_URL : WTA_BASE_URL;
+          const prefix   = tour === "atp" ? "atp" : "wta";
+          const tourLabel: "ATP" | "WTA" = tour === "atp" ? "ATP" : "WTA";
+
+          const tasks: Promise<void>[] = [];
+
+          // ── Main-draw file ───────────────────────────────────────────────
+          const mainUrl = `${base}/${prefix}_matches_${year}.csv`;
+          tasks.push(
+            fetchAndAppend(mainUrl, tourLabel, `${prefix}_matches_${year}`).then((count) => {
+              if (count > 0) {
+                if (tour === "atp") atpYearsLoaded++;
+                else wtaYearsLoaded++;
+              }
+            }),
+          );
+
+          // ── Challenger / ITF supplementary file ─────────────────────────
+          if (includeChallengerItf) {
+            const chalUrl = tour === "atp"
+              ? `${base}/${prefix}_matches_qual_chall_${year}.csv`
+              : `${base}/${prefix}_matches_qual_itf_${year}.csv`;
+            const chalLabel = tour === "atp"
+              ? `${prefix}_matches_qual_chall_${year}`
+              : `${prefix}_matches_qual_itf_${year}`;
+            tasks.push(
+              fetchAndAppend(chalUrl, tourLabel, chalLabel).then((count) => {
+                if (count > 0) {
+                  if (tour === "atp") atpChallengerYearsLoaded++;
+                  else wtaItfYearsLoaded++;
+                }
+              }),
+            );
           }
+
+          return tasks;
         }),
       ),
     );
   }
 
   if (allFixtures.length === 0) {
-    logger.warn({ startYear, endYear, tours }, "sackmannBackfill: no fixtures loaded");
+    logger.warn({ startYear, endYear, tours, includeChallengerItf }, "sackmannBackfill: no fixtures loaded");
     const emptyDate = `${startYear}-01-01`;
     return {
       atpYearsLoaded: 0,
       wtaYearsLoaded: 0,
+      atpChallengerYearsLoaded: 0,
+      wtaItfYearsLoaded: 0,
       fixturesLoaded: 0,
       backfill: {
         dateStart: emptyDate,
@@ -355,7 +433,13 @@ export async function runSackmannBackfill(
   const dateStop  = allFixtures[allFixtures.length - 1].date;
 
   logger.info(
-    { fixturesLoaded: allFixtures.length, atpYearsLoaded, wtaYearsLoaded, dateStart, dateStop },
+    {
+      fixturesLoaded: allFixtures.length,
+      atpYearsLoaded, wtaYearsLoaded,
+      atpChallengerYearsLoaded, wtaItfYearsLoaded,
+      includeChallengerItf,
+      dateStart, dateStop,
+    },
     "sackmannBackfill: all CSVs loaded, starting historical backfill",
   );
 
@@ -373,5 +457,16 @@ export async function runSackmannBackfill(
     },
   );
 
-  return { atpYearsLoaded, wtaYearsLoaded, fixturesLoaded: allFixtures.length, backfill };
+  return { atpYearsLoaded, wtaYearsLoaded, atpChallengerYearsLoaded, wtaItfYearsLoaded, fixturesLoaded: allFixtures.length, backfill };
 }
+
+// ── Test-only named exports ───────────────────────────────────────────────────
+// Not part of the public API. Exported with underscore prefix so call-sites are
+// visibly out-of-module-contract. Used by sackmannBackfillChallengerItf.test.ts
+// to white-box-test the CSV parsing logic without re-implementing it locally.
+export {
+  rowToFixture    as _rowToFixture,
+  mapWtaLevel     as _mapWtaLevel,
+  mapAtpLevel     as _mapAtpLevel,
+  intOrNull       as _intOrNull,
+};

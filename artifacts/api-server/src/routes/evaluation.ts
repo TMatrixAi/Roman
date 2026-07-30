@@ -594,20 +594,28 @@ router.post("/evaluation/historical-backfill/run-cycle", async (_req, res): Prom
  * the live-provider backfill. Runs in the background; outcome written to job_runs.
  *
  * POST /evaluation/sackmann-backfill/run
- * Body (all optional): { startYear?: number, endYear?: number, tours?: ("atp"|"wta")[] }
+ * Body (all optional): { startYear?: number, endYear?: number, tours?: ("atp"|"wta")[], includeChallengerItf?: boolean }
+ *
+ * includeChallengerItf defaults to true — fetches atp_matches_qual_chall_YYYY.csv and
+ * wta_matches_qual_itf_YYYY.csv in addition to the main-draw files. These files add Challenger
+ * and ITF match history for lower-ranked players who rarely appear in the main-draw file.
  */
-router.post("/evaluation/sackmann-backfill/run", async (req, res): Promise<void> => {
-  if (!(await enforceEntitlement(res, canUsePredictionHistory, "predictionHistory"))) return;
+// requireAdmin: this is a data-pipeline operation, not a subscriber feature; the entitlement
+// check is inappropriate here (it requires an active user session/subscription) and would block
+// owner-triggered runs. Other job-trigger routes (calibration-refit, walk-forward) already use
+// requireAdmin for the same reason.
+router.post("/evaluation/sackmann-backfill/run", requireAdmin, async (req, res): Promise<void> => {
 
-  const startYear = typeof req.body?.startYear === "number" ? req.body.startYear : 2010;
-  const endYear   = typeof req.body?.endYear   === "number" ? req.body.endYear   : new Date().getFullYear();
-  const tours     = Array.isArray(req.body?.tours) ? req.body.tours : ["atp", "wta"];
+  const startYear          = typeof req.body?.startYear          === "number"  ? req.body.startYear          : 2010;
+  const endYear            = typeof req.body?.endYear            === "number"  ? req.body.endYear            : new Date().getFullYear();
+  const tours              = Array.isArray(req.body?.tours)                    ? req.body.tours               : ["atp", "wta"];
+  const includeChallengerItf = typeof req.body?.includeChallengerItf === "boolean" ? req.body.includeChallengerItf : true;
 
   // Respond immediately — the backfill is long-running.
-  res.json({ started: true, startYear, endYear, tours, jobName: `${SACKMANN_PROVIDER}-backfill` });
+  res.json({ started: true, startYear, endYear, tours, includeChallengerItf, jobName: `${SACKMANN_PROVIDER}-backfill` });
 
   const startedAt = new Date();
-  runSackmannBackfill({ startYear, endYear, tours })
+  runSackmannBackfill({ startYear, endYear, tours, includeChallengerItf })
     .then(async (result) => {
       await db.insert(jobRunsTable).values({
         jobName: `${SACKMANN_PROVIDER}-backfill`,
@@ -619,6 +627,9 @@ router.post("/evaluation/sackmann-backfill/run", async (req, res): Promise<void>
           fixturesLoaded: result.fixturesLoaded,
           atpYearsLoaded: result.atpYearsLoaded,
           wtaYearsLoaded: result.wtaYearsLoaded,
+          atpChallengerYearsLoaded: result.atpChallengerYearsLoaded,
+          wtaItfYearsLoaded: result.wtaItfYearsLoaded,
+          includeChallengerItf,
           matchesInserted: result.backfill.matchesInserted,
           featureRowsInserted: result.backfill.featureRowsInserted,
           matchesSkippedDuplicate: result.backfill.matchesSkippedDuplicate,
