@@ -6,6 +6,16 @@
  * tennis provider in the same order as the prediction engine, and returns
  * their match records for use as validation evidence.
  *
+ * Provider chain (mirrors compositeProvider.ts but is intentionally independent):
+ *   Tier 1: RapidAPI / MatchStat  (X_RAPIDAPI_KEY) — player search via rankings
+ *   Tier 2: API-Tennis            (API_TENNIS_KEY)  — player search + full match history
+ *   Tier 3: Sofascore             (no key required) — supplemental history for sparse players
+ *
+ * Each tier has its own error handling and diagnostics.  No tier shares circuit-breaker
+ * state or provider instances with the prediction engine's compositeProvider.ts — the
+ * separation is intentional so a quota exhaustion in one subsystem never silently degrades
+ * the other.
+ *
  * Required outcomes (per architecture spec):
  *
  *   CACHE_HIT         — found in local DB (caller sets this; not returned here)
@@ -22,8 +32,9 @@
  */
 
 import { pool } from "@workspace/db";
+import { ApiTennisProvider } from "../tennisData/apiTennisProvider.js";
+import { MatchStatProvider } from "../tennisData/matchStatProvider.js";
 import {
-  getTennisDataProvider,
   ProviderUnavailableError,
   type MatchRecord,
   type PlayerSummary,
@@ -82,6 +93,30 @@ export interface LiveFetchResult {
   diagnostics: LiveFetchDiagnostics;
 }
 
+// ─── Lazy provider singletons ─────────────────────────────────────────────────
+//
+// Each provider is constructed once per process and re-used across requests.
+// They are kept separate from the prediction engine's getTennisDataProvider()
+// instances so quota exhaustion / circuit state in one subsystem never bleeds
+// into the other.  `undefined` = not yet initialised; `null` = key absent.
+
+let _builderRapidApiProvider: MatchStatProvider | null | undefined;
+let _builderApiTennisProvider: ApiTennisProvider | null | undefined;
+
+function getBuilderRapidApiProvider(): MatchStatProvider | null {
+  if (_builderRapidApiProvider !== undefined) return _builderRapidApiProvider;
+  const key = process.env.X_RAPIDAPI_KEY ?? process.env.x_rapidapi_key;
+  _builderRapidApiProvider = key ? new MatchStatProvider(key) : null;
+  return _builderRapidApiProvider;
+}
+
+function getBuilderApiTennisProvider(): ApiTennisProvider | null {
+  if (_builderApiTennisProvider !== undefined) return _builderApiTennisProvider;
+  const key = process.env.API_TENNIS_KEY;
+  _builderApiTennisProvider = key ? new ApiTennisProvider(key) : null;
+  return _builderApiTennisProvider;
+}
+
 // ─── Name-matching helpers ───────────────────────────────────────────────────
 
 function extractSurname(name: string): string {
@@ -95,19 +130,52 @@ function extractFirstInitial(name: string): string {
 }
 
 /**
+ * Normalise a name string for comparison: NFD decompose, strip combining diacritics,
+ * and lower-case. Applied to both queried and candidate names so "Nădal"/"Nadal",
+ * "Đoković"/"Djokovic" etc. compare equal.
+ */
+function normaliseName(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    // Characters that do NOT decompose via NFD and must be mapped explicitly.
+    // Đ (U+0110, Latin D with stroke) ≠ Ð (U+00D0, Eth) — both need entries.
+    .replace(/[ŁłÐðØøÆæĐđ]/g, (c) =>
+      ({ Ł: "L", ł: "l", Ð: "D", ð: "d", Ø: "O", ø: "o", Æ: "AE", æ: "ae", Đ: "D", đ: "d" }[c] ?? c),
+    )
+    .toLowerCase();
+}
+
+/**
+ * Normalise a provider candidate name that may arrive in "Lastname, F." or
+ * "Lastname, Firstname" reversed format into the standard "F. Lastname" order.
+ * When no comma is present the name is returned unchanged.
+ */
+function normaliseCandidateName(name: string): string {
+  const commaIdx = name.indexOf(",");
+  if (commaIdx === -1) return name;
+  const last = name.slice(0, commaIdx).trim();
+  const first = name.slice(commaIdx + 1).trim();
+  return first ? `${first} ${last}` : last;
+}
+
+/**
  * Confidence check: does a provider candidate match the queried player?
  *
  * Requires both a surname match AND a first-initial match to prevent false
  * positives in common-surname collisions (e.g. "A. Singh" vs "D. Singh").
+ * Both sides are NFD-normalised before comparison so diacritics in either
+ * the query ("Nădal") or the candidate ("Ĉoric") never block a real match.
  */
 function isConfidentSearchMatch(candidateName: string, queriedName: string): boolean {
-  const qSurname = extractSurname(queriedName);
+  const normalised = normaliseCandidateName(candidateName);
+  const cNorm = normaliseName(normalised);
+  const qSurname = normaliseName(extractSurname(queriedName));
   const qInitial = extractFirstInitial(queriedName).toLowerCase();
-  const cNorm = candidateName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   if (!cNorm.includes(qSurname)) return false;
   if (qInitial) {
-    const cInitial = extractFirstInitial(candidateName).toLowerCase();
+    const cInitial = extractFirstInitial(normalised).toLowerCase();
     if (cInitial !== qInitial) return false;
   }
   return true;
@@ -128,13 +196,14 @@ function buildSearchQueries(playerName: string): string[] {
   const surname = trimmed.split(/\s+/).pop() ?? trimmed;
   if (surname.length >= 3) queries.add(surname);
 
-  // 3. NFD-normalised — strips diacritics (Đ→D, ę→e, Ø→O) and handles
-  //    non-NFD letters that normalize() doesn't cover
+  // 3. NFD-normalised — strips combining diacritics (é→e, ö→o, ń→n) and maps
+  //    non-NFD special letters that normalize() doesn't decompose (Đ, Ł, Ø …).
+  //    Must mirror the same replacement map used in normaliseName() above.
   const nfd = trimmed
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[ŁłÐðØøÆæ]/g, (c) =>
-      ({ Ł: "L", ł: "l", Ð: "D", ð: "d", Ø: "O", ø: "o", Æ: "AE", æ: "ae" }[c] ?? c)
+    .replace(/[ŁłÐðØøÆæĐđ]/g, (c) =>
+      ({ Ł: "L", ł: "l", Ð: "D", ð: "d", Ø: "O", ø: "o", Æ: "AE", æ: "ae", Đ: "D", đ: "d" }[c] ?? c)
     );
   if (nfd !== trimmed) queries.add(nfd);
   const nfdSurname = nfd.split(/\s+/).pop() ?? nfd;
@@ -210,18 +279,209 @@ async function saveMatchesToDb(
   }
 }
 
-// ─── Sofascore fallback helper ────────────────────────────────────────────────
+// ─── Tier-1: RapidAPI / MatchStat ────────────────────────────────────────────
+
+/**
+ * Attempt to resolve a player's identity via the RapidAPI / MatchStat provider.
+ *
+ * MatchStat exposes player search through its rankings endpoints (ATP + WTA).
+ * It does NOT have a per-player match history endpoint, so this function can
+ * only confirm whether the player is found in current standings — it never
+ * returns match records. When the player is found their MatchStat ID is recorded
+ * in diagnostics for traceability. If MatchStat is unavailable or the player is
+ * not found, returns null and the caller moves on to Tier 2.
+ */
+async function attemptRapidApi(
+  playerName: string,
+  diag: LiveFetchDiagnostics,
+  providerOverride?: InstanceType<typeof import("../tennisData/matchStatProvider.js").MatchStatProvider> | null,
+): Promise<PlayerSummary | null> {
+  const provider = providerOverride !== undefined ? providerOverride : getBuilderRapidApiProvider();
+  if (!provider) return null; // key not configured — skip silently
+
+  const sourceDiag: ProviderSourceDiagnostic = {
+    source: "rapidapi",
+    attempted: true,
+    succeeded: false,
+    playerFound: false,
+    recordsReturned: 0,
+  };
+  diag.sourcesAttempted.push("rapidapi");
+
+  const searchQueries = buildSearchQueries(playerName);
+  let foundPlayer: PlayerSummary | null = null;
+
+  for (const query of searchQueries) {
+    try {
+      const results = await provider.searchPlayers(query);
+      const match = results.find((r) => isConfidentSearchMatch(r.name, playerName));
+      if (match) {
+        foundPlayer = match;
+        break;
+      }
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        const reason = err.message;
+        sourceDiag.failureReason = reason;
+        diag.sourcesFailed.push("rapidapi");
+        diag.failureReasons.push(`rapidapi search: ${reason}`);
+        diag.sources.push(sourceDiag);
+        return null;
+      }
+      // Non-fatal — try next variant
+    }
+  }
+
+  if (foundPlayer) {
+    sourceDiag.succeeded = true;
+    sourceDiag.playerFound = true;
+    sourceDiag.providerPlayerId = foundPlayer.id;
+    // MatchStat has no match-history endpoint: record 0 records but mark player found
+    sourceDiag.recordsReturned = 0;
+    diag.sourcesSuccessful.push("rapidapi");
+    diag.providerIdsFound["rapidapi"] = foundPlayer.id;
+    diag.recordsPerSource["rapidapi"] = 0;
+    if (diag.playerResolutionMethod === "none") {
+      diag.playerResolutionMethod = "rapidapi-search";
+    }
+  } else {
+    sourceDiag.failureReason = "Player not found in RapidAPI rankings";
+    diag.sourcesFailed.push("rapidapi");
+  }
+
+  diag.sources.push(sourceDiag);
+  return foundPlayer; // caller uses this as a hint (identity confirmed) even though no records
+}
+
+// ─── Tier-2: API-Tennis (full history) ───────────────────────────────────────
+
+/**
+ * Attempt to resolve a player and their match history via API-Tennis.
+ *
+ * API-Tennis supports both player search and full match-history retrieval, making
+ * it the primary source of actual MatchRecord data in this chain. This is tried
+ * after (or in parallel with) the RapidAPI tier, and returns a full LiveFetchResult
+ * when records are found. Returns null when the player cannot be identified, when
+ * the provider is unavailable, or when 0 completed matches are returned (Sofascore
+ * tier-3 is then tried by the caller).
+ */
+async function attemptMatchstat(
+  playerName: string,
+  diag: LiveFetchDiagnostics,
+  providerOverride?: InstanceType<typeof import("../tennisData/apiTennisProvider.js").ApiTennisProvider> | null,
+): Promise<LiveFetchResult | null> {
+  const provider = providerOverride !== undefined ? providerOverride : getBuilderApiTennisProvider();
+  if (!provider) return null; // key not configured — skip silently
+
+  const sourceDiag: ProviderSourceDiagnostic = {
+    source: "api-tennis",
+    attempted: true,
+    succeeded: false,
+    playerFound: false,
+    recordsReturned: 0,
+  };
+  diag.sourcesAttempted.push("api-tennis");
+
+  // ── Step 1: Search for the player ────────────────────────────────────────
+  const searchQueries = buildSearchQueries(playerName);
+  let foundPlayer: PlayerSummary | null = null;
+  let searchMethod = "none";
+
+  for (const query of searchQueries) {
+    try {
+      const results = await provider.searchPlayers(query);
+      const match = results.find((r) => isConfidentSearchMatch(r.name, playerName));
+      if (match) {
+        foundPlayer = match;
+        searchMethod = classifySearchMethod(query, playerName);
+        break;
+      }
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        const reason = err.message;
+        sourceDiag.failureReason = reason;
+        diag.sourcesFailed.push("api-tennis");
+        diag.failureReasons.push(`api-tennis search: ${reason}`);
+        diag.sources.push(sourceDiag);
+        return null;
+      }
+      // Non-fatal — try next variant
+    }
+  }
+
+  if (!foundPlayer) {
+    sourceDiag.failureReason = "Player not found in API-Tennis";
+    diag.sourcesFailed.push("api-tennis");
+    diag.sources.push(sourceDiag);
+    return null;
+  }
+
+  sourceDiag.playerFound = true;
+  sourceDiag.providerPlayerId = foundPlayer.id;
+  diag.providerIdsFound["api-tennis"] = foundPlayer.id;
+  if (diag.playerResolutionMethod === "none" || diag.playerResolutionMethod === "rapidapi-search") {
+    diag.playerResolutionMethod = searchMethod;
+  }
+
+  // ── Step 2: Fetch match history ───────────────────────────────────────────
+  let records: MatchRecord[] = [];
+  try {
+    records = await provider.getPlayerMatches(foundPlayer.id);
+    sourceDiag.succeeded = true;
+    sourceDiag.recordsReturned = records.length;
+    diag.sourcesSuccessful.push("api-tennis");
+    diag.recordsPerSource["api-tennis"] = records.length;
+
+    if (records.length > 0) {
+      diag.outcome = "DATA_FOUND";
+
+      // Non-blocking DB cache write
+      saveMatchesToDb(
+        records,
+        foundPlayer.id,
+        foundPlayer.name,
+        foundPlayer.tour ?? null,
+        "builder-live-fetch:api-tennis",
+      ).catch(() => {});
+
+      diag.sources.push(sourceDiag);
+      return {
+        records,
+        resolvedPlayerId: foundPlayer.id,
+        resolvedPlayerName: foundPlayer.name,
+        tour: foundPlayer.tour ?? null,
+        diagnostics: diag,
+      };
+    }
+
+    // Player found but no completed match records
+    diag.outcome = "NO_MATCH_HISTORY";
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    sourceDiag.failureReason = reason;
+    diag.sourcesFailed.push("api-tennis");
+    diag.failureReasons.push(`api-tennis getPlayerMatches(${foundPlayer.id}): ${reason}`);
+    diag.outcome = "SOURCE_UNAVAILABLE";
+  }
+
+  diag.sources.push(sourceDiag);
+  return null;
+}
+
+// ─── Tier-3: Sofascore ────────────────────────────────────────────────────────
 
 /**
  * Attempt to resolve a player and their match history via Sofascore.
- * Called after the primary provider chain fails (PLAYER_NOT_FOUND or
- * NO_MATCH_HISTORY).  Updates `diag` in-place; returns a full LiveFetchResult
- * on success, or null when Sofascore also cannot provide data.
+ * Called after both RapidAPI and API-Tennis tiers fail to return records.
+ * Updates `diag` in-place; returns a full LiveFetchResult on success, or null
+ * when Sofascore also cannot provide data.
  */
 async function attemptSofascore(
   playerName: string,
   diag: LiveFetchDiagnostics,
+  sofascoreOverride?: typeof fetchFromSofascore,
 ): Promise<LiveFetchResult | null> {
+  const sfFetch = sofascoreOverride ?? fetchFromSofascore;
   const sfDiag: ProviderSourceDiagnostic = {
     source: "sofascore",
     attempted: true,
@@ -232,7 +492,7 @@ async function attemptSofascore(
   diag.sourcesAttempted.push("sofascore");
 
   try {
-    const sfResult = await fetchFromSofascore(playerName);
+    const sfResult = await sfFetch(playerName);
 
     if (sfResult.error?.includes("rate-limit")) {
       sfDiag.failureReason = sfResult.error;
@@ -286,7 +546,7 @@ async function attemptSofascore(
     } else {
       sfDiag.failureReason = sfResult.error ?? "Player not found in Sofascore";
       diag.sourcesFailed.push("sofascore");
-      // PLAYER_NOT_FOUND outcome stays as-is when both providers say not found
+      // PLAYER_NOT_FOUND outcome stays as-is when all providers say not found
     }
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -299,18 +559,59 @@ async function attemptSofascore(
   return null;
 }
 
+// ─── Exported helpers (for unit tests) ────────────────────────────────────────
+
+export { normaliseName, normaliseCandidateName, isConfidentSearchMatch, buildSearchQueries };
+
+// ─── Provider injection interface (tests override; production uses env-key singletons) ──
+
+export interface BuilderProviders {
+  rapidApi: InstanceType<typeof import("../tennisData/matchStatProvider.js").MatchStatProvider> | null;
+  apiTennis: InstanceType<typeof import("../tennisData/apiTennisProvider.js").ApiTennisProvider> | null;
+  sofascore: typeof fetchFromSofascore;
+}
+
 // ─── Main export ─────────────────────────────────────────────────────────────
 
+/**
+ * Fetch match records for a player from all configured external providers.
+ *
+ * Provider chain:
+ *   1. RapidAPI/MatchStat — player identity resolution via current rankings search
+ *   2. API-Tennis         — player search + full match history
+ *   3. Sofascore          — supplemental history for sparse/lower-tier players
+ *
+ * Each provider is attempted independently with its own error handling.  A
+ * failure at any tier is recorded in diagnostics and the chain continues to the
+ * next tier rather than surfacing a hard error to the caller.
+ *
+ * `_providers` is an optional injection point used exclusively by unit tests to
+ * supply mock provider instances without needing module mocking.  Production
+ * callers must never pass it.
+ */
 export async function fetchPlayerMatchesFromProviders(
   playerName: string,
   _context?: { opponentName?: string; tournamentName?: string },
+  _providers?: Partial<BuilderProviders>,
 ): Promise<LiveFetchResult> {
-  const provider = getTennisDataProvider();
-  const providerName = provider.name;
+  // Resolve providers: injected overrides take precedence (tests use this);
+  // production falls back to env-key singletons.
+  // `undefined` in the injected map means "use env key"; `null` means "disabled".
+  const injectedRapidApi = _providers && "rapidApi" in _providers ? _providers.rapidApi : undefined;
+  const injectedApiTennis = _providers && "apiTennis" in _providers ? _providers.apiTennis : undefined;
+  const injectedSofascore = _providers?.sofascore;
+
+  const effectiveRapidApi = injectedRapidApi !== undefined ? injectedRapidApi : getBuilderRapidApiProvider();
+  const effectiveApiTennis = injectedApiTennis !== undefined ? injectedApiTennis : getBuilderApiTennisProvider();
+
+  const sourcesConfigured: string[] = [];
+  if (effectiveRapidApi) sourcesConfigured.push("rapidapi");
+  if (effectiveApiTennis) sourcesConfigured.push("api-tennis");
+  sourcesConfigured.push("sofascore");
 
   const diag: LiveFetchDiagnostics = {
     outcome: "CACHE_MISS",
-    sourcesConfigured: [providerName, "sofascore"],
+    sourcesConfigured,
     sourcesAttempted: [],
     sourcesSuccessful: [],
     sourcesFailed: [],
@@ -321,126 +622,40 @@ export async function fetchPlayerMatchesFromProviders(
     sources: [],
   };
 
-  const sourceDiag: ProviderSourceDiagnostic = {
-    source: providerName,
-    attempted: false,
-    succeeded: false,
-    playerFound: false,
-    recordsReturned: 0,
-  };
-
-  diag.sourcesAttempted.push(providerName);
-  sourceDiag.attempted = true;
-
-  // ── Step 1: Search for the player using progressive name variants ─────────
-  const searchQueries = buildSearchQueries(playerName);
-  let foundPlayer: PlayerSummary | null = null;
-  let searchMethod = "none";
-  let providerUnavailable = false;
-
-  for (const query of searchQueries) {
-    try {
-      const results = await provider.searchPlayers(query);
-      const match = results.find((r) => isConfidentSearchMatch(r.name, playerName));
-      if (match) {
-        foundPlayer = match;
-        searchMethod = classifySearchMethod(query, playerName);
-        break;
-      }
-    } catch (err) {
-      if (err instanceof ProviderUnavailableError) {
-        providerUnavailable = true;
-        const reason = err.message;
-        sourceDiag.failureReason = reason;
-        diag.sourcesFailed.push(providerName);
-        diag.failureReasons.push(`${providerName} search: ${reason}`);
-        break; // No point retrying other variants if the provider is down
-      }
-      // Non-fatal (unexpected error on one variant) — try next variant
-    }
+  // ── Tier 1: RapidAPI / MatchStat — player identity resolution ────────────
+  // MatchStat can confirm a player exists in current standings (useful for
+  // identity resolution diagnostics) but has no match-history endpoint.
+  // Run it first so any identity signal is captured before Tier 2 searches.
+  if (effectiveRapidApi) {
+    await attemptRapidApi(playerName, diag, effectiveRapidApi);
+    // Result (PlayerSummary | null) is intentionally discarded here — MatchStat
+    // IDs are incompatible with API-Tennis IDs, so the Tier-2 search is always
+    // run independently. The value of Tier 1 is diagnostic coverage, not data.
   }
 
-  if (providerUnavailable) {
-    diag.outcome = "SOURCE_UNAVAILABLE";
-    diag.sources.push(sourceDiag);
-    return {
-      records: [],
-      resolvedPlayerId: null,
-      resolvedPlayerName: null,
-      tour: null,
-      diagnostics: diag,
-    };
+  // ── Tier 2: API-Tennis — full search + match history ─────────────────────
+  if (effectiveApiTennis) {
+    const apiTennisResult = await attemptMatchstat(playerName, diag, effectiveApiTennis);
+    if (apiTennisResult) return apiTennisResult;
   }
 
-  if (!foundPlayer) {
-    diag.outcome = "PLAYER_NOT_FOUND";
-    diag.playerResolutionMethod = "none";
-    diag.sources.push(sourceDiag);
-    // ── Sofascore fallback: primary provider couldn't find the player ─────
-    const sfResult1 = await attemptSofascore(playerName, diag);
-    if (sfResult1) return sfResult1;
-    return {
-      records: [],
-      resolvedPlayerId: null,
-      resolvedPlayerName: null,
-      tour: null,
-      diagnostics: diag,
-    };
-  }
+  // ── Tier 3: Sofascore — supplemental / fallback ───────────────────────────
+  const sfResult = await attemptSofascore(playerName, diag, injectedSofascore);
+  if (sfResult) return sfResult;
 
-  // ── Step 2: Fetch match history for the resolved player ───────────────────
-  sourceDiag.playerFound = true;
-  sourceDiag.providerPlayerId = foundPlayer.id;
-  diag.providerIdsFound[providerName] = foundPlayer.id;
-  diag.playerResolutionMethod = searchMethod;
-  diag.outcome = "PLAYER_RESOLVED";
-
-  let records: MatchRecord[] = [];
-  try {
-    records = await provider.getPlayerMatches(foundPlayer.id);
-    sourceDiag.succeeded = true;
-    sourceDiag.recordsReturned = records.length;
-    diag.sourcesSuccessful.push(providerName);
-    diag.recordsPerSource[providerName] = records.length;
-
-    if (records.length === 0) {
-      diag.outcome = "NO_MATCH_HISTORY";
-    } else {
-      diag.outcome = "DATA_FOUND";
-      // Non-blocking DB cache write — subsequent requests for the same player
-      // will hit the local DB instead of calling the provider again.
-      const providerLabel = `builder-live-fetch:${providerName}`;
-      saveMatchesToDb(
-        records,
-        foundPlayer.id,
-        foundPlayer.name,
-        foundPlayer.tour ?? null,
-        providerLabel,
-      ).catch(() => {
-        /* silently ignored — cache write is best-effort */
-      });
-    }
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    sourceDiag.failureReason = reason;
-    diag.sourcesFailed.push(providerName);
-    diag.failureReasons.push(`${providerName} getPlayerMatches(${foundPlayer.id}): ${reason}`);
-    diag.outcome = "SOURCE_UNAVAILABLE";
-  }
-
-  diag.sources.push(sourceDiag);
-
-  // ── Sofascore fallback: player found but provider returned 0 match records ─
-  if (records.length === 0) {
-    const sfResult2 = await attemptSofascore(playerName, diag);
-    if (sfResult2) return sfResult2;
+  // ── All providers exhausted ───────────────────────────────────────────────
+  if (diag.outcome === "CACHE_MISS") {
+    // No provider was attempted at all (no keys configured) or all returned
+    // PLAYER_NOT_FOUND — pick the most accurate terminal outcome.
+    const anyAttempted = diag.sourcesAttempted.length > 0;
+    diag.outcome = anyAttempted ? "PLAYER_NOT_FOUND" : "DATA_UNAVAILABLE";
   }
 
   return {
-    records,
-    resolvedPlayerId: foundPlayer.id,
-    resolvedPlayerName: foundPlayer.name,
-    tour: foundPlayer.tour ?? null,
+    records: [],
+    resolvedPlayerId: null,
+    resolvedPlayerName: null,
+    tour: null,
     diagnostics: diag,
   };
 }
