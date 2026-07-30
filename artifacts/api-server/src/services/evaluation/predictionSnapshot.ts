@@ -82,10 +82,23 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
     enrichPlayerRankFromSearch(input.provider, player2Raw),
   ]);
 
+  // Guard every provider call: when the circuit breaker is open these throw
+  // ProviderUnavailableError.  Falling back to empty match lists / null h2h lets
+  // the prediction engine run on historical-DB data alone (data quality will be
+  // lower, disclosures will fire) rather than hard-failing with 502.
+  const safeGetMatches = async (id: string) => {
+    try { return await input.provider.getPlayerMatches(id); }
+    catch { return []; }
+  };
+  const safeGetH2H = async (id1: string, id2: string): Promise<HeadToHeadRecord> => {
+    try { return await input.provider.getHeadToHead(id1, id2); }
+    catch { return { player1Id: id1, player2Id: id2, meetings: [] }; }
+  };
+
   const [player1Matches, player2Matches, headToHead] = await Promise.all([
-    input.provider.getPlayerMatches(resolvedPlayer1Id),
-    input.provider.getPlayerMatches(resolvedPlayer2Id),
-    input.provider.getHeadToHead(resolvedPlayer1Id, resolvedPlayer2Id),
+    safeGetMatches(resolvedPlayer1Id),
+    safeGetMatches(resolvedPlayer2Id),
+    safeGetH2H(resolvedPlayer1Id, resolvedPlayer2Id),
   ]);
 
   const matchTour = player1.tour ?? player2.tour;

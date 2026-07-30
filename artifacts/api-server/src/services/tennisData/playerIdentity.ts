@@ -468,7 +468,14 @@ async function resolvePlayerProfileByName(
 
   // Use searchKnownPlayers (combines live + historical) rather than bare provider.searchPlayers
   // so players not in current standings can still be found via historical match records.
-  const candidates = await provider.searchPlayers(submittedName);
+  // Guard against circuit-breaker open — fall back to empty list so the caller can still
+  // try historical paths rather than throwing a ProviderUnavailableError.
+  let candidates: Awaited<ReturnType<typeof provider.searchPlayers>>;
+  try {
+    candidates = await provider.searchPlayers(submittedName);
+  } catch {
+    candidates = [];
+  }
 
   // 1. Exact name match
   for (const c of candidates) {
