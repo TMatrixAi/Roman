@@ -50,6 +50,7 @@ import { isPipelineQuiet, PAPER_TRADE_QUIET_WINDOW_HOURS, sendPipelineQuietAlert
 import { usedHistoricalMatchFallback } from "../services/predictionEngine/playerProfileWarnings";
 import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
 import { runSackmannBackfill, SACKMANN_PROVIDER } from "../services/historicalData/sackmannBackfill";
+import { runTennisDataCoUkBackfill, TENNIS_DATA_CO_UK_PROVIDER } from "../services/historicalData/tennisDataCoUkBackfill";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
@@ -676,6 +677,88 @@ router.get("/evaluation/sackmann-backfill/status", async (_req, res): Promise<vo
           startedAt: latest.startedAt?.toISOString() ?? null,
           finishedAt: latest.finishedAt?.toISOString() ?? null,
           summary: latest.summary ?? null,
+          errorMessage: latest.errorMessage ?? null,
+        }
+      : null,
+  });
+});
+
+/**
+ * tennis-data.co.uk XLSX backfill (Phase 5 item 2) — downloads ATP + WTA XLSX files and
+ * inserts match records with embedded market odds into historical_matches.
+ * No API key required. Runs in the background; outcome written to job_runs.
+ *
+ * POST /evaluation/tennis-data-co-uk-backfill/run
+ * Body (all optional): { startYear?: number, endYear?: number, tours?: ("atp"|"wta")[] }
+ * Defaults: startYear=2015, endYear=<current year>, tours=["atp","wta"]
+ *
+ * Market odds (B365, Pinnacle, market avg/max) are stored in raw_source JSONB under _marketOdds.
+ * Query: WHERE provider='tennis-data-co-uk' AND (raw_source->'_marketOdds'->>'avgWinner')::float IS NOT NULL
+ */
+router.post("/evaluation/tennis-data-co-uk-backfill/run", requireAdmin, async (req, res): Promise<void> => {
+  const startYear = typeof req.body?.startYear === "number" ? req.body.startYear : 2015;
+  const endYear   = typeof req.body?.endYear   === "number" ? req.body.endYear   : new Date().getFullYear();
+  const tours     = Array.isArray(req.body?.tours)          ? req.body.tours      : ["atp", "wta"];
+
+  res.json({ started: true, startYear, endYear, tours, jobName: `${TENNIS_DATA_CO_UK_PROVIDER}-backfill` });
+
+  const startedAt = new Date();
+  runTennisDataCoUkBackfill({ startYear, endYear, tours })
+    .then(async (result) => {
+      await db.insert(jobRunsTable).values({
+        jobName:    `${TENNIS_DATA_CO_UK_PROVIDER}-backfill`,
+        startedAt,
+        finishedAt: new Date(),
+        status:     "success",
+        attempts:   1,
+        summary: {
+          fixturesLoaded:   result.fixturesLoaded,
+          fixturesWithOdds: result.fixturesWithOdds,
+          atpYearsLoaded:   result.atpYearsLoaded,
+          wtaYearsLoaded:   result.wtaYearsLoaded,
+          matchesInserted:          result.backfill.matchesInserted,
+          featureRowsInserted:      result.backfill.featureRowsInserted,
+          matchesSkippedDuplicate:  result.backfill.matchesSkippedDuplicate,
+        },
+        errorMessage: null,
+      });
+      logger.info({ result }, "tennis-data-co-uk-backfill: completed");
+    })
+    .catch(async (err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "tennis-data-co-uk-backfill: failed");
+      await db.insert(jobRunsTable).values({
+        jobName:    `${TENNIS_DATA_CO_UK_PROVIDER}-backfill`,
+        startedAt,
+        finishedAt: new Date(),
+        status:     "failed",
+        attempts:   1,
+        summary:    null,
+        errorMessage,
+      });
+    });
+});
+
+/**
+ * GET /evaluation/tennis-data-co-uk-backfill/status
+ * Returns the most recent job_runs row for the tennis-data.co.uk backfill.
+ */
+router.get("/evaluation/tennis-data-co-uk-backfill/status", requireAdmin, async (_req, res): Promise<void> => {
+  const [latest] = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, `${TENNIS_DATA_CO_UK_PROVIDER}-backfill`))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(1);
+
+  res.json({
+    hasRun: !!latest,
+    lastRun: latest
+      ? {
+          status:       latest.status,
+          startedAt:    latest.startedAt?.toISOString()  ?? null,
+          finishedAt:   latest.finishedAt?.toISOString() ?? null,
+          summary:      latest.summary      ?? null,
           errorMessage: latest.errorMessage ?? null,
         }
       : null,
