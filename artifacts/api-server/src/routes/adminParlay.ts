@@ -184,7 +184,7 @@ router.post("/admin/parlay/evaluate", requireAdmin, async (req, res): Promise<vo
     };
 
     if (!Array.isArray(legs) || legs.length === 0) { res.status(400).json({ error: "legs must be a non-empty array" }); return; }
-    if (legs.length > 40) { res.status(400).json({ error: "maximum 40 legs per parlay" }); return; }
+    if (legs.length > 150) { res.status(400).json({ error: "maximum 150 legs per parlay" }); return; }
 
     const evaluatedLegs = await Promise.all(legs.map(async (leg): Promise<EvalLeg> => {
       try {
@@ -395,8 +395,8 @@ router.post("/admin/parlay/validate", requireAdmin, async (req, res): Promise<vo
     if (!Array.isArray(legs) || legs.length === 0) {
       res.status(400).json({ error: "legs must be a non-empty array" }); return;
     }
-    if (legs.length > 40) {
-      res.status(400).json({ error: "maximum 40 legs per validation" }); return;
+    if (legs.length > 150) {
+      res.status(400).json({ error: "maximum 150 legs per validation" }); return;
     }
 
     const gradeOrder = ["Reject", "Weak", "Moderate", "Strong", "Elite"] as const;
