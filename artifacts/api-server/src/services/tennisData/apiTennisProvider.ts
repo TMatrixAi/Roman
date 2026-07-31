@@ -409,9 +409,11 @@ export class ApiTennisProvider implements TennisDataProvider {
               );
               throw statusErr;
             }
-            const body = (await response.json()) as ApiTennisEnvelope<T>;
+            const body = (await response.json()) as ApiTennisEnvelope<T> & { error?: string; message?: string };
             if (body.success !== 1) {
-              throw new Error("API-Tennis reported an unsuccessful response");
+              const detail = body.error ?? body.message ?? JSON.stringify(body);
+              logger.warn({ method, detail }, "API-Tennis success=0 response");
+              throw new Error(`API-Tennis reported an unsuccessful response: ${detail}`);
             }
             return body.result;
           },
