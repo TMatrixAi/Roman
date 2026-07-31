@@ -453,6 +453,43 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
     },
   ];
 
+  // Market Consensus module — computed separately from the historical feature modules.
+  //
+  // The market module is NOT pushed into `moduleEdges` (whose element type is a closed literal
+  // union over historical feature keys) because:
+  //   (a) TypeScript infers the union from the array literal and would reject "marketOdds";
+  //   (b) the market module is architecturally distinct — it is a live external signal, not a
+  //       historical data feature, and is always excluded from the Data Quality blend.
+  //
+  // When absent (no odds configured, provider down, matchup not listed, or ablation override),
+  // marketConsensusInput is null and the ensemble is identical to predictions without odds.
+  // Absence does NOT synthesize a 50/50 neutral vote (that adds meaningless noise).
+  //
+  // Orientation: player1DecimalOdds / player2DecimalOdds are player-1-relative (same convention
+  // as every other engine input), so normP1 maps directly to player1Edge without name-matching.
+  let marketConsensusInput: { name: string; player1Edge: number; reliability: number; weightPrior: number } | null = null;
+  if (
+    input.marketOdds != null &&
+    !excludedModels?.has("marketOdds") &&
+    input.marketOdds.player1DecimalOdds > 1 &&
+    input.marketOdds.player2DecimalOdds > 1
+  ) {
+    const rawP1 = 1 / input.marketOdds.player1DecimalOdds;
+    const rawP2 = 1 / input.marketOdds.player2DecimalOdds;
+    const totalImplied = rawP1 + rawP2;
+    // Vig-normalize: remove the bookmaker's over-round so the two sides sum to 1.
+    const normP1 = totalImplied > 0 ? rawP1 / totalImplied : 0.5;
+    // Inverse of edgeToProbability(edge) = 1 / (1 + exp(-edge/12)) * 100.
+    // Solved: edge = 12 * ln(normP1 / (1 - normP1)), with normP1 in [0, 1].
+    const marketEdge = normP1 > 0 && normP1 < 1 ? 12 * Math.log(normP1 / (1 - normP1)) : 0;
+    marketConsensusInput = {
+      name: "Market Consensus",
+      player1Edge: marketEdge,
+      reliability: 80,
+      weightPrior: 0.5, // modest supplemental vote; below the three core signal modules
+    };
+  }
+
   // Task #111 root-cause fix: the Data Quality blend must draw from every module NOT in
   // `EXCLUDED_FROM_DATA_QUALITY` (currently just Head-to-Head), independent of which modules are
   // excluded from the ensemble VOTE. Before this fix, `moduleEdges` below was pre-filtered by
@@ -470,7 +507,12 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // turns a module off should not silently keep counting toward Data Quality either.
   const allModuleEdgesForDataQuality = moduleEdges.filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_DATA_QUALITY.has(m.key));
 
-  const ensembleModuleEdges = moduleEdges.filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key));
+  const ensembleModuleEdges = [
+    ...moduleEdges.filter((m) => !excludedModels?.has(m.key) && !EXCLUDED_FROM_ENSEMBLE.has(m.key)),
+    // Market Consensus is excluded from EXCLUDED_FROM_DATA_QUALITY but NOT from the ensemble vote —
+    // add it here (after the feature-module filter) only when real odds are present.
+    ...(marketConsensusInput ? [marketConsensusInput] : []),
+  ];
   const { models: featureModels, ensembleProbability: rawEnsembleProbability, modelAgreement: featureAgreement } = buildEnsemble(ensembleModuleEdges);
   // Recomputed (pure, deterministic) so we keep the full weighted-disagreement breakdown --
   // stddev/support/conflicting models -- for the disagreement explanation below, not just the
@@ -1016,6 +1058,30 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
       voteDirection: effectivelyContributes ? voteDirection : null,
     };
   });
+
+  // Append the market consensus module trace when it voted.
+  if (marketConsensusInput) {
+    const marketVote = featureModelByName.get("Market Consensus");
+    const marketAblated = excludedModels?.has("marketOdds") ?? false;
+    const marketVoteDir: "player1" | "player2" | "tied" | null = marketVote
+      ? marketVote.player1Probability > 50 ? "player1" : marketVote.player1Probability < 50 ? "player2" : "tied"
+      : null;
+    moduleTraces.push({
+      key: "marketOdds",
+      name: "Market Consensus",
+      rawEdge: Math.round(marketConsensusInput.player1Edge * 1000) / 1000,
+      reliability: marketConsensusInput.reliability,
+      importance: 0.5, // excluded from DQ blend; value is informational only
+      weightPrior: marketConsensusInput.weightPrior,
+      confidenceShrink: 1.0,
+      excludedFromEnsemble: false,
+      excludedFromDataQuality: true,
+      excludedByAblation: marketAblated,
+      player1Probability: !marketAblated && marketVote ? marketVote.player1Probability : null,
+      effectiveWeight: !marketAblated && marketVote ? marketVote.weightUsed : null,
+      voteDirection: !marketAblated ? marketVoteDir : null,
+    });
+  }
 
   const calibratedMarginForTrace = Math.abs(calibratedProbability - 50);
   // surfaceEloFavorsP1, serveReturnFavorsP1, recentFormFavorsP1 are computed earlier near the

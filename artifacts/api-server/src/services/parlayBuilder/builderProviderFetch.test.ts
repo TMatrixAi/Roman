@@ -481,3 +481,92 @@ describe("fetchPlayerMatchesFromProviders — provider chain", () => {
     assert.ok(result.diagnostics.sourcesConfigured.includes("api-tennis"));
   });
 });
+
+// ─── attemptOddsApi tests ─────────────────────────────────────────────────────
+//
+// These tests use the injectable `_fetchFn` parameter so no real network call is
+// ever made. The core invariants proven here:
+//   - Backfill mode (asOfDate set)  → always null, _fetchFn never called
+//   - Provider returns null          → null (no odds available for this matchup)
+//   - Provider returns valid quote   → player1DecimalOdds returned (player ordering)
+//   - Provider throws                → null (non-fatal fallback, never throws)
+//   - Odds value ≤ 1                 → null (invalid decimal odds rejected)
+
+import { attemptOddsApi } from "./builderProviderFetch.js";
+import type { OddsQuote } from "../oddsData/index.js";
+
+function makeQuote(player1DecimalOdds: number, player2DecimalOdds: number): OddsQuote {
+  return {
+    provider: "Test Provider",
+    player1DecimalOdds,
+    player2DecimalOdds,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+describe("attemptOddsApi — market odds fetch for Parlay Builder", () => {
+  it("returns null immediately in backfill mode (asOfDate set) and never calls _fetchFn", async () => {
+    let fetchCalled = false;
+    const fetchFn = async (): Promise<OddsQuote | null> => {
+      fetchCalled = true;
+      return makeQuote(1.60, 2.40);
+    };
+
+    const result = await attemptOddsApi("Player A", "Player B", null, new Date("2024-06-01"), fetchFn);
+
+    assert.strictEqual(result, null, "must return null in backfill mode");
+    assert.strictEqual(fetchCalled, false, "_fetchFn must not be called in backfill mode");
+  });
+
+  it("returns null when the provider finds no odds for this matchup", async () => {
+    const fetchFn = async (): Promise<OddsQuote | null> => null;
+
+    const result = await attemptOddsApi("Player A", "Player B", null, undefined, fetchFn);
+
+    assert.strictEqual(result, null, "must return null when provider returns null");
+  });
+
+  it("returns player1DecimalOdds (the selected player's odds) when provider returns a valid quote", async () => {
+    // selectedPlayerName is always passed as player1 to fetchMarketOdds, so quote.player1DecimalOdds
+    // belongs to the selected player — no additional name-mapping needed.
+    const fetchFn = async (): Promise<OddsQuote | null> => makeQuote(1.75, 2.10);
+
+    const result = await attemptOddsApi("Selected Player", "Opponent", null, undefined, fetchFn);
+
+    assert.strictEqual(result, 1.75, "must return player1DecimalOdds (the selected player's odds)");
+  });
+
+  it("returns null (non-throwing) when the provider throws", async () => {
+    const fetchFn = async (): Promise<OddsQuote | null> => {
+      throw new Error("provider down");
+    };
+
+    // Must not throw — market odds are supplemental and provider errors must never surface
+    await assert.doesNotReject(() => attemptOddsApi("Player A", "Player B", null, undefined, fetchFn));
+    const result = await attemptOddsApi("Player A", "Player B", null, undefined, fetchFn);
+    assert.strictEqual(result, null, "must return null on provider error, not rethrow");
+  });
+
+  it("returns null when provider returns odds <= 1 (invalid decimal odds)", async () => {
+    const fetchFn = async (): Promise<OddsQuote | null> => makeQuote(0.9, 2.0);
+
+    const result = await attemptOddsApi("Player A", "Player B", null, undefined, fetchFn);
+
+    assert.strictEqual(result, null, "must reject decimal odds <= 1 as invalid");
+  });
+
+  it("passes selectedPlayerName as player1 to _fetchFn (player ordering check)", async () => {
+    let capturedP1: string | undefined;
+    let capturedP2: string | undefined;
+    const fetchFn = async (p1: string, p2: string): Promise<OddsQuote | null> => {
+      capturedP1 = p1;
+      capturedP2 = p2;
+      return makeQuote(1.85, 1.95);
+    };
+
+    await attemptOddsApi("Jannik Sinner", "Carlos Alcaraz", null, undefined, fetchFn);
+
+    assert.strictEqual(capturedP1, "Jannik Sinner", "selectedPlayerName must be passed as player1 to fetchFn");
+    assert.strictEqual(capturedP2, "Carlos Alcaraz", "opponentName must be passed as player2 to fetchFn");
+  });
+});

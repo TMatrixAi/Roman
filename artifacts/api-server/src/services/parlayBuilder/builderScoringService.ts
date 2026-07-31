@@ -20,6 +20,7 @@ import {
 } from "../tennisData/playerIdentity.js";
 import {
   fetchPlayerMatchesFromProviders,
+  attemptOddsApi,
   type LiveFetchDiagnostics,
   type ResolutionOutcome,
 } from "./builderProviderFetch.js";
@@ -616,7 +617,10 @@ function generateReasons(factors: FactorScore[], sel: PlayerStats, opp: PlayerSt
 // ---------------------------------------------------------------------------
 
 export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<BuilderResult> {
-  const { selectedPlayerId, selectedPlayerName, opponentId, opponentName, surface, tournamentName, marketOdds, asOfDate } = snapshot;
+  const {
+    selectedPlayerId, selectedPlayerName, opponentId, opponentName, surface, tournamentName,
+    marketOdds: suppliedMarketOdds, asOfDate,
+  } = snapshot;
 
   // ── 1. Resolve both players' match history with multi-source fallback ────────
   //
@@ -633,16 +637,22 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   //   5. Live provider fetch (skipped when asOfDate is set — backfill mode)
   const index = await getCachedPlayerIdentityIndex();
 
-  // Resolve both players + kick off Tier 5 web research in parallel.
-  // Web research is skipped in backfill mode (asOfDate set) — historical
-  // injury news is unreliable and we never want API calls on backfill rows.
-  const [selResolution, oppResolution, webResearch] = await Promise.all([
+  // Resolve both players + kick off Tier 5 web research + live market odds in parallel.
+  // Web research and odds fetching are both skipped in backfill mode (asOfDate set).
+  // Market odds: selectedPlayerName is "player1" so quote.player1DecimalOdds is theirs directly.
+  const [selResolution, oppResolution, webResearch, fetchedMarketOdds] = await Promise.all([
     resolvePlayerMatchRows(selectedPlayerId, selectedPlayerName, index, asOfDate),
     resolvePlayerMatchRows(opponentId, opponentName, index, asOfDate),
     asOfDate == null
       ? researchPlayerMatchup(selectedPlayerName, opponentName).catch(() => null)
       : Promise.resolve(null),
+    suppliedMarketOdds == null
+      ? attemptOddsApi(selectedPlayerName, opponentName, null, asOfDate)
+      : Promise.resolve(null),
   ]);
+
+  // Use user-supplied odds when present; fall back to the live fetch result.
+  const marketOdds = suppliedMarketOdds ?? fetchedMarketOdds;
 
   const selResolvedId = selResolution.resolvedId;
   const oppResolvedId = oppResolution.resolvedId;

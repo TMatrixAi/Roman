@@ -25,8 +25,9 @@ function getSafeRedirectPath(input: unknown): string {
  * GET /auth/owner-auto-login?token=<token>[&next=/some/path]
  *
  * Bookmarkable magic-link for the owner. Validates the token against
- * OWNER_AUTO_LOGIN_TOKEN (or falls back to ADMIN_ACCESS_KEY), sets the
- * signed admin session cookie, then redirects to `next` (defaults to /app).
+ * OWNER_AUTO_LOGIN_TOKEN (or OWNER_MAGIC_LINK_TOKEN). The endpoint returns 403
+ * when neither dedicated token env var is set — it does NOT fall back to
+ * ADMIN_ACCESS_KEY, which must never appear in a URL query string.
  *
  * Works from any browser / device — not tied to Replit iframe headers.
  * The Replit-header path (isOwnerAutoAuthenticated) still works inside

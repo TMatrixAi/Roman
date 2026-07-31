@@ -277,3 +277,87 @@ describe("builderScoringService — scoring correctness invariants", () => {
     }
   });
 });
+
+// ─── Market Consensus factor tests ───────────────────────────────────────────
+//
+// `__TEST_computeScoring` accepts `opts.marketOdds` (the selected player's decimal odds,
+// same as what `attemptOddsApi` returns). These tests verify the factor's scoring direction,
+// neutral fallback, and underdog penalty — all without network access.
+
+describe("builderScoringService — marketConsensus factor invariants", () => {
+  it("market factor scores > 50 when the selected player is the market favorite (odds 1.60)", () => {
+    const sel = makeStats({ total: 20, winRate: 0.60 });
+    const opp = makeStats({ total: 20, winRate: 0.50 });
+    // 1.60 decimal odds → implied probability ≈ 62.5% → factor must score above neutral
+    const result = __TEST_computeScoring(sel, opp, {
+      selResolvedId: "sel",
+      opponentName: "P.Opp",
+      marketOdds: 1.60,
+    });
+
+    const factor = result.factors.find(f => f.key === "marketConsensus");
+    assert.ok(factor !== undefined, "marketConsensus factor must be present when odds are supplied");
+    assert.ok(
+      factor!.score > 50,
+      `market factor score must be > 50 when selected is favorite (got ${factor!.score})`,
+    );
+  });
+
+  it("market factor scores 50 (neutral) and is marked unavailable when no odds are supplied", () => {
+    const sel = makeStats({ total: 20, winRate: 0.60 });
+    const opp = makeStats({ total: 20, winRate: 0.50 });
+    const result = __TEST_computeScoring(sel, opp, {
+      selResolvedId: "sel",
+      opponentName: "P.Opp",
+      marketOdds: null,
+    });
+
+    const factor = result.factors.find(f => f.key === "marketConsensus");
+    assert.ok(factor !== undefined, "marketConsensus factor must always be present in the factor list");
+    assert.strictEqual(
+      factor!.score,
+      50,
+      `marketConsensus must score exactly 50 (neutral) when no odds are supplied (got ${factor!.score})`,
+    );
+    // When no odds are supplied, the factor exists but is marked non-available
+    // (the implementation marks it "limited" — absence of real odds, not a provider failure)
+    assert.ok(
+      factor!.status !== "available",
+      `marketConsensus must NOT be marked available when no odds are supplied (got '${factor!.status}')`,
+    );
+  });
+
+  it("market factor scores < 50 when the selected player is the underdog (odds 2.50)", () => {
+    const sel = makeStats({ total: 20, winRate: 0.50 });
+    const opp = makeStats({ total: 20, winRate: 0.60 });
+    // 2.50 decimal odds → implied probability = 40% → factor must score below neutral
+    const result = __TEST_computeScoring(sel, opp, {
+      selResolvedId: "sel",
+      opponentName: "P.Opp",
+      marketOdds: 2.50,
+    });
+
+    const factor = result.factors.find(f => f.key === "marketConsensus");
+    assert.ok(factor !== undefined, "marketConsensus factor must be present when odds are supplied");
+    assert.ok(
+      factor!.score < 50,
+      `market factor score must be < 50 when selected is underdog at 2.50 odds (got ${factor!.score})`,
+    );
+  });
+
+  it("market factor direction is symmetric: swapping favorite/underdog mirrors the score across 50", () => {
+    const sel = makeStats({ total: 20, winRate: 0.55 });
+    const opp = makeStats({ total: 20, winRate: 0.55 });
+
+    const asFavorite  = __TEST_computeScoring(sel, opp, { selResolvedId: "sel", opponentName: "P.Opp", marketOdds: 1.60 });
+    const asUnderdog  = __TEST_computeScoring(sel, opp, { selResolvedId: "sel", opponentName: "P.Opp", marketOdds: 2.67 }); // ≈ 1/(1-1/1.60) reciprocal implied
+
+    const favFactor  = asFavorite.factors.find(f => f.key === "marketConsensus");
+    const undFactor  = asUnderdog.factors.find(f => f.key === "marketConsensus");
+    assert.ok(favFactor !== undefined && undFactor !== undefined, "both results must have a marketConsensus factor");
+    assert.ok(
+      favFactor!.score > 50 && undFactor!.score < 50,
+      `favorite odds must score > 50 (${favFactor!.score}) and underdog odds must score < 50 (${undFactor!.score})`,
+    );
+  });
+});

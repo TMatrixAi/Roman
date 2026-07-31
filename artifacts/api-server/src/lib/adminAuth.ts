@@ -28,15 +28,15 @@ function isProduction(): boolean {
 }
 
 export function getOwnerAutoLoginToken(): string | undefined {
-  // Optional dedicated token for owner-only magic-link login.
-  // Falls back to ADMIN_ACCESS_KEY so existing deployments work without extra setup.
+  // Dedicated token for the owner-only magic-link login endpoint.
+  // MUST be a separate secret from ADMIN_ACCESS_KEY: the magic-link token travels in a URL
+  // query string, which exposes it through browser history, server access logs, and proxy logs.
+  // Using the long-lived admin key as a URL parameter would compromise it permanently.
+  // Callers who haven't set a dedicated token get a 403 ("not configured") rather than
+  // a silent fallback to the admin key.
   const candidates = [
     process.env.OWNER_AUTO_LOGIN_TOKEN,
     process.env.OWNER_MAGIC_LINK_TOKEN,
-    process.env.ADMIN_ACCESS_KEY,
-    process.env.ADMIN_ACCESSKEY,
-    process.env.ADMIN_KEY,
-    process.env.ADMIN_PASSWORD,
   ];
   for (const value of candidates) {
     const trimmed = value?.trim();

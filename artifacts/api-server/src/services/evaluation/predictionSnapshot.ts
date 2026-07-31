@@ -9,6 +9,7 @@ import type { MatchFormat, MatchRecord, PlayerProfile, Surface, TennisDataProvid
 import { enrichPlayerRankFromSearch, resolvePlayerProfileForPrediction } from "../tennisData/playerIdentity";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
 import { resolveSimulatorAdoption } from "./simulatorValidation";
+import { fetchMarketOdds, type OddsQuote } from "../oddsData/index.js";
 
 export class PredictionSnapshotResolutionError extends Error {
   readonly missingFields: string[];
@@ -103,7 +104,7 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
 
   const matchTour = player1.tour ?? player2.tour;
 
-  const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment, simulatorAdoption, weather] = await Promise.all([
+  const [player1OpponentStrength, player2OpponentStrength, activeCalibrationRow, segment, simulatorAdoption, weather, marketOdds] = await Promise.all([
     resolveOpponentStrength(player1Matches),
     resolveOpponentStrength(player2Matches),
     db.select().from(calibrationModelsTable).where(eq(calibrationModelsTable.active, true)).limit(1),
@@ -112,6 +113,10 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
     input.includeWeather && input.scheduledStartAt
       ? getUpcomingConditions(input.tournamentName ?? null, input.scheduledStartAt)
       : Promise.resolve(null),
+    // Real pre-match market odds (The Odds API primary → Odds-API.io fallback).
+    // Passed to the engine so the Market Consensus module can vote when real odds are available.
+    // Non-throwing: returns null when neither provider has odds for this matchup today.
+    fetchMarketOdds(player1.name, player2.name, input.scheduledStartAt ?? null).catch((): OddsQuote | null => null),
   ]);
 
   const output = runPredictionEngine({
@@ -130,6 +135,7 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
     tournamentLevel: input.tournamentLevel ?? null,
     segment,
     simulatorAdoption,
+    marketOdds,
   });
 
   output.engine.warnings.push(...buildPlayerProfileWarnings(player1, player2));

@@ -75,7 +75,11 @@ export const MODULE_IMPORTANCE = {
  * reliability is a fixed constant (70), same as Fatigue above. Its warnings do not feed into any
  * prediction-output path. Including it adds a constant drag identical in form to Fatigue's.
  */
-export const EXCLUDED_FROM_DATA_QUALITY = new Set(["headToHead", "fatigue", "availability", "matchLoadRecovery"]);
+// marketOdds: excluded from Data Quality because the absence of live odds for a matchup is not
+// a data-richness gap -- the core prediction signals (match history, form, Elo) are independent
+// of whether a bookmaker happens to have listed odds today. Including it would silently penalise
+// every non-covered tournament even though the underlying prediction evidence is unchanged.
+export const EXCLUDED_FROM_DATA_QUALITY = new Set(["headToHead", "fatigue", "availability", "matchLoadRecovery", "marketOdds"]);
 
 /**
  * Fixed prior on how much each module's vote counts toward the ACTUAL blended probability

@@ -215,6 +215,131 @@ test("Form-Elo conflict gate: RF genuinely influences the ensemble and its remov
   }
 });
 
+// ─── Market Odds wiring tests ─────────────────────────────────────────────────
+//
+// The market odds module is a live-signal supplement that:
+//   - is present in engine.models only when a real OddsQuote is supplied
+//   - is absent when marketOdds is null (no fallback to 50/50 invented vote)
+//   - is absent when "marketOdds" is in excludedModels (ablation)
+//   - uses vig-normalized implied probability, so symmetric odds produce ~50%
+//   - is always excluded from the Data Quality blend (decisionTrace check)
+//
+// All tests use baseInput() with an injected OddsQuote — no network calls needed.
+
+test("Market Consensus appears in engine.models when real odds are supplied", () => {
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 1.60,
+      player2DecimalOdds: 2.40,
+      fetchedAt: new Date().toISOString(),
+    },
+  }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.ok(
+    marketVote !== undefined,
+    "Market Consensus must appear in engine.models when an OddsQuote is supplied",
+  );
+  assert.ok(
+    marketVote!.weightUsed > 0,
+    `Market Consensus must have positive ensemble weight (got ${marketVote!.weightUsed})`,
+  );
+});
+
+test("Market Consensus is absent from engine.models when marketOdds is null (no fabricated neutral vote)", () => {
+  const output = runPredictionEngine(baseInput({ marketOdds: null }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.strictEqual(
+    marketVote,
+    undefined,
+    "Market Consensus must NOT appear when marketOdds is null — absence must not synthesize a 50/50 noise vote",
+  );
+});
+
+test("Market Consensus is absent when excluded via ablation (excludedModels: Set(['marketOdds']))", () => {
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 1.60,
+      player2DecimalOdds: 2.40,
+      fetchedAt: new Date().toISOString(),
+    },
+    excludedModels: new Set(["marketOdds"] as const),
+  }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.strictEqual(
+    marketVote,
+    undefined,
+    "Market Consensus must be excluded from engine.models when 'marketOdds' is in excludedModels",
+  );
+});
+
+test("vig-normalized symmetric odds (2.0 / 2.0) produce a Market Consensus probability within 1pp of 50", () => {
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 2.0,
+      player2DecimalOdds: 2.0,
+      fetchedAt: new Date().toISOString(),
+    },
+  }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.ok(marketVote !== undefined, "Market Consensus must appear for valid symmetric odds");
+  assert.ok(
+    Math.abs(marketVote!.player1Probability - 50) < 1,
+    `symmetric 2.0/2.0 odds must produce near-50% probability after vig normalization (got ${marketVote!.player1Probability})`,
+  );
+});
+
+test("Market Consensus player1Probability > 50 when player1 is the heavy market favorite (1.20 odds)", () => {
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 1.20,
+      player2DecimalOdds: 4.50,
+      fetchedAt: new Date().toISOString(),
+    },
+  }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.ok(marketVote !== undefined, "Market Consensus must appear for valid asymmetric odds");
+  assert.ok(
+    marketVote!.player1Probability > 60,
+    `player1 at 1.20 decimal odds must produce player1Probability well above 50 (got ${marketVote!.player1Probability})`,
+  );
+});
+
+test("Market Consensus trace in decisionTrace.modules is always excludedFromDataQuality and never excludedFromEnsemble", () => {
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 1.80,
+      player2DecimalOdds: 2.00,
+      fetchedAt: new Date().toISOString(),
+    },
+  }));
+
+  const trace = output.decisionTrace.modules.find((m) => m.key === "marketOdds");
+  assert.ok(
+    trace !== undefined,
+    "marketOdds trace must appear in decisionTrace.modules when odds are present",
+  );
+  assert.strictEqual(
+    trace!.excludedFromDataQuality,
+    true,
+    "Market Consensus must always be excluded from the Data Quality blend (absence of live odds ≠ lower data quality)",
+  );
+  assert.strictEqual(
+    trace!.excludedFromEnsemble,
+    false,
+    "Market Consensus must NOT be excluded from the ensemble when real odds are present",
+  );
+});
+
 test("Form-Elo conflict gate: does NOT suppress RF when signals agree — RF retains its normal weight contribution", () => {
   // When both surface Elo and recent form point at the same player, the gate must be quiet.
   // Verify by checking that RF's weightUsed in the agree scenario is > a meaningful fraction

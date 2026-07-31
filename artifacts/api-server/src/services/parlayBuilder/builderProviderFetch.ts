@@ -40,6 +40,7 @@ import {
   type PlayerSummary,
 } from "../tennisData/index.js";
 import { fetchFromSofascore } from "./sofascoreProvider.js";
+import { fetchMarketOdds } from "../oddsData/index.js";
 
 // ─── Outcome & diagnostic types ──────────────────────────────────────────────
 
@@ -557,6 +558,47 @@ async function attemptSofascore(
 
   diag.sources.push(sfDiag);
   return null;
+}
+
+// ─── Odds API (market consensus) ─────────────────────────────────────────────
+
+/**
+ * Attempt to fetch real pre-match head-to-head decimal odds for this matchup from the
+ * configured odds providers (The Odds API primary → Odds-API.io fallback).
+ *
+ * Returns the decimal odds for the SELECTED player (the one passed as `selectedPlayerName`),
+ * or null when:
+ *   - neither odds key is configured
+ *   - neither provider currently lists odds for this matchup
+ *   - any transient provider error occurs (non-fatal: caller falls back to 50)
+ *
+ * `selectedPlayerName` is passed as "player1" to `fetchMarketOdds` so the caller can
+ * use `quote.player1DecimalOdds` directly without additional name-mapping.
+ *
+ * Always skipped in backfill mode (asOfDate != null) — real-time API calls must never
+ * fire when replaying historical matchups.
+ */
+export async function attemptOddsApi(
+  selectedPlayerName: string,
+  opponentName: string,
+  scheduledStart: Date | null,
+  asOfDate?: Date,
+  /**
+   * Optional fetch function override for unit tests. Production code always uses the real
+   * `fetchMarketOdds` from the oddsData module; tests inject a stub to avoid network calls.
+   */
+  _fetchFn: typeof fetchMarketOdds = fetchMarketOdds,
+): Promise<number | null> {
+  if (asOfDate != null) return null; // never call live APIs in backfill mode
+  try {
+    const quote = await _fetchFn(selectedPlayerName, opponentName, scheduledStart);
+    if (quote == null) return null;
+    // selectedPlayerName was passed as "player1" → player1DecimalOdds is theirs
+    const odds = quote.player1DecimalOdds;
+    return odds > 1 ? odds : null;
+  } catch {
+    return null; // non-fatal — market odds are supplemental
+  }
 }
 
 // ─── Exported helpers (for unit tests) ────────────────────────────────────────
