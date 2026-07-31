@@ -45,8 +45,13 @@ import { logger } from "../../lib/logger";
 
 export const SACKMANN_PROVIDER = "sackmann";
 
-// GitHub sources (original Sackmann repos — now private).
-// Set GITHUB_PAT to a personal access token with repo read access to re-enable.
+// Public mirror: farhadGithub/tennis-atp-data (ATP main-draw 1968–2024, exact Sackmann schema).
+// Confirmed reachable from Replit via both raw.githubusercontent.com and api.github.com/contents/.
+const FARHAD_ATP_MIRROR_BASE = "https://raw.githubusercontent.com/farhadGithub/tennis-atp-data/master/data/raw";
+
+// Original Sackmann repos (private — require a PAT that has collaborator access on JeffSackmann's repos).
+// Used for ATP Challenger/qualifying files (no public mirror exists for those) and all WTA files.
+// Gracefully returns [] on 404 so missing years are silently skipped.
 const ATP_BASE_URL = "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master";
 const WTA_BASE_URL = "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master";
 
@@ -515,11 +520,26 @@ export async function runSackmannBackfill(
 
           const tasks: Promise<void>[] = [];
 
-          // ── Main-draw file (Kaggle mirror → GitHub fallback) ─────────────
+          // ── Main-draw file ────────────────────────────────────────────────
+          // ATP: use the farhadGithub public mirror (1968–2024, exact Sackmann schema, confirmed
+          //      reachable from Replit). Falls back to the original Sackmann repo (private, 404s)
+          //      for years beyond 2024 or if the mirror is unavailable.
+          // WTA: no public mirror found; uses the original Sackmann repo (private, graceful 404).
           const mainFilename = `${prefix}_matches_${year}.csv`;
-          const mainUrl = `${base}/${mainFilename}`;
+          const mirrorBase = tour === "atp" ? FARHAD_ATP_MIRROR_BASE : null;
+          const mainUrl = mirrorBase
+            ? `${mirrorBase}/${mainFilename}`
+            : `${base}/${mainFilename}`;
+          // Kaggle fallback still attempted for WTA (gmadevs/wta-matches covers 2000–2016)
+          const useKaggle = tour === "wta";
           tasks.push(
-            fetchAndAppend(mainUrl, tourLabel, `${prefix}_matches_${year}`, kaggleDset, mainFilename).then((count) => {
+            fetchAndAppend(
+              mainUrl,
+              tourLabel,
+              `${prefix}_matches_${year}`,
+              useKaggle ? kaggleDset : undefined,
+              useKaggle ? mainFilename : undefined,
+            ).then((count) => {
               if (count > 0) {
                 if (tour === "atp") atpYearsLoaded++;
                 else wtaYearsLoaded++;
