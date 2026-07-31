@@ -22,8 +22,9 @@ import type {
 } from "./types";
 import { ProviderUnavailableError } from "./types";
 import { fetchFromSofascore } from "../parlayBuilder/sofascoreProvider.js";
+import { fetchFromBsdTennis } from "./bsdTennisProvider.js";
 
-// Minimum number of match records below which Sofascore tier-3 is attempted.
+// Minimum number of match records below which supplemental tiers are attempted.
 const SOFASCORE_MIN_RECORDS_THRESHOLD = 5;
 
 export class CompositeTennisProvider implements TennisDataProvider {
@@ -129,30 +130,41 @@ export class CompositeTennisProvider implements TennisDataProvider {
       }
     }
 
-    // Tier-3: Sofascore. Used when both primary and fallback return sparse or no history,
-    // which happens most often for Challenger/ITF/WTA-lower players. Sofascore has broader
-    // coverage for these tiers. Only attempted when a player name is cached (i.e. getPlayer
-    // was called first, which is the normal prediction flow).
-    if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD) {
-      const playerName = this.playerNameCache.get(playerId);
-      if (playerName) {
-        try {
-          const sfResult = await fetchFromSofascore(playerName);
-          if (sfResult.records.length > 0) {
-            logger.debug(
-              { playerId, playerName, primary: records.length, sofascore: sfResult.records.length },
-              "compositeProvider: Sofascore tier-3 supplemented match history",
-            );
-            // Merge: Sofascore records first (most recent events first), primary records appended.
-            // Deduplication by (surface, score, tourney similarity) is not done here — the
-            // prediction engine handles sparse/duplicate history gracefully.
-            return sfResult.records.length >= records.length
-              ? sfResult.records
-              : records;
-          }
-        } catch (sfErr) {
-          logger.debug({ playerId, playerName, err: sfErr }, "compositeProvider: Sofascore tier-3 failed (non-fatal)");
+    const playerName = this.playerNameCache.get(playerId);
+
+    // Tier-3: BSD Tennis (sports.bzzoiro.com). Structured JSON API, covers top ATP/WTA
+    // ranked players. Only fires when BSD_TENNIS_API_KEY is configured and both primary
+    // and fallback are unavailable or return sparse history.
+    if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD && playerName) {
+      try {
+        const bsdResult = await fetchFromBsdTennis(playerName);
+        if (bsdResult.records.length > records.length) {
+          logger.debug(
+            { playerId, playerName, prior: records.length, bsd: bsdResult.records.length },
+            "compositeProvider: BSD Tennis tier-3 supplemented match history",
+          );
+          records = bsdResult.records;
         }
+      } catch (bsdErr) {
+        logger.debug({ playerId, playerName, err: bsdErr }, "compositeProvider: BSD Tennis tier-3 failed (non-fatal)");
+      }
+    }
+
+    // Tier-4: Sofascore (public unauthenticated API). Broader coverage for Challenger/ITF/
+    // WTA-lower players not in BSD's top-500 rankings. Only attempted when a player name
+    // is cached (i.e. getPlayer was called first, which is the normal prediction flow).
+    if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD && playerName) {
+      try {
+        const sfResult = await fetchFromSofascore(playerName);
+        if (sfResult.records.length > records.length) {
+          logger.debug(
+            { playerId, playerName, prior: records.length, sofascore: sfResult.records.length },
+            "compositeProvider: Sofascore tier-4 supplemented match history",
+          );
+          records = sfResult.records;
+        }
+      } catch (sfErr) {
+        logger.debug({ playerId, playerName, err: sfErr }, "compositeProvider: Sofascore tier-4 failed (non-fatal)");
       }
     }
 
