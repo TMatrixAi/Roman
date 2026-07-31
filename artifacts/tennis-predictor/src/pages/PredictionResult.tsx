@@ -349,15 +349,34 @@ export default function PredictionResultPage() {
                   <div className="mt-6 flex flex-wrap gap-3">
                     <Badge
                       variant={
+                        // v2 tiers (current engine output)
+                        prediction.recommendation === 'HIGHEST_CONFIDENCE' ? 'success' :
+                        prediction.recommendation === 'HIGH_CONFIDENCE'    ? 'success' :
+                        prediction.recommendation === 'MODERATE_CONFIDENCE' ? 'secondary' :
+                        prediction.recommendation === 'LOW_CONFIDENCE'     ? 'warning' :
+                        prediction.recommendation === 'INSUFFICIENT_EDGE'  ? 'outline' :
+                        // Legacy tiers (stored in older prediction rows)
                         prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
-                        prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
-                        prediction.recommendation === 'HIGH_RISK' ? 'warning' :
-                        prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
+                        prediction.recommendation === 'MODERATE_LEAN'     ? 'secondary' :
+                        prediction.recommendation === 'HIGH_RISK'          ? 'warning' :
+                        prediction.recommendation === 'NO_STRONG_SIGNAL'  ? 'outline' :
+                        prediction.recommendation === 'DO_NOT_RECOMMEND'  ? 'destructive' :
+                        'outline' // safe fallback — unknown label stays neutral, not red
                       }
-                      className="text-sm px-3 py-1.5 font-bold shadow-md"
+                      className={`text-sm px-3 py-1.5 font-bold shadow-md${
+                        prediction.recommendation === 'INSUFFICIENT_EDGE'
+                          ? ' text-muted-foreground border-muted-foreground/30'
+                          : ''
+                      }`}
                       title={
-                        prediction.recommendation === 'STRONG_RECOMMENDATION'
-                          ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
+                        prediction.recommendation === 'HIGHEST_CONFIDENCE'
+                          ? "All three core signals (Surface Elo, Serve & Return, Recent Form) agree on the same player."
+                          : prediction.recommendation === 'HIGH_CONFIDENCE'
+                          ? "Strong directional agreement across the core engine signals."
+                          : prediction.recommendation === 'INSUFFICIENT_EDGE'
+                          ? "The pick is within ±3% of a coin flip — not enough edge to recommend confidently."
+                          : prediction.recommendation === 'STRONG_RECOMMENDATION'
+                          ? "The engine's highest-confidence legacy tier — validate against more recent outputs."
                           : undefined
                       }
                     >
