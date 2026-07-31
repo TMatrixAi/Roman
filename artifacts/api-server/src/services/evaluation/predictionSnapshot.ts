@@ -7,6 +7,7 @@ import { resolveOpponentStrength, type OpponentStrengthResolution } from "../pre
 import { getUpcomingConditions, type WeatherConditions } from "../predictionEngine/weather";
 import type { MatchFormat, MatchRecord, PlayerProfile, Surface, TennisDataProvider, TournamentLevel, HeadToHeadRecord } from "../tennisData";
 import { enrichPlayerRankFromSearch, resolvePlayerProfileForPrediction } from "../tennisData/playerIdentity";
+import { CompositeTennisProvider } from "../tennisData/compositeProvider.js";
 import { resolveSegmentSpecialistInput } from "./specialistWeights";
 import { resolveSimulatorAdoption } from "./simulatorValidation";
 import { fetchMarketOdds, type OddsQuote } from "../oddsData/index.js";
@@ -77,6 +78,20 @@ export async function predictFromSnapshot(input: PredictionSnapshotInput): Promi
 
   const resolvedPlayer1Id = player1Resolution.resolvedPlayerId;
   const resolvedPlayer2Id = player2Resolution.resolvedPlayerId;
+
+  // Pre-seed the composite provider's name cache so the Sofascore tier-3 in
+  // getPlayerMatches can activate even if getPlayer() fails for both primary and
+  // fallback (e.g. API-Tennis circuit open, player not in MatchStat rankings).
+  // Submitted names come from fixture card headers — they are the real names
+  // from the source that generated the fixture, not guesses.
+  if (input.provider instanceof CompositeTennisProvider) {
+    if (input.player1SubmittedName && resolvedPlayer1Id) {
+      input.provider.seedPlayerName(resolvedPlayer1Id, input.player1SubmittedName);
+    }
+    if (input.player2SubmittedName && resolvedPlayer2Id) {
+      input.provider.seedPlayerName(resolvedPlayer2Id, input.player2SubmittedName);
+    }
+  }
 
   const [player1, player2] = await Promise.all([
     enrichPlayerRankFromSearch(input.provider, player1Raw),

@@ -79,6 +79,19 @@ export class CompositeTennisProvider implements TennisDataProvider {
     );
   }
 
+  /**
+   * Pre-seed the player name cache so the Sofascore tier-3 in getPlayerMatches
+   * can activate even when both primary and fallback fail for getPlayer. Should
+   * be called by any code that already has the player name from fixture data
+   * (e.g. predictFromSnapshot when submittedPlayerName is available). Has no
+   * effect if the ID is already cached from a prior getPlayer call.
+   */
+  seedPlayerName(playerId: string, name: string): void {
+    if (!this.playerNameCache.has(playerId)) {
+      this.playerNameCache.set(playerId, name);
+    }
+  }
+
   async getPlayer(playerId: string): Promise<PlayerProfile | null> {
     const profile = await this.withFallback(
       "getPlayer",

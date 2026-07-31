@@ -418,18 +418,29 @@ export class MatchStatProvider implements TennisDataProvider {
   // ── Not available on this API — throw immediately to avoid wasted HTTP calls ──
 
   async getPlayer(_playerId: string): Promise<PlayerProfile | null> {
+    // Player profiles are not available from this API — route to API-Tennis.
+    // Important: MatchStat/RapidAPI player IDs are a different namespace from
+    // API-Tennis IDs. Never attempt to look up MatchStat IDs against API-Tennis
+    // or vice versa — they collide with unrelated players (often doubles teams).
+    // The compositeProvider's name cache is seeded via seedPlayerName() by callers
+    // that have the player name from fixture data, so the Sofascore tier-3 in
+    // getPlayerMatches can activate even when both primary and fallback fail here.
     throw new ProviderUnavailableError(
       "MatchStat: player profile endpoint not available — routing to API-Tennis",
     );
   }
 
   async getPlayerMatches(_playerId: string): Promise<MatchRecord[]> {
+    // Individual match records are not available from this API.  Throwing here
+    // causes the composite provider to route to API-Tennis (tier-2), and if that
+    // also fails, Sofascore (tier-3) is attempted via the compositeProvider's own
+    // getPlayerMatches fallback logic using the name seeded via seedPlayerName().
     throw new ProviderUnavailableError(
       "MatchStat: player match history endpoint not available — routing to API-Tennis",
     );
   }
 
-  async getHeadToHead(player1Id: string, player2Id: string): Promise<HeadToHeadRecord> {
+  async getHeadToHead(_player1Id: string, _player2Id: string): Promise<HeadToHeadRecord> {
     // H2H is embedded as a summary string in upcoming match data ("0-1"), not a
     // detailed endpoint.  Throw so API-Tennis provides the full meeting history.
     throw new ProviderUnavailableError(
