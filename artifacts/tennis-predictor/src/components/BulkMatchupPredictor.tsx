@@ -21,7 +21,7 @@ import { isGrandSlam } from "@/lib/grandSlam"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
 
-const MAX_FILES = 40
+const MAX_FILES = 150
 
 const STORAGE_KEY = "bulkMatchupPredictor.batch.v1"
 
