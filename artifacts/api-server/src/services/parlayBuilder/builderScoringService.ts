@@ -91,11 +91,22 @@ export interface DataSourceDiagnostics {
    */
   opponentProviderDiag?: LiveFetchDiagnostics;
   /**
-   * True when at least one player had 0 local rows AND the provider was
-   * unreachable (SOURCE_UNAVAILABLE). A Grade D or REMOVE from zero data
-   * is misleading in this case — the frontend should show DATA_UNAVAILABLE.
+   * True when at least one player had 0 local rows AND the live-fetch returned
+   * a no-data outcome (SOURCE_UNAVAILABLE, DATA_UNAVAILABLE, PLAYER_NOT_FOUND,
+   * or NO_MATCH_HISTORY). A graded score from zero evidence is actively
+   * misleading — the frontend must show DATA_UNAVAILABLE instead of a grade.
    */
   isProviderOutage?: boolean;
+  /**
+   * Machine-readable cause of the no-data condition. Allows the frontend to
+   * show a cause-specific message rather than a generic "provider error".
+   *
+   *   provider-unreachable — SOURCE_UNAVAILABLE: providers timed out / errored
+   *   not-configured       — DATA_UNAVAILABLE: no provider keys are set
+   *   player-not-found     — PLAYER_NOT_FOUND: providers responded but don't know this player
+   *   no-history           — NO_MATCH_HISTORY: player was identified but has 0 pro match records
+   */
+  noDataReason?: "provider-unreachable" | "not-configured" | "player-not-found" | "no-history";
   /** Set when data is available but limited; explains why scores may be low-confidence. */
   dataConfidenceNote?: string;
 }
@@ -712,23 +723,85 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       : r.winner_id,
   }));
 
-  // ── Provider-outage guard ────────────────────────────────────────────────
-  // If a player is absent from the local DB AND the provider was unreachable,
-  // we have no real evidence at all. Computing a Grade D from zero matches
-  // would be actively misleading — return DATA_UNAVAILABLE instead.
-  const selIsOutage = selMatches.length === 0 &&
-    selResolution.liveFetchDiagnostics?.outcome === "SOURCE_UNAVAILABLE";
-  const oppIsOutage = oppMatches.length === 0 &&
-    oppResolution.liveFetchDiagnostics?.outcome === "SOURCE_UNAVAILABLE";
+  // ── No-evidence guard ────────────────────────────────────────────────────
+  //
+  // If a player is absent from the local DB AND the live-fetch returned a
+  // no-data outcome, we have zero real evidence. Computing any grade from
+  // zero matches is actively misleading — return DATA_UNAVAILABLE instead.
+  //
+  // No-data outcomes (in live mode only — backfill skips Layer 5 entirely
+  // and intentionally scores thin-data rows to build calibration data):
+  //   SOURCE_UNAVAILABLE  — providers timed out or errored
+  //   DATA_UNAVAILABLE    — no provider API keys configured
+  //   PLAYER_NOT_FOUND    — providers responded but don't know this player
+  //   NO_MATCH_HISTORY    — player found; no completed pro match records
 
-  if (selIsOutage || oppIsOutage) {
-    const outagePlayers = [
-      ...(selIsOutage ? [selectedPlayerName] : []),
-      ...(oppIsOutage ? [opponentName] : []),
+  const NO_EVIDENCE_OUTCOMES = new Set<ResolutionOutcome>([
+    "SOURCE_UNAVAILABLE", "DATA_UNAVAILABLE", "PLAYER_NOT_FOUND", "NO_MATCH_HISTORY",
+  ]);
+
+  // Only applies in live mode (asOfDate = null); backfill mode never calls Layer 5.
+  const isLiveMode = asOfDate == null;
+
+  const selNoEvidenceOutcome = selResolution.liveFetchDiagnostics?.outcome;
+  const oppNoEvidenceOutcome = oppResolution.liveFetchDiagnostics?.outcome;
+
+  const selIsNoEvidence = isLiveMode && selMatches.length === 0 &&
+    (selNoEvidenceOutcome == null || NO_EVIDENCE_OUTCOMES.has(selNoEvidenceOutcome));
+  const oppIsNoEvidence = isLiveMode && oppMatches.length === 0 &&
+    (oppNoEvidenceOutcome == null || NO_EVIDENCE_OUTCOMES.has(oppNoEvidenceOutcome));
+
+  if (selIsNoEvidence || oppIsNoEvidence) {
+    const noEvidencePlayers = [
+      ...(selIsNoEvidence ? [selectedPlayerName] : []),
+      ...(oppIsNoEvidence ? [opponentName] : []),
     ];
-    const reasons = selResolution.liveFetchDiagnostics?.failureReasons.length
-      ? selResolution.liveFetchDiagnostics.failureReasons
-      : oppResolution.liveFetchDiagnostics?.failureReasons ?? [];
+
+    // Pick the most specific cause for messaging (prefer the cause of the selected player,
+    // then opponent, since we can only surface one primary note to the user).
+    const primaryOutcome = selNoEvidenceOutcome ?? oppNoEvidenceOutcome;
+
+    const noDataReason: DataSourceDiagnostics["noDataReason"] =
+      primaryOutcome === "SOURCE_UNAVAILABLE" ? "provider-unreachable"
+      : primaryOutcome === "DATA_UNAVAILABLE" ? "not-configured"
+      : primaryOutcome === "PLAYER_NOT_FOUND" ? "player-not-found"
+      : primaryOutcome === "NO_MATCH_HISTORY" ? "no-history"
+      : "provider-unreachable"; // fallback (null outcome = Layer 5 skipped unexpectedly)
+
+    const dataConfidenceNote =
+      noDataReason === "provider-unreachable"
+        ? `External data providers could not be reached for ${noEvidencePlayers.join(" and ")}. Validation is unavailable — try again when providers are online.`
+        : noDataReason === "not-configured"
+          ? `No data providers are configured for ${noEvidencePlayers.join(" and ")}. Check that API keys (API_TENNIS_KEY, X_RAPIDAPI_KEY) are set.`
+          : noDataReason === "player-not-found"
+            ? `${noEvidencePlayers.join(" and ")} could not be found in any configured data provider. Check spelling and try again.`
+            : /* no-history */
+              `${noEvidencePlayers.join(" and ")} was identified in provider records but has no completed professional match history. Cannot produce a meaningful grade.`;
+
+    const criticalFlagMessage =
+      noDataReason === "provider-unreachable"
+        ? `Data unavailable — providers unreachable for: ${noEvidencePlayers.join(", ")}`
+        : noDataReason === "not-configured"
+          ? `Data unavailable — no provider keys configured for: ${noEvidencePlayers.join(", ")}`
+          : noDataReason === "player-not-found"
+            ? `Player not found in any provider — check name for: ${noEvidencePlayers.join(", ")}`
+            : `No professional match records found for: ${noEvidencePlayers.join(", ")}`;
+
+    const failureReasons =
+      selResolution.liveFetchDiagnostics?.failureReasons.length
+        ? selResolution.liveFetchDiagnostics.failureReasons
+        : oppResolution.liveFetchDiagnostics?.failureReasons ?? [];
+
+    const reasons = failureReasons.length > 0
+      ? failureReasons
+      : noDataReason === "provider-unreachable"
+        ? ["All configured data providers were unreachable. No evidence could be gathered for this validation."]
+        : noDataReason === "not-configured"
+          ? ["No data provider API keys are configured. Set API_TENNIS_KEY or X_RAPIDAPI_KEY to enable live validation."]
+          : noDataReason === "player-not-found"
+            ? [`${noEvidencePlayers.join(" and ")} could not be found in any provider. Verify the player name and try again.`]
+            : [`${noEvidencePlayers.join(" and ")} has no completed professional match records on file.`];
+
     const dataSourceDiagnostics: DataSourceDiagnostics = {
       selectedPlayerStatus: "player_not_found",
       opponentStatus: "player_not_found",
@@ -736,10 +809,12 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       opponentMatchCount: 0,
       h2hMatchCount: 0,
       isProviderOutage: true,
+      noDataReason,
       selectedPlayerProviderDiag: selResolution.liveFetchDiagnostics,
       opponentProviderDiag: oppResolution.liveFetchDiagnostics,
-      dataConfidenceNote: `External data providers could not be reached for ${outagePlayers.join(" and ")}. Validation is unavailable — try again when providers are online.`,
+      dataConfidenceNote,
     };
+
     return {
       validationScore: 0,
       riskScore: 0,
@@ -748,8 +823,8 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       parlayGrade: "Reject",
       removalProbability: 0,
       decision: "DATA_UNAVAILABLE",
-      reasons: reasons.length > 0 ? reasons : ["All configured data providers were unreachable. No evidence could be gathered for this validation."],
-      criticalFlags: [`Data unavailable — providers unreachable for: ${outagePlayers.join(", ")}`],
+      reasons,
+      criticalFlags: [criticalFlagMessage],
       dataCoverage: 0,
       sourceAgreement: 0,
       sourcesAgreeing: 0,

@@ -100,7 +100,9 @@ interface DataSourceDiagnostics {
   selectedPlayerMatchCount: number; opponentMatchCount: number; h2hMatchCount: number
   selectedPlayerResolvedVia?: string; opponentResolvedVia?: string
   selectedPlayerProviderDiag?: LiveFetchDiagnostics; opponentProviderDiag?: LiveFetchDiagnostics
-  isProviderOutage?: boolean; dataConfidenceNote?: string
+  isProviderOutage?: boolean
+  noDataReason?: "provider-unreachable" | "not-configured" | "player-not-found" | "no-history"
+  dataConfidenceNote?: string
 }
 
 interface BuilderLegResult {
@@ -176,6 +178,7 @@ function decisionBadge(d: string, size = "sm") {
   const cls = size === "lg" ? "text-xs px-3 py-1" : "text-[10px]"
   if (d === "KEEP") return <Badge className={`${cls} bg-success/20 text-success border-success/30 gap-1`}><CheckCircle2 className="w-2.5 h-2.5" />KEEP</Badge>
   if (d === "REMOVE") return <Badge variant="destructive" className={`${cls} gap-1`}><XCircle className="w-2.5 h-2.5" />REMOVE</Badge>
+  if (d === "DATA_UNAVAILABLE") return <Badge className={`${cls} bg-muted text-muted-foreground border-border/50 gap-1`}><WifiOff className="w-2.5 h-2.5" />NO DATA</Badge>
   return <Badge className={`${cls} bg-warning/20 text-warning border-warning/30 gap-1`}><AlertTriangle className="w-2.5 h-2.5" />BORDERLINE</Badge>
 }
 
@@ -874,16 +877,47 @@ function ValidationLegCard({ leg, isAutoSelected, isSaved, onToggleSave }: {
           {leg.surface && <span className="text-muted-foreground">Surface: <span className="text-foreground">{leg.surface}</span></span>}
         </div>
 
-        {/* DATA_UNAVAILABLE — provider outage */}
+        {/* DATA_UNAVAILABLE — no real evidence; distinct from low-confidence */}
         {leg.decision === "DATA_UNAVAILABLE" && leg.dataSourceDiagnostics?.isProviderOutage && (
           <div className="flex items-start gap-1.5 p-2 rounded-lg bg-muted/60 border border-border/40">
-            <WifiOff className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+            {leg.dataSourceDiagnostics.noDataReason === "player-not-found" ? (
+              <UserX className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+            ) : leg.dataSourceDiagnostics.noDataReason === "no-history" ? (
+              <Database className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+            ) : (
+              <WifiOff className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+            )}
             <div className="min-w-0 space-y-0.5">
-              <p className="text-[10px] font-mono text-foreground font-bold">DATA UNAVAILABLE</p>
+              <p className="text-[10px] font-mono text-foreground font-bold">
+                {leg.dataSourceDiagnostics.noDataReason === "player-not-found"
+                  ? "PLAYER NOT FOUND"
+                  : leg.dataSourceDiagnostics.noDataReason === "no-history"
+                    ? "NO MATCH RECORDS"
+                    : leg.dataSourceDiagnostics.noDataReason === "not-configured"
+                      ? "PROVIDERS NOT CONFIGURED"
+                      : "DATA UNAVAILABLE"}
+              </p>
               <p className="text-[10px] font-mono text-muted-foreground leading-snug">{leg.dataSourceDiagnostics.dataConfidenceNote}</p>
+              {/* Per-player provider outcome detail */}
               {leg.dataSourceDiagnostics.selectedPlayerProviderDiag && (
                 <p className="text-[9px] font-mono text-muted-foreground/60">
-                  Sources tried: {leg.dataSourceDiagnostics.selectedPlayerProviderDiag.sourcesAttempted.join(", ") || "none"}
+                  Selected player — sources tried: {leg.dataSourceDiagnostics.selectedPlayerProviderDiag.sourcesAttempted.join(", ") || "none"}
+                  {leg.dataSourceDiagnostics.selectedPlayerProviderDiag.outcome !== "DATA_FOUND" && (
+                    <span className="ml-1 text-muted-foreground/40">({leg.dataSourceDiagnostics.selectedPlayerProviderDiag.outcome})</span>
+                  )}
+                </p>
+              )}
+              {leg.dataSourceDiagnostics.opponentProviderDiag && (
+                <p className="text-[9px] font-mono text-muted-foreground/60">
+                  Opponent — sources tried: {leg.dataSourceDiagnostics.opponentProviderDiag.sourcesAttempted.join(", ") || "none"}
+                  {leg.dataSourceDiagnostics.opponentProviderDiag.outcome !== "DATA_FOUND" && (
+                    <span className="ml-1 text-muted-foreground/40">({leg.dataSourceDiagnostics.opponentProviderDiag.outcome})</span>
+                  )}
+                </p>
+              )}
+              {leg.dataSourceDiagnostics.noDataReason === "player-not-found" && (
+                <p className="text-[9px] font-mono text-warning/70">
+                  Check name spelling — use the exact name the provider uses (e.g. "R. Nadal" or "Rafael Nadal")
                 </p>
               )}
             </div>
