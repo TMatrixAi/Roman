@@ -9,7 +9,7 @@ import {
   Layers, ImagePlus, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
   ChevronDown, ChevronUp, Trash2, RotateCcw, Search, Play, FlaskConical,
   Shield, ShieldAlert, ShieldOff, TrendingUp, Activity, BarChart2, ArrowLeftRight,
-  Wifi, WifiOff, Server, Database, Bookmark, BookmarkCheck, History, X,
+  Wifi, WifiOff, Server, Database, Bookmark, BookmarkCheck, History, X, UserX,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
