@@ -149,6 +149,25 @@ export default function PredictionResultPage() {
   }
 
   const engine = prediction.engine;
+
+  // When tieBreakerApplied=true, the banner must display the RAW ensemble probability that
+  // triggered the disclosure — not calibratedProbability, which can land at extreme values
+  // (e.g. 100%/0%) after calibration, specialist-blending, and simulator-blending run *after*
+  // the tie-breaker check. Showing calibratedProbability inside a "Too Close to Call" banner
+  // directly contradicts the banner's own text ("The raw ensemble probability is shown").
+  //
+  // Semantic choice (Option b from the task spec): tieBreakerApplied is anchored to the raw
+  // ensemble. If calibration subsequently resolves the signal strongly, the UI should still
+  // surface the raw ensemble in the banner — the ensemble was genuinely a coin flip regardless
+  // of what calibration did after.  calibratedProbability remains the authoritative stored value
+  // and is used everywhere outside the "Too Close to Call" hero.
+  //
+  // Source: decisionTrace.pipeline.rawEnsemble (written by index.ts at prediction time and
+  // always available when decisionTrace is present). Fallback to calibratedProbability for
+  // legacy predictions that predate the decisionTrace field, so the banner never crashes.
+  const rawEnsemble: number =
+    (prediction as any).decisionTrace?.pipeline?.rawEnsemble ?? prediction.calibratedProbability;
+
   const isResolved = !!prediction.actualWinnerId;
   const isCorrect = prediction.actualWinnerId === prediction.predictedWinnerId;
   // Auth status represents the single owner session cookie, so this stays owner-only.
@@ -231,14 +250,14 @@ export default function PredictionResultPage() {
                       <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-foreground break-words leading-tight">
                         {prediction.player1Name}
                       </h2>
-                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{prediction.calibratedProbability.toFixed(1)}%</span>
+                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{rawEnsemble.toFixed(1)}%</span>
                     </div>
                     <div className="text-muted-foreground font-mono text-xs tracking-widest uppercase px-1">vs</div>
                     <div className="flex items-baseline gap-3">
                       <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-foreground break-words leading-tight">
                         {prediction.player2Name}
                       </h2>
-                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{(100 - prediction.calibratedProbability).toFixed(1)}%</span>
+                      <span className="text-lg font-mono text-muted-foreground tabular-nums">{(100 - rawEnsemble).toFixed(1)}%</span>
                     </div>
                   </div>
                   <div className="mt-6 flex flex-wrap gap-3">
@@ -353,11 +372,13 @@ export default function PredictionResultPage() {
                 <div className="space-y-3 bg-secondary/30 p-5 rounded-2xl border border-border/50">
                   <div className="flex justify-between font-mono text-sm items-center">
                     <span className="font-bold text-muted-foreground tracking-widest">RAW PROBABILITY SPLIT</span>
-                    <span className="font-mono text-sm text-muted-foreground tabular-nums">{prediction.calibratedProbability.toFixed(1)} / {(100 - prediction.calibratedProbability).toFixed(1)}</span>
+                    <span className="font-mono text-sm text-muted-foreground tabular-nums">{rawEnsemble.toFixed(1)} / {(100 - rawEnsemble).toFixed(1)}</span>
                   </div>
-                  {/* Centred bar showing how close to 50/50 the split is */}
+                  {/* Centred bar showing how close to 50/50 the split is — uses rawEnsemble,
+                      the value that triggered the close-match disclosure, not calibratedProbability
+                      (which can diverge significantly after calibration and blending). */}
                   <div className="h-4 w-full bg-background rounded-full overflow-hidden flex border border-border shadow-inner relative">
-                    <div className="h-full bg-primary/40 transition-all duration-1000 ease-out" style={{ width: `${prediction.calibratedProbability}%` }} />
+                    <div className="h-full bg-primary/40 transition-all duration-1000 ease-out" style={{ width: `${rawEnsemble}%` }} />
                     <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-border/80" />
                   </div>
                   <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
