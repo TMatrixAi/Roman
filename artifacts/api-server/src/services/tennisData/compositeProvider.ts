@@ -23,6 +23,7 @@ import type {
 import { ProviderUnavailableError } from "./types";
 import { fetchFromSofascore } from "../parlayBuilder/sofascoreProvider.js";
 import { fetchFromBsdTennis } from "./bsdTennisProvider.js";
+import { getPlayerMatchesFromDb } from "./dbHistoryFallback.js";
 
 // Minimum number of match records below which supplemental tiers are attempted.
 const SOFASCORE_MIN_RECORDS_THRESHOLD = 5;
@@ -165,6 +166,25 @@ export class CompositeTennisProvider implements TennisDataProvider {
         }
       } catch (sfErr) {
         logger.debug({ playerId, playerName, err: sfErr }, "compositeProvider: Sofascore tier-4 failed (non-fatal)");
+      }
+    }
+
+    // Tier-5: historical_matches DB. Final safety net when all live providers (MatchStat,
+    // API-Tennis, BSD Tennis, Sofascore) are unavailable or return sparse history.
+    // Player IDs in historical_matches use the same api-tennis.com namespace as the engine,
+    // so lookup is direct by playerId — no name resolution needed.
+    if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD) {
+      try {
+        const dbRecords = await getPlayerMatchesFromDb(playerId);
+        if (dbRecords.length > records.length) {
+          logger.info(
+            { playerId, prior: records.length, db: dbRecords.length },
+            "compositeProvider: historical_matches DB tier-5 supplemented match history",
+          );
+          records = dbRecords;
+        }
+      } catch (dbErr) {
+        logger.debug({ playerId, err: dbErr }, "compositeProvider: DB tier-5 failed (non-fatal)");
       }
     }
 

@@ -186,6 +186,18 @@ function stddev(values: number[]): number {
 }
 
 // ---------------------------------------------------------------------------
+// Closeness risk floor — smooth ramp replacing the old two-step cliff.
+// At cs ≤ 50 the floor is 0.  Between 50 and 80 it ramps linearly from 0→40.
+// Between 80 and 100 it continues at a shallower slope to a ceiling of 55.
+// This eliminates the 40-point jump that appeared the moment cs crossed 65.
+// ---------------------------------------------------------------------------
+function closenessRiskFloor(cs: number): number {
+  if (cs <= 50) return 0;
+  if (cs <= 80) return Math.round(((cs - 50) / 30) * 40);   // 50→0 … 80→40
+  return Math.round(40 + ((cs - 80) / 20) * 15);             // 80→40 … 100→55
+}
+
+// ---------------------------------------------------------------------------
 // DB row types
 // ---------------------------------------------------------------------------
 
@@ -459,9 +471,15 @@ async function resolvePlayerMatchRows(
 export interface PlayerStats {
   total: number;
   winRate: number;
+  /** 0 at n=0, 1 at n≥10 — how much to trust winRate vs. the 0.5 prior */
+  winRateConfidence: number;
   surfaceTotal: number;
   surfaceWinRate: number;
+  /** 0 at n=0, 1 at n≥5 — how much to trust surfaceWinRate */
+  surfaceWinRateConfidence: number;
   recentWinRate: number;     // last 10 matches
+  /** 0 at n=0, 1 at n≥5 — how much to trust recentWinRate */
+  recentWinRateConfidence: number;
   avgOppRank: number;        // SOS proxy (lower avg rank = tougher schedule)
   surfaceAvgOppRank: number;
   retirementRate: number;    // times player retired / total
@@ -535,8 +553,12 @@ export function computePlayerStats(
 
   return {
     total, winRate,
-    surfaceTotal: surfaceMatches.length, surfaceWinRate: surfaceMatches.length > 0 ? surfaceWins / surfaceMatches.length : 0.5,
+    winRateConfidence: Math.min(1, total / 10),
+    surfaceTotal: surfaceMatches.length,
+    surfaceWinRate: surfaceMatches.length > 0 ? surfaceWins / surfaceMatches.length : 0.5,
+    surfaceWinRateConfidence: Math.min(1, surfaceMatches.length / 5),
     recentWinRate: recent10.length > 0 ? recent10Wins / recent10.length : 0.5,
+    recentWinRateConfidence: Math.min(1, recent10.length / 5),
     avgOppRank, surfaceAvgOppRank,
     retirementRate, lastMatchDate, currentRank,
     tournamentWinRate: tournamentMatches.length > 0 ? tournamentWins / tournamentMatches.length : 0.5,
@@ -1199,17 +1221,20 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
 
   let risk = 35; // baseline
 
-  // Raise risk for negative signals
-  if (sel.recentWinRate < 0.4) risk += 12;
-  if (surface && sel.surfaceWinRate < 0.4 && sel.surfaceTotal >= 5) risk += 10;
+  // Raise risk for negative signals — continuous versions replace the old binary on/off
+  // switches so adjacent values (e.g. recentWinRate 0.39 vs 0.41) differ by ~1 point
+  // of risk rather than a hard 12-point cliff.
+  risk += Math.round(Math.max(0, (0.4 - sel.recentWinRate) / 0.4) * 12);
+  if (surface && sel.surfaceTotal >= 5)
+    risk += Math.round(Math.max(0, (0.4 - sel.surfaceWinRate) / 0.4) * 10);
   if (marketOdds != null && 1 / marketOdds < 0.42) risk += 18;
   if (selDaysRest != null && selDaysRest <= 1) risk += 10;
   if (sel.retirementRate > 0.12) risk += 8;
-  if (opp.recentWinRate > 0.7) risk += 8;
-  if (sel.total < 10) risk += 12;  // insufficient data for selected player = more risk
-  if (opp.total < 10) risk += 12;  // BUG B FIX: insufficient data for OPPONENT also raises risk
-                                    // (previously omitted; thin opponent data could improve risk
-                                    // via the agreement bonus on a collapsed factor set)
+  risk += Math.round(Math.max(0, (opp.recentWinRate - 0.7) / 0.3) * 8);
+  // Data-scarcity penalty: 0 at n≥10, full 15 at n=0 — thin data is penalised
+  // proportionally so a 1-match player differs meaningfully from a 9-match one.
+  risk += Math.round((1 - Math.min(1, sel.total / 10)) * 15);
+  risk += Math.round((1 - Math.min(1, opp.total / 10)) * 15);
   if (dataCoverage < 60) risk += 10;
 
   // Lower risk for positive signals
@@ -1251,9 +1276,16 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
 
   const closenessSignals: number[] = [];
 
-  // Win rate gap: 0 gap = maximally close (100), 0.4+ gap = clearly separated (0)
-  const winRateGap = Math.abs(sel.winRate - opp.winRate);
-  closenessSignals.push(clamp(Math.round((1 - winRateGap / 0.4) * 100), 0, 100));
+  // Win rate gap: 0 gap = maximally close (100), 0.4+ gap = clearly separated (0).
+  // ONLY included when both players have enough data for winRate to be meaningful —
+  // a 0.5 vs 0.5 gap from two thin-data defaults is absence-of-signal, not a real
+  // even matchup, and should not trigger the closeness floor.
+  const winRateSignalConf = Math.min(sel.winRateConfidence, opp.winRateConfidence);
+  if (winRateSignalConf > 0) {
+    const winRateGap = Math.abs(sel.winRate - opp.winRate);
+    const rawSignal = clamp(Math.round((1 - winRateGap / 0.4) * 100), 0, 100);
+    closenessSignals.push(Math.round(rawSignal * winRateSignalConf));
+  }
 
   // Surface win rate gap, only when both players have a real surface sample
   if (surface && sel.surfaceTotal >= 5 && opp.surfaceTotal >= 5) {
@@ -1275,12 +1307,9 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
 
   const closenessScore = closenessSignals.length > 0
     ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length)
-    : 50; // no independent signals available -- neutral, no floor applied beyond the default below
+    : 50; // no independent signals available — neutral, no floor applied beyond the default below
 
-  let riskFloor = 0;
-  if (closenessScore >= 80) riskFloor = 55;
-  else if (closenessScore >= 65) riskFloor = 40;
-
+  const riskFloor = closenessRiskFloor(closenessScore);
   const riskScore = clamp(Math.max(preClosenessRisk, riskFloor), 0, 100);
 
   // ── 6. Critical flags & data source diagnostics ──────────────────────────────
@@ -1654,16 +1683,17 @@ export function __TEST_computeScoring(
   const unavailW = factors.filter(f => f.status === "unavailable").reduce((s, f) => s + f.weight, 0);
   const dataCoverage = Math.round((1 - unavailW) * 100);
 
-  // Risk Score — Bug B + Bug C fixes applied
+  // Risk Score — Bug B + Bug C fixes applied; flat adders converted to continuous ramps
   let risk = 35;
-  if (sel.recentWinRate < 0.4) risk += 12;
-  if (surface && sel.surfaceWinRate < 0.4 && sel.surfaceTotal >= 5) risk += 10;
+  risk += Math.round(Math.max(0, (0.4 - sel.recentWinRate) / 0.4) * 12);
+  if (surface && sel.surfaceTotal >= 5)
+    risk += Math.round(Math.max(0, (0.4 - sel.surfaceWinRate) / 0.4) * 10);
   if (marketOdds != null && 1 / marketOdds < 0.42) risk += 18;
   if (selDaysRest != null && selDaysRest <= 1) risk += 10;
   if (sel.retirementRate > 0.12) risk += 8;
-  if (opp.recentWinRate > 0.7) risk += 8;
-  if (sel.total < 10) risk += 12;
-  if (opp.total < 10) risk += 12;   // Bug B fix
+  risk += Math.round(Math.max(0, (opp.recentWinRate - 0.7) / 0.3) * 8);
+  risk += Math.round((1 - Math.min(1, sel.total / 10)) * 15);
+  risk += Math.round((1 - Math.min(1, opp.total / 10)) * 15);
   if (dataCoverage < 60) risk += 10;
   if (sel.winRate > 0.65 && sel.total >= 15) risk -= 10;
   if (surface && sel.surfaceWinRate > 0.65 && sel.surfaceTotal >= 8) risk -= 10;
@@ -1671,9 +1701,14 @@ export function __TEST_computeScoring(
   if (marketOdds != null && 1 / marketOdds > 0.60) risk -= 12;
   if (selRank != null && oppRank != null && selRank < oppRank * 0.5) risk -= 8;
 
-  // Closeness floor — thresholds validated 2026-07-31 (n=1,500 graded legs; see analyzeClosenessFloors.ts)
+  // Closeness floor — smooth ramp replacing the old two-step cliff
   const closenessSignals: number[] = [];
-  closenessSignals.push(clamp(Math.round((1 - Math.abs(sel.winRate - opp.winRate) / 0.4) * 100), 0, 100));
+  // Gate winRate signal by confidence — thin-data 0.5-vs-0.5 is not real closeness
+  const winRateSignalConf = Math.min(sel.winRateConfidence, opp.winRateConfidence);
+  if (winRateSignalConf > 0) {
+    const rawSignal = clamp(Math.round((1 - Math.abs(sel.winRate - opp.winRate) / 0.4) * 100), 0, 100);
+    closenessSignals.push(Math.round(rawSignal * winRateSignalConf));
+  }
   if (surface && sel.surfaceTotal >= 5 && opp.surfaceTotal >= 5)
     closenessSignals.push(clamp(Math.round((1 - Math.abs(sel.surfaceWinRate - opp.surfaceWinRate) / 0.4) * 100), 0, 100));
   if (marketOdds != null)
@@ -1682,8 +1717,7 @@ export function __TEST_computeScoring(
     closenessSignals.push(clamp(Math.round((1 - Math.abs(selRank - oppRank) / Math.max(selRank, oppRank)) * 100), 0, 100));
   const closenessScore = closenessSignals.length > 0
     ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length) : 50;
-  const riskFloor = closenessScore >= 80 ? 55 : closenessScore >= 65 ? 40 : 0;
-  const riskScore = clamp(Math.max(Math.round(risk), riskFloor), 0, 100);
+  const riskScore = clamp(Math.max(Math.round(risk), closenessRiskFloor(closenessScore)), 0, 100);
 
   // Grades
   const reliabilityGrade = toReliabilityGrade(validationScore, dataCoverage);

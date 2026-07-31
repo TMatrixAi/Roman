@@ -59,3 +59,4 @@
 - [Screenshot Import Service architecture](screenshot-import-service-architecture.md) — global singleton; NO module calls OCR directly; provider chain: vision AI → OCR.Space → Tesseract; health monitor + MD5 cache; admin health panel.
 - [Validation Engine — three player data states](validation-engine-data-states.md) — opinionated-factors-only denominator fixes "0 of 13 agree"; player_not_found ≠ bad pick → BORDERLINE not REMOVE; dataSourceDiagnostics exposes per-player match counts.
 - [Screenshot resolver circuit-breaker resilience](screenshot-resolver-circuit-breaker.md) — "P1: NOT READ" = resolver threw (not OCR fail); three fixes: searchSafely wrapper, no-cache-on-throw, normalizeName must split "J.J." dots to spaces before stripping.
+- [Prediction engine 50/50 root cause](prediction-engine-50-50-root-cause.md) — api-tennis billing lapse → zero match records → 50/50; fix: tier-5 DB fallback from historical_matches

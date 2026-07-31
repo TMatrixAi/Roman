@@ -38,14 +38,23 @@ import {
 
 // ─── Fixture helpers ────────────────────────────────────────────────────────
 
-/** Build a minimal PlayerStats with sensible defaults. Override only what the test needs. */
+/** Build a minimal PlayerStats with sensible defaults. Override only what the test needs.
+ *  winRateConfidence / surfaceWinRateConfidence / recentWinRateConfidence are derived from
+ *  the resolved total / surfaceTotal automatically so tests that only override `total`
+ *  get the correct confidence values without needing to set them explicitly. */
 function makeStats(overrides: Partial<PlayerStats> = {}): PlayerStats {
+  const total       = overrides.total       ?? 20;
+  const surfaceTotal = overrides.surfaceTotal ?? 0;
+  const recentN     = Math.min(total, 10);           // mirrors computePlayerStats recent10.length
   return {
-    total: 20,
+    total,
     winRate: 0.55,
-    surfaceTotal: 0,
+    winRateConfidence: Math.min(1, total / 10),
+    surfaceTotal,
     surfaceWinRate: 0.5,
+    surfaceWinRateConfidence: Math.min(1, surfaceTotal / 5),
     recentWinRate: 0.6,
+    recentWinRateConfidence: Math.min(1, recentN / 5),
     avgOppRank: 100,
     surfaceAvgOppRank: 100,
     retirementRate: 0.0,
@@ -173,14 +182,17 @@ describe("builderScoringService — scoring correctness invariants", () => {
       //
       // The invariant here: with collapsed data, risk must be at least as high
       // as the baseline 35 + thin-data penalties (no bonus applied).
-      // Both sel.total=3 < 10 → +12, opp.total=3 < 10 → +12.  Baseline = 35+24 = 59.
+      // Continuous scarcity formula: Math.round((1 - min(1, total/10)) * 15)
+      //   total=3 → Math.round(0.7 * 15) = 11 for each player.  Baseline = 35+22 = 57.
       // agreementRate > 0.75 but available < 5 → no -8 reduction.
-      const minExpectedRisk = 35 + 12 + 12; // baseline + sel-thin + opp-thin (before closeness floor)
+      const selScarcity = Math.round((1 - Math.min(1, selThin.total / 10)) * 15);
+      const oppScarcity = Math.round((1 - Math.min(1, oppThin.total / 10)) * 15);
+      const minExpectedRisk = 35 + selScarcity + oppScarcity; // baseline + continuous thin-data penalties
       // The closeness floor may raise it further; the bonus CANNOT lower it.
       assert.ok(
         rThin.riskScore >= minExpectedRisk,
         `Collapsed factor set (available=${rThin.available}) must not fire -8 bonus — ` +
-        `riskScore ${rThin.riskScore} should be >= ${minExpectedRisk}`,
+        `riskScore ${rThin.riskScore} should be >= ${minExpectedRisk} (35 + ${selScarcity} + ${oppScarcity})`,
       );
     }
     // If available somehow >= 5 with this thin data, the bonus gate doesn't apply;
