@@ -156,17 +156,17 @@ export default function PredictionResultPage() {
   // the tie-breaker check. Showing calibratedProbability inside a "Too Close to Call" banner
   // directly contradicts the banner's own text ("The raw ensemble probability is shown").
   //
-  // Semantic choice (Option b from the task spec): tieBreakerApplied is anchored to the raw
-  // ensemble. If calibration subsequently resolves the signal strongly, the UI should still
-  // surface the raw ensemble in the banner — the ensemble was genuinely a coin flip regardless
-  // of what calibration did after.  calibratedProbability remains the authoritative stored value
-  // and is used everywhere outside the "Too Close to Call" hero.
+  // Semantic choice (Option b): tieBreakerApplied is anchored to the raw ensemble. If
+  // calibration subsequently resolves the signal strongly, the UI still surfaces the raw
+  // ensemble in the banner — the ensemble was genuinely a coin flip regardless of what
+  // calibration did after. calibratedProbability remains the authoritative stored value and is
+  // used everywhere outside the "Too Close to Call" hero.
   //
-  // Source: decisionTrace.pipeline.rawEnsemble (written by index.ts at prediction time and
-  // always available when decisionTrace is present). Fallback to calibratedProbability for
-  // legacy predictions that predate the decisionTrace field, so the banner never crashes.
-  const rawEnsemble: number =
-    (prediction as any).decisionTrace?.pipeline?.rawEnsemble ?? prediction.calibratedProbability;
+  // rawEnsembleProbability is a proper typed API field populated by the GET /predictions/:id
+  // route from decisionTrace.pipeline.rawEnsemble. Null for legacy predictions that predate the
+  // decisionTrace field — fallback to calibratedProbability in that case (banner still shows
+  // something coherent, just not the ideal raw value).
+  const rawEnsemble: number = prediction.rawEnsembleProbability ?? prediction.calibratedProbability;
 
   const isResolved = !!prediction.actualWinnerId;
   const isCorrect = prediction.actualWinnerId === prediction.predictedWinnerId;

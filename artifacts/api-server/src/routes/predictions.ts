@@ -421,7 +421,11 @@ router.post("/predictions", requireClerkUser, predictionLimiter, async (req, res
     res.setHeader("x-prediction-request-id", integrity.requestId);
     res.setHeader("x-prediction-match-id", integrity.requestMatchId);
 
-    res.status(201).json(CreatePredictionResponse.parse(saved));
+    // Augment with rawEnsembleProbability sourced from the persisted decisionTrace.pipeline so
+    // the client can display the pre-calibration value in the "Too Close to Call" banner without
+    // relying on the decisionTrace field (which is not in the API schema to keep payloads lean).
+    const savedWithRaw = { ...saved, rawEnsembleProbability: (saved.decisionTrace as any)?.pipeline?.rawEnsemble ?? null };
+    res.status(201).json(CreatePredictionResponse.parse(savedWithRaw));
   } catch (err) {
     if (err instanceof ProviderUnavailableError) {
       res.status(502).json({ error: "Tennis data provider unavailable", detail: err.message });
@@ -457,7 +461,8 @@ router.get("/predictions/:predictionId", requireClerkUser, async (req, res): Pro
     return;
   }
 
-  res.json(GetPredictionResponse.parse(row));
+  const rowWithRaw = { ...row, rawEnsembleProbability: (row.decisionTrace as any)?.pipeline?.rawEnsemble ?? null };
+  res.json(GetPredictionResponse.parse(rowWithRaw));
 });
 
 /**
@@ -639,7 +644,8 @@ router.patch("/predictions/:predictionId/outcome", async (req, res): Promise<voi
     .where(eq(predictionsTable.id, params.data.predictionId))
     .returning();
 
-  res.json(GetPredictionResponse.parse(updated));
+  const updatedWithRaw = { ...updated, rawEnsembleProbability: (updated?.decisionTrace as any)?.pipeline?.rawEnsemble ?? null };
+  res.json(GetPredictionResponse.parse(updatedWithRaw));
 });
 
 export default router;
