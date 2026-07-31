@@ -11,8 +11,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { PlayerSearch } from "@/components/PlayerSearch"
 import { PasteMatchupPredictor } from "@/components/PasteMatchupPredictor"
 import { BulkMatchupPredictor } from "@/components/BulkMatchupPredictor"
-import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown, FolderOpen } from "lucide-react"
+import { Activity, Search, Swords, Settings2, RefreshCw, ClipboardPaste, Layers, ChevronDown, FolderOpen, X } from "lucide-react"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
+import { SavedPredictionCards } from "@/components/SavedPredictionCards"
 
 function PlayerCard({ 
   playerId, 
@@ -182,6 +183,8 @@ export default function PredictBuilderPage() {
   // Expose mutation-like shape so JSX can reference createPrediction.isPending / isError
   const createPrediction = { isPending: isPredictionPending, isError: isPredictionError }
 
+  const [savedCardsOpen, setSavedCardsOpen] = useState(false)
+
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("matchConditionsExpanded") === "true" } catch { return false }
   })
@@ -287,28 +290,12 @@ export default function PredictBuilderPage() {
                   BULK<span className="hidden sm:inline"> UPLOAD</span>
                 </TabsTrigger>
               </TabsList>
-              {/* Saved Prediction Cards — opens the most recent completed bulk batch */}
+              {/* Saved Prediction Cards — toggle the saved cards panel */}
               <Button
                 variant="outline"
                 size="sm"
-                className="font-mono gap-1.5 shrink-0 h-9 text-xs border-primary/40 text-primary hover:bg-primary/10"
-                onClick={() => {
-                  try {
-                    const raw = localStorage.getItem("savedBulkPredictionBatch.v1")
-                    if (!raw) {
-                      alert("No Saved Prediction Cards yet.\n\nRun a Bulk Screenshot batch to save one automatically.")
-                      return
-                    }
-                    const batch = JSON.parse(raw) as { ids: number[] }
-                    if (!batch.ids?.length) {
-                      alert("No Saved Prediction Cards yet.")
-                      return
-                    }
-                    setLocation(`/predictions/${batch.ids[0]}?batch=${batch.ids.join(",")}`)
-                  } catch {
-                    alert("Could not open saved batch. Try running a new bulk prediction.")
-                  }
-                }}
+                className={`font-mono gap-1.5 shrink-0 h-9 text-xs border-primary/40 text-primary hover:bg-primary/10 transition-colors ${savedCardsOpen ? "bg-primary/10" : ""}`}
+                onClick={() => setSavedCardsOpen(prev => !prev)}
               >
                 <FolderOpen className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden xs:inline">SAVED </span>CARDS
@@ -339,6 +326,27 @@ export default function PredictBuilderPage() {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Saved Prediction Cards panel — toggled by the SAVED CARDS button above */}
+      {savedCardsOpen && (
+        <Card className="border-border/60 shadow-sm glass-panel animate-in fade-in duration-200">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+              Saved Prediction Cards
+            </p>
+            <button
+              onClick={() => setSavedCardsOpen(false)}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+              aria-label="Close saved cards"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <CardContent className="px-4 pb-4 pt-0">
+            <SavedPredictionCards />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Match Conditions — only visible once both players are selected */}
       {player1Id && player2Id && (

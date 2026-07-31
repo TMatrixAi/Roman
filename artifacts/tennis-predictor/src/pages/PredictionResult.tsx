@@ -11,10 +11,14 @@ import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type 
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Bookmark, BookmarkCheck } from "lucide-react"
 import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@clerk/react"
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
+const api = (path: string) => `${BASE}${path}`
 
 const UPSET_RISK_SHORT_LABEL = UPSET_RISK_SHORT
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
@@ -132,6 +136,9 @@ export default function PredictionResultPage() {
   })
   const { data: adminAuth } = useGetAdminAuthStatus()
   const { toast } = useToast()
+  const { isSignedIn } = useAuth()
+  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const recordOutcome = useRecordPredictionOutcome()
 
@@ -173,6 +180,30 @@ export default function PredictionResultPage() {
   // Auth status represents the single owner session cookie, so this stays owner-only.
   const isOwnerSession = adminAuth?.authenticated === true
   const canCopy = isOwnerSession
+
+  const handleSaveCard = async () => {
+    if (!prediction || saving) return
+    setSaving(true)
+    try {
+      const res = await fetch(api("/api/saved-cards"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ predictionId: prediction.id }),
+      })
+      if (res.ok) {
+        const data = await res.json() as { alreadySaved?: boolean }
+        setSaved(true)
+        toast({ title: data.alreadySaved ? "Already in your saved cards" : "✅ Saved to your cards" })
+      } else {
+        toast({ title: "Could not save — try again", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Network error — try again", variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleCopyPrediction = async () => {
     const text = buildPredictionCopyText(prediction)
@@ -219,18 +250,39 @@ export default function PredictionResultPage() {
 
       {/* COMPACT SUMMARY HERO */}
       <Card className="border border-primary/20 overflow-hidden relative shadow-xl glass-panel">
-        {canCopy && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute top-3 right-3 z-20 h-8 px-2.5 text-xs font-mono gap-1.5 bg-background/95"
-            onClick={handleCopyPrediction}
-            title="Copy social summary"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            📋 Copy
-          </Button>
-        )}
+        <div className="absolute top-3 right-3 z-20 flex gap-2">
+          {canCopy && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs font-mono gap-1.5 bg-background/95"
+              onClick={handleCopyPrediction}
+              title="Copy social summary"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              📋 Copy
+            </Button>
+          )}
+          {isSignedIn && !isOwnerSession && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={`h-8 px-2.5 text-xs font-mono gap-1.5 bg-background/95 transition-colors ${saved ? "border-success/50 text-success" : ""}`}
+              onClick={handleSaveCard}
+              disabled={saving}
+              title="Save to your prediction cards"
+            >
+              {saving ? (
+                <Bookmark className="w-3.5 h-3.5 animate-pulse" />
+              ) : saved ? (
+                <BookmarkCheck className="w-3.5 h-3.5" />
+              ) : (
+                <Bookmark className="w-3.5 h-3.5" />
+              )}
+              {saved ? "Saved" : "Save"}
+            </Button>
+          )}
+        </div>
         <div className="absolute right-0 top-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
         <div className="absolute left-0 bottom-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
         
