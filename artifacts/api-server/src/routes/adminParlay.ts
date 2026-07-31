@@ -471,8 +471,9 @@ router.post("/admin/parlay/validate", requireAdmin, async (req, res): Promise<vo
           `INSERT INTO parlay_leg_outcomes
              (session_id, selected_player_id, opponent_id, selected_player_name, opponent_name,
               tournament_name, surface, validation_score, risk_score, reliability_grade,
-              parlay_grade, decision, data_coverage, source_agreement, factor_scores, market_odds)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16)`,
+              parlay_grade, decision, data_coverage, source_agreement, factor_scores, market_odds,
+              matchup_closeness)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)`,
           [
             sessionId,
             leg.selectedPlayerId,
@@ -490,6 +491,7 @@ router.post("/admin/parlay/validate", requireAdmin, async (req, res): Promise<vo
             result.sourceAgreement,
             JSON.stringify(result.factorScores),
             leg.marketOdds ?? null,
+            result.matchupCloseness ?? null,
           ]
         );
       }
@@ -848,14 +850,16 @@ router.post("/admin/parlay/backfill", requireAdmin, (req, res): void => {
                (session_id, selected_player_id, opponent_id, selected_player_name, opponent_name,
                 tournament_name, surface, validation_score, risk_score, reliability_grade,
                 parlay_grade, decision, data_coverage, source_agreement, factor_scores,
-                market_odds, actual_winner_id, resolved_at, source, backfill_match_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,'backfill',$19)`,
+                market_odds, actual_winner_id, resolved_at, source, backfill_match_id,
+                matchup_closeness)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,'backfill',$19,$20)`,
             [null, selectedPlayerId, opponentId, selectedPlayerName, opponentName,
              match.tournament_name ?? null, match.surface ?? null,
              result.validationScore, result.riskScore, result.reliabilityGrade,
              result.parlayGrade, result.decision, result.dataCoverage, result.sourceAgreement,
              JSON.stringify(result.factorScores), marketOdds,
-             match.actual_winner_id, asOfDate, match.id]
+             match.actual_winner_id, asOfDate, match.id,
+             result.matchupCloseness ?? null]
           );
           inserted++;
         } catch (err) {

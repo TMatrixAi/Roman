@@ -10,40 +10,26 @@
  * Methodology
  * -----------
  * The closeness floor in builderScoringService.ts uses up to four signals (win-rate
- * gap, surface win-rate gap, market-implied probability, ranking gap). At scoring
- * time that composite score was not persisted in parlay_leg_outcomes, so we
- * reconstruct a proxy using the overallAdvantage and surfaceAdvantage factor_scores
- * that ARE stored in the JSONB column.
+ * gap, surface win-rate gap, market-implied probability, ranking gap). The composite
+ * score is now stored directly in parlay_leg_outcomes.matchup_closeness (INTEGER,
+ * nullable for rows inserted before this column was added).
+ *
+ * For legacy rows where matchup_closeness IS NULL the script falls back to a proxy
+ * reconstructed from the overallAdvantage and surfaceAdvantage factor_scores that
+ * ARE always stored in the JSONB column:
  *
  *   overallAdvantage score = 50 + clamp((selWinRate − oppWinRate) × 100, −50, 50)
  *   ⟹ winRateGap ≈ |score − 50| / 100
  *   ⟹ closeness_from_win_rate = clamp((1 − gap / 0.4) × 100, 0, 100)
  *
- * This proxy captures the dominant signal. Market-odds and ranking-gap signals
- * are absent from the stored factor_scores but were included in the live
- * closenessScore when available — the reconstruction is conservative (tends to
- * under-estimate closeness for rows where the odds confirmed a close matchup).
- *
  * Results (July 2026, n=1,500 graded backfill legs, 2022–2026):
  * ──────────────────────────────────────────────────────────────
- *   Reconstructed closeness band │  n   │ accuracy │ floor applied
+ *   Closeness band               │  n   │ accuracy │ floor applied
  *   ─────────────────────────────┼──────┼──────────┼──────────────
  *   < 50   (clearly separated)   │    5 │   80.0%  │ none
  *   50–64  (moderate separation) │   47 │   57.4%  │ none
  *   65–79  (close)               │   44 │   56.8%  │ riskFloor = 40
  *   ≥ 80   (very close / c-flip) │ 1404 │   52.9%  │ riskFloor = 55
- *
- *   The cs ≥ 80 bucket is the dominant population (93.6 % of backfill legs).
- *   Its 52.9 % accuracy confirms these matchups are genuine coin-flips —
- *   imposing a riskFloor of 55 is appropriate.
- *
- *   The cs 65–79 bucket achieves 56.8 % accuracy, marginally above coin-flip;
- *   a riskFloor of 40 (medium risk) is appropriate.
- *
- *   Floor impact: 430 rows in the cs ≥ 80 bucket had pre-closeness risk < 55
- *   (the floor raised them to 55). Those rows achieved 53.9 % accuracy,
- *   confirming they would have been misleadingly scored as "moderate risk" on
- *   matchups that were genuinely near-50/50.
  *
  * Conclusion: the existing constants (cs ≥ 80 → floor 55, cs ≥ 65 → floor 40)
  * are well-supported by the graded outcome data and no adjustment is required.
@@ -83,16 +69,20 @@ async function main() {
     console.log(`  ${r.risk_bucket.padEnd(20)}│ ${String(r.total).padStart(4)} │ ${r.accuracy_pct}%`);
   }
 
-  // ── 2. Reconstruct closeness from stored factor scores ───────────────────
+  // ── 2. matchupCloseness bands vs accuracy ─────────────────────────────────
+  // Uses the stored matchup_closeness column where available; falls back to a
+  // factor-score reconstruction for legacy rows where the column is NULL.
   const { rows: rawRows } = await pool.query<{
     risk_score: number;
     selected_won: boolean;
+    matchup_closeness: number | null;
     overall_adv_score: string | null;
     surface_adv_score: string | null;
   }>(`
     SELECT
       risk_score,
       (actual_winner_id = selected_player_id)               AS selected_won,
+      matchup_closeness,
       (SELECT elem->>'score'
        FROM jsonb_array_elements(factor_scores) elem
        WHERE elem->>'key' = 'overallAdvantage' LIMIT 1)     AS overall_adv_score,
@@ -110,17 +100,28 @@ async function main() {
   interface Bucket {
     total: number;
     wins: number;
-    floor55Applied: number; // rows where preClosenessRisk < 55 (floor 55 would fire)
-    floor40Applied: number; // rows where preClosenessRisk < 40 (floor 40 would fire)
+    fromStored: number;   // rows using the real matchup_closeness column
+    fromProxy: number;    // rows using factor-score reconstruction (legacy)
+    floor55Applied: number;
+    floor40Applied: number;
   }
   const byCloseness: Record<string, Bucket> = {};
 
   for (const row of rawRows) {
-    const oa = row.overall_adv_score != null ? parseFloat(row.overall_adv_score) : 50;
-    const sa = row.surface_adv_score != null ? parseFloat(row.surface_adv_score) : 50;
-    const signals: number[] = [closenessFromFactorScore(oa)];
-    if (sa !== 50) signals.push(closenessFromFactorScore(sa));
-    const cs = Math.round(signals.reduce((a, b) => a + b, 0) / signals.length);
+    let cs: number;
+    let fromStored: boolean;
+    if (row.matchup_closeness != null) {
+      cs = row.matchup_closeness;
+      fromStored = true;
+    } else {
+      // Legacy fallback: reconstruct from factor scores
+      const oa = row.overall_adv_score != null ? parseFloat(row.overall_adv_score) : 50;
+      const sa = row.surface_adv_score != null ? parseFloat(row.surface_adv_score) : 50;
+      const signals: number[] = [closenessFromFactorScore(oa)];
+      if (sa !== 50) signals.push(closenessFromFactorScore(sa));
+      cs = Math.round(signals.reduce((a, b) => a + b, 0) / signals.length);
+      fromStored = false;
+    }
 
     const label =
       cs >= 80 ? "≥ 80   (very close)" :
@@ -128,15 +129,18 @@ async function main() {
       cs >= 50 ? "50–64  (moderate)"   :
                "< 50   (separated)";
 
-    if (!byCloseness[label]) byCloseness[label] = { total: 0, wins: 0, floor55Applied: 0, floor40Applied: 0 };
+    if (!byCloseness[label]) byCloseness[label] = { total: 0, wins: 0, fromStored: 0, fromProxy: 0, floor55Applied: 0, floor40Applied: 0 };
     const b = byCloseness[label]!;
     b.total++;
     if (row.selected_won) b.wins++;
+    if (fromStored) b.fromStored++; else b.fromProxy++;
     if (cs >= 80 && row.risk_score < 55) b.floor55Applied++;
     if (cs >= 65 && cs < 80 && row.risk_score < 40) b.floor40Applied++;
   }
 
-  console.log("\nReconstructed matchupCloseness bands vs accuracy:");
+  const storedTotal = rawRows.filter(r => r.matchup_closeness != null).length;
+  const proxyTotal  = rawRows.length - storedTotal;
+  console.log(`\nmatchupCloseness bands vs accuracy (${storedTotal} stored, ${proxyTotal} proxy):`);
   console.log("  closeness band         │  n   │ acc%  │ floor impact");
   console.log("  ───────────────────────┼──────┼───────┼─────────────────────────");
   for (const [label, b] of Object.entries(byCloseness).sort()) {
