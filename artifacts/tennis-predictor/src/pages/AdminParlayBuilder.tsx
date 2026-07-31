@@ -19,7 +19,7 @@ import {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
 const api = (path: string) => `${BASE}${path}`
 
-const MAX_FILES = 40
+const MAX_FILES = 150
 const RESOLVE_CONCURRENCY = 4
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
