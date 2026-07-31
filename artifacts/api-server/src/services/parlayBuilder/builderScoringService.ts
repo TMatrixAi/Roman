@@ -444,7 +444,7 @@ async function resolvePlayerMatchRows(
 // Player statistics (computed directly from historical_matches rows)
 // ---------------------------------------------------------------------------
 
-interface PlayerStats {
+export interface PlayerStats {
   total: number;
   winRate: number;
   surfaceTotal: number;
@@ -460,7 +460,7 @@ interface PlayerStats {
   quarterWinRates: number[]; // for consistency calculation
 }
 
-function computePlayerStats(
+export function computePlayerStats(
   matches: MatchRow[],
   playerId: string,
   surface: string | null,
@@ -1050,15 +1050,27 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   }
 
   // Factor: Data Quality (% of expected matches available)
+  //
+  // BUG A FIX: This factor measures the AVERAGE data coverage for BOTH players combined.
+  // Swapping sel and opp produces an identical score — it is NOT a directional sel-vs-opp
+  // comparison and must never vote in the agreement count. supportsSelected is always null
+  // (data-quality gate, not a predictive signal). Using addFactor() here would silently set
+  // supportsSelected=true whenever dqScore>52, injecting a phantom +1 into every matchup
+  // regardless of which player is selected.
   const expectedMatches = 30;
   const selCoverage = Math.min(100, Math.round((sel.total / expectedMatches) * 100));
   const oppCoverage = Math.min(100, Math.round((opp.total / expectedMatches) * 100));
   const avgDataCoverage = (selCoverage + oppCoverage) / 2;
   const dqScore = clamp(Math.round(avgDataCoverage * 0.5 + 50 - 25), 20, 80);
-  addFactor("dataQuality", "Data Coverage Quality",
-    dqScore,
-    `Data coverage: ${selectedPlayerName} ${selCoverage}%, ${opponentName} ${oppCoverage}% of expected match history available`
-  );
+  factors.push({
+    key: "dataQuality",
+    label: "Data Coverage Quality",
+    score: dqScore,
+    weight: DEFAULT_WEIGHTS.dataQuality ?? 0.02,
+    status: "available",
+    supportsSelected: null, // intentionally non-directional: measures combined coverage for BOTH players
+    detail: `Data coverage: ${selectedPlayerName} ${selCoverage}%, ${opponentName} ${oppCoverage}% of expected match history available`,
+  });
 
   // ── 3. Source Agreement (computed after all other factors) ────────────────
   //
@@ -1109,13 +1121,18 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   if (selDaysRest != null && selDaysRest <= 1) risk += 10;
   if (sel.retirementRate > 0.12) risk += 8;
   if (opp.recentWinRate > 0.7) risk += 8;
-  if (sel.total < 10) risk += 12;  // insufficient data = more risk
+  if (sel.total < 10) risk += 12;  // insufficient data for selected player = more risk
+  if (opp.total < 10) risk += 12;  // BUG B FIX: insufficient data for OPPONENT also raises risk
+                                    // (previously omitted; thin opponent data could improve risk
+                                    // via the agreement bonus on a collapsed factor set)
   if (dataCoverage < 60) risk += 10;
 
   // Lower risk for positive signals
   if (sel.winRate > 0.65 && sel.total >= 15) risk -= 10;
   if (surface && sel.surfaceWinRate > 0.65 && sel.surfaceTotal >= 8) risk -= 10;
-  if (agreementRate > 0.75) risk -= 8;
+  if (agreementRate > 0.75 && available >= 5) risk -= 8;  // BUG C FIX: minimum sample gate
+                                                           // (previously no floor — a 3/3 collapsed
+                                                           // set got a stronger bonus than 7/8 full)
   if (marketOdds != null && 1 / marketOdds > 0.60) risk -= 12;
   if (selRank != null && oppRank != null && selRank < oppRank * 0.5) risk -= 8;
 
@@ -1255,9 +1272,31 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   // ── 7. Grades and decision ────────────────────────────────────────────────
 
   const reliabilityGrade = toReliabilityGrade(validationScore, dataCoverage);
-  const parlayGrade = toParlayGrade(validationScore, riskScore, reliabilityGrade);
+  let parlayGrade = toParlayGrade(validationScore, riskScore, reliabilityGrade);
   const decision = toDecision(validationScore, riskScore, reliabilityGrade, dataCoverage, criticalFlags);
   const removalProbability = clamp(Math.round((100 - validationScore) * 0.55 + riskScore * 0.45), 0, 100);
+
+  // ── 7b. Consistency guard ─────────────────────────────────────────────────
+  //
+  // Elite tier is structurally incompatible with missing or thin player data: Elite requires
+  // genuine, well-supported evidence for a high-confidence directional pick. When any player
+  // has player_not_found or insufficient_data status AND the tier resolved to Elite (possible
+  // when thin data happens to collapse factors into a unanimous but tiny sample), force the
+  // grade down and record the caught inconsistency in criticalFlags for the admin diagnostics
+  // panel. Modelled on the prediction engine's finalConsistencyCheck.ts.
+  const _hasDataGap =
+    dataSourceDiagnostics.selectedPlayerStatus !== "data_available" ||
+    dataSourceDiagnostics.opponentStatus !== "data_available";
+  if (parlayGrade === "Elite" && _hasDataGap) {
+    const _gapPlayers = [
+      ...(dataSourceDiagnostics.selectedPlayerStatus !== "data_available" ? [selectedPlayerName] : []),
+      ...(dataSourceDiagnostics.opponentStatus !== "data_available" ? [opponentName] : []),
+    ].join(" and ");
+    criticalFlags.push(
+      `Consistency guard: Elite tier forced down to Strong — insufficient data for ${_gapPlayers} contradicts Elite-tier confidence`,
+    );
+    parlayGrade = "Strong";
+  }
 
   // ── 8. Reasons ────────────────────────────────────────────────────────────
 
@@ -1281,4 +1320,298 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     dataSourceDiagnostics,
     builderVersion: BUILDER_VERSION,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Test-only pure scoring helper (no DB, no external APIs)
+// ---------------------------------------------------------------------------
+//
+// Replicates the pure factor + agreement + risk + consistency computation from
+// computeBuilderScore so unit tests can exercise the scoring logic directly from
+// pre-built PlayerStats without mocking the database pool or provider chain.
+//
+// ALL bug fixes (A, B, C, consistency guard) are included here — this function
+// is the canonical reference for what "correct scoring" looks like.
+//
+// @internal — never import this in production code.
+
+export interface __TEST_ScoringResult {
+  factors: FactorScore[];
+  agreeing: number;
+  available: number;
+  agreementRate: number;
+  validationScore: number;
+  dataCoverage: number;
+  riskScore: number;
+  reliabilityGrade: "A" | "B" | "C" | "D" | "F";
+  parlayGrade: "Elite" | "Strong" | "Moderate" | "Weak" | "Reject";
+  /** Non-null only when the consistency guard fired (Elite + data gap → forced to Strong). */
+  caughtInconsistency: string | null;
+}
+
+export function __TEST_computeScoring(
+  sel: PlayerStats,
+  opp: PlayerStats,
+  opts: {
+    selectedPlayerName?: string;
+    opponentName?: string;
+    selResolvedId?: string;
+    oppResolvedId?: string;
+    surface?: string | null;
+    tournamentName?: string | null;
+    marketOdds?: number | null;
+    h2hMatches?: ReadonlyArray<{ winner_id: string | null }>;
+    selectedPlayerStatus?: PlayerDataStatus;
+    opponentStatus?: PlayerDataStatus;
+  } = {},
+): __TEST_ScoringResult {
+  const selectedPlayerName = opts.selectedPlayerName ?? "Selected";
+  const opponentName       = opts.opponentName       ?? "Opponent";
+  const selResolvedId      = opts.selResolvedId      ?? "sel-id";
+  const surface            = opts.surface            ?? null;
+  const tournamentName     = opts.tournamentName     ?? null;
+  const marketOdds         = opts.marketOdds         ?? null;
+  const h2hArr             = (opts.h2hMatches ?? []) as { winner_id: string | null }[];
+
+  const selRank = sel.currentRank;
+  const oppRank = opp.currentRank;
+
+  const selDaysRest = sel.lastMatchDate
+    ? Math.floor((Date.now() - sel.lastMatchDate.getTime()) / 86_400_000)
+    : null;
+  const oppDaysRest = opp.lastMatchDate
+    ? Math.floor((Date.now() - opp.lastMatchDate.getTime()) / 86_400_000)
+    : null;
+
+  const factors: FactorScore[] = [];
+
+  const _addFactor = (key: string, label: string, score: number, detail: string, limited = false): void => {
+    factors.push({
+      key, label, score,
+      weight: DEFAULT_WEIGHTS[key] ?? 0.01,
+      status: limited ? "limited" : "available",
+      supportsSelected: score > 52 ? true : score < 48 ? false : null,
+      detail,
+    });
+  };
+  const _addUnavailable = (key: string, label: string): void => {
+    factors.push({ key, label, score: 50, weight: DEFAULT_WEIGHTS[key] ?? 0.01, status: "unavailable", supportsSelected: null, detail: "" });
+  };
+
+  // Overall Advantage
+  if (sel.total >= 5 && opp.total >= 5) {
+    const sosBoostSel = sel.avgOppRank < 80 ? 0.04 : sel.avgOppRank < 150 ? 0.02 : 0;
+    const sosBoostOpp = opp.avgOppRank < 80 ? 0.04 : opp.avgOppRank < 150 ? 0.02 : 0;
+    _addFactor("overallAdvantage", "Overall Win Rate",
+      diffScore(sel.winRate + sosBoostSel, opp.winRate + sosBoostOpp, 100),
+      `Overall win rate: ${selectedPlayerName} ${Math.round(sel.winRate * 100)}% vs ${opponentName} ${Math.round(opp.winRate * 100)}%`);
+  } else {
+    _addFactor("overallAdvantage", "Overall Win Rate", 50, `Insufficient match history (${selectedPlayerName}: ${sel.total}, ${opponentName}: ${opp.total})`, true);
+  }
+
+  // Surface Advantage
+  if (surface && sel.surfaceTotal >= 3 && opp.surfaceTotal >= 3) {
+    _addFactor("surfaceAdvantage", `${surface} Court Advantage`,
+      diffScore(sel.surfaceWinRate, opp.surfaceWinRate, 100),
+      `${surface} record: ${selectedPlayerName} ${Math.round(sel.surfaceWinRate * 100)}% vs ${opponentName} ${Math.round(opp.surfaceWinRate * 100)}%`);
+  } else {
+    _addFactor("surfaceAdvantage", `${surface ?? "Surface"} Advantage`, 50, surface ? `Limited ${surface} data` : "No surface specified", !!surface);
+  }
+
+  _addUnavailable("utr", "UTR Rating");
+
+  // Recent Form
+  if (sel.recentWinRate > 0.5 || opp.recentWinRate > 0.5) {
+    _addFactor("recentForm", "Recent Form",
+      diffScore(sel.recentWinRate, opp.recentWinRate, 100),
+      `Recent form: ${selectedPlayerName} ${Math.round(sel.recentWinRate * 10)}/10 wins vs ${opponentName} ${Math.round(opp.recentWinRate * 10)}/10`);
+  } else {
+    _addFactor("recentForm", "Recent Form", 50, "Recent match history insufficient", true);
+  }
+
+  // Surface Record
+  if (surface && (sel.surfaceTotal >= 5 || opp.surfaceTotal >= 5)) {
+    _addFactor("surfaceRecord", `${surface} Surface Record`, diffScore(sel.surfaceWinRate, opp.surfaceWinRate, 80), `${surface} overall record`);
+  } else {
+    _addFactor("surfaceRecord", "Surface Record", 50, "Insufficient surface data", true);
+  }
+
+  _addUnavailable("serveAdvantage", "Serve Advantage");
+  _addUnavailable("returnAdvantage", "Return Advantage");
+  _addUnavailable("holdBreak", "Hold/Break Statistics");
+
+  // Strength of Schedule
+  if (sel.total >= 10 && opp.total >= 10) {
+    const selAdj = sel.winRate * (1 + (sel.avgOppRank > 0 ? 1 / sel.avgOppRank : 0) * 100);
+    const oppAdj = opp.winRate * (1 + (opp.avgOppRank > 0 ? 1 / opp.avgOppRank : 0) * 100);
+    _addFactor("strengthOfSchedule", "Strength of Schedule", diffScore(selAdj, oppAdj, 30),
+      `Avg opp rank: ${selectedPlayerName} ${Math.round(sel.avgOppRank)} vs ${opponentName} ${Math.round(opp.avgOppRank)}`);
+  } else {
+    _addFactor("strengthOfSchedule", "Strength of Schedule", 50, "Insufficient data", true);
+  }
+
+  // Market Consensus
+  if (marketOdds != null && marketOdds > 1) {
+    const impliedProb = 1 / marketOdds;
+    _addFactor("marketConsensus", "Market Consensus",
+      Math.round(50 + clamp((impliedProb - 0.5) * 100, -50, 50)),
+      `Market implies ${Math.round(impliedProb * 100)}% (odds ${marketOdds})`);
+  } else {
+    _addFactor("marketConsensus", "Market Consensus", 50, "No market odds provided", true);
+  }
+
+  // Ranking Trend
+  if (selRank != null && oppRank != null) {
+    _addFactor("rankingTrend", "Current Ranking", diffScore(oppRank, selRank, 0.5),
+      `Rankings: ${selectedPlayerName} #${selRank} vs ${opponentName} #${oppRank}`);
+  } else if (selRank != null || oppRank != null) {
+    _addFactor("rankingTrend", "Current Ranking", 50, "Ranking only available for one player", true);
+  } else {
+    _addFactor("rankingTrend", "Current Ranking", 50, "No ranking data", true);
+  }
+
+  // Head-to-Head
+  if (h2hArr.length >= 2) {
+    const h2hWins = h2hArr.filter(m => m.winner_id === selResolvedId).length;
+    const recentH2h = h2hArr.slice(0, 5);
+    const recentWins = recentH2h.filter(m => m.winner_id === selResolvedId).length;
+    const blended = (h2hWins / h2hArr.length) * 0.4 + (recentWins / recentH2h.length) * 0.6;
+    _addFactor("headToHead", "Head-to-Head", diffScore(blended, 1 - blended, 80),
+      `H2H: ${selectedPlayerName} ${h2hWins}–${h2hArr.length - h2hWins}`);
+  } else if (h2hArr.length === 1) {
+    const won = h2hArr[0].winner_id === selResolvedId;
+    _addFactor("headToHead", "Head-to-Head", won ? 58 : 42, `1 H2H meeting — ${selectedPlayerName} ${won ? "won" : "lost"}`, true);
+  } else {
+    _addFactor("headToHead", "Head-to-Head", 50, "No previous meetings", true);
+  }
+
+  // Travel Fatigue
+  if (selDaysRest != null && oppDaysRest != null) {
+    const restScore = (d: number) => d < 1 ? 0.3 : d === 1 ? 0.7 : d <= 3 ? 1.0 : d <= 7 ? 0.9 : d <= 14 ? 0.7 : 0.5;
+    _addFactor("travelFatigue", "Rest & Fatigue", diffScore(restScore(selDaysRest), restScore(oppDaysRest), 60),
+      `Days rest: ${selectedPlayerName} ${selDaysRest}d vs ${opponentName} ${oppDaysRest}d`);
+  } else {
+    _addFactor("travelFatigue", "Rest & Fatigue", 50, "Schedule data unavailable", true);
+  }
+
+  // Injury Risk (no live web research in test mode)
+  _addFactor("injuryRisk", "Injury & Fitness Risk", 50, "No real-time injury data", true);
+
+  // Tournament Experience
+  if (tournamentName && (sel.tournamentTotal >= 2 || opp.tournamentTotal >= 2)) {
+    _addFactor("tournamentExperience", "Tournament Experience",
+      diffScore(sel.tournamentTotal > 0 ? sel.tournamentWinRate : 0.5, opp.tournamentTotal > 0 ? opp.tournamentWinRate : 0.5, 80),
+      `${tournamentName} experience`);
+  } else {
+    _addFactor("tournamentExperience", "Tournament Experience", 50, tournamentName ? "Insufficient tournament history" : "No tournament specified", true);
+  }
+
+  // Historical Consistency
+  if (sel.quarterWinRates.length >= 2 && opp.quarterWinRates.length >= 2) {
+    _addFactor("historicalConsistency", "Historical Consistency",
+      diffScore(stddev(opp.quarterWinRates), stddev(sel.quarterWinRates), 150),
+      "Performance consistency");
+  } else {
+    _addFactor("historicalConsistency", "Historical Consistency", 50, "Insufficient history", true);
+  }
+
+  // Historical Volatility
+  if (sel.total >= 10 && opp.total >= 10) {
+    _addFactor("historicalVolatility", "Historical Volatility",
+      diffScore(opp.retirementRate, sel.retirementRate, 200),
+      `Retirement rate: ${selectedPlayerName} ${Math.round(sel.retirementRate * 100)}% vs ${opponentName} ${Math.round(opp.retirementRate * 100)}%`);
+  } else {
+    _addFactor("historicalVolatility", "Historical Volatility", 50, "Insufficient data", true);
+  }
+
+  // Data Quality — Bug A fix: supportsSelected always null (non-directional)
+  {
+    const expectedMatches = 30;
+    const selCov = Math.min(100, Math.round((sel.total / expectedMatches) * 100));
+    const oppCov = Math.min(100, Math.round((opp.total / expectedMatches) * 100));
+    const dq = clamp(Math.round(((selCov + oppCov) / 2) * 0.5 + 25), 20, 80);
+    factors.push({
+      key: "dataQuality", label: "Data Coverage Quality", score: dq,
+      weight: DEFAULT_WEIGHTS.dataQuality ?? 0.02,
+      status: "available",
+      supportsSelected: null, // intentionally non-directional
+      detail: `Data coverage: ${selectedPlayerName} ${selCov}%, ${opponentName} ${oppCov}%`,
+    });
+  }
+
+  // Source Agreement
+  const decisiveF    = factors.filter(f => f.status !== "unavailable" && f.key !== "sourceAgreement");
+  const opinionatedF = decisiveF.filter(f => f.supportsSelected !== null);
+  const agreeing      = opinionatedF.filter(f => f.supportsSelected === true).length;
+  const available     = opinionatedF.length;
+  const agreementRate = available > 0 ? agreeing / available : 0.5;
+  factors.push({
+    key: "sourceAgreement", label: "Source Agreement",
+    score: diffScore(agreementRate, 1 - agreementRate, 100),
+    weight: DEFAULT_WEIGHTS.sourceAgreement,
+    status: "available",
+    supportsSelected: agreementRate > 0.55 ? true : agreementRate < 0.45 ? false : null,
+    detail: `${agreeing} of ${available} available sources agree (${Math.round(agreementRate * 100)}% agreement)`,
+  });
+
+  // Validation Score
+  const availF = factors.filter(f => f.status !== "unavailable");
+  const totalW = availF.reduce((s, f) => s + f.weight, 0);
+  const validationScore = Math.round(availF.reduce((s, f) => s + f.score * (f.weight / totalW), 0));
+  const unavailW = factors.filter(f => f.status === "unavailable").reduce((s, f) => s + f.weight, 0);
+  const dataCoverage = Math.round((1 - unavailW) * 100);
+
+  // Risk Score — Bug B + Bug C fixes applied
+  let risk = 35;
+  if (sel.recentWinRate < 0.4) risk += 12;
+  if (surface && sel.surfaceWinRate < 0.4 && sel.surfaceTotal >= 5) risk += 10;
+  if (marketOdds != null && 1 / marketOdds < 0.42) risk += 18;
+  if (selDaysRest != null && selDaysRest <= 1) risk += 10;
+  if (sel.retirementRate > 0.12) risk += 8;
+  if (opp.recentWinRate > 0.7) risk += 8;
+  if (sel.total < 10) risk += 12;
+  if (opp.total < 10) risk += 12;   // Bug B fix
+  if (dataCoverage < 60) risk += 10;
+  if (sel.winRate > 0.65 && sel.total >= 15) risk -= 10;
+  if (surface && sel.surfaceWinRate > 0.65 && sel.surfaceTotal >= 8) risk -= 10;
+  if (agreementRate > 0.75 && available >= 5) risk -= 8;  // Bug C fix
+  if (marketOdds != null && 1 / marketOdds > 0.60) risk -= 12;
+  if (selRank != null && oppRank != null && selRank < oppRank * 0.5) risk -= 8;
+
+  // Closeness floor
+  const closenessSignals: number[] = [];
+  closenessSignals.push(clamp(Math.round((1 - Math.abs(sel.winRate - opp.winRate) / 0.4) * 100), 0, 100));
+  if (surface && sel.surfaceTotal >= 5 && opp.surfaceTotal >= 5)
+    closenessSignals.push(clamp(Math.round((1 - Math.abs(sel.surfaceWinRate - opp.surfaceWinRate) / 0.4) * 100), 0, 100));
+  if (marketOdds != null)
+    closenessSignals.push(clamp(Math.round((1 - Math.abs(1 / marketOdds - 0.5) * 2) * 100), 0, 100));
+  if (selRank != null && oppRank != null)
+    closenessSignals.push(clamp(Math.round((1 - Math.abs(selRank - oppRank) / Math.max(selRank, oppRank)) * 100), 0, 100));
+  const closenessScore = closenessSignals.length > 0
+    ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length) : 50;
+  const riskFloor = closenessScore >= 80 ? 55 : closenessScore >= 65 ? 40 : 0;
+  const riskScore = clamp(Math.max(Math.round(risk), riskFloor), 0, 100);
+
+  // Grades
+  const reliabilityGrade = toReliabilityGrade(validationScore, dataCoverage);
+  let parlayGrade = toParlayGrade(validationScore, riskScore, reliabilityGrade);
+
+  // Consistency guard — Bug D fix
+  const selectedPlayerStatus = opts.selectedPlayerStatus
+    ?? (sel.total === 0 ? "player_not_found" : sel.total < 5 ? "insufficient_data" : "data_available");
+  const opponentStatus = opts.opponentStatus
+    ?? (opp.total === 0 ? "player_not_found" : opp.total < 5 ? "insufficient_data" : "data_available");
+
+  let caughtInconsistency: string | null = null;
+  const hasDataGap = selectedPlayerStatus !== "data_available" || opponentStatus !== "data_available";
+  if (parlayGrade === "Elite" && hasDataGap) {
+    const gapPlayers = [
+      ...(selectedPlayerStatus !== "data_available" ? [selectedPlayerName] : []),
+      ...(opponentStatus       !== "data_available" ? [opponentName]       : []),
+    ].join(" and ");
+    caughtInconsistency = `Consistency guard: Elite tier forced down to Strong — insufficient data for ${gapPlayers}`;
+    parlayGrade = "Strong";
+  }
+
+  return { factors, agreeing, available, agreementRate, validationScore, dataCoverage, riskScore, reliabilityGrade, parlayGrade, caughtInconsistency };
 }

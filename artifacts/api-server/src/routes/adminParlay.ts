@@ -13,6 +13,7 @@ import { requireAdmin } from "../lib/adminAuth";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { computeBuilderScore, type BuilderSnapshot } from "../services/parlayBuilder/builderScoringService.js";
+import { fetchMarketOdds } from "../services/oddsData";
 
 const router: IRouter = Router();
 
@@ -187,7 +188,7 @@ router.post("/admin/parlay/evaluate", requireAdmin, async (req, res): Promise<vo
 
     const evaluatedLegs = await Promise.all(legs.map(async (leg): Promise<EvalLeg> => {
       try {
-      const { player1Id, player2Id, player1Name, player2Name, selectedSide, tournamentName, marketOdds } = leg;
+      const { player1Id, player2Id, player1Name, player2Name, selectedSide, tournamentName, marketOdds: callerMarketOdds } = leg;
       const inlineSignals = (leg as Record<string, unknown>).inlineSignals as {
         calibratedProbabilityP1: number;
         dataQuality: number;
@@ -198,6 +199,23 @@ router.post("/admin/parlay/evaluate", requireAdmin, async (req, res): Promise<vo
       } | null | undefined;
       const selectedIsP1 = selectedSide === "1";
       const selectedName = selectedIsP1 ? player1Name : player2Name;
+
+      // Task #2: resolve real market odds when the caller did not supply them.
+      // Without this, computeSafetyScore falls back to a hardcoded 50 (neutral) market factor
+      // for every leg that lacks caller-supplied odds — the "50 % fallback" Task #2 removes.
+      let marketOdds: number | null = callerMarketOdds ?? null;
+      if (marketOdds === null) {
+        try {
+          const oddsQuote = await fetchMarketOdds(player1Name, player2Name, null);
+          if (oddsQuote) {
+            // Orient to the selected player so the implied-probability display is always relative
+            // to the pick, not a fixed player slot.
+            marketOdds = selectedIsP1 ? oddsQuote.player1DecimalOdds : oddsQuote.player2DecimalOdds;
+          }
+        } catch (fetchErr) {
+          logger.warn({ fetchErr, player1Name, player2Name }, "Market odds fetch failed — scoring leg without odds");
+        }
+      }
 
       // Fast path: inline signals supplied by caller (e.g. freshly-run prediction result)
       // Skip the DB lookup entirely and compute the safety score directly.

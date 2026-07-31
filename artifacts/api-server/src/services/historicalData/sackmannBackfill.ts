@@ -45,8 +45,19 @@ import { logger } from "../../lib/logger";
 
 export const SACKMANN_PROVIDER = "sackmann";
 
+// GitHub sources (original Sackmann repos — now private).
+// Set GITHUB_PAT to a personal access token with repo read access to re-enable.
 const ATP_BASE_URL = "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master";
 const WTA_BASE_URL = "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master";
+
+// Kaggle mirror sources (public datasets, exact Sackmann column format).
+// Requires KAGGLE_API_TOKEN env var with download permission.
+//   ATP main-draw: 2000-2017  (gmadevs/atp-matches-dataset)
+//   WTA main-draw: 2000-2016  (gmadevs/wta-matches)
+// Qual/Challenger files are not mirrored on Kaggle — those still require GITHUB_PAT.
+const KAGGLE_ATP_DATASET = "gmadevs/atp-matches-dataset";
+const KAGGLE_WTA_DATASET = "gmadevs/wta-matches";
+
 const FETCH_TIMEOUT_MS = 30_000;
 
 // ── CSV parsing ───────────────────────────────────────────────────────────────
@@ -218,18 +229,90 @@ function rowToFixture(
 
 // ── CSV fetching ──────────────────────────────────────────────────────────────
 
-async function fetchCsvYear(url: string): Promise<Record<string, string>[]> {
+/**
+ * Download a single CSV from GitHub (raw.githubusercontent.com).
+ * Adds `Authorization: token <GITHUB_PAT>` when the env var is set.
+ * Returns [] on 404 so callers silently skip unavailable years.
+ */
+async function fetchCsvFromGitHub(url: string): Promise<Record<string, string>[]> {
+  const headers: Record<string, string> = {};
+  const pat = process.env.GITHUB_PAT;
+  if (pat) headers["Authorization"] = `token ${pat}`;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (res.status === 404) return []; // Year doesn't exist yet
+    const res = await fetch(url, { signal: controller.signal, headers });
+    if (res.status === 404) return []; // Year not yet available or repo private
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     const text = await res.text();
     return parseCsv(text);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Download a single CSV from Kaggle.
+ * Requires `KAGGLE_API_TOKEN` env var with download permissions.
+ * Known public mirrors:
+ *   - gmadevs/atp-matches-dataset  → atp_matches_YYYY.csv  (2000–2017)
+ *   - gmadevs/wta-matches           → wta_matches_YYYY.csv  (2000–2016)
+ * Returns [] if the token is absent, if the file isn't in the dataset, or
+ * if the download is rejected (e.g. read-only token).
+ */
+async function fetchCsvFromKaggle(kaggleDataset: string, filename: string): Promise<Record<string, string>[]> {
+  const token = process.env.KAGGLE_API_TOKEN;
+  if (!token) return [];
+
+  const url = `https://www.kaggle.com/api/v1/datasets/${kaggleDataset}/download/${encodeURIComponent(filename)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "follow",
+    });
+    if (res.status === 404) return []; // File not in this dataset (e.g. post-2017 year)
+    if (!res.ok) {
+      logger.warn(
+        { status: res.status, dataset: kaggleDataset, file: filename },
+        "sackmannBackfill: Kaggle download failed (token may lack download permission)",
+      );
+      return [];
+    }
+    const text = await res.text();
+    return parseCsv(text);
+  } catch (err) {
+    logger.warn({ err, dataset: kaggleDataset, file: filename }, "sackmannBackfill: Kaggle fetch error");
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch one year's CSV, trying Kaggle first then GitHub as a fallback.
+ *
+ * Source precedence:
+ *   1. Kaggle (if KAGGLE_API_TOKEN is set and file exists in the mirror dataset)
+ *   2. GitHub raw content (if GITHUB_PAT is set, or the repo happens to be public)
+ *
+ * Qual/Challenger files are not mirrored on Kaggle; those use GitHub only.
+ */
+async function fetchCsvYear(
+  githubUrl: string,
+  kaggleDataset?: string,
+  kaggleFilename?: string,
+): Promise<Record<string, string>[]> {
+  // Try Kaggle first when we have a dataset + filename mapping
+  if (kaggleDataset && kaggleFilename) {
+    const rows = await fetchCsvFromKaggle(kaggleDataset, kaggleFilename);
+    if (rows.length > 0) return rows;
+  }
+  // Fall back to GitHub (works if GITHUB_PAT is set or repo is public)
+  return fetchCsvFromGitHub(githubUrl);
 }
 
 // ── Minimal TennisDataProvider wrapper ────────────────────────────────────────
@@ -324,12 +407,18 @@ export async function runSackmannBackfill(
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
 
   /**
-   * Fetches one CSV URL, maps rows to HistoricalFixture[], and appends to allFixtures.
-   * Returns the number of valid fixtures loaded (0 on 404 or error).
+   * Fetches one CSV (trying Kaggle then GitHub), maps rows to HistoricalFixture[], and
+   * appends to allFixtures. Returns the number of valid fixtures loaded (0 on failure).
    */
-  async function fetchAndAppend(url: string, tourLabel: "ATP" | "WTA", context: string): Promise<number> {
+  async function fetchAndAppend(
+    url: string,
+    tourLabel: "ATP" | "WTA",
+    context: string,
+    kaggleDataset?: string,
+    kaggleFilename?: string,
+  ): Promise<number> {
     try {
-      const rows = await fetchCsvYear(url);
+      const rows = await fetchCsvYear(url, kaggleDataset, kaggleFilename);
       if (rows.length === 0) return 0;
       const fixtures = rows
         .map((r) => rowToFixture(r, tourLabel))
@@ -343,28 +432,32 @@ export async function runSackmannBackfill(
     }
   }
 
-  // Fetch all CSV files in parallel (capped to avoid hammering GitHub).
+  // Fetch all CSV files in parallel (capped to avoid hammering external APIs).
   // For each (year, tour) pair we fetch:
   //   1. The main-draw file: atp_matches_YYYY.csv / wta_matches_YYYY.csv
+  //      Source: Kaggle mirror first (2000-2017 ATP / 2000-2016 WTA), then GitHub fallback
   //   2. (if includeChallengerItf) The supplementary file:
   //        ATP: atp_matches_qual_chall_YYYY.csv — ATP Challengers + qualifying rounds
   //        WTA: wta_matches_qual_itf_YYYY.csv   — WTA ITF events + qualifying rounds
-  const concurrency = 4; // slightly lower to be courteous to GitHub with 2× the file requests
+  //        Source: GitHub only (no Kaggle mirror for qual/chall files)
+  const concurrency = 4;
   for (let i = 0; i < years.length; i += concurrency) {
     const batch = years.slice(i, i + concurrency);
     await Promise.all(
       batch.flatMap((year) =>
         tours.flatMap((tour) => {
-          const base     = tour === "atp" ? ATP_BASE_URL : WTA_BASE_URL;
-          const prefix   = tour === "atp" ? "atp" : "wta";
+          const base        = tour === "atp" ? ATP_BASE_URL : WTA_BASE_URL;
+          const prefix      = tour === "atp" ? "atp" : "wta";
           const tourLabel: "ATP" | "WTA" = tour === "atp" ? "ATP" : "WTA";
+          const kaggleDset  = tour === "atp" ? KAGGLE_ATP_DATASET : KAGGLE_WTA_DATASET;
 
           const tasks: Promise<void>[] = [];
 
-          // ── Main-draw file ───────────────────────────────────────────────
-          const mainUrl = `${base}/${prefix}_matches_${year}.csv`;
+          // ── Main-draw file (Kaggle mirror → GitHub fallback) ─────────────
+          const mainFilename = `${prefix}_matches_${year}.csv`;
+          const mainUrl = `${base}/${mainFilename}`;
           tasks.push(
-            fetchAndAppend(mainUrl, tourLabel, `${prefix}_matches_${year}`).then((count) => {
+            fetchAndAppend(mainUrl, tourLabel, `${prefix}_matches_${year}`, kaggleDset, mainFilename).then((count) => {
               if (count > 0) {
                 if (tour === "atp") atpYearsLoaded++;
                 else wtaYearsLoaded++;
@@ -372,14 +465,16 @@ export async function runSackmannBackfill(
             }),
           );
 
-          // ── Challenger / ITF supplementary file ─────────────────────────
+          // ── Challenger / ITF supplementary file (GitHub only) ───────────
           if (includeChallengerItf) {
-            const chalUrl = tour === "atp"
-              ? `${base}/${prefix}_matches_qual_chall_${year}.csv`
-              : `${base}/${prefix}_matches_qual_itf_${year}.csv`;
+            const chalFilename = tour === "atp"
+              ? `${prefix}_matches_qual_chall_${year}.csv`
+              : `${prefix}_matches_qual_itf_${year}.csv`;
+            const chalUrl = `${base}/${chalFilename}`;
             const chalLabel = tour === "atp"
               ? `${prefix}_matches_qual_chall_${year}`
               : `${prefix}_matches_qual_itf_${year}`;
+            // No Kaggle mirror for qual/chall files — GitHub only
             tasks.push(
               fetchAndAppend(chalUrl, tourLabel, chalLabel).then((count) => {
                 if (count > 0) {
