@@ -919,4 +919,117 @@ router.post("/screenshot-import/health/reset/:label", requireAdmin, (req, res): 
   });
 });
 
+// ── Saved Parlay Legs ─────────────────────────────────────────────────────────
+// Separate from parlay_leg_outcomes (calibration). These are user-bookmarked
+// BuilderLegResult snapshots for the "Saved Parlays" folder in the UI.
+
+router.get("/admin/parlay/saved-legs", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, saved_at, leg_payload FROM parlay_saved_legs ORDER BY saved_at DESC`
+    );
+    res.json({ legs: rows });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+router.post("/admin/parlay/saved-legs", requireAdmin, async (req, res): Promise<void> => {
+  const { legPayload } = req.body as { legPayload: unknown };
+  if (!legPayload || typeof legPayload !== "object") {
+    res.status(400).json({ error: "legPayload required" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO parlay_saved_legs (leg_payload) VALUES ($1::jsonb) RETURNING id, saved_at`,
+      [JSON.stringify(legPayload)]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+router.delete("/admin/parlay/saved-legs/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+  try {
+    await pool.query(`DELETE FROM parlay_saved_legs WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+router.delete("/admin/parlay/saved-legs", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    await pool.query(`DELETE FROM parlay_saved_legs`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+// ── Active Parlay Session ─────────────────────────────────────────────────────
+// Single-row (id=1 singleton) store for the in-progress parlay session.
+// Survives browser close / device switches for the single-owner admin model.
+
+router.get("/admin/parlay/session", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT session_payload FROM parlay_active_session WHERE id = 1`
+    );
+    res.json(rows[0]?.session_payload ?? null);
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+router.put("/admin/parlay/session", requireAdmin, async (req, res): Promise<void> => {
+  const payload = req.body;
+  if (!payload || typeof payload !== "object") {
+    res.status(400).json({ error: "payload required" });
+    return;
+  }
+  try {
+    await pool.query(
+      `INSERT INTO parlay_active_session (id, session_payload, updated_at)
+       VALUES (1, $1::jsonb, now())
+       ON CONFLICT (id) DO UPDATE SET session_payload = EXCLUDED.session_payload, updated_at = now()`,
+      [JSON.stringify(payload)]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+// ── Parlay History ────────────────────────────────────────────────────────────
+// Reads from parlay_leg_outcomes (the calibration/backfill table) — read-only.
+// The write path for that table is unchanged (adminParlay /validate + backfill routes).
+
+router.get("/admin/parlay/history", requireAdmin, async (req, res): Promise<void> => {
+  const limit = Math.min(200, parseInt(typeof req.query.limit === "string" ? req.query.limit : "100") || 100);
+  const offset = parseInt(typeof req.query.offset === "string" ? req.query.offset : "0") || 0;
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, selected_player_name, opponent_name, tournament_name, surface,
+             validation_score, risk_score, reliability_grade, parlay_grade, decision,
+             data_coverage, source_agreement, market_odds, source,
+             actual_winner_id, selected_player_id,
+             created_at, resolved_at
+      FROM parlay_leg_outcomes
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+    const { rows: [countRow] } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text as count FROM parlay_leg_outcomes`
+    );
+    res.json({ legs: rows, total: parseInt(countRow?.count ?? "0") });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
 export default router;

@@ -541,6 +541,28 @@ const STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS parlay_leg_outcomes_session_idx ON parlay_leg_outcomes (session_id)`,
   // Resolution job: match player pairs quickly
   `CREATE INDEX IF NOT EXISTS parlay_leg_outcomes_players_idx ON parlay_leg_outcomes (selected_player_id, opponent_id)`,
+
+  // ── Parlay Builder: user-saved legs ──────────────────────────────────────────
+  // Persists individual BuilderLegResult snapshots for the "Saved Parlays" folder.
+  // Completely separate from parlay_leg_outcomes (which is calibration data).
+  `
+  CREATE TABLE IF NOT EXISTS parlay_saved_legs (
+    id          SERIAL PRIMARY KEY,
+    saved_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    leg_payload JSONB NOT NULL
+  )
+  `,
+
+  // ── Parlay Builder: active session ────────────────────────────────────────────
+  // Single-row store (id=1 singleton) for the current in-progress parlay session.
+  // Upserted on every change so the session survives browser close / device switch.
+  `
+  CREATE TABLE IF NOT EXISTS parlay_active_session (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    session_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+  )
+  `,
 ];
 
 let ensured = false;

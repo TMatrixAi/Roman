@@ -9,7 +9,7 @@ import {
   Layers, ImagePlus, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
   ChevronDown, ChevronUp, Trash2, RotateCcw, Search, Play, FlaskConical,
   Shield, ShieldAlert, ShieldOff, TrendingUp, Activity, BarChart2, ArrowLeftRight,
-  Wifi, WifiOff, Server, Database,
+  Wifi, WifiOff, Server, Database, Bookmark, BookmarkCheck, History, X,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -492,10 +492,310 @@ function LegInputCard({ leg, index, onSelect, onOdds, onRemove }: {
   )
 }
 
+// ── History Mode ──────────────────────────────────────────────────────────────
+
+interface HistoryLeg {
+  id: number
+  selected_player_name: string
+  opponent_name: string
+  tournament_name: string | null
+  surface: string | null
+  validation_score: number
+  risk_score: number
+  reliability_grade: string
+  parlay_grade: string
+  decision: string
+  data_coverage: number
+  source: string
+  actual_winner_id: string | null
+  selected_player_id: string
+  created_at: string
+  resolved_at: string | null
+  market_odds: string | null
+}
+
+function HistoryMode() {
+  const { toast } = useToast()
+  const [legs, setLegs] = useState<HistoryLeg[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const limit = 100
+
+  const fetchHistory = useCallback(async (newOffset = 0) => {
+    setLoading(true)
+    try {
+      const r = await fetch(api(`/api/admin/parlay/history?limit=${limit}&offset=${newOffset}`), { credentials: "include" })
+      if (!r.ok) throw new Error(await r.text())
+      const j = await r.json()
+      setLegs(j.legs ?? [])
+      setTotal(j.total ?? 0)
+      setOffset(newOffset)
+    } catch (e) {
+      toast({ title: "Failed to load history", description: String(e), variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { void fetchHistory(0) }, [fetchHistory])
+
+  const outcomeFor = (leg: HistoryLeg) => {
+    if (!leg.actual_winner_id) return null
+    return leg.actual_winner_id === leg.selected_player_id
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="font-display font-semibold text-base">Leg History</h2>
+          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+            {total.toLocaleString()} total legs · live + backfill
+          </p>
+        </div>
+        <button
+          onClick={() => fetchHistory(offset)}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-mono text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-40"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      {loading && legs.length === 0 ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono py-12 justify-center">
+          <RefreshCw className="w-4 h-4 animate-spin" /> Loading history…
+        </div>
+      ) : legs.length === 0 ? (
+        <Card className="border-dashed bg-secondary/20">
+          <CardContent className="py-12 text-center space-y-2">
+            <History className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+            <p className="text-sm font-mono text-muted-foreground">No legs yet</p>
+            <p className="text-[11px] text-muted-foreground/60 font-mono">Run Analyze Parlay or the calibration backfill to populate history</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="rounded-lg border border-border/40 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-border/40 bg-secondary/30">
+                    <th className="text-left px-3 py-2 text-[10px] text-muted-foreground tracking-wider">PLAYERS</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-muted-foreground tracking-wider hidden sm:table-cell">EVENT</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-muted-foreground tracking-wider">DECISION</th>
+                    <th className="text-right px-3 py-2 text-[10px] text-muted-foreground tracking-wider">VAL</th>
+                    <th className="text-right px-3 py-2 text-[10px] text-muted-foreground tracking-wider hidden sm:table-cell">RISK</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-muted-foreground tracking-wider">OUTCOME</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-muted-foreground tracking-wider hidden md:table-cell">DATE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {legs.map((leg, i) => {
+                    const won = outcomeFor(leg)
+                    return (
+                      <tr key={leg.id} className={`border-t border-border/20 ${i % 2 === 0 ? "bg-transparent" : "bg-secondary/10"}`}>
+                        <td className="px-3 py-2">
+                          <p className="font-semibold truncate max-w-[140px]">{leg.selected_player_name}</p>
+                          <p className="text-muted-foreground truncate max-w-[140px]">vs {leg.opponent_name}</p>
+                        </td>
+                        <td className="px-3 py-2 hidden sm:table-cell">
+                          <p className="truncate max-w-[110px] text-muted-foreground">{leg.tournament_name ?? "—"}</p>
+                          <p className="text-muted-foreground/60">{leg.surface ?? "—"} · {leg.parlay_grade}</p>
+                        </td>
+                        <td className="px-3 py-2">
+                          {decisionBadge(leg.decision)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          <span className={leg.validation_score >= 65 ? "text-success" : leg.validation_score >= 45 ? "text-warning" : "text-destructive"}>
+                            {leg.validation_score}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                          <span className={leg.risk_score <= 35 ? "text-success" : leg.risk_score <= 55 ? "text-warning" : "text-destructive"}>
+                            {leg.risk_score}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {won === null ? (
+                            <span className="text-muted-foreground/50">—</span>
+                          ) : won ? (
+                            <span className="text-success font-bold">WON ✓</span>
+                          ) : (
+                            <span className="text-destructive font-bold">LOST ✗</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground hidden md:table-cell">
+                          {new Date(leg.created_at).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between gap-2 text-xs font-mono text-muted-foreground">
+            <span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
+            <div className="flex gap-2">
+              <button
+                disabled={offset === 0 || loading}
+                onClick={() => fetchHistory(Math.max(0, offset - limit))}
+                className="px-3 py-1 rounded border border-border hover:border-primary/40 disabled:opacity-40 transition-colors"
+              >← Prev</button>
+              <button
+                disabled={offset + limit >= total || loading}
+                onClick={() => fetchHistory(offset + limit)}
+                className="px-3 py-1 rounded border border-border hover:border-primary/40 disabled:opacity-40 transition-colors"
+              >Next →</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Saved Parlays Panel ───────────────────────────────────────────────────────
+
+interface SavedLegRow { id: number; saved_at: string; leg_payload: BuilderLegResult }
+
+function SavedParlaysPanel({
+  onClose,
+  onAddSelected,
+}: {
+  onClose: () => void
+  onAddSelected: (legs: BuilderLegResult[]) => void
+}) {
+  const { toast } = useToast()
+  const [rows, setRows] = useState<SavedLegRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [confirmClear, setConfirmClear] = useState(false)
+
+  const fetchSaved = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await fetch(api("/api/admin/parlay/saved-legs"), { credentials: "include" })
+      if (!r.ok) throw new Error(await r.text())
+      const j = await r.json()
+      setRows(j.legs ?? [])
+    } catch (e) {
+      toast({ title: "Failed to load saved legs", description: String(e), variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { void fetchSaved() }, [fetchSaved])
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleAddSelected = () => {
+    const toAdd = rows.filter(r => selected.has(r.id)).map(r => r.leg_payload)
+    if (toAdd.length === 0) return
+    onAddSelected(toAdd)
+    onClose()
+  }
+
+  const handleClearAll = async () => {
+    if (!confirmClear) { setConfirmClear(true); return }
+    try {
+      const resp = await fetch(api("/api/admin/parlay/saved-legs"), { method: "DELETE", credentials: "include" })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      // Only clear local state once the server confirmed the delete
+      setRows([])
+      setSelected(new Set())
+      setConfirmClear(false)
+    } catch (e) {
+      toast({ title: "Failed to clear", description: String(e), variant: "destructive" })
+      setConfirmClear(false)
+    }
+  }
+
+  return (
+    <Card className="border-primary/30 bg-card shadow-lg">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest">SAVED PARLAYS</p>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono py-4 justify-center">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading…
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm font-mono text-muted-foreground text-center py-4">No saved legs yet — click the bookmark icon on any leg card</p>
+        ) : (
+          <div className="space-y-1 max-h-72 overflow-y-auto">
+            {rows.map(row => (
+              <div
+                key={row.id}
+                onClick={() => toggleSelect(row.id)}
+                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${selected.has(row.id) ? "bg-primary/10 border border-primary/20" : "hover:bg-secondary/40"}`}
+              >
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selected.has(row.id) ? "border-primary bg-primary" : "border-muted-foreground/40"}`}>
+                  {selected.has(row.id) && <CheckCircle2 className="w-2.5 h-2.5 text-primary-foreground" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{row.leg_payload.selectedPlayerName} <span className="text-muted-foreground font-normal">vs {row.leg_payload.opponentName}</span></p>
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    {decisionBadge(row.leg_payload.decision)} · Val {row.leg_payload.validationScore} · {new Date(row.saved_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {rows.length > 0 && (
+          <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+            <Button
+              size="sm"
+              className="font-mono text-xs h-7 flex-1"
+              disabled={selected.size === 0}
+              onClick={handleAddSelected}
+            >
+              Add Selected ({selected.size})
+            </Button>
+            <button
+              onClick={handleClearAll}
+              className={`text-xs font-mono px-3 py-1.5 rounded border transition-colors ${confirmClear ? "border-destructive text-destructive bg-destructive/10" : "border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive"}`}
+            >
+              {confirmClear ? "Confirm clear?" : "Clear All"}
+            </button>
+            {confirmClear && (
+              <button
+                onClick={() => setConfirmClear(false)}
+                className="text-xs font-mono px-2 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground transition-colors"
+              >Cancel</button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Validation Leg Card (Independent Validation Engine — Task 105) ────────────
 
-function ValidationLegCard({ leg, isAutoSelected }: {
+function ValidationLegCard({ leg, isAutoSelected, isSaved, onToggleSave }: {
   leg: BuilderLegResult; isAutoSelected?: boolean
+  isSaved?: boolean; onToggleSave?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [expandFactors, setExpandFactors] = useState(false)
@@ -652,14 +952,38 @@ function ValidationLegCard({ leg, isAutoSelected }: {
           </div>
         )}
 
-        {/* Reasons (expandable) */}
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          {expanded ? "Hide" : "Show"} {leg.reasons.length} reason{leg.reasons.length !== 1 ? "s" : ""}
-        </button>
+        {/* Action row: reasons toggle + factor breakdown toggle + save bookmark */}
+        {/* validationScore is the authoritative "better pick" signal used for sort and display */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {expanded ? "Hide" : "Show"} {leg.reasons.length} reason{leg.reasons.length !== 1 ? "s" : ""}
+          </button>
+          {leg.factorScores.length > 0 && (
+            <button
+              onClick={() => setExpandFactors(e => !e)}
+              className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {expandFactors ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {expandFactors ? "Hide" : "Show"} factor breakdown ({leg.factorScores.filter(f => f.available).length} active)
+            </button>
+          )}
+          {/* Bookmark/save — saves this leg snapshot to the Saved Parlays folder */}
+          {onToggleSave && (
+            <button
+              onClick={onToggleSave}
+              title={isSaved ? "Remove from Saved Parlays" : "Save to Saved Parlays"}
+              className={`ml-auto flex items-center gap-1 text-[10px] font-mono transition-colors ${isSaved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+            >
+              {isSaved ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+              {isSaved ? "Saved" : "Save"}
+            </button>
+          )}
+        </div>
+
         {expanded && (
           <div className="space-y-0.5 pt-0.5 border-t border-border/30">
             {leg.reasons.map((r, i) => (
@@ -669,38 +993,27 @@ function ValidationLegCard({ leg, isAutoSelected }: {
         )}
 
         {/* Factor scores (expandable) */}
-        {leg.factorScores.length > 0 && (
-          <>
-            <button
-              onClick={() => setExpandFactors(e => !e)}
-              className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {expandFactors ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              {expandFactors ? "Hide" : "Show"} factor breakdown ({leg.factorScores.filter(f => f.available).length} active)
-            </button>
-            {expandFactors && (
-              <div className="space-y-1.5 pt-1 border-t border-border/30">
-                {leg.factorScores.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[10px]">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${f.available ? (f.score >= 65 ? "bg-success" : f.score >= 45 ? "bg-warning" : "bg-destructive") : "bg-muted"}`} />
-                    <span className="font-mono text-muted-foreground shrink-0 w-28 truncate">{f.name}</span>
-                    {f.available ? (
-                      <>
-                        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-primary/60 transition-all" style={{ width: `${f.score}%` }} />
-                        </div>
-                        <span className="font-mono tabular-nums w-7 text-right text-foreground">{f.score}</span>
-                        <span className="font-mono text-muted-foreground/60 w-12 text-right">{f.weight}%w</span>
-                      </>
-                    ) : (
-                      <span className="font-mono text-muted-foreground/50 italic">unavailable</span>
-                    )}
-                  </div>
-                ))}
-                <p className="text-[9px] font-mono text-muted-foreground/40 pt-1">Builder v{leg.builderVersion} — Independent from Prediction Engine</p>
+        {leg.factorScores.length > 0 && expandFactors && (
+          <div className="space-y-1.5 pt-1 border-t border-border/30">
+            {leg.factorScores.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${f.available ? (f.score >= 65 ? "bg-success" : f.score >= 45 ? "bg-warning" : "bg-destructive") : "bg-muted"}`} />
+                <span className="font-mono text-muted-foreground shrink-0 w-28 truncate">{f.name}</span>
+                {f.available ? (
+                  <>
+                    <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-primary/60 transition-all" style={{ width: `${f.score}%` }} />
+                    </div>
+                    <span className="font-mono tabular-nums w-7 text-right text-foreground">{f.score}</span>
+                    <span className="font-mono text-muted-foreground/60 w-12 text-right">{f.weight}%w</span>
+                  </>
+                ) : (
+                  <span className="font-mono text-muted-foreground/50 italic">unavailable</span>
+                )}
               </div>
-            )}
-          </>
+            ))}
+            <p className="text-[9px] font-mono text-muted-foreground/40 pt-1">Builder v{leg.builderVersion} — Independent from Prediction Engine</p>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1228,7 +1541,7 @@ function CalibrationDashboard() {
 export default function AdminParlayBuilder() {
   const { toast } = useToast()
   const search = useSearch()
-  const [mode, setMode] = useState<"live" | "backtest" | "calibration">("live")
+  const [mode, setMode] = useState<"live" | "history" | "backtest" | "calibration">("live")
   const resultsRef = useRef<HTMLDivElement>(null)
 
   // Input-phase state
@@ -1242,6 +1555,14 @@ export default function AdminParlayBuilder() {
   const [analyzePhase, setAnalyzePhase] = useState<"predicting" | "evaluating" | null>(null)
   const [slipView, setSlipView] = useState<"all" | "KEEP" | "BORDERLINE" | "REMOVE">("all")
   const [autoSelected, setAutoSelected] = useState<Set<number>>(new Set())
+
+  // Saved parlays: Map of "selectedPlayerName|opponentName" → DB row id
+  const [savedMap, setSavedMap] = useState<Map<string, number>>(new Map())
+  const [showSavedPanel, setShowSavedPanel] = useState(false)
+
+  // Session persistence: debounce ref so rapid changes don't spam the server
+  const sessionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionRestoredRef = useRef(false)
 
   // ── Bulk predictor draft handoff ───────────────────────────────────────────
   // When navigated to with ?draft=1, read match data from sessionStorage and
@@ -1282,6 +1603,108 @@ export default function AdminParlayBuilder() {
       // Corrupt or missing draft — open blank, user can add legs manually.
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps — intentionally runs once on mount only
+
+  // ── Session persistence: restore previous session on mount ─────────────────
+  // Separate from the draft handoff above; the draft handoff only fires when ?draft=1
+  // is in the URL. This effect restores the session on every non-draft load.
+  //
+  // IMPORTANT: sessionRestoredRef.current is only set true AFTER the async GET
+  // completes (success or error). The debounced save checks this flag before
+  // writing, preventing the initial-empty-state PUT from overwriting a stored session.
+  useEffect(() => {
+    if (sessionRestoredRef.current) return
+    const params = new URLSearchParams(search)
+    if (params.has("draft")) {
+      // Draft takes precedence — treat restore as complete so saves work normally
+      sessionRestoredRef.current = true
+      return
+    }
+    void (async () => {
+      try {
+        const r = await fetch(api("/api/admin/parlay/session"), { credentials: "include" })
+        if (r.ok) {
+          const payload = await r.json()
+          if (payload && typeof payload === "object") {
+            if (Array.isArray(payload.legs) && payload.legs.length > 0) {
+              setLegs(payload.legs as ParlayLeg[])
+            }
+            if (payload.slipView) setSlipView(payload.slipView)
+            if (payload.result) setResult(payload.result as BuilderSession)
+          }
+        }
+      } catch { /* silent — session restore is best-effort */ }
+      finally {
+        // Mark restore complete regardless of outcome so subsequent saves can proceed
+        sessionRestoredRef.current = true
+      }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps — runs once on mount only
+
+  // ── Session persistence: debounced save on legs/filter/result changes ──────
+  // Gate on sessionRestoredRef.current so the initial empty-state render
+  // cannot fire a PUT before the GET restore has had a chance to resolve.
+  useEffect(() => {
+    if (sessionDebounceRef.current) clearTimeout(sessionDebounceRef.current)
+    sessionDebounceRef.current = setTimeout(() => {
+      if (!sessionRestoredRef.current) return // restore still in flight — skip
+      void fetch(api("/api/admin/parlay/session"), {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legs, slipView, result }),
+      }).catch(() => { /* fire-and-forget, silent failure */ })
+    }, 500)
+    return () => {
+      if (sessionDebounceRef.current) clearTimeout(sessionDebounceRef.current)
+    }
+  }, [legs, slipView, result])
+
+  // ── Load saved legs on mount to populate savedMap ─────────────────────────
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await fetch(api("/api/admin/parlay/saved-legs"), { credentials: "include" })
+        if (!r.ok) return
+        const j = await r.json()
+        const rows: Array<{ id: number; leg_payload: BuilderLegResult }> = j.legs ?? []
+        setSavedMap(new Map(rows.map(row => [
+          `${row.leg_payload.selectedPlayerName}|${row.leg_payload.opponentName}`,
+          row.id,
+        ])))
+      } catch { /* silent */ }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps — runs once on mount only
+
+  // ── Save / unsave a leg ────────────────────────────────────────────────────
+  const handleToggleSave = useCallback(async (leg: BuilderLegResult) => {
+    const key = `${leg.selectedPlayerName}|${leg.opponentName}`
+    const existingId = savedMap.get(key)
+    if (existingId != null) {
+      // Unsave — check response.ok before removing from local state
+      try {
+        const resp = await fetch(api(`/api/admin/parlay/saved-legs/${existingId}`), { method: "DELETE", credentials: "include" })
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        setSavedMap(prev => { const n = new Map(prev); n.delete(key); return n })
+      } catch (e) {
+        toast({ title: "Failed to unsave", description: String(e), variant: "destructive" })
+      }
+    } else {
+      // Save — check response.ok before updating local state
+      try {
+        const r = await fetch(api("/api/admin/parlay/saved-legs"), {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ legPayload: leg }),
+        })
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+        const j = await r.json()
+        setSavedMap(prev => new Map(prev).set(key, j.id as number))
+      } catch (e) {
+        toast({ title: "Failed to save", description: String(e), variant: "destructive" })
+      }
+    }
+  }, [savedMap, toast])
 
   // ── Screenshot processing (identical to BulkMatchupPredictor) ─────────────
 
@@ -1514,9 +1937,11 @@ export default function AdminParlayBuilder() {
   )
   const canAnalyze = legsWithSelection.length > 0 && !isResolving && !evaluating
 
-  const filteredResultLegs: BuilderLegResult[] = result?.legs.filter((l: BuilderLegResult) =>
+  // Auto-sort: higher validationScore (the authoritative "better pick" signal) appears first.
+  // Applied at display layer only — does not mutate the underlying result.legs array.
+  const filteredResultLegs: BuilderLegResult[] = (result?.legs.filter((l: BuilderLegResult) =>
     slipView === "all" ? true : l.decision === slipView
-  ) ?? []
+  ) ?? []).slice().sort((a, b) => b.validationScore - a.validationScore)
 
   // Auto Builder helpers — pick KEEP legs sorted by validationScore
   const autoPickLegs = (count: number | "all", sortBy: "validationScore" | "riskScore" = "validationScore") => {
@@ -1548,11 +1973,15 @@ export default function AdminParlayBuilder() {
         >
           <Server className="w-4 h-4" />
         </button>
-        {/* Mode toggle */}
+        {/* Mode toggle — order: LIVE → HISTORY → BACKTEST → CALIBRATION */}
         <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
           <button onClick={() => { setMode("live"); setResult(null) }}
             className={`px-3 py-1.5 text-xs font-mono transition-colors ${mode === "live" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             LIVE
+          </button>
+          <button onClick={() => setMode("history")}
+            className={`px-3 py-1.5 text-xs font-mono border-l border-border transition-colors ${mode === "history" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            HISTORY
           </button>
           <button onClick={() => setMode("backtest")}
             className={`px-3 py-1.5 text-xs font-mono border-l border-border transition-colors ${mode === "backtest" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1570,7 +1999,7 @@ export default function AdminParlayBuilder() {
         <ProviderHealthPanel onClose={() => setShowHealthPanel(false)} />
       )}
 
-      {mode === "calibration" ? <CalibrationDashboard /> : mode === "backtest" ? <BacktestMode /> : (
+      {mode === "calibration" ? <CalibrationDashboard /> : mode === "history" ? <HistoryMode /> : mode === "backtest" ? <BacktestMode /> : (
         <div className="grid lg:grid-cols-2 gap-5 items-start">
 
           {/* ── Input column ── always first on desktop; on mobile goes below results when results exist */}
@@ -1711,6 +2140,13 @@ export default function AdminParlayBuilder() {
                       >
                         <RotateCcw className="w-3.5 h-3.5" /> Reset
                       </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        className={`font-mono text-xs gap-1.5 h-8 ${showSavedPanel ? "border-primary text-primary bg-primary/10" : ""}`}
+                        onClick={() => setShowSavedPanel(p => !p)}
+                      >
+                        <Bookmark className="w-3.5 h-3.5" /> Saved {savedMap.size > 0 ? `(${savedMap.size})` : ""}
+                      </Button>
                     </div>
 
                     {/* Filter tabs */}
@@ -1732,11 +2168,56 @@ export default function AdminParlayBuilder() {
                   </CardContent>
                 </Card>
 
-                {/* Per-leg results */}
+                {/* Saved Parlays panel — shown when Saved button is active */}
+                {showSavedPanel && (
+                  <SavedParlaysPanel
+                    onClose={() => setShowSavedPanel(false)}
+                    onAddSelected={(savedLegs) => {
+                      // Merge saved BuilderLegResult snapshots back into the results for inspection
+                      // They won't have a full session, so surface as a toast with the count
+                      toast({
+                        title: `${savedLegs.length} saved leg${savedLegs.length === 1 ? "" : "s"} loaded`,
+                        description: "Scroll down to see the leg cards below.",
+                      })
+                      // Re-run with the saved legs by synthesising a minimal session overlay
+                      setResult(prev => {
+                        if (!prev) return { legs: savedLegs, summary: {
+                          keepCount: savedLegs.filter(l => l.decision === "KEEP").length,
+                          borderlineCount: savedLegs.filter(l => l.decision === "BORDERLINE").length,
+                          removeCount: savedLegs.filter(l => l.decision === "REMOVE").length,
+                          avgValidationScore: Math.round(savedLegs.reduce((s, l) => s + l.validationScore, 0) / savedLegs.length),
+                          avgRiskScore: Math.round(savedLegs.reduce((s, l) => s + l.riskScore, 0) / savedLegs.length),
+                          overallParlayGrade: "Moderate" as const,
+                        }}
+                        const merged = [...prev.legs, ...savedLegs]
+                        return { ...prev, legs: merged, summary: {
+                          ...prev.summary,
+                          keepCount: merged.filter(l => l.decision === "KEEP").length,
+                          borderlineCount: merged.filter(l => l.decision === "BORDERLINE").length,
+                          removeCount: merged.filter(l => l.decision === "REMOVE").length,
+                          avgValidationScore: Math.round(merged.reduce((s, l) => s + l.validationScore, 0) / merged.length),
+                          avgRiskScore: Math.round(merged.reduce((s, l) => s + l.riskScore, 0) / merged.length),
+                        }}
+                      })
+                      setShowSavedPanel(false)
+                    }}
+                  />
+                )}
+
+                {/* Per-leg results — sorted by validationScore desc (best picks first) */}
                 <div className="space-y-2">
                   {filteredResultLegs.map((leg, i) => {
                     const globalIdx = result.legs.indexOf(leg)
-                    return <ValidationLegCard key={i} leg={leg} isAutoSelected={autoSelected.has(globalIdx)} />
+                    const saveKey = `${leg.selectedPlayerName}|${leg.opponentName}`
+                    return (
+                      <ValidationLegCard
+                        key={i}
+                        leg={leg}
+                        isAutoSelected={autoSelected.has(globalIdx)}
+                        isSaved={savedMap.has(saveKey)}
+                        onToggleSave={() => handleToggleSave(leg)}
+                      />
+                    )
                   })}
                   {filteredResultLegs.length === 0 && (
                     <p className="text-sm text-muted-foreground font-mono text-center py-4">
