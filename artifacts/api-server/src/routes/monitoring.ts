@@ -51,8 +51,7 @@ function deriveRec(row: EpRow): Recommendation | null {
     row.calibratedProbability,
     dataQuality,
     dqLabel,
-    row.upsetRiskTier as Parameters<typeof computeRecommendation>[3],
-    row.modelAgreement as Parameters<typeof computeRecommendation>[4],
+    row.modelAgreement as Parameters<typeof computeRecommendation>[3],
     snapshot?.engine?.tieBreakerApplied === true,
   );
 }

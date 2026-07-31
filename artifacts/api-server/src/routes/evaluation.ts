@@ -120,7 +120,7 @@ function deriveRecommendationFromEvaluationRow(row: {
   const dataQuality = row.dataQuality;
   const dataQualityLabel = dataQuality >= 85 ? "Excellent" : dataQuality >= 65 ? "Strong" : dataQuality >= 45 ? "Acceptable" : dataQuality >= 25 ? "Limited" : "Poor";
   const tieBreakerApplied = row.tieBreakerApplied === true;
-  return computeRecommendation(row.calibratedProbability, dataQuality, dataQualityLabel, row.upsetRiskTier as Parameters<typeof computeRecommendation>[3], row.modelAgreement as Parameters<typeof computeRecommendation>[4], tieBreakerApplied);
+  return computeRecommendation(row.calibratedProbability, dataQuality, dataQualityLabel, row.modelAgreement as Parameters<typeof computeRecommendation>[3], tieBreakerApplied);
 }
 
 router.get("/evaluation/runs", async (_req, res): Promise<void> => {

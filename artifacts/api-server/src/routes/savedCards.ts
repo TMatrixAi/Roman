@@ -115,7 +115,7 @@ router.delete("/saved-cards/:id", requireClerkUser, async (req, res): Promise<vo
   }
 
   const clerkUserId = getAuth(req).userId!;
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(req.params.id as string, 10);
 
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: "Invalid id" });
