@@ -285,7 +285,6 @@ export async function runShadowPaperTradingReplay(options: ShadowReplayOptions):
         continue;
       }
 
-      process.stderr.write(`[shadowReplay] scored raw=${scored.rawProbability} calibrated=${scored.calibratedProbability} calibrated*100=${scored.calibratedProbability * 100}\n`);
       const favorsPlayer1 = scored.calibratedProbability >= 0.5;
       const predictedWinnerId = favorsPlayer1 ? match.player1Id : match.player2Id;
       const includedInAccuracy = !isVoid && (resultType === "normal" || retirementRule === "included");

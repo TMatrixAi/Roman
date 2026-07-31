@@ -1,4 +1,4 @@
-import { useGetAdminAuthStatus, useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome, useGetMyPaymentsStatus } from "@workspace/api-client-react"
+import { useGetAdminAuthStatus, useGetPrediction, getGetPredictionQueryKey, useRecordPredictionOutcome } from "@workspace/api-client-react"
 import { useParams, useSearch } from "wouter"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,12 +11,8 @@ import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type 
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Sparkles, Loader2 } from "lucide-react"
-import { useState, useCallback } from "react"
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
-const api = (path: string) => `${BASE}${path}`
-import { useQuery } from "@tanstack/react-query"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy } from "lucide-react"
+import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
 import { useToast } from "@/hooks/use-toast"
 
@@ -51,60 +47,6 @@ const MODEL_NAME_LABELS: Record<string, string> = {
   "Segment Specialist": "Specialist Model",
   "Monte Carlo": "Monte Carlo",
   "Calibrated Ensemble": "Calibrated Ensemble",
-}
-
-/** Renders engine warnings with a "Show more" collapse after the first 3. */
-function WarningsList({ warnings }: { warnings: string[] }) {
-  const [expanded, setExpanded] = useState(false)
-  const LIMIT = 3
-  const visible = expanded ? warnings : warnings.slice(0, LIMIT)
-  const hidden = warnings.length - LIMIT
-  return (
-    <div className="mb-6 p-5 border-2 border-warning/30 bg-warning/5 rounded-2xl space-y-3 shadow-sm">
-      {visible.map((w, i) => (
-        <div key={i} className="flex gap-3 text-sm text-foreground/80">
-          <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-          <span className="leading-snug">{w}</span>
-        </div>
-      ))}
-      {!expanded && hidden > 0 && (
-        <button
-          onClick={() => setExpanded(true)}
-          className="text-xs font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 pt-1 transition-colors"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-          {hidden} more notice{hidden !== 1 ? "s" : ""}
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** Renders informational disclosures with a "Show more" collapse after the first 3. */
-function DisclosuresList({ disclosures }: { disclosures: string[] }) {
-  const [expanded, setExpanded] = useState(false)
-  const LIMIT = 3
-  const visible = expanded ? disclosures : disclosures.slice(0, LIMIT)
-  const hidden = disclosures.length - LIMIT
-  return (
-    <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
-      {visible.map((d, i) => (
-        <div key={i} className="flex gap-3 text-sm text-foreground/80">
-          <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-          <span className="leading-snug">{d}</span>
-        </div>
-      ))}
-      {!expanded && hidden > 0 && (
-        <button
-          onClick={() => setExpanded(true)}
-          className="text-xs font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 pt-1 transition-colors"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-          {hidden} more note{hidden !== 1 ? "s" : ""}
-        </button>
-      )}
-    </div>
-  )
 }
 
 function toVisibleModelName(name: string): string {
@@ -189,10 +131,8 @@ export default function PredictionResultPage() {
     query: { queryKey: getGetPredictionQueryKey(id), enabled: !!id }
   })
   const { data: adminAuth } = useGetAdminAuthStatus()
-  const { data: billing } = useGetMyPaymentsStatus()
-  const subscriberTier = billing?.tier ?? null
-  const isEliteSubscriber = subscriberTier === "elite" || subscriberTier === "elite_annual"
   const { toast } = useToast()
+
   const recordOutcome = useRecordPredictionOutcome()
 
   if (isLoading) {
@@ -246,20 +186,10 @@ export default function PredictionResultPage() {
 
       {/* HEADER MATCHUP */}
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between border-b border-border/50 pb-6">
-        <div className="space-y-2">
-          {prediction.tournamentName && (
-            <p className="text-base sm:text-lg font-display font-bold text-foreground tracking-tight">
-              {prediction.tournamentName}{" "}
-              <span className="font-mono text-sm font-normal text-muted-foreground">({prediction.surface})</span>
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
-            {!prediction.tournamentName && (
-              <Badge variant="secondary" className="uppercase bg-secondary/50 border shadow-sm">{prediction.surface}</Badge>
-            )}
-            <span className="uppercase tracking-widest">{prediction.matchFormat}</span>
-            {prediction.tournamentLevel && <Badge variant="outline" className="uppercase bg-background shadow-sm">{prediction.tournamentLevel}</Badge>}
-          </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm font-mono text-muted-foreground">
+          <Badge variant="secondary" className="uppercase bg-secondary/50 border shadow-sm">{prediction.surface}</Badge>
+          <span className="uppercase tracking-widest">{prediction.matchFormat}</span>
+          {prediction.tournamentLevel && <Badge variant="outline" className="uppercase bg-background shadow-sm">{prediction.tournamentLevel}</Badge>}
         </div>
         {isResolved && (
           <Badge variant={isCorrect ? "success" : "destructive"} className="text-sm px-4 py-1.5 shadow-md">
@@ -348,22 +278,14 @@ export default function PredictionResultPage() {
                   <div className="mt-6 flex flex-wrap gap-3">
                     <Badge
                       variant={
-                        (prediction.recommendation as string) === 'HIGHEST_CONFIDENCE' ? 'success' :
-                        (prediction.recommendation as string) === 'HIGH_CONFIDENCE' ? 'success' :
-                        (prediction.recommendation as string) === 'MODERATE_CONFIDENCE' ? 'secondary' :
-                        (prediction.recommendation as string) === 'LOW_CONFIDENCE' ? 'warning' :
-                        (prediction.recommendation as string) === 'INSUFFICIENT_EDGE' ? 'outline' :
-                        // Legacy stored values for predictions made before the rename
-                        (prediction.recommendation as string) === 'STRONG_RECOMMENDATION' ? 'success' :
-                        (prediction.recommendation as string) === 'MODERATE_LEAN' ? 'secondary' :
-                        (prediction.recommendation as string) === 'HIGH_RISK' ? 'warning' :
-                        (prediction.recommendation as string) === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
+                        prediction.recommendation === 'STRONG_RECOMMENDATION' ? 'success' :
+                        prediction.recommendation === 'MODERATE_LEAN' ? 'secondary' :
+                        prediction.recommendation === 'HIGH_RISK' ? 'warning' :
+                        prediction.recommendation === 'NO_STRONG_SIGNAL' ? 'outline' : 'destructive'
                       }
                       className="text-sm px-3 py-1.5 font-bold shadow-md"
                       title={
-                        (prediction.recommendation as string) === 'HIGHEST_CONFIDENCE'
-                          ? "Highest Confidence: all three core signals independently agree, the margin is strong, and model consensus is high. Still an early, small-sample tier — see the Accuracy Dashboard."
-                          : (prediction.recommendation as string) === 'STRONG_RECOMMENDATION'
+                        prediction.recommendation === 'STRONG_RECOMMENDATION'
                           ? "The engine's highest-confidence call by its own gating criteria -- backtesting has not yet shown this tier beating other tiers, so treat it as a signal, not a guarantee."
                           : undefined
                       }
@@ -377,15 +299,6 @@ export default function PredictionResultPage() {
                         title="Meets every one of the engine's strictest gates at once. Still an early, small-sample tier -- not yet statistically proven to outperform non-Elite predictions."
                       >
                         <Crown className="w-4 h-4" /> ELITE TIER
-                      </Badge>
-                    )}
-                    {isEliteSubscriber && (
-                      <Badge
-                        variant="outline"
-                        className="text-sm px-3 py-1.5 font-bold gap-1.5 shadow-md border-primary/40 bg-primary/5 text-primary"
-                        title="You're on the Elite plan — you have access to every prediction the engine produces."
-                      >
-                        <Crown className="w-4 h-4" /> ELITE MEMBER
                       </Badge>
                     )}
                     <Badge variant="outline" className="text-sm px-3 py-1.5 bg-background shadow-sm">
@@ -406,16 +319,12 @@ export default function PredictionResultPage() {
                       Raw ensemble was within 3% of 50/50. Force Signal mode is active — this pick was forced at your request. Backtesting shows calls in this range perform at or below chance.
                     </p>
                   )}
-                  {((prediction.recommendation as string) === 'HIGHEST_CONFIDENCE' || (prediction.recommendation as string) === 'HIGH_CONFIDENCE' || (prediction.recommendation as string) === 'STRONG_RECOMMENDATION') && (
+                  {prediction.recommendation === 'STRONG_RECOMMENDATION' && (
                     <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
-                      {(prediction.recommendation as string) === 'HIGHEST_CONFIDENCE'
-                        ? "Highest Confidence: Surface Elo, Serve & Return, and Recent Form all independently favour the same player, the probability margin is strong, and model agreement is high. Still an early, small-sample tier — not yet proven to outperform High Confidence. See the Accuracy Dashboard."
-                        : "High Confidence marks the engine's well-supported calls. Backtesting is still early-stage — treat this as one input, not a proven edge. See the Accuracy Dashboard for current sample counts."}
-                    </p>
-                  )}
-                  {(prediction.recommendation as string) === 'INSUFFICIENT_EDGE' && (
-                    <p className="text-xs text-muted-foreground mt-4 max-w-md leading-relaxed font-mono">
-                      Insufficient Edge: available evidence does not reliably separate these players. This may be due to thin data, conflicted models, or a probability close to a coin flip.
+                      "HIGH CONFIDENCE" marks the engine's own highest-confidence calls, based on today's thresholds --
+                      validation on real outcomes is still early-stage, and this tier hasn't yet been shown to beat
+                      other tiers. See the Accuracy Dashboard for current backtest sample counts.
+                      Treat it as one input, not a proven edge.
                     </p>
                   )}
                   {engine.isEliteTier && (
@@ -423,10 +332,6 @@ export default function PredictionResultPage() {
                       {engine.eliteTierReason ? `${engine.eliteTierReason} ` : ""}
                       Elite is an early, small-sample tier -- directionally promising but not yet statistically proven
                       to outperform non-Elite predictions. See the Accuracy Dashboard for current sample counts.
-                      {((prediction.recommendation as string) === 'LOW_CONFIDENCE' ||
-                        (prediction.recommendation as string) === 'MODERATE_CONFIDENCE') &&
-                        ' Elite Tier and Confidence are independent dimensions: Elite reflects evidence alignment quality (all signals agree, specialist confirmed, no model conflict); Confidence reflects probability magnitude (edge size). A genuine but thin margin can satisfy Elite\'s alignment gates while not clearing the Confidence thresholds for High or Highest.'
-                      }
                     </p>
                   )}
                 </div>
@@ -518,9 +423,6 @@ export default function PredictionResultPage() {
                   </div>
                 </div>
               ) : null}
-
-              {/* Task #35: AI plain-language explanation — fetched on demand */}
-              <PredictionExplanation predictionId={id} />
 
               {!isResolved && (
                 <div className="pt-6 border-t border-border/50">
@@ -617,60 +519,49 @@ export default function PredictionResultPage() {
               </div>
             )}
             
-            {/* Compact bar chart — one row per model, no detail expansion */}
-            <div className="space-y-1 pt-2">
-              {/* Column headers */}
-              <div className="flex items-center gap-3 px-1 pb-1 border-b border-border/40">
-                <span className="w-28 shrink-0 text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Model</span>
-                <span className="text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate">{prediction.player1Name}</span>
-                <span className="ml-auto text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase truncate text-right">{prediction.player2Name}</span>
-                <span className="w-10 shrink-0" />
+            <div className="space-y-3 pt-2">
+              <div className="hidden md:flex text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase px-4 pb-2 border-b border-border/50">
+                <span className="flex-1" title="Model used in this prediction">Model Name</span>
+                <span className="w-16 text-right" title="Player 1 raw probability from this model">Raw Prob</span>
+                <span className="w-28 text-right" title="Final contribution weight used in the ensemble">Effective Weight</span>
+                <span className="w-28 text-right" title="Raw probability multiplied by effective weight">Weighted Contribution</span>
+                <span className="w-20 text-right" title="Reliability score (0-100)">Reliability</span>
+                <span className="w-24 text-right" title="Whether this model materially influenced the final pick">Status</span>
               </div>
-
               {engine.models
                 .filter((vote) => typeof vote.modelName === "string" && vote.modelName.trim().length > 0)
                 .map((vote, i) => {
                   const modelName = toVisibleModelName(vote.modelName)
-                  const prob = vote.player1Probability          // 0–100, P1 perspective
-                  const excluded = vote.weightUsed < 0.01
-                  const p1Leads = prob >= 50
+                  const effectiveWeightPct = vote.weightUsed * 100
+                  const weightedContribution = (vote.player1Probability * vote.weightUsed)
+                  const favored = vote.player1Probability >= 50 ? prediction.player1Name : prediction.player2Name
+                  const status = vote.weightUsed < 0.01 ? "Excluded" : vote.reliability < 25 ? "Limited" : "Active"
+                  const availability = vote.weightUsed < 0.01 ? "Unavailable" : "Available"
+                  const sampleDepth = vote.reliability >= 75 ? "High" : vote.reliability >= 45 ? "Medium" : "Low"
 
                   return (
-                    <div key={i} className={`flex items-center gap-3 px-1 py-1.5 rounded-lg transition-opacity ${excluded ? "opacity-35" : ""}`}>
-                      {/* Model name */}
-                      <span className="w-28 shrink-0 text-[11px] font-mono font-medium text-foreground/80 truncate" title={modelName}>
-                        {modelName}
-                      </span>
-
-                      {/* Bar track */}
-                      <div className="flex-1 relative h-3.5 bg-secondary rounded-full overflow-hidden">
-                        {/* Center divider */}
-                        <div className="absolute inset-y-0 left-1/2 w-px bg-border/70 z-10" />
-                        {/* Probability fill — always anchored to the leading side */}
-                        {p1Leads ? (
-                          <div
-                            className="absolute inset-y-0 left-0 bg-primary/75 rounded-full transition-all duration-300"
-                            style={{ width: `${prob}%` }}
-                          />
-                        ) : (
-                          <div
-                            className="absolute inset-y-0 right-0 bg-warning/75 rounded-full transition-all duration-300"
-                            style={{ width: `${100 - prob}%` }}
-                          />
-                        )}
+                    <div key={i} className="p-3 rounded-lg hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/50 space-y-2">
+                      <div className="md:flex md:items-center md:gap-3 md:text-sm">
+                        <span className="md:flex-1 font-medium truncate">{modelName}</span>
+                        <span className="md:w-16 md:text-right font-mono font-bold text-primary tabular-nums">{vote.player1Probability.toFixed(1)}%</span>
+                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{effectiveWeightPct.toFixed(1)}%</span>
+                        <span className="hidden md:block md:w-28 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{weightedContribution.toFixed(1)}</span>
+                        <span className="hidden md:block md:w-20 md:text-right font-mono text-xs text-muted-foreground tabular-nums">{vote.reliability.toFixed(0)}</span>
+                        <span className="hidden md:block md:w-24 md:text-right text-xs font-mono">{status}</span>
                       </div>
-
-                      {/* Probability label */}
-                      <span className={`w-10 shrink-0 text-right text-[11px] font-mono font-bold tabular-nums ${excluded ? "text-muted-foreground" : p1Leads ? "text-primary" : "text-warning"}`}>
-                        {p1Leads ? prob.toFixed(0) : (100 - prob).toFixed(0)}%
-                      </span>
+                      <div className="grid grid-cols-2 md:hidden gap-2 text-[11px] font-mono text-muted-foreground">
+                        <span>Favored: <span className="text-foreground">{favored}</span></span>
+                        <span>Effective Weight: <span className="text-foreground">{effectiveWeightPct.toFixed(1)}%</span></span>
+                        <span>Weighted Contribution: <span className="text-foreground">{weightedContribution.toFixed(1)}</span></span>
+                        <span>Reliability: <span className="text-foreground">{vote.reliability.toFixed(0)}</span></span>
+                        <span>Data Availability: <span className="text-foreground">{availability}</span></span>
+                        <span>Sample Depth: <span className="text-foreground">{sampleDepth}</span></span>
+                        <span>Status: <span className="text-foreground">{status}</span></span>
+                        <span>Explanation: <span className="text-foreground">{status === "Excluded" ? "Near-zero effect in final ensemble." : "Contributed to final probability."}</span></span>
+                      </div>
                     </div>
                   )
                 })}
-
-              <p className="pt-1 text-[10px] font-mono text-muted-foreground text-center">
-                bar length = confidence · green = {prediction.player1Name} · amber = {prediction.player2Name} · faded = excluded
-              </p>
             </div>
           </CardContent>
         </Card>
@@ -819,22 +710,23 @@ export default function PredictionResultPage() {
         )}
 
         {!!engine.warnings?.length && (
-          <WarningsList warnings={engine.warnings} />
-        )}
-
-        {!!engine.coverageGaps?.length && (
-          <div className="mb-6 p-5 border border-border/50 bg-muted/20 rounded-2xl space-y-3 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-1">Coverage Gaps</p>
-            {engine.coverageGaps.map((g, i) => (
-              <div key={i} className="flex gap-3 text-sm text-foreground/60">
-                <Info className="w-5 h-5 text-muted-foreground shrink-0" /> <span className="leading-snug">{g}</span>
+          <div className="mb-6 p-5 border-2 border-warning/30 bg-warning/5 rounded-2xl space-y-3 shadow-sm">
+            {engine.warnings.map((w, i) => (
+              <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                <AlertTriangle className="w-5 h-5 text-warning shrink-0" /> <span className="leading-snug">{w}</span>
               </div>
             ))}
           </div>
         )}
 
         {!!engine.disclosures?.length && (
-          <DisclosuresList disclosures={engine.disclosures} />
+          <div className="mb-8 p-5 border border-border/60 bg-secondary/40 rounded-2xl space-y-3 shadow-sm backdrop-blur-sm">
+            {engine.disclosures.map((d, i) => (
+              <div key={i} className="flex gap-3 text-sm text-foreground/80">
+                <Info className="w-5 h-5 text-primary shrink-0" /> <span className="leading-snug">{d}</span>
+              </div>
+            ))}
+          </div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
@@ -1307,79 +1199,6 @@ function DecisionTracePanel({ trace, player1Name, player2Name }: { trace: any; p
       </div>
     </div>
   );
-}
-
-/** Task #35: on-demand plain-language explanation fetched from the AI explain endpoint. */
-function PredictionExplanation({ predictionId }: { predictionId: number }) {
-  const [requested, setRequested] = useState(false)
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["predictions", predictionId, "explain"] as const,
-    queryFn: async () => {
-      const res = await fetch(`/api/predictions/${predictionId}/explain`)
-      if (!res.ok) throw new Error("Failed to fetch explanation")
-      const json = await res.json() as { explanation: string }
-      return json.explanation
-    },
-    enabled: requested,
-    staleTime: Infinity, // explanation won't change — cache forever once fetched
-    retry: 1,
-  })
-
-  const handleRequest = useCallback(() => setRequested(true), [])
-
-  return (
-    <div className="border-t border-border/50 pt-6 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
-          AI SUMMARY
-        </p>
-        {!requested && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono text-xs gap-1.5 h-7 px-2.5"
-            onClick={handleRequest}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Explain This Pick
-          </Button>
-        )}
-      </div>
-
-      {!requested && (
-        <p className="text-xs text-muted-foreground/70 leading-relaxed">
-          Ask the AI to narrate the key signals behind this prediction in plain English.
-        </p>
-      )}
-
-      {isLoading && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono py-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Generating explanation…
-        </div>
-      )}
-
-      {isError && (
-        <p className="text-xs text-destructive font-mono">
-          Could not generate explanation. Try again later.
-        </p>
-      )}
-
-      {data && (
-        <div className="bg-secondary/30 border border-border/50 rounded-xl p-4 space-y-3">
-          {data.split("\n\n").map((para, i) => (
-            <p key={i} className="text-sm text-foreground/85 leading-relaxed">
-              {para}
-            </p>
-          ))}
-          <p className="text-[10px] font-mono text-muted-foreground/50 pt-1 border-t border-border/30">
-            AI-generated summary · not a guarantee · based on engine signals only
-          </p>
-        </div>
-      )}
-    </div>
-  )
 }
 
 function Swords(props: any) {
