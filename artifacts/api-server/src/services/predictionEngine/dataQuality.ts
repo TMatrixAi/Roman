@@ -170,7 +170,12 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
 // surface-specific edge. See docs/audit-matchloadrecovery-live-revalidation.md for the full
 // breakdown; re-run the ablation if the historical corpus grows substantially and this decision
 // should be revisited.
-export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue", "matchLoadRecovery"]);
+// marketOdds: excluded pending the Task #21 paper_trade ablation reaching its ≥200 paired-row
+// reliability bar. The 2026-07-31 run produced n=180 paper_trade pairs (just short of the
+// required 200) with directional accuracy/log-loss improvements, but the sample is too small to
+// declare a confirmed net positive. Will be removed from this set once the bar is cleared —
+// see docs/audit-market-consensus-ablation.md and scripts/auditMarketConsensusAblation.ts.
+export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue", "matchLoadRecovery", "marketOdds"]);
 
 /**
  * Per-model confidence shrink (see `EnsembleModuleInput.confidenceShrink`), derived directly from

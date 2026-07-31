@@ -218,15 +218,21 @@ test("Form-Elo conflict gate: RF genuinely influences the ensemble and its remov
 // ─── Market Odds wiring tests ─────────────────────────────────────────────────
 //
 // The market odds module is a live-signal supplement that:
-//   - is present in engine.models only when a real OddsQuote is supplied
+//   - is present in engine.models only when a real OddsQuote is supplied AND
+//     either (a) marketOdds is not in EXCLUDED_FROM_ENSEMBLE, or (b) an explicit
+//     excludedModels set is provided (ablation bypass — the caller overrides the global gate)
 //   - is absent when marketOdds is null (no fallback to 50/50 invented vote)
-//   - is absent when "marketOdds" is in excludedModels (ablation)
+//   - is absent when "marketOdds" is in excludedModels (ablation override)
+//   - is absent in normal live calls when globally excluded via EXCLUDED_FROM_ENSEMBLE
+//     (Task #21: excluded until the ≥200 paper_trade paired-row reliability bar is cleared)
 //   - uses vig-normalized implied probability, so symmetric odds produce ~50%
 //   - is always excluded from the Data Quality blend (decisionTrace check)
 //
-// All tests use baseInput() with an injected OddsQuote — no network calls needed.
+// Tests that verify the module IS active pass excludedModels: new Set() to signal ablation
+// mode (bypassing the EXCLUDED_FROM_ENSEMBLE global gate). Tests that verify the global
+// exclusion behavior pass only marketOdds with no excludedModels override.
 
-test("Market Consensus appears in engine.models when real odds are supplied", () => {
+test("Market Consensus appears in engine.models when odds are supplied in ablation mode (excludedModels: new Set())", () => {
   const output = runPredictionEngine(baseInput({
     marketOdds: {
       provider: "Test Provider",
@@ -234,6 +240,8 @@ test("Market Consensus appears in engine.models when real odds are supplied", ()
       player2DecimalOdds: 2.40,
       fetchedAt: new Date().toISOString(),
     },
+    // explicit empty excludedModels = ablation mode: bypasses EXCLUDED_FROM_ENSEMBLE global gate
+    excludedModels: new Set(),
   }));
 
   const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
@@ -277,7 +285,30 @@ test("Market Consensus is absent when excluded via ablation (excludedModels: Set
   );
 });
 
-test("vig-normalized symmetric odds (2.0 / 2.0) produce a Market Consensus probability within 1pp of 50", () => {
+test("Market Consensus is absent in live calls (no excludedModels) even with valid odds when globally excluded via EXCLUDED_FROM_ENSEMBLE", () => {
+  // This test verifies the Task #21 global gate: when marketOdds is in EXCLUDED_FROM_ENSEMBLE
+  // and no explicit excludedModels is passed (the live/paper_trade code path), the market module
+  // must NOT vote even if real odds are provided. The global gate is enforced only on no-override
+  // calls so live predictions are never influenced by an underpowered-sample module.
+  const output = runPredictionEngine(baseInput({
+    marketOdds: {
+      provider: "Test Provider",
+      player1DecimalOdds: 1.60,
+      player2DecimalOdds: 2.40,
+      fetchedAt: new Date().toISOString(),
+    },
+    // no excludedModels — this is the live call path
+  }));
+
+  const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
+  assert.strictEqual(
+    marketVote,
+    undefined,
+    "Market Consensus must NOT appear in a live call (no excludedModels override) while globally excluded via EXCLUDED_FROM_ENSEMBLE — the module is pending re-validation (Task #21)",
+  );
+});
+
+test("vig-normalized symmetric odds (2.0 / 2.0) produce a Market Consensus probability within 1pp of 50 (ablation mode)", () => {
   const output = runPredictionEngine(baseInput({
     marketOdds: {
       provider: "Test Provider",
@@ -285,6 +316,7 @@ test("vig-normalized symmetric odds (2.0 / 2.0) produce a Market Consensus proba
       player2DecimalOdds: 2.0,
       fetchedAt: new Date().toISOString(),
     },
+    excludedModels: new Set(), // ablation bypass
   }));
 
   const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
@@ -295,7 +327,7 @@ test("vig-normalized symmetric odds (2.0 / 2.0) produce a Market Consensus proba
   );
 });
 
-test("Market Consensus player1Probability > 50 when player1 is the heavy market favorite (1.20 odds)", () => {
+test("Market Consensus player1Probability > 50 when player1 is the heavy market favorite (1.20 odds) [ablation mode]", () => {
   const output = runPredictionEngine(baseInput({
     marketOdds: {
       provider: "Test Provider",
@@ -303,6 +335,7 @@ test("Market Consensus player1Probability > 50 when player1 is the heavy market 
       player2DecimalOdds: 4.50,
       fetchedAt: new Date().toISOString(),
     },
+    excludedModels: new Set(), // ablation bypass
   }));
 
   const marketVote = output.engine.models.find((m) => m.modelName === "Market Consensus");
@@ -313,7 +346,7 @@ test("Market Consensus player1Probability > 50 when player1 is the heavy market 
   );
 });
 
-test("Market Consensus trace in decisionTrace.modules is always excludedFromDataQuality and never excludedFromEnsemble", () => {
+test("Market Consensus trace in decisionTrace.modules is always excludedFromDataQuality and never excludedFromEnsemble [ablation mode]", () => {
   const output = runPredictionEngine(baseInput({
     marketOdds: {
       provider: "Test Provider",
@@ -321,6 +354,7 @@ test("Market Consensus trace in decisionTrace.modules is always excludedFromData
       player2DecimalOdds: 2.00,
       fetchedAt: new Date().toISOString(),
     },
+    excludedModels: new Set(), // ablation bypass
   }));
 
   const trace = output.decisionTrace.modules.find((m) => m.key === "marketOdds");

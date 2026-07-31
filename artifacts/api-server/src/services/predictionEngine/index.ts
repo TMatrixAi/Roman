@@ -467,9 +467,25 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   //
   // Orientation: player1DecimalOdds / player2DecimalOdds are player-1-relative (same convention
   // as every other engine input), so normP1 maps directly to player1Edge without name-matching.
+  //
+  // Task #21 (2026-07-31): excluded from the ensemble pending the ≥200 paper_trade paired-row
+  // reliability bar. The 2026-07-31 ablation run produced n=180 paper_trade pairs (just short of
+  // the required 200). Directional signals are promising — Δacc +0.5pp, Δlog-loss −0.014, market
+  // correct 69.6% when it disagrees with the model — but the sample is too small to declare a
+  // confirmed net positive. "marketOdds" is in EXCLUDED_FROM_ENSEMBLE until re-validated at ≥200.
+  // See docs/audit-market-consensus-ablation.md and scripts/auditMarketConsensusAblation.ts.
   let marketConsensusInput: { name: string; player1Edge: number; reliability: number; weightPrior: number } | null = null;
+  // Task #21: honor the global EXCLUDED_FROM_ENSEMBLE gate for "marketOdds" whenever no explicit
+  // per-call ablation set is provided (i.e. every live, paper-trade, and non-ablation call). An
+  // explicitly-provided `excludedModels` (even an empty Set) signals ablation mode — the caller
+  // takes responsibility for which modules are active, so the global gate is bypassed for that
+  // call only. This lets the dedicated market-odds ablation script test both "with odds" and
+  // "without odds" arms independently via `excludedModels`, while standard live calls always
+  // respect the global exclusion.
+  const marketGloballyExcluded = excludedModels == null && EXCLUDED_FROM_ENSEMBLE.has("marketOdds");
   if (
     input.marketOdds != null &&
+    !marketGloballyExcluded &&
     !excludedModels?.has("marketOdds") &&
     input.marketOdds.player1DecimalOdds > 1 &&
     input.marketOdds.player2DecimalOdds > 1
