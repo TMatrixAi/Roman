@@ -230,13 +230,75 @@ function rowToFixture(
 // ── CSV fetching ──────────────────────────────────────────────────────────────
 
 /**
- * Download a single CSV from GitHub (raw.githubusercontent.com).
- * Adds `Authorization: token <GITHUB_PAT>` when the env var is set.
+ * Convert a raw.githubusercontent.com URL to its api.github.com/repos/.../contents/ equivalent.
+ * Returns null if the URL doesn't match the expected pattern.
+ *
+ * raw:  https://raw.githubusercontent.com/OWNER/REPO/BRANCH/path/file.csv
+ * api:  https://api.github.com/repos/OWNER/REPO/contents/path/file.csv
+ *
+ * api.github.com is confirmed reachable from Replit's sandbox (returns HTTP 200 for public
+ * endpoints), while raw.githubusercontent.com consistently 404s for private repos — even with
+ * an Authorization header that would otherwise be valid.  The api.github.com contents endpoint
+ * with `Accept: application/vnd.github.v3.raw` streams raw file content (no base64 encoding).
+ */
+function rawUrlToContentsUrl(rawUrl: string): string | null {
+  const m = rawUrl.match(
+    /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/,
+  );
+  if (!m) return null;
+  const [, owner, repo, , filepath] = m;
+  return `https://api.github.com/repos/${owner}/${repo}/contents/${filepath}`;
+}
+
+/**
+ * Download a single CSV from GitHub.
+ *
+ * Strategy (in order):
+ *   1. When GITHUB_PAT is set: use api.github.com/repos/.../contents/ with
+ *      `Accept: application/vnd.github.v3.raw` — confirmed reachable from Replit even when
+ *      raw.githubusercontent.com returns 404 for private repos.
+ *   2. Fallback: raw.githubusercontent.com — works for truly public repos with no auth,
+ *      or when the PAT URL transform above is not applicable.
+ *
  * Returns [] on 404 so callers silently skip unavailable years.
  */
 async function fetchCsvFromGitHub(url: string): Promise<Record<string, string>[]> {
-  const headers: Record<string, string> = {};
   const pat = process.env.GITHUB_PAT;
+
+  // ── Attempt 1: api.github.com/repos/.../contents/ (preferred when PAT is available) ──
+  if (pat) {
+    const contentsUrl = rawUrlToContentsUrl(url);
+    if (contentsUrl) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const res = await fetch(contentsUrl, {
+          signal: controller.signal,
+          headers: {
+            Authorization: `token ${pat}`,
+            Accept: "application/vnd.github.v3.raw",
+            "User-Agent": "TennisMatrix-Backfill/1.0",
+          },
+        });
+        if (res.status === 404) return []; // Year not in repo
+        if (res.ok) {
+          const text = await res.text();
+          return parseCsv(text);
+        }
+        logger.warn(
+          { status: res.status, contentsUrl },
+          "sackmannBackfill: api.github.com/contents fetch failed — falling back to raw URL",
+        );
+      } catch (err) {
+        logger.warn({ err, contentsUrl }, "sackmannBackfill: api.github.com/contents error — falling back");
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  // ── Attempt 2: raw.githubusercontent.com (works for public repos; PAT auth added if set) ──
+  const headers: Record<string, string> = { "User-Agent": "TennisMatrix-Backfill/1.0" };
   if (pat) headers["Authorization"] = `token ${pat}`;
 
   const controller = new AbortController();
