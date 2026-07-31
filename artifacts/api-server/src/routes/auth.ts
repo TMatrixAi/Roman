@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { AdminLoginBody, AdminLoginResponse, GetAdminAuthStatusResponse, AdminLogoutResponse } from "@workspace/api-zod";
 import {
   getAdminAccessKey,
+  getOwnerAutoLoginToken,
   isOwnerAutoAuthenticated,
   isAdminSessionCookieValid,
   setAdminSessionCookie,
@@ -11,6 +12,43 @@ import { authLimiter } from "../middlewares/rateLimiter";
 import { auditLog } from "../middlewares/auditLog";
 
 const router: IRouter = Router();
+
+function getSafeRedirectPath(input: unknown): string {
+  if (typeof input !== "string") return "/app";
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/")) return "/app";
+  if (trimmed.startsWith("//")) return "/app";
+  return trimmed;
+}
+
+/**
+ * GET /auth/owner-auto-login?token=<token>[&next=/some/path]
+ *
+ * Bookmarkable magic-link for the owner. Validates the token against
+ * OWNER_AUTO_LOGIN_TOKEN (or falls back to ADMIN_ACCESS_KEY), sets the
+ * signed admin session cookie, then redirects to `next` (defaults to /app).
+ *
+ * Works from any browser / device — not tied to Replit iframe headers.
+ * The Replit-header path (isOwnerAutoAuthenticated) still works inside
+ * the Replit preview; this route is additive, not a replacement.
+ */
+router.get("/auth/owner-auto-login", (req, res): void => {
+  const configuredToken = getOwnerAutoLoginToken();
+  if (!configuredToken) {
+    res.status(403).json({ error: "Owner auto-login is not configured on the server" });
+    return;
+  }
+
+  const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+  if (!token || token !== configuredToken) {
+    res.status(401).json({ error: "Invalid owner auto-login token" });
+    return;
+  }
+
+  setAdminSessionCookie(res);
+  const next = getSafeRedirectPath(req.query.next);
+  res.redirect(302, next);
+});
 
 router.get("/auth/status", (req, res): void => {
   const authenticated = isAdminSessionCookieValid(req.signedCookies) || isOwnerAutoAuthenticated(req);

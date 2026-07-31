@@ -27,6 +27,24 @@ function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+export function getOwnerAutoLoginToken(): string | undefined {
+  // Optional dedicated token for owner-only magic-link login.
+  // Falls back to ADMIN_ACCESS_KEY so existing deployments work without extra setup.
+  const candidates = [
+    process.env.OWNER_AUTO_LOGIN_TOKEN,
+    process.env.OWNER_MAGIC_LINK_TOKEN,
+    process.env.ADMIN_ACCESS_KEY,
+    process.env.ADMIN_ACCESSKEY,
+    process.env.ADMIN_KEY,
+    process.env.ADMIN_PASSWORD,
+  ];
+  for (const value of candidates) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
 export function getAdminAccessKey(): string | undefined {
   // Accept a few common secret-name variants across hosts (Replit/Codespaces/etc.).
   // The first non-empty value wins.
