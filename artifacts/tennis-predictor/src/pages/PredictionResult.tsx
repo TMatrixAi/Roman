@@ -11,7 +11,7 @@ import { asPercentage, asFraction, formatPercentage, fractionToPercentage, type 
 import { deriveMonteCarloHeadline } from "@/lib/monteCarloHeadline"
 import { buildPredictionCopyText } from "@/lib/predictionCopyText"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
-import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Bookmark, BookmarkCheck } from "lucide-react"
+import { Activity, ShieldAlert, CheckCircle2, XCircle, TrendingUp, AlertTriangle, ChevronRight, Dna, ActivitySquare, Database, Vote, Info, Dices, Crown, Scale, Zap, GitBranch, ChevronDown, Copy, Bookmark, BookmarkCheck, FolderOpen } from "lucide-react"
 import { useState } from "react"
 import { UPSET_RISK_LABEL, UPSET_RISK_SHORT, UPSET_RISK_TEXT_CLASS, upsetRiskBadgeClasses } from "@/lib/upsetRiskColors"
 import { useToast } from "@/hooks/use-toast"
@@ -194,7 +194,9 @@ export default function PredictionResultPage() {
       if (res.ok) {
         const data = await res.json() as { alreadySaved?: boolean }
         setSaved(true)
-        toast({ title: data.alreadySaved ? "Already in your saved cards" : "✅ Saved to your cards" })
+        toast({ title: data.alreadySaved ? "Already in your Cards folder" : "✅ Saved to Cards folder" })
+      } else if (res.status === 403) {
+        toast({ title: "Sign in with a user account to save cards", variant: "destructive" })
       } else {
         toast({ title: "Could not save — try again", variant: "destructive" })
       }
@@ -250,6 +252,33 @@ export default function PredictionResultPage() {
 
       {/* COMPACT SUMMARY HERO */}
       <Card className="border border-primary/20 overflow-hidden relative shadow-xl glass-panel">
+        {/* Top-left: Save to Cards folder — shown for any signed-in user */}
+        {isSignedIn && (
+          <div className="absolute top-3 left-3 z-20">
+            <Button
+              variant="outline"
+              size="sm"
+              className={`h-8 px-3 text-xs font-mono gap-1.5 bg-background/95 transition-all ${
+                saved
+                  ? "border-success/60 text-success bg-success/10"
+                  : "border-primary/30 text-primary hover:border-primary hover:bg-primary/10"
+              }`}
+              onClick={handleSaveCard}
+              disabled={saving}
+              title="Save to your Cards folder"
+            >
+              {saving ? (
+                <Bookmark className="w-3.5 h-3.5 animate-pulse" />
+              ) : saved ? (
+                <BookmarkCheck className="w-3.5 h-3.5" />
+              ) : (
+                <FolderOpen className="w-3.5 h-3.5" />
+              )}
+              {saved ? "SAVED" : "SAVE"}
+            </Button>
+          </div>
+        )}
+        {/* Top-right: admin copy button */}
         <div className="absolute top-3 right-3 z-20 flex gap-2">
           {canCopy && (
             <Button
@@ -261,25 +290,6 @@ export default function PredictionResultPage() {
             >
               <Copy className="w-3.5 h-3.5" />
               📋 Copy
-            </Button>
-          )}
-          {isSignedIn && !isOwnerSession && (
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-8 px-2.5 text-xs font-mono gap-1.5 bg-background/95 transition-colors ${saved ? "border-success/50 text-success" : ""}`}
-              onClick={handleSaveCard}
-              disabled={saving}
-              title="Save to your prediction cards"
-            >
-              {saving ? (
-                <Bookmark className="w-3.5 h-3.5 animate-pulse" />
-              ) : saved ? (
-                <BookmarkCheck className="w-3.5 h-3.5" />
-              ) : (
-                <Bookmark className="w-3.5 h-3.5" />
-              )}
-              {saved ? "Saved" : "Save"}
             </Button>
           )}
         </div>
