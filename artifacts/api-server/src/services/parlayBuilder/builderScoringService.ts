@@ -186,6 +186,15 @@ function stddev(values: number[]): number {
 }
 
 // ---------------------------------------------------------------------------
+// Thin-data risk floor — applied whenever any player has < 5 matches.
+// When data is sparse the true risk is unknown, not low.  A closeness score of
+// 25 on two 0.5/0.5 win-rate players built from 3 matches each is absence-of-
+// signal, not evidence of a safe bet.  This floor prevents riskScore from
+// going below THIN_DATA_RISK_FLOOR in that state.
+// ---------------------------------------------------------------------------
+export const THIN_DATA_RISK_FLOOR = 45;
+
+// ---------------------------------------------------------------------------
 // Closeness risk floor — smooth ramp replacing the old two-step cliff.
 // At cs ≤ 50 the floor is 0.  Between 50 and 80 it ramps linearly from 0→40.
 // Between 80 and 100 it continues at a shallower slope to a ceiling of 55.
@@ -1310,7 +1319,19 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     : 50; // no independent signals available — neutral, no floor applied beyond the default below
 
   const riskFloor = closenessRiskFloor(closenessScore);
-  const riskScore = clamp(Math.max(preClosenessRisk, riskFloor), 0, 100);
+  const postClosenessRisk = clamp(Math.max(preClosenessRisk, riskFloor), 0, 100);
+
+  // ── 5c. Thin-data risk floor ──────────────────────────────────────────────
+  //
+  // When either player has < 5 matches (insufficient_data or player_not_found),
+  // the risk is fundamentally unknown — not low.  A matchup with sel.total=3 and
+  // opp.total=3 sharing the same sparse win rate still produces a real closeness
+  // signal of ~0 gap, which the closeness floor translates to ~0 added risk.
+  // That is absence-of-signal, not evidence of a safe pick.
+  // THIN_DATA_RISK_FLOOR (45) is applied as a hard floor in those cases so that
+  // "I don't know" never scores as "low risk".
+  const _thinDataFloorFired = (sel.total < 5 || opp.total < 5) && postClosenessRisk < THIN_DATA_RISK_FLOOR;
+  const riskScore = _thinDataFloorFired ? THIN_DATA_RISK_FLOOR : postClosenessRisk;
 
   // ── 6. Critical flags & data source diagnostics ──────────────────────────────
   //
@@ -1380,6 +1401,17 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     criticalFlags.push(`Very limited match history for ${opponentName} — ${opp.total} match${opp.total !== 1 ? "es" : ""} found${source}`);
   }
 
+  // Log when the thin-data risk floor was applied so it's visible in the admin diagnostics panel.
+  if (_thinDataFloorFired) {
+    const thinPlayers = [
+      ...(sel.total < 5 ? [selectedPlayerName] : []),
+      ...(opp.total < 5 ? [opponentName] : []),
+    ].join(" and ");
+    criticalFlags.push(
+      `Thin-data risk floor (min ${THIN_DATA_RISK_FLOOR}): riskScore raised from ${postClosenessRisk} — risk is unknown, not low, when data is thin for ${thinPlayers}`,
+    );
+  }
+
   // Only flag missing surface data when the player IS found (not-found gets its own message)
   if (surface && sel.surfaceTotal === 0 && sel.total > 0) {
     criticalFlags.push(`No ${surface} court matches found for ${selectedPlayerName}`);
@@ -1415,7 +1447,8 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       ...(dataSourceDiagnostics.opponentStatus !== "data_available" ? [opponentName] : []),
     ].join(" and ");
     criticalFlags.push(
-      `Consistency guard: Elite tier forced down to Strong — insufficient data for ${_gapPlayers} contradicts Elite-tier confidence`,
+      `Consistency guard: Elite tier forced down to Strong — insufficient data for ${_gapPlayers} contradicts Elite-tier confidence` +
+      (_thinDataFloorFired ? ` (thin-data risk floor ${THIN_DATA_RISK_FLOOR} also applied)` : ""),
     );
     parlayGrade = "Strong";
   }
@@ -1717,18 +1750,23 @@ export function __TEST_computeScoring(
     closenessSignals.push(clamp(Math.round((1 - Math.abs(selRank - oppRank) / Math.max(selRank, oppRank)) * 100), 0, 100));
   const closenessScore = closenessSignals.length > 0
     ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length) : 50;
-  const riskScore = clamp(Math.max(Math.round(risk), closenessRiskFloor(closenessScore)), 0, 100);
+  const postClosenessRisk = clamp(Math.max(Math.round(risk), closenessRiskFloor(closenessScore)), 0, 100);
+
+  // Thin-data risk floor — mirrors the same guard in computeBuilderScore
+  const selectedPlayerStatus = opts.selectedPlayerStatus
+    ?? (sel.total === 0 ? "player_not_found" : sel.total < 5 ? "insufficient_data" : "data_available");
+  const opponentStatus = opts.opponentStatus
+    ?? (opp.total === 0 ? "player_not_found" : opp.total < 5 ? "insufficient_data" : "data_available");
+  const thinDataFloorFired =
+    (selectedPlayerStatus !== "data_available" || opponentStatus !== "data_available") &&
+    postClosenessRisk < THIN_DATA_RISK_FLOOR;
+  const riskScore = thinDataFloorFired ? THIN_DATA_RISK_FLOOR : postClosenessRisk;
 
   // Grades
   const reliabilityGrade = toReliabilityGrade(validationScore, dataCoverage);
   let parlayGrade = toParlayGrade(validationScore, riskScore, reliabilityGrade);
 
   // Consistency guard — Bug D fix
-  const selectedPlayerStatus = opts.selectedPlayerStatus
-    ?? (sel.total === 0 ? "player_not_found" : sel.total < 5 ? "insufficient_data" : "data_available");
-  const opponentStatus = opts.opponentStatus
-    ?? (opp.total === 0 ? "player_not_found" : opp.total < 5 ? "insufficient_data" : "data_available");
-
   let caughtInconsistency: string | null = null;
   const hasDataGap = selectedPlayerStatus !== "data_available" || opponentStatus !== "data_available";
   if (parlayGrade === "Elite" && hasDataGap) {
@@ -1736,7 +1774,9 @@ export function __TEST_computeScoring(
       ...(selectedPlayerStatus !== "data_available" ? [selectedPlayerName] : []),
       ...(opponentStatus       !== "data_available" ? [opponentName]       : []),
     ].join(" and ");
-    caughtInconsistency = `Consistency guard: Elite tier forced down to Strong — insufficient data for ${gapPlayers}`;
+    caughtInconsistency =
+      `Consistency guard: Elite tier forced down to Strong — insufficient data for ${gapPlayers}` +
+      (thinDataFloorFired ? ` (thin-data risk floor ${THIN_DATA_RISK_FLOOR} also applied)` : "");
     parlayGrade = "Strong";
   }
 
