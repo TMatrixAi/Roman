@@ -1589,6 +1589,8 @@ export default function AdminParlayBuilder() {
   const [analyzePhase, setAnalyzePhase] = useState<"predicting" | "evaluating" | null>(null)
   const [slipView, setSlipView] = useState<"all" | "KEEP" | "BORDERLINE" | "REMOVE">("all")
   const [autoSelected, setAutoSelected] = useState<Set<number>>(new Set())
+  // Maps result.legs[i] → the ParlayLeg key that produced it, so we can flip legs by result decision
+  const [resultLegKeys, setResultLegKeys] = useState<string[]>([])
 
   // Saved parlays: Map of "selectedPlayerName|opponentName" → DB row id
   const [savedMap, setSavedMap] = useState<Map<string, number>>(new Map())
@@ -1848,13 +1850,16 @@ export default function AdminParlayBuilder() {
 
   // ── Analyze Parlay ─────────────────────────────────────────────────────────
 
-  const analyzeParlay = async () => {
+  const analyzeParlay = async (overrideLegs?: ParlayLeg[]) => {
     // All legs with names — selectedSide defaults to "1" so no manual click needed
-    const ready = legs.filter(l =>
+    const sourcLegs = overrideLegs ?? legs
+    const ready = sourcLegs.filter(l =>
       l.status !== "resolving" && l.status !== "error" &&
       (l.player1Name || l.player2Name)
     )
     if (ready.length === 0) { toast({ title: "Upload at least one match before analyzing" }); return }
+    // Record the key order so switchBorderlineLegs can map result[i] → leg key
+    setResultLegKeys(ready.map(l => l.key))
 
     setEvaluating(true)
     setResult(null)
@@ -1906,11 +1911,14 @@ export default function AdminParlayBuilder() {
       }))
 
       // Update selectedSide in state to reflect the auto-picked predicted winner
-      setLegs(prev => prev.map(l => {
-        const sig = legSignals[l.key]
-        if (!sig) return l
-        return { ...l, selectedSide: sig.predictedWinnerSide }
-      }))
+      // (skip if we were called with overrideLegs — those already have the right side)
+      if (!overrideLegs) {
+        setLegs(prev => prev.map(l => {
+          const sig = legSignals[l.key]
+          if (!sig) return l
+          return { ...l, selectedSide: sig.predictedWinnerSide }
+        }))
+      }
 
       // ── Phase 2: Independent Builder Validation (Task 105) ───────────────────
       // Reads historical_matches directly — NEVER uses engine scores or predictions table.
@@ -1987,6 +1995,39 @@ export default function AdminParlayBuilder() {
     const pick = count === "all" ? keepLegs : keepLegs.slice(0, count)
     setAutoSelected(new Set(pick.map(({ i }) => i)))
     setSlipView("all")
+  }
+
+  // ── Switch Borderline ───────────────────────────────────────────────────────
+  // Flip the selected player for every BORDERLINE leg, then re-run the analysis.
+  // result.legs[i] maps to the leg with key resultLegKeys[i] (recorded at analysis time).
+  const borderlineCount = result?.legs.filter(l => l.decision === "BORDERLINE").length ?? 0
+
+  const switchBorderlineLegs = () => {
+    if (!result || resultLegKeys.length === 0) return
+
+    // Build set of keys that scored BORDERLINE
+    const borderlineKeySet = new Set(
+      result.legs
+        .map((leg, i) => leg.decision === "BORDERLINE" ? resultLegKeys[i] : null)
+        .filter((k): k is string => k != null)
+    )
+    if (borderlineKeySet.size === 0) return
+
+    // Flip those legs to the opposite player, keep everything else intact
+    const flipped = legs.map(l =>
+      borderlineKeySet.has(l.key)
+        ? { ...l, selectedSide: (l.selectedSide === "1" ? "2" : "1") as "1" | "2" }
+        : l
+    )
+    setLegs(flipped)
+    // Re-run analysis immediately with the flipped legs (pass directly so we
+    // don't wait for the React state update to propagate)
+    analyzeParlay(flipped)
+
+    toast({
+      title: `Switched ${borderlineKeySet.size} BORDERLINE leg${borderlineKeySet.size === 1 ? "" : "s"}`,
+      description: "Re-running analysis with the opposing players selected.",
+    })
   }
 
   return (
@@ -2074,7 +2115,7 @@ export default function AdminParlayBuilder() {
               <Button
                 className="w-full font-mono gap-2 sticky bottom-20 lg:static shadow-lg lg:shadow-none"
                 size="lg"
-                onClick={analyzeParlay}
+                onClick={() => analyzeParlay()}
                 disabled={!canAnalyze}
               >
                 {evaluating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
@@ -2183,8 +2224,8 @@ export default function AdminParlayBuilder() {
                       </Button>
                     </div>
 
-                    {/* Filter tabs */}
-                    <div className="flex gap-1 flex-wrap">
+                    {/* Filter tabs + Switch Borderline action */}
+                    <div className="flex gap-1 flex-wrap items-center">
                       {(["all", "KEEP", "BORDERLINE", "REMOVE"] as const).map(v => (
                         <button
                           key={v}
@@ -2198,6 +2239,18 @@ export default function AdminParlayBuilder() {
                           {v}
                         </button>
                       ))}
+                      {/* Switch Borderline — flips all BORDERLINE legs to the opposing player and re-runs */}
+                      {borderlineCount > 0 && (
+                        <button
+                          onClick={switchBorderlineLegs}
+                          disabled={evaluating}
+                          title={`Flip all ${borderlineCount} BORDERLINE leg${borderlineCount === 1 ? "" : "s"} to the opposing player and re-run`}
+                          className="text-[9px] font-mono px-2 py-0.5 rounded border transition-colors border-warning/50 text-warning bg-warning/10 hover:bg-warning/20 hover:border-warning active:bg-warning/30 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <ArrowLeftRight className="w-2.5 h-2.5" />
+                          Switch {borderlineCount} Borderline
+                        </button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

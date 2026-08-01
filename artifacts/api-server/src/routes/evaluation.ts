@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { resolve as resolvePath, join as joinPath } from "path";
 import { and, desc, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { db, evaluationPredictionsTable, evaluationRunsTable, calibrationModelsTable, jobRunsTable, historicalMatchesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
@@ -51,6 +52,7 @@ import { usedHistoricalMatchFallback } from "../services/predictionEngine/player
 import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCoveredMatchDate } from "../services/historicalData/backfill";
 import { runSackmannBackfill, SACKMANN_PROVIDER } from "../services/historicalData/sackmannBackfill";
 import { runTennisDataCoUkBackfill, TENNIS_DATA_CO_UK_PROVIDER } from "../services/historicalData/tennisDataCoUkBackfill";
+import { runExternalCsvBackfill, EXT_CSV_PROVIDER } from "../services/historicalData/externalCsvBackfill";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
@@ -677,6 +679,95 @@ router.get("/evaluation/sackmann-backfill/status", async (_req, res): Promise<vo
           startedAt: latest.startedAt?.toISOString() ?? null,
           finishedAt: latest.finishedAt?.toISOString() ?? null,
           summary: latest.summary ?? null,
+          errorMessage: latest.errorMessage ?? null,
+        }
+      : null,
+  });
+});
+
+/**
+ * POST /evaluation/external-csv-backfill/run
+ * Imports uploaded CSV files from attached_assets/ (or any workspace-relative paths) into
+ * historical_matches. Same Elo / feature-snapshot / idempotency guarantees as the Sackmann path.
+ *
+ * Body: { files: string[] }  — workspace-relative paths, e.g.
+ *   ["attached_assets/2024-atp-season_xxx.csv", "attached_assets/2024-wta-season_xxx.csv"]
+ *
+ * Player ID resolution: surnames are matched against existing historical_matches rows so that
+ * known Sackmann / API-Tennis player IDs are reused — keeping Elo chains intact across years.
+ * New players fall back to "ext-{csvId}" (stable within and across files from this source).
+ */
+router.post("/evaluation/external-csv-backfill/run", requireAdmin, async (req, res): Promise<void> => {
+  const requestedFiles: string[] = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (requestedFiles.length === 0) {
+    res.status(400).json({ error: "Provide at least one file path in the 'files' array" });
+    return;
+  }
+
+  // process.cwd() in the API server is artifacts/api-server — go up two levels to workspace root
+  const workspaceRoot = resolvePath(process.cwd(), "../..");
+  const absFiles      = requestedFiles.map((f: string) => joinPath(workspaceRoot, f));
+  const jobName    = `${EXT_CSV_PROVIDER}-backfill`;
+
+  res.json({ started: true, files: requestedFiles, jobName });
+
+  const startedAt = new Date();
+  runExternalCsvBackfill({ files: absFiles })
+    .then(async (result) => {
+      await db.insert(jobRunsTable).values({
+        jobName,
+        startedAt,
+        finishedAt: new Date(),
+        status: "success",
+        attempts: 1,
+        summary: {
+          filesLoaded:             result.filesLoaded,
+          fixturesParsed:          result.fixturesParsed,
+          playersMatched:          result.playersMatched,
+          playersUnmatched:        result.playersUnmatched,
+          matchesInserted:         result.backfill.matchesInserted,
+          featureRowsInserted:     result.backfill.featureRowsInserted,
+          matchesSkippedDuplicate: result.backfill.matchesSkippedDuplicate,
+        },
+        errorMessage: null,
+      });
+      logger.info({ result }, "ext-csv-backfill: completed");
+    })
+    .catch(async (err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "ext-csv-backfill: failed");
+      await db.insert(jobRunsTable).values({
+        jobName,
+        startedAt,
+        finishedAt: new Date(),
+        status: "failed",
+        attempts: 1,
+        summary: null,
+        errorMessage,
+      });
+    });
+});
+
+/**
+ * GET /evaluation/external-csv-backfill/status
+ * Most recent job_runs row for the external CSV backfill.
+ */
+router.get("/evaluation/external-csv-backfill/status", requireAdmin, async (_req, res): Promise<void> => {
+  const [latest] = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, `${EXT_CSV_PROVIDER}-backfill`))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(1);
+
+  res.json({
+    hasRun: !!latest,
+    lastRun: latest
+      ? {
+          status:       latest.status,
+          startedAt:    latest.startedAt?.toISOString()  ?? null,
+          finishedAt:   latest.finishedAt?.toISOString() ?? null,
+          summary:      latest.summary      ?? null,
           errorMessage: latest.errorMessage ?? null,
         }
       : null,
