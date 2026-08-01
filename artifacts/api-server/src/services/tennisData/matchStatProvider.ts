@@ -47,7 +47,7 @@ const BASE_URL = `https://${HOST}`;
 // exhausted the quota by midday. 30 minutes → ~48 calls/day, well within limits.
 // The Refresh button bypasses the cache for on-demand updates.
 const UPCOMING_TTL_MS = 30 * 60 * 1000;  // 30 minutes
-const RANKINGS_TTL_MS = 60 * 60 * 1000;  // 1 hour
+export const RANKINGS_TTL_MS = 60 * 60 * 1000;  // 1 hour
 
 // 429 handling — fail immediately and let the composite provider fall back to
 // API-Tennis.  Retrying 429s in the primary provider delays requests by 35+
@@ -235,6 +235,20 @@ export class MatchStatProvider implements TennisDataProvider {
   private lastSuccessfulCallAt: string | null = null;
   private lastError: string | null = null;
 
+  /**
+   * Fast player-by-ID lookup built as a side-effect of the rankings fetch.
+   *
+   * Eviction contract: both `playerById` and `playerByIdExpiresAt` are set
+   * exclusively inside the TtlCache fetcher callback that populates
+   * `rankings:all:*`.  `getPlayer()` rejects (clears the Map and throws) when
+   * `Date.now() > playerByIdExpiresAt`, so callers never receive data older
+   * than RANKINGS_TTL_MS even if no `searchPlayers()` call has triggered a
+   * refresh yet.  A process restart resets both structures together.
+   */
+  private playerById = new Map<string, PlayerSummary>();
+  /** Absolute timestamp (ms) after which playerById must be treated as expired. */
+  private playerByIdExpiresAt = 0;
+
   constructor(apiKey: string) {
     this.apiKey = apiKey;
   }
@@ -388,6 +402,26 @@ export class MatchStatProvider implements TennisDataProvider {
         const combined: Array<{ entry: RawRankingEntry; tour: "ATP" | "WTA" }> = [];
         for (const e of (Array.isArray(atpRaw) ? atpRaw : [])) combined.push({ entry: e, tour: "ATP" });
         for (const e of (Array.isArray(wtaRaw) ? wtaRaw : [])) combined.push({ entry: e, tour: "WTA" });
+
+        // Rebuild playerById in lockstep with the fresh rankings so it is never
+        // older than the TtlCache entry.  Set the expiry first, then clear and
+        // repopulate so getPlayer() rejects stale lookups even when this fetcher
+        // hasn't been called yet after TTL expiry.
+        this.playerByIdExpiresAt = Date.now() + RANKINGS_TTL_MS;
+        this.playerById.clear();
+        for (const { entry: e, tour } of combined) {
+          const p = e.player;
+          if (!p?.id) continue;
+          const id = String(p.id);
+          this.playerById.set(id, {
+            id,
+            name: p.name ?? "",
+            countryCode: p.country ?? null,
+            currentRank: typeof e.rank === "number" ? e.rank : null,
+            tour,
+          });
+        }
+
         return combined;
       },
     );
@@ -429,14 +463,37 @@ export class MatchStatProvider implements TennisDataProvider {
 
   // ── Not available on this API — throw immediately to avoid wasted HTTP calls ──
 
-  async getPlayer(_playerId: string): Promise<PlayerProfile | null> {
-    // Player profiles are not available from this API — route to API-Tennis.
+  async getPlayer(playerId: string): Promise<PlayerProfile | null> {
+    // playerById is populated as a side-effect of the rankings fetch inside
+    // searchPlayers(). If the rankings have already been fetched this TTL window
+    // the map is populated; otherwise it is empty and we fall through to the
+    // throw so the composite provider routes the call to API-Tennis.
+    //
     // Important: MatchStat/RapidAPI player IDs are a different namespace from
     // API-Tennis IDs. Never attempt to look up MatchStat IDs against API-Tennis
     // or vice versa — they collide with unrelated players (often doubles teams).
     // The compositeProvider's name cache is seeded via seedPlayerName() by callers
     // that have the player name from fixture data, so the Sofascore tier-3 in
     // getPlayerMatches can activate even when both primary and fallback fail here.
+    // Reject lookups whose underlying rankings data has aged past RANKINGS_TTL_MS,
+    // even if no subsequent searchPlayers() call has triggered a fresh fetch yet.
+    // Clear the Map on expiry so memory isn't held past its useful life.
+    if (Date.now() > this.playerByIdExpiresAt) {
+      this.playerById.clear();
+      throw new ProviderUnavailableError(
+        "MatchStat: player profile endpoint not available — routing to API-Tennis",
+      );
+    }
+    const summary = this.playerById.get(playerId);
+    if (summary) {
+      return {
+        ...summary,
+        age: null,
+        plays: null,
+        fullName: null,
+        source: "live-standings",
+      };
+    }
     throw new ProviderUnavailableError(
       "MatchStat: player profile endpoint not available — routing to API-Tennis",
     );
