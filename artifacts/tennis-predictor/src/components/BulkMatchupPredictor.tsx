@@ -332,7 +332,21 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
   const { isSignedIn } = useAuth()
   const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
 
-  useEffect(() => { setResumableBatch(readStoredBatch()) }, [])
+  useEffect(() => {
+    const batch = readStoredBatch()
+    if (!batch) return
+    const sanitized = sanitizeResumedItems(batch)
+    // If every resolved item has already been predicted, restore silently — no resume
+    // banner needed when the user is just returning to view a completed batch.
+    const allDone = sanitized.every(
+      (it) => it.status !== "resolved" || it.predictStatus === "success",
+    )
+    if (allDone) {
+      setItems(sanitized)
+    } else {
+      setResumableBatch(sanitized)
+    }
+  }, [])
   useEffect(() => { if (items.length > 0) writeStoredBatch(items) }, [items])
 
   const resolvedCount = items.filter(isReady).length
@@ -754,7 +768,10 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
     } catch {
       // localStorage unavailable (private-browse quota) — continue silently
     }
-    clearStoredBatch()
+    // Do NOT call clearStoredBatch() here — we want the completed batch to persist in
+    // sessionStorage so that returning to Run Model shows the predictions with their
+    // PREDICTED badges rather than an empty state. The batch is only cleared when the
+    // user starts a new one (handleFiles calls clearStoredBatch on upload).
     setLocation(`/predictions/${successIds[0]}?batch=${successIds.join(",")}`)
   }
 
@@ -1164,7 +1181,7 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
       {/* Primary action button(s) */}
       {hasItems && (
-        <div className={isAdmin && donePredictionIds.length > 0 ? "grid grid-cols-2 gap-2" : ""}>
+        <div className={isAdmin && resolvedCount > 0 ? "grid grid-cols-2 gap-2" : ""}>
           <Button
             size="lg" className="w-full font-bold font-mono h-12" variant="accent"
             disabled={anyResolving || isPredicting || resolvedCount === 0}
@@ -1183,8 +1200,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
             )}
           </Button>
 
-          {/* Admin-only: Build Parlay shortcut — only shown after predictions exist */}
-          {isAdmin && donePredictionIds.length > 0 && (
+          {/* Admin-only: Build Parlay shortcut — shown as soon as screenshots resolve */}
+          {isAdmin && resolvedCount > 0 && (
             <Button
               size="lg"
               className="w-full font-bold font-mono h-12 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:border-amber-400"
