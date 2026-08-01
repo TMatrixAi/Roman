@@ -248,6 +248,174 @@ test("fetchFromBsdTennis: ambiguous search results (two candidates both pass ful
   }
 }));
 
+// ─── Pagination tests ──────────────────────────────────────────────────────
+
+test("fetchBsdPlayerMatches: follows next cursor and returns records from both pages", withFakeKey(async () => {
+  const capturedUrls: string[] = [];
+
+  // Build a finished match stub
+  function finishedMatch(id: number, playerId: number): object {
+    return {
+      id,
+      tournament: { id: 1, name: "Test Open", circuit: "ATP", category: "ATP250", surface: "Hard" },
+      player1: { id: playerId, name: "Test Player", short_name: "T. Player", gender: "M", country_code: "ARG", current_ranking: null },
+      player2: { id: 999, name: "Opponent Name", short_name: "O. Name", gender: "M", country_code: "ESP", current_ranking: null },
+      match_date: "2025-06-01",
+      status: "finished",
+      round_name: "R32",
+      player1_sets: 2,
+      player2_sets: 0,
+      sets_detail: [{ p1: 6, p2: 3 }, { p1: 6, p2: 4 }],
+      winner_id: playerId,
+      odds_player1: null,
+      odds_player2: null,
+    };
+  }
+
+  const PAGE2_URL = "https://sports.bzzoiro.com/tennis/api/v2/matches/?player=300&status=finished&date_from=2022-01-01&date_to=2025-01-01&limit=200&offset=200";
+
+  const restore = mockFetch(async (url) => {
+    capturedUrls.push(url);
+    if (url.includes("/rankings/")) {
+      return jsonResponse(paginated([bsdRankingEntry(300, "Test Player")], 1));
+    }
+    if (url.includes("/matches/") && !url.includes("offset=200")) {
+      // First page: 1 match, next points to page 2
+      return jsonResponse({
+        count: 2,
+        next: PAGE2_URL,
+        previous: null,
+        results: [finishedMatch(1001, 300)],
+      });
+    }
+    if (url.includes("offset=200")) {
+      // Second page: 1 match, no next
+      return jsonResponse({
+        count: 2,
+        next: null,
+        previous: null,
+        results: [finishedMatch(1002, 300)],
+      });
+    }
+    return jsonResponse({}, 404);
+  });
+
+  try {
+    const result = await fetchFromBsdTennis("Test Player");
+    assert.equal(result.resolvedVia, "rankings-cache");
+    // Both pages must be merged
+    assert.equal(result.records.length, 2, "must return records from both pages");
+    const ids = result.records.map(r => r.id).sort();
+    assert.deepEqual(ids, ["bsd-1001", "bsd-1002"]);
+    // Two matches requests (one per page) must have been made
+    const matchRequests = capturedUrls.filter(u => u.includes("/matches/"));
+    assert.equal(matchRequests.length, 2, "must make two matches requests for a two-page response");
+  } finally {
+    restore();
+  }
+}));
+
+test("fetchBsdPlayerMatches: stops at hard cap and returns exactly MAX_MATCHES_HARD_CAP records", withFakeKey(async () => {
+  // Simulate 6 pages × 200 raw results each = 1 200 total raw; all map cleanly.
+  // The hard cap is 1 000, so we expect exactly 1 000 mapped records and no 6th-page request.
+
+  let matchPageCount = 0;
+
+  function makePage(pageIndex: number, hasNext: boolean): object {
+    const results = Array.from({ length: 200 }, (_, i) => ({
+      id: pageIndex * 200 + i + 1,
+      tournament: { id: 1, name: "Big Open", circuit: "ATP", category: "ATP250", surface: "Hard" },
+      player1: { id: 42, name: "Big Hitter", short_name: "B. Hitter", gender: "M", country_code: "USA", current_ranking: null },
+      player2: { id: 999, name: "Opponent", short_name: "Opp", gender: "M", country_code: "ESP", current_ranking: null },
+      match_date: "2025-05-01",
+      status: "finished",
+      round_name: "R32",
+      player1_sets: 2,
+      player2_sets: 0,
+      sets_detail: [{ p1: 6, p2: 3 }, { p1: 6, p2: 4 }],
+      winner_id: 42,
+      odds_player1: null,
+      odds_player2: null,
+    }));
+    return {
+      count: 1200,
+      next: hasNext ? `https://sports.bzzoiro.com/tennis/api/v2/matches/?player=42&offset=${(pageIndex + 1) * 200}` : null,
+      previous: null,
+      results,
+    };
+  }
+
+  const restore = mockFetch(async (url) => {
+    if (url.includes("/rankings/")) {
+      return jsonResponse(paginated([bsdRankingEntry(42, "Big Hitter")], 1));
+    }
+    if (url.includes("/matches/")) {
+      const page = makePage(matchPageCount, matchPageCount < 5);
+      matchPageCount++;
+      return jsonResponse(page);
+    }
+    return jsonResponse({}, 404);
+  });
+
+  try {
+    const result = await fetchFromBsdTennis("Big Hitter");
+    assert.equal(result.records.length, 1000, "must return exactly 1000 records at the hard cap");
+    assert.ok(matchPageCount <= 5, `must stop fetching at or before 5 pages; fetched ${matchPageCount}`);
+  } finally {
+    restore();
+  }
+}));
+
+test("fetchBsdPlayerMatches: hostile next cursor from different origin is rejected, does not forward auth token", withFakeKey(async () => {
+  let maliciousFetchCalled = false;
+
+  const restore = mockFetch(async (url) => {
+    if (url.includes("/rankings/")) {
+      return jsonResponse(paginated([bsdRankingEntry(77, "Safe Player")], 1));
+    }
+    if (url.includes("sports.bzzoiro.com") && url.includes("/matches/")) {
+      // First page: next points to a different origin
+      return jsonResponse({
+        count: 300,
+        next: "https://evil.example.com/steal-token?player=77&offset=200",
+        previous: null,
+        results: Array.from({ length: 200 }, (_, i) => ({
+          id: i + 1,
+          tournament: { id: 1, name: "Open", circuit: "ATP", category: "ATP250", surface: "Hard" },
+          player1: { id: 77, name: "Safe Player", short_name: "S. Player", gender: "M", country_code: "AUS", current_ranking: null },
+          player2: { id: 88, name: "Other", short_name: "O.", gender: "M", country_code: "ESP", current_ranking: null },
+          match_date: "2025-06-01",
+          status: "finished",
+          round_name: "R32",
+          player1_sets: 2,
+          player2_sets: 0,
+          sets_detail: [{ p1: 6, p2: 3 }, { p1: 6, p2: 1 }],
+          winner_id: 77,
+          odds_player1: null,
+          odds_player2: null,
+        })),
+      });
+    }
+    if (url.includes("evil.example.com")) {
+      maliciousFetchCalled = true;
+      return jsonResponse({});
+    }
+    return jsonResponse({}, 404);
+  });
+
+  try {
+    // Should throw (origin mismatch) rather than silently follow the hostile cursor
+    await assert.rejects(
+      () => fetchFromBsdTennis("Safe Player"),
+      /origin mismatch/i,
+      "must throw on a cursor pointing to a different origin",
+    );
+    assert.equal(maliciousFetchCalled, false, "must never send a request to the hostile origin");
+  } finally {
+    restore();
+  }
+}));
+
 // ─── Match history URL parameter regression tests ──────────────────────────
 // These guard against the silent bugs discovered during task #53:
 //   1. `player_id=` is silently IGNORED by the BSD API; correct param is `player=`.

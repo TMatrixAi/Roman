@@ -16,6 +16,7 @@ import type { MatchRecord, Surface, TournamentLevel } from "./types.js";
 const BASE_URL = "https://sports.bzzoiro.com";
 const TIMEOUT_MS = 10_000;
 const MAX_MATCHES_PER_FETCH = 200;
+const MAX_MATCHES_HARD_CAP = 1_000;
 
 // ─── Response shapes ─────────────────────────────────────────────────────────
 
@@ -81,6 +82,48 @@ function bsdFetch(path: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   return fetch(`${BASE_URL}${path}`, {
+    headers: {
+      Authorization: `Token ${key}`,
+      Accept: "application/json",
+    },
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Validates that a BSD pagination cursor URL is safe to follow:
+ *  - Must use HTTPS.
+ *  - Must be on the same origin as BASE_URL (prevents credential redirect to arbitrary hosts).
+ * Returns the validated URL string, or throws if the URL fails validation.
+ */
+function validateBsdCursorUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`BSD pagination cursor is not a valid URL: ${raw}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`BSD pagination cursor must use HTTPS; got: ${parsed.protocol}`);
+  }
+  const expectedOrigin = new URL(BASE_URL).origin;
+  if (parsed.origin !== expectedOrigin) {
+    throw new Error(
+      `BSD pagination cursor origin mismatch: expected ${expectedOrigin}, got ${parsed.origin}`,
+    );
+  }
+  return parsed.href;
+}
+
+/** Fetches a full URL (used for following BSD `next` pagination cursors). */
+function bsdFetchUrl(url: string): Promise<Response> {
+  const key = getKey();
+  if (!key) throw new Error("BSD_TENNIS_API_KEY not configured");
+  // Validate origin before forwarding auth credentials.
+  const safeUrl = validateBsdCursorUrl(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  return fetch(safeUrl, {
     headers: {
       Authorization: `Token ${key}`,
       Accept: "application/json",
@@ -374,13 +417,16 @@ function isoDateYearsAgo(years: number): string {
 // ─── Match history fetch ──────────────────────────────────────────────────────
 
 /**
- * Fetches completed match history for a BSD player.
+ * Fetches completed match history for a BSD player, following BSD's `next`
+ * pagination cursor until all pages are consumed or the hard cap
+ * (MAX_MATCHES_HARD_CAP) is reached.
  *
  * BSD API notes (confirmed via schema + live probing):
  *  - The correct query-param is `player=<id>` (NOT `player_id` which is silently ignored).
  *  - Without `date_from`/`date_to` the endpoint defaults to the **next 7 days** of scheduled
  *    matches, so historical data requires an explicit date range.
  *  - `status=finished` restricts to completed matches only.
+ *  - `next` in the response is either a full absolute URL or null when there are no more pages.
  */
 async function fetchBsdPlayerMatches(
   bsdPlayerId: number,
@@ -388,20 +434,61 @@ async function fetchBsdPlayerMatches(
 ): Promise<MatchRecord[]> {
   const dateFrom = isoDateYearsAgo(3); // 3-year rolling window
   const dateTo = new Date().toISOString().slice(0, 10);
-  const res = await bsdFetch(
-    `/tennis/api/v2/matches/?player=${bsdPlayerId}&status=finished&date_from=${dateFrom}&date_to=${dateTo}&limit=${MAX_MATCHES_PER_FETCH}`,
-  );
-  if (!res.ok) throw new Error(`BSD matches HTTP ${res.status}`);
-  const data = (await res.json()) as BsdPaginatedResponse<BsdMatch>;
 
   const records: MatchRecord[] = [];
-  for (const m of data.results) {
-    const rec = mapMatch(m, bsdPlayerId);
-    if (rec) records.push(rec);
+  let pagesFetched = 0;
+  let totalFetched = 0; // raw results received across all pages (mapped or not)
+  let nextUrl: string | null = null; // null on first iteration → use path-based fetch
+
+  do {
+    let res: Response;
+    if (nextUrl === null) {
+      // First page: build URL from params
+      res = await bsdFetch(
+        `/tennis/api/v2/matches/?player=${bsdPlayerId}&status=finished&date_from=${dateFrom}&date_to=${dateTo}&limit=${MAX_MATCHES_PER_FETCH}`,
+      );
+    } else {
+      // Subsequent pages: follow the validated cursor URL returned by BSD
+      res = await bsdFetchUrl(nextUrl);
+    }
+
+    if (!res.ok) throw new Error(`BSD matches HTTP ${res.status}`);
+    const data = (await res.json()) as BsdPaginatedResponse<BsdMatch>;
+    pagesFetched++;
+    totalFetched += data.results.length;
+
+    for (const m of data.results) {
+      if (records.length >= MAX_MATCHES_HARD_CAP) break; // enforce cap mid-page
+      const rec = mapMatch(m, bsdPlayerId);
+      if (rec) records.push(rec);
+    }
+
+    if (pagesFetched === 1 && data.next) {
+      logger.info(
+        { bsdPlayerId, playerName, total: data.count, pageSize: data.results.length },
+        "BSD Tennis: pagination required — player has more than one page of match history",
+      );
+    }
+
+    nextUrl = data.next ?? null;
+  } while (nextUrl !== null && totalFetched < MAX_MATCHES_HARD_CAP && records.length < MAX_MATCHES_HARD_CAP);
+
+  if (records.length >= MAX_MATCHES_HARD_CAP || totalFetched >= MAX_MATCHES_HARD_CAP) {
+    logger.warn(
+      { bsdPlayerId, playerName, cap: MAX_MATCHES_HARD_CAP, totalFetched, mapped: records.length },
+      "BSD Tennis: hard cap reached — match history truncated",
+    );
   }
 
   logger.debug(
-    { bsdPlayerId, playerName, fetched: data.results.length, mapped: records.length, dateFrom, dateTo },
+    {
+      bsdPlayerId,
+      playerName,
+      pagesFetched,
+      mapped: records.length,
+      dateFrom,
+      dateTo,
+    },
     "BSD Tennis match history fetched",
   );
   return records;
