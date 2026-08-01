@@ -107,44 +107,63 @@ function mapSurface(raw: string): Surface | null {
 // ── Player ID resolution ──────────────────────────────────────────────────────
 
 /**
- * Extract the "surname key" from a DB-stored player name (format: "First Last" or "First M. Last").
- * "Novak Djokovic"             → "djokovic"
- * "Alejandro Davidovich Fokina"→ "davidovich fokina"
- * Falls back to the full name (lowercased) when only one token is found.
+ * Extract surname key + first initial from a DB-stored player name (format: "First [Middle] Last").
+ * "Novak Djokovic"              → { surname: "djokovic",          initial: "n" }
+ * "Alejandro Davidovich Fokina" → { surname: "davidovich fokina", initial: "a" }
+ * Falls back gracefully for single-word names.
  */
-function dbNameToSurnameKey(name: string): string {
-  const words = name.trim().split(/\s+/);
-  if (words.length < 2) return name.trim().toLowerCase();
-  return words.slice(1).join(" ").toLowerCase();
+function dbNameParts(name: string): { surname: string; initial: string } {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { surname: "", initial: "" };
+  if (words.length === 1) {
+    return { surname: words[0].toLowerCase(), initial: words[0][0]?.toLowerCase() ?? "" };
+  }
+  return {
+    initial: words[0][0]?.toLowerCase() ?? "",
+    surname: words.slice(1).join(" ").toLowerCase(),
+  };
 }
 
 /**
- * Extract the "surname key" from a CSV abbreviated name (format: "Last F." or "Compound Last F.").
- * "Djokovic N."          → "djokovic"
- * "Davidovich Fokina A." → "davidovich fokina"
- * "De Minaur A."         → "de minaur"
- * Handles missing initials by returning the full name lowercased.
+ * Extract surname key + first initial from a CSV abbreviated name (format: "Last F." or "Compound Last F.").
+ * "Djokovic N."          → { surname: "djokovic",          initial: "n" }
+ * "Davidovich Fokina A." → { surname: "davidovich fokina", initial: "a" }
+ * "De Minaur A."         → { surname: "de minaur",         initial: "a" }
+ * "Osaka"                → { surname: "osaka",             initial: null }
  */
-function csvNameToSurnameKey(name: string): string {
-  const words = name.trim().split(/\s+/);
-  if (words.length < 2) return name.trim().toLowerCase();
+function csvNameParts(name: string): { surname: string; initial: string | null } {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { surname: "", initial: null };
+  if (words.length === 1) return { surname: words[0].toLowerCase(), initial: null };
   const lastToken = words[words.length - 1];
-  // Drop if it looks like an initial: single letter, optionally followed by a dot
   if (/^[A-Za-z]\.?$/.test(lastToken)) {
-    return words.slice(0, -1).join(" ").toLowerCase();
+    return {
+      surname: words.slice(0, -1).join(" ").toLowerCase(),
+      initial: lastToken.replace(".", "").toLowerCase(),
+    };
   }
-  return name.trim().toLowerCase();
+  return { surname: name.trim().toLowerCase(), initial: null };
 }
 
 type PlayerEntry = { id: string; name: string };
-type PlayerIdMap = Map<string, PlayerEntry[]>;
+
+type PlayerIdMap = {
+  /** "surname|initial" → players. Unique = unambiguous. */
+  byInitial: Map<string, PlayerEntry[]>;
+  /** surname → players. Fallback when initial absent or initial-key is ambiguous. */
+  bySurname: Map<string, PlayerEntry[]>;
+};
 
 /**
- * Query historical_matches to build a surname-key → [{id, name}] lookup.
+ * Query historical_matches to build an enhanced surname+initial player lookup.
  * Only one DB round-trip; all subsequent lookups are in-process.
+ *
+ * Uses surname + first-initial keys so "Murray A." (Andy) and "Murray J." (Jamie)
+ * are disambiguated instead of both falling through to ext-{id}.
  */
 async function buildPlayerIdMap(): Promise<PlayerIdMap> {
-  const map: PlayerIdMap = new Map();
+  const byInitial = new Map<string, PlayerEntry[]>();
+  const bySurname = new Map<string, PlayerEntry[]>();
 
   const result = await db.execute(sql`
     SELECT player_id, player_name FROM (
@@ -156,38 +175,62 @@ async function buildPlayerIdMap(): Promise<PlayerIdMap> {
     ) sub
   `);
 
-  for (const r of result.rows as Array<{ player_id: string; player_name: string }>) {
-    if (!r.player_id || !r.player_name) continue;
-    const key = dbNameToSurnameKey(r.player_name);
+  function addEntry(map: Map<string, PlayerEntry[]>, key: string, entry: PlayerEntry): void {
     if (!map.has(key)) map.set(key, []);
     const bucket = map.get(key)!;
-    if (!bucket.some(e => e.id === r.player_id)) {
-      bucket.push({ id: r.player_id, name: r.player_name });
-    }
+    if (!bucket.some(e => e.id === entry.id)) bucket.push(entry);
   }
 
-  return map;
+  for (const r of result.rows as Array<{ player_id: string; player_name: string }>) {
+    if (!r.player_id || !r.player_name) continue;
+    const entry: PlayerEntry = { id: r.player_id, name: r.player_name };
+    const { surname, initial } = dbNameParts(r.player_name);
+    if (!surname) continue;
+    addEntry(bySurname, surname, entry);
+    if (initial) addEntry(byInitial, `${surname}|${initial}`, entry);
+  }
+
+  return { byInitial, bySurname };
 }
 
 /**
- * Resolve a CSV player's name to an existing DB player ID when a unique surname match exists.
- * Falls back to "ext-{extId}" to keep matches linked to the same player across files even
- * when no Sackmann/API-Tennis counterpart exists yet.
+ * Resolve a CSV player's name to an existing DB player ID.
+ *
+ * Resolution order:
+ *   1. Surname + first-initial → unambiguous match (handles "Murray A." vs "Murray J.")
+ *   2. Surname-only            → only when globally unique in the DB
+ *   3. Fall back to "ext-{tour}-{extId}" — tour-scoped so ATP and WTA numeric player-ID
+ *      namespaces never collide (both CSVs share the same numeric home_id / away_id space).
  */
 function resolvePlayerId(
   csvName: string,
   extId: string,
+  tour: "ATP" | "WTA",
   map: PlayerIdMap,
   tally: { matched: number; unmatched: number },
 ): string {
-  const key = csvNameToSurnameKey(csvName);
-  const candidates = map.get(key);
-  if (candidates && candidates.length === 1) {
-    tally.matched++;
-    return candidates[0].id;
+  const { surname, initial } = csvNameParts(csvName);
+
+  // 1. Surname + initial (most specific)
+  if (initial) {
+    const candidates = map.byInitial.get(`${surname}|${initial}`);
+    if (candidates && candidates.length === 1) {
+      tally.matched++;
+      return candidates[0].id;
+    }
   }
+
+  // 2. Surname-only when globally unambiguous
+  const surnameCandidates = map.bySurname.get(surname);
+  if (surnameCandidates && surnameCandidates.length === 1) {
+    tally.matched++;
+    return surnameCandidates[0].id;
+  }
+
   tally.unmatched++;
-  return `ext-${extId || csvName.replace(/\s+/g, "-")}`;
+  // Tour-prefix prevents ATP player "ext-atp-12345" from ever colliding with WTA player
+  // "ext-wta-12345" when both CSVs happen to assign the same numeric home_id / away_id.
+  return `ext-${tour.toLowerCase()}-${extId || csvName.replace(/\s+/g, "-")}`;
 }
 
 // ── Tournament level inference ────────────────────────────────────────────────
@@ -266,9 +309,12 @@ function rowToFixture(
   const homeName = row.home_name?.trim() ?? "";
   const awayName = row.away_name?.trim() ?? "";
 
-  // Resolve player IDs against existing DB history
-  const p1Id = resolvePlayerId(homeName, homeId, playerIdMap, tally);
-  const p2Id = resolvePlayerId(awayName, awayId, playerIdMap, tally);
+  // Resolve player IDs against existing DB history.
+  // tour is passed so the ext-{tour}-{id} fallback is always tour-scoped — ATP and WTA
+  // CSVs share the same numeric home_id / away_id namespace, so an un-namespaced fallback
+  // would create collisions that corrupt Elo chains across tours.
+  const p1Id = resolvePlayerId(homeName, homeId, tour, playerIdMap, tally);
+  const p2Id = resolvePlayerId(awayName, awayId, tour, playerIdMap, tally);
 
   const tournamentName = row.tournament?.trim() || null;
   const level     = inferLevel(tournamentName, tourHuman);
@@ -340,9 +386,9 @@ class ExternalCsvProvider implements TennisDataProvider {
   getUpcomingFixtures():    Promise<Fixture[]>          { return Promise.reject(new ProviderUnavailableError(`${EXT_CSV_PROVIDER}: getUpcomingFixtures not available`)); }
   getUpcomingFixturesRange(): Promise<Fixture[]>        { return Promise.reject(new ProviderUnavailableError(`${EXT_CSV_PROVIDER}: getUpcomingFixturesRange not available`)); }
   getHeadToHead():          Promise<HeadToHeadRecord>   { return Promise.reject(new ProviderUnavailableError(`${EXT_CSV_PROVIDER}: getHeadToHead not available`)); }
-  getLiveScores():          Promise<LiveScore[]>        { return Promise.reject(new ProviderUnavailableError(`${EXT_CSV_PROVIDER}: getLiveScores not available`)); }
-  getProviderStatus():      Promise<ProviderStatusInfo> {
-    return Promise.resolve({ provider: EXT_CSV_PROVIDER, connected: true, lastSuccessfulCallAt: null, lastError: null });
+  getLiveScores(_fixtureIds: string[]): Promise<Map<string, LiveScore>> { return Promise.reject(new ProviderUnavailableError(`${EXT_CSV_PROVIDER}: getLiveScores not available`)); }
+  getStatus(): ProviderStatusInfo {
+    return { provider: EXT_CSV_PROVIDER, connected: true, lastSuccessfulCallAt: null, lastError: null };
   }
 }
 
@@ -375,7 +421,10 @@ export async function runExternalCsvBackfill(
   // Build player ID map from existing historical_matches (one DB round-trip)
   logger.info({ fileCount: files.length }, "externalCsvBackfill: building player ID map");
   const playerIdMap = await buildPlayerIdMap();
-  logger.info({ uniqueSurnameKeys: playerIdMap.size }, "externalCsvBackfill: player ID map ready");
+  logger.info(
+    { bySurnameKeys: playerIdMap.bySurname.size, byInitialKeys: playerIdMap.byInitial.size },
+    "externalCsvBackfill: player ID map ready",
+  );
 
   const allFixtures: HistoricalFixture[] = [];
   let filesLoaded = 0;

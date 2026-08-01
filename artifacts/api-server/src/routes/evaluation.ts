@@ -53,6 +53,7 @@ import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCover
 import { runSackmannBackfill, SACKMANN_PROVIDER } from "../services/historicalData/sackmannBackfill";
 import { runTennisDataCoUkBackfill, TENNIS_DATA_CO_UK_PROVIDER } from "../services/historicalData/tennisDataCoUkBackfill";
 import { runExternalCsvBackfill, EXT_CSV_PROVIDER } from "../services/historicalData/externalCsvBackfill";
+import { runExternalCsvBridge } from "../services/historicalData/externalCsvBridge";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
@@ -757,6 +758,85 @@ router.get("/evaluation/external-csv-backfill/status", requireAdmin, async (_req
     .select()
     .from(jobRunsTable)
     .where(eq(jobRunsTable.jobName, `${EXT_CSV_PROVIDER}-backfill`))
+    .orderBy(desc(jobRunsTable.startedAt))
+    .limit(1);
+
+  res.json({
+    hasRun: !!latest,
+    lastRun: latest
+      ? {
+          status:       latest.status,
+          startedAt:    latest.startedAt?.toISOString()  ?? null,
+          finishedAt:   latest.finishedAt?.toISOString() ?? null,
+          summary:      latest.summary      ?? null,
+          errorMessage: latest.errorMessage ?? null,
+        }
+      : null,
+  });
+});
+
+/**
+ * POST /evaluation/external-csv-backfill/bridge
+ *
+ * Post-import bridge: re-resolves ext-{id} player IDs in historical_matches to existing
+ * Sackmann / API-Tennis IDs using surname + first-initial disambiguation.
+ *
+ * Safe to run repeatedly — idempotent once all ext-{id}s have been replaced.
+ * Runs in the background; result is logged and stored in job_runs under "ext-csv-bridge".
+ *
+ * Typical use-case: run AFTER the initial CSV backfill to raise the player-ID match rate
+ * from ~11% (surname-only) to ≥70% ATP / ≥50% WTA, so Elo chains continue across years.
+ */
+router.post("/evaluation/external-csv-backfill/bridge", requireAdmin, async (_req, res): Promise<void> => {
+  const jobName   = "ext-csv-bridge";
+  const startedAt = new Date();
+  res.json({ started: true, jobName });
+
+  runExternalCsvBridge()
+    .then(async (result) => {
+      await db.insert(jobRunsTable).values({
+        jobName,
+        startedAt,
+        finishedAt: new Date(),
+        status: "success",
+        attempts: 1,
+        summary: {
+          extPlayerSlotsFound: result.extPlayerSlotsFound,
+          resolved:            result.resolved,
+          unresolved:          result.unresolved,
+          matchRowsUpdated:    result.matchRowsUpdated,
+          featureRowsUpdated:  result.featureRowsUpdated,
+          atpMatchRate:        result.atpMatchRate,
+          wtaMatchRate:        result.wtaMatchRate,
+        },
+        errorMessage: null,
+      });
+      logger.info({ result }, "ext-csv-bridge: completed");
+    })
+    .catch(async (err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "ext-csv-bridge: failed");
+      await db.insert(jobRunsTable).values({
+        jobName,
+        startedAt,
+        finishedAt: new Date(),
+        status: "failed",
+        attempts: 1,
+        summary: null,
+        errorMessage,
+      });
+    });
+});
+
+/**
+ * GET /evaluation/external-csv-backfill/bridge/status
+ * Most recent job_runs row for the ext-csv bridge.
+ */
+router.get("/evaluation/external-csv-backfill/bridge/status", requireAdmin, async (_req, res): Promise<void> => {
+  const [latest] = await db
+    .select()
+    .from(jobRunsTable)
+    .where(eq(jobRunsTable.jobName, "ext-csv-bridge"))
     .orderBy(desc(jobRunsTable.startedAt))
     .limit(1);
 
