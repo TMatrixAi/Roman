@@ -165,6 +165,10 @@ test("runMatchSimulation: player1WinProbability, rangeLow, rangeHigh never hit e
     assert.ok(result.rangeLow < 100, `rangeLow must be < 100 for: ${label} (got ${result.rangeLow})`);
     assert.ok(result.rangeHigh < 100, `rangeHigh must be < 100 for: ${label} (got ${result.rangeHigh})`);
     assert.ok(result.rangeLow > 0, `rangeLow must be > 0 for: ${label} (got ${result.rangeLow})`);
+    assert.ok(result.straightSetsProbabilityPlayer1 > 0, `straightSetsProbabilityPlayer1 must be > 0 for: ${label} (got ${result.straightSetsProbabilityPlayer1})`);
+    assert.ok(result.straightSetsProbabilityPlayer1 < 100, `straightSetsProbabilityPlayer1 must be < 100 for: ${label} (got ${result.straightSetsProbabilityPlayer1})`);
+    assert.ok(result.straightSetsProbabilityPlayer2 > 0, `straightSetsProbabilityPlayer2 must be > 0 for: ${label} (got ${result.straightSetsProbabilityPlayer2})`);
+    assert.ok(result.straightSetsProbabilityPlayer2 < 100, `straightSetsProbabilityPlayer2 must be < 100 for: ${label} (got ${result.straightSetsProbabilityPlayer2})`);
   }
 
   // Symmetric case must stay in realistic range
