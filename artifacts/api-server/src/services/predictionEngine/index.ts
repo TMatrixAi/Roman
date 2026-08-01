@@ -704,9 +704,17 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   const simulatorWeight = simulatorAdoptedGlobally ? Math.round(simulatorAdoption!.weight! * simulatorScopeScale * 1000) / 1000 : 0;
   const simulatorApplied = simulatorWeight > 0;
 
-  const calibratedProbability = simulatorApplied
+  const calibratedProbabilityRaw = simulatorApplied
     ? Math.round((simulatorWeight * simulation.player1WinProbability + (1 - simulatorWeight) * preSimulatorProbability) * 10) / 10
     : preSimulatorProbability;
+  // Hard gate: the engine can never claim 0 % or 100 % certainty.
+  // Bounds are [0.6, 99.4] so that the downstream toFixed(0) display (used for the
+  // "WIN PROBABILITY" headline) rounds to at most "99%" in both directions:
+  //   player1 wins → calibratedProbability → toFixed(0) ≤ 99
+  //   player2 wins → 100 - calibratedProbability ≤ 99.4 → toFixed(0) ≤ 99
+  // This also guards the path where simulatorApplied=false and preSimulatorProbability
+  // is extreme, which the simulator's own safeRate clamp cannot reach.
+  const calibratedProbability = Math.max(0.6, Math.min(99.4, calibratedProbabilityRaw));
 
   const models: ModelVote[] = [...featureModels];
   models.push({
@@ -844,7 +852,11 @@ export function runPredictionEngine(input: PredictionEngineInput): EngineOutput 
   // Guardrail (final consistency check): the predicted winner's own probability, mirrored from
   // player 1's when player 2 is the pick. By construction this can never read below 50 next to
   // the player the engine just named the favorite -- see the field doc on EngineOutput.
-  const predictedWinnerProbability = Math.round((favorsPlayer1 ? calibratedProbability : 100 - calibratedProbability) * 10) / 10;
+  // Belt-and-suspenders: cap at 99.4 so toFixed(0) can never produce "100%" regardless of
+  // floating-point edge cases upstream (the primary gate is the calibratedProbability clamp above).
+  const predictedWinnerProbability = Math.min(99.4,
+    Math.round((favorsPlayer1 ? calibratedProbability : 100 - calibratedProbability) * 10) / 10,
+  );
   const predictedSetScore = predictSetScore(input.matchFormat, calibratedProbability);
 
   const reasons: string[] = [];

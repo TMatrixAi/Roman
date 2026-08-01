@@ -302,8 +302,9 @@ export function runMatchSimulation(estimate: ServicePointEstimate, matchFormat: 
     player1WinProbability: Math.round(safeRate(meanWinRate) * 1000) / 10,
     rangeLow: Math.round(safeRate(percentile(0.1)) * 1000) / 10,
     rangeHigh: Math.round(safeRate(percentile(0.9)) * 1000) / 10,
-    straightSetsProbabilityPlayer1: Math.round((straightSetsPlayer1 / totalSims) * 1000) / 10,
-    straightSetsProbabilityPlayer2: Math.round((straightSetsPlayer2 / totalSims) * 1000) / 10,
+    // straightSets can hit 100 % in simulated dominant matchups — apply same safe cap.
+    straightSetsProbabilityPlayer1: Math.round(safeRate(straightSetsPlayer1 / totalSims) * 1000) / 10,
+    straightSetsProbabilityPlayer2: Math.round(safeRate(straightSetsPlayer2 / totalSims) * 1000) / 10,
     setScoreDistribution,
     expectedGamesPlayer1: Math.round((totalGamesPlayer1 / totalSims) * 10) / 10,
     expectedGamesPlayer2: Math.round((totalGamesPlayer2 / totalSims) * 10) / 10,
