@@ -319,6 +319,22 @@ export const FixturesList = forwardRef<
   // Dismissed fixture IDs — user-dismissed via swipe-delete or "Remove Cancelled" button
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(loadDismissed)
 
+  // Auto-clear stale dismissals: when the provider returns fixtures but every one of them is
+  // in the dismissed set (sessionStorage poisoning across page-loads), silently reset so the
+  // list isn't permanently blank without the user pressing Refresh.
+  // Guard with a ref so this only fires once per fixtures-load, not on every re-render.
+  const autoResetDoneRef = useRef(false)
+  useEffect(() => {
+    if (!fixtures || fixtures.length === 0) return
+    if (autoResetDoneRef.current) return
+    const allDismissed = fixtures.every(f => dismissedIds.has(f.id))
+    if (allDismissed && dismissedIds.size > 0) {
+      setDismissedIds(new Set())
+      persistDismissed(new Set())
+    }
+    autoResetDoneRef.current = true
+  }, [fixtures]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const dismissFixture = (id: string) => {
     setDismissedIds(prev => {
       const next = new Set(prev)

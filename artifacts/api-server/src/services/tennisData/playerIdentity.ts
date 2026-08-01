@@ -253,15 +253,21 @@ export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
       .from(historicalMatchesTable),
   ]);
 
-  // normalizedName -> (playerId -> most recent sighting timestamp under that name)
-  const byName = new Map<string, Map<string, number>>();
+  // normalizedName -> (playerId -> { minSeenAt, maxSeenAt } under that name)
+  const byName = new Map<string, Map<string, { minSeenAt: number; maxSeenAt: number }>>();
   for (const row of [...player1Rows, ...player2Rows]) {
     if (!isSinglesName(row.name)) continue;
     const normalized = normalizePlayerName(row.name);
     if (!normalized) continue;
-    const idMap = byName.get(normalized) ?? new Map<string, number>();
+    const idMap = byName.get(normalized) ?? new Map<string, { minSeenAt: number; maxSeenAt: number }>();
     const seenAt = row.scheduledStartAt.getTime();
-    idMap.set(row.id, Math.max(idMap.get(row.id) ?? -Infinity, seenAt));
+    const existing = idMap.get(row.id);
+    if (existing) {
+      existing.minSeenAt = Math.min(existing.minSeenAt, seenAt);
+      existing.maxSeenAt = Math.max(existing.maxSeenAt, seenAt);
+    } else {
+      idMap.set(row.id, { minSeenAt: seenAt, maxSeenAt: seenAt });
+    }
     byName.set(normalized, idMap);
   }
 
@@ -269,8 +275,46 @@ export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
   const canonicalIdById = new Map<string, string>();
   const aliasIdsByCanonicalId = new Map<string, string[]>();
   for (const [normalized, idMap] of byName) {
-    // Never alias multiple IDs together on an abbreviated key like "m uchijima".
+    // Never alias multiple IDs together on an abbreviated key like "m uchijima" — two distinct
+    // real players can share the same initial+surname form. The Sackmann bridge below is the ONE
+    // exception: when exactly one of the two IDs is a sackmann-* ID and their active date ranges
+    // are disjoint, the same physical person is almost certainly represented across two data eras
+    // (Sackmann pre-2024, live provider from ~2024 onward) — not two players competing simultaneously.
     if (idMap.size > 1 && isWeakIdentityNameKey(normalized)) {
+      // --- Sackmann bridge ---
+      // Condition: exactly 2 IDs, one sackmann-* and one live; date ranges must not overlap.
+      if (idMap.size === 2) {
+        const entries = [...idMap.entries()];
+        const sackmannEntry = entries.find(([id]) => id.startsWith("sackmann-"));
+        const liveEntry = entries.find(([id]) => !id.startsWith("sackmann-"));
+        if (sackmannEntry && liveEntry) {
+          const [sackmannId, sackmannRange] = sackmannEntry;
+          const [liveId, liveRange] = liveEntry;
+          // Disjoint = zero temporal overlap between the two IDs' active windows.
+          const disjoint =
+            sackmannRange.maxSeenAt <= liveRange.minSeenAt ||
+            liveRange.maxSeenAt <= sackmannRange.minSeenAt;
+          if (disjoint) {
+            // Live ID is canonical (most recent). Sackmann ID is an alias.
+            canonicalIdByName.set(normalized, liveId);
+            aliasIdsByCanonicalId.set(liveId, [liveId, sackmannId]);
+            canonicalIdById.set(sackmannId, liveId);
+            if (!canonicalIdById.has(liveId)) canonicalIdById.set(liveId, liveId);
+            logger.debug(
+              {
+                normalized,
+                sackmannId,
+                liveId,
+                sackmannMax: new Date(sackmannRange.maxSeenAt).toISOString(),
+                liveMin: new Date(liveRange.minSeenAt).toISOString(),
+              },
+              "playerIdentity: Sackmann bridge — disjoint date ranges, aliasing sackmann ID to live ID",
+            );
+            continue;
+          }
+        }
+      }
+      // Overlapping or >2 IDs: keep all as self-canonical (collision guard stands).
       for (const id of idMap.keys()) {
         if (!canonicalIdById.has(id)) canonicalIdById.set(id, id);
       }
@@ -279,9 +323,9 @@ export async function buildPlayerIdentityIndex(): Promise<PlayerIdentityIndex> {
 
     let canonicalId: string | null = null;
     let mostRecent = -Infinity;
-    for (const [id, seenAt] of idMap) {
-      if (seenAt > mostRecent) {
-        mostRecent = seenAt;
+    for (const [id, range] of idMap) {
+      if (range.maxSeenAt > mostRecent) {
+        mostRecent = range.maxSeenAt;
         canonicalId = id;
       }
     }

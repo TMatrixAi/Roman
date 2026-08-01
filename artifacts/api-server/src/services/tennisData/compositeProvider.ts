@@ -24,6 +24,7 @@ import { ProviderUnavailableError } from "./types";
 import { fetchFromSofascore } from "../parlayBuilder/sofascoreProvider.js";
 import { fetchFromBsdTennis } from "./bsdTennisProvider.js";
 import { getPlayerMatchesFromDb } from "./dbHistoryFallback.js";
+import { getCachedPlayerIdentityIndex, getAliasIds } from "./playerIdentity.js";
 
 // Minimum number of match records below which supplemental tiers are attempted.
 const SOFASCORE_MIN_RECORDS_THRESHOLD = 5;
@@ -171,14 +172,17 @@ export class CompositeTennisProvider implements TennisDataProvider {
 
     // Tier-5: historical_matches DB. Final safety net when all live providers (MatchStat,
     // API-Tennis, BSD Tennis, Sofascore) are unavailable or return sparse history.
-    // Player IDs in historical_matches use the same api-tennis.com namespace as the engine,
-    // so lookup is direct by playerId — no name resolution needed.
+    // Resolve the full alias group (includes any sackmann-* ID bridged to this live ID) so
+    // the Sackmann archive rows (pre-2024) are returned alongside 2025+ api-tennis rows.
     if (records.length < SOFASCORE_MIN_RECORDS_THRESHOLD) {
       try {
-        const dbRecords = await getPlayerMatchesFromDb(playerId);
+        const identityIndex = await getCachedPlayerIdentityIndex();
+        const canonicalId = identityIndex.canonicalIdById.get(playerId) ?? playerId;
+        const aliasIds = getAliasIds(identityIndex, canonicalId);
+        const dbRecords = await getPlayerMatchesFromDb(aliasIds.length > 1 ? aliasIds : playerId);
         if (dbRecords.length > records.length) {
           logger.info(
-            { playerId, prior: records.length, db: dbRecords.length },
+            { playerId, canonicalId, aliasCount: aliasIds.length, prior: records.length, db: dbRecords.length },
             "compositeProvider: historical_matches DB tier-5 supplemented match history",
           );
           records = dbRecords;

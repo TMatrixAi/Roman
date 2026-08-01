@@ -30,9 +30,18 @@ interface GameMarginRow {
 
 /**
  * Fetch a player's completed match history from the historical_matches DB table.
- * Returns empty when the table has no records for that player (non-throwing).
+ *
+ * Accepts either a single player ID or an array of IDs (alias group). Pass multiple IDs when
+ * the player identity index has bridged a sackmann-* ID to a live provider ID — both IDs need
+ * to be queried so the full history across both data eras is returned.
+ *
+ * Returns empty when the table has no records for any of the supplied IDs (non-throwing).
  */
-export async function getPlayerMatchesFromDb(playerId: string): Promise<MatchRecord[]> {
+export async function getPlayerMatchesFromDb(playerIdOrIds: string | string[]): Promise<MatchRecord[]> {
+  const playerIds = Array.isArray(playerIdOrIds) ? playerIdOrIds : [playerIdOrIds];
+  // Single canonical ID to use for result perspective (isP1 / opponentId logic).
+  // When multiple IDs are supplied, the first entry is the canonical live ID.
+  const primaryId = playerIds[0]!;
   try {
     const rows = await db
       .select()
@@ -40,8 +49,8 @@ export async function getPlayerMatchesFromDb(playerId: string): Promise<MatchRec
       .where(
         and(
           or(
-            eq(historicalMatchesTable.player1Id, playerId),
-            eq(historicalMatchesTable.player2Id, playerId),
+            inArray(historicalMatchesTable.player1Id, playerIds),
+            inArray(historicalMatchesTable.player2Id, playerIds),
           ),
           isNotNull(historicalMatchesTable.winnerId),
           eq(historicalMatchesTable.cancelled, false),
@@ -58,7 +67,10 @@ export async function getPlayerMatchesFromDb(playerId: string): Promise<MatchRec
       .limit(MAX_HISTORY_ROWS);
 
     const records: MatchRecord[] = rows.map((row) => {
-      const isP1 = row.player1Id === playerId;
+      // When alias IDs are supplied (Sackmann bridge), the row's player1Id/player2Id may be any
+      // ID in the alias group. Use set-membership to determine perspective, then normalise the
+      // opponentId to the primaryId's namespace so downstream Elo/surface callers are consistent.
+      const isP1 = playerIds.includes(row.player1Id);
       const opponentId = isP1 ? row.player2Id : row.player1Id;
       const opponentName = isP1 ? row.player2Name : row.player1Name;
       const opponentRank = isP1 ? (row.player2Rank ?? null) : (row.player1Rank ?? null);
@@ -81,7 +93,7 @@ export async function getPlayerMatchesFromDb(playerId: string): Promise<MatchRec
         opponentId,
         opponentName,
         opponentRank,
-        result: row.winnerId === playerId ? "W" : "L",
+        result: playerIds.includes(row.winnerId ?? "") ? "W" : "L",
         score: row.score ?? null,
         retired: row.retired,
         walkover: row.walkover,
@@ -92,12 +104,12 @@ export async function getPlayerMatchesFromDb(playerId: string): Promise<MatchRec
     });
 
     logger.debug(
-      { playerId, dbRecords: records.length },
+      { primaryId, aliasCount: playerIds.length, dbRecords: records.length },
       "dbHistoryFallback: loaded match history from historical_matches",
     );
     return records;
   } catch (err) {
-    logger.warn({ playerId, err }, "dbHistoryFallback: query failed (non-fatal)");
+    logger.warn({ primaryId, aliasCount: playerIds.length, err }, "dbHistoryFallback: query failed (non-fatal)");
     return [];
   }
 }

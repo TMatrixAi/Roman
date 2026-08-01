@@ -234,14 +234,76 @@ async function getRankingsCache(): Promise<Map<string, number>> {
   return map;
 }
 
+/**
+ * Attempts a BSD player-search API call for players outside the top-500 rankings cache.
+ * BSD exposes GET /tennis/api/v2/players/?search=<term> — tries the player's surname first.
+ * Returns the best-matching BSD player ID, or null when the endpoint is unavailable or no
+ * confident match is found. Result is stored in the rankings cache to short-circuit future calls.
+ */
+async function searchBsdPlayerByName(
+  name: string,
+  cache: Map<string, number>,
+): Promise<number | null> {
+  const normalized = normalizeName(name);
+  const words = normalized.split(" ");
+  // Use the surname (last word) as the search term — gives broadest recall without false matches.
+  const surname = words[words.length - 1] ?? "";
+  if (surname.length < 3) return null;
+
+  let res: Response;
+  try {
+    res = await bsdFetch(`/tennis/api/v2/players/?search=${encodeURIComponent(surname)}`);
+  } catch {
+    return null; // network / timeout — non-fatal
+  }
+
+  if (!res.ok) {
+    // 404 or 405 means the endpoint doesn't exist on this BSD plan — don't retry.
+    logger.debug({ surname, status: res.status }, "BSD Tennis player-search endpoint unavailable (non-fatal)");
+    return null;
+  }
+
+  let data: BsdPaginatedResponse<BsdPlayer>;
+  try {
+    data = (await res.json()) as BsdPaginatedResponse<BsdPlayer>;
+  } catch {
+    return null;
+  }
+
+  if (!data.results || data.results.length === 0) return null;
+
+  // Pick the candidate whose normalized name best matches the requested name.
+  // Require the surname to be present (prevents wrong-player aliasing).
+  let bestId: number | null = null;
+  let bestScore = 0;
+  for (const player of data.results) {
+    const cn = normalizeName(player.name);
+    if (!cn.includes(surname)) continue; // surname must match
+    // Score: count how many words of the queried name appear in the candidate name.
+    const matchedWords = words.filter(w => w.length > 1 && cn.includes(w)).length;
+    if (matchedWords > bestScore) {
+      bestScore = matchedWords;
+      bestId = player.id;
+      // Store in cache so the next call for this player skips the search.
+      cache.set(cn, player.id);
+      if (player.short_name) cache.set(normalizeName(player.short_name), player.id);
+    }
+  }
+
+  if (bestId !== null) {
+    logger.debug({ name, surname, bestId, bestScore }, "BSD Tennis: player found via search fallback");
+  }
+  return bestId;
+}
+
 async function findBsdPlayerIdByName(name: string): Promise<number | null> {
   const cache = await getRankingsCache();
   const normalized = normalizeName(name);
 
-  // Exact normalized match
+  // Exact normalized match (rankings cache hit — fast path)
   if (cache.has(normalized)) return cache.get(normalized)!;
 
-  // Surname-only fallback (last word)
+  // Surname-only fallback within the rankings cache
   const surname = normalized.split(" ").pop() ?? "";
   if (surname.length >= 3) {
     for (const [cName, id] of cache.entries()) {
@@ -249,7 +311,9 @@ async function findBsdPlayerIdByName(name: string): Promise<number | null> {
     }
   }
 
-  return null;
+  // Player not in top-500 rankings cache: try the BSD player-search endpoint.
+  // Stores the result in the cache on success so repeat lookups are instant.
+  return searchBsdPlayerByName(name, cache);
 }
 
 // ─── Match history fetch ──────────────────────────────────────────────────────
