@@ -761,15 +761,21 @@ async function resolvePlayerMatch(
   const candidates = await gatherCandidates(provider, searchName);
   const confident = candidates.filter((c) => isConfidentMatch(norm, normalizeName(c.name)));
 
+  // A single confident candidate is unambiguous by definition — resolve it even when the OCR
+  // name is in an abbreviated "X. Surname" or "X. Y. Surname" form.  The weak-key guard below
+  // is only meaningful when multiple candidates match (genuine ambiguity), so checking for a
+  // unique hit first prevents ITF/lower-tier players whose canonical DB names are abbreviated
+  // (e.g. "S. Kopp", "E. Meri", "T. Pereira") from being permanently stuck as "not-found"
+  // when the live provider is unavailable and the historical DB is the only source.
+  if (confident.length === 1) {
+    return { match: { recognizedName, player: confident[0] }, status: "resolved" };
+  }
+
   if (isWeakOcrIdentityKey(norm)) {
     return {
       match: { recognizedName, player: null },
       status: confident.length > 0 ? "ambiguous" : "not-found",
     };
-  }
-
-  if (confident.length === 1) {
-    return { match: { recognizedName, player: confident[0] }, status: "resolved" };
   }
 
   if (confident.length > 1) {

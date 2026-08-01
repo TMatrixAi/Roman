@@ -20,6 +20,7 @@ import {
 import { isGrandSlam } from "@/lib/grandSlam"
 import { buildClientMatchId, createPredictionWithIntegrity } from "@/lib/predictionRequestIntegrity"
 import { useGetAdminAuthStatus } from "@/hooks/useGetAdminAuthStatus"
+import { useAuth } from "@clerk/react"
 
 const MAX_FILES = 150
 
@@ -328,6 +329,8 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
   const { data: adminAuth } = useGetAdminAuthStatus()
   const isAdmin = adminAuth?.authenticated === true
+  const { isSignedIn } = useAuth()
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
 
   useEffect(() => { setResumableBatch(readStoredBatch()) }, [])
   useEffect(() => { if (items.length > 0) writeStoredBatch(items) }, [items])
@@ -704,20 +707,45 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
 
   /** Navigate to the batch results page. Only called when all predictions succeeded. */
   const navigateToResults = (successIds: number[]) => {
-    if (successIds.length > 0) {
-      // Auto-save this batch so the user can retrieve it later from "Saved Prediction Cards"
-      // without re-running the prediction engine. Always overwrites — only one batch is kept.
-      try {
-        localStorage.setItem(
-          "savedBulkPredictionBatch.v1",
-          JSON.stringify({ ids: successIds, savedAt: Date.now() }),
-        )
-      } catch {
-        // localStorage unavailable (private-browse quota) — continue silently
-      }
-      clearStoredBatch()
-      setLocation(`/predictions/${successIds[0]}?batch=${successIds.join(",")}`)
+    if (successIds.length === 0) return
+
+    // ── Auto-save this batch to Saved Prediction Cards ───────────────────────
+    // Clears the previous batch first so the saved folder always reflects the
+    // latest run — no stale cards from an earlier session. Fire-and-forget:
+    // navigation happens immediately; saves complete before the user can navigate
+    // back and open the saved panel.
+    if (isSignedIn) {
+      void (async () => {
+        try {
+          // 1. Replace previous batch
+          await fetch(`${BASE}/api/saved-cards`, { method: "DELETE", credentials: "include" })
+          // 2. Save every prediction from this run
+          await Promise.all(
+            successIds.map((id) =>
+              fetch(`${BASE}/api/saved-cards`, {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ predictionId: id }),
+              }),
+            ),
+          )
+        } catch {
+          // best-effort — navigation and results are unaffected
+        }
+      })()
     }
+
+    try {
+      localStorage.setItem(
+        "savedBulkPredictionBatch.v1",
+        JSON.stringify({ ids: successIds, savedAt: Date.now() }),
+      )
+    } catch {
+      // localStorage unavailable (private-browse quota) — continue silently
+    }
+    clearStoredBatch()
+    setLocation(`/predictions/${successIds[0]}?batch=${successIds.join(",")}`)
   }
 
   /**

@@ -253,7 +253,6 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
       { pooledValidationPoints: allValidationPoints.length },
       "Fitting pooled calibration model (cascade-bad rows already excluded per fold)",
     );
-    await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
     const liveFit = fitBestCalibration(allValidationPoints);
     const liveMapping = liveFit.knots;
     const dates = allMatches.map((m) => m.scheduledStartAt.getTime());
@@ -262,21 +261,48 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
     // call stack as a function argument, which blows the stack limit at scale).
     const minDate = dates.length ? dates.reduce((a, b) => (b < a ? b : a), dates[0]!) : null;
     const maxDate = dates.length ? dates.reduce((a, b) => (b > a ? b : a), dates[0]!) : null;
+
+    // ── Minimum-quality guard ────────────────────────────────────────────────
+    // A degenerate isotonic fit (holdoutSampleSize === 0) means the entire
+    // validation set was too small to hold out a meaningful comparison slice
+    // (fitBestCalibration requires ≥100 holdout points before the Platt/isotonic
+    // competition can run). Isotonic regression on a handful of rows reliably
+    // collapses to a constant-1 mapping that sends every prediction to ~100%.
+    //
+    // Guard: only replace the active model when the new fit has a real holdout
+    // (holdoutSampleSize > 0 means ≥100 held-out points were actually scored).
+    // When the guard fires, the new model is still written to the DB for
+    // diagnostics but active: false -- the previous model keeps serving.
+    const fitsPassesQualityGate = liveFit.holdoutSampleSize > 0;
+    if (fitsPassesQualityGate) {
+      await db.update(calibrationModelsTable).set({ active: false }).where(eq(calibrationModelsTable.active, true));
+    } else {
+      logger.warn(
+        { fitSampleSize: liveFit.fitSampleSize, holdoutSampleSize: liveFit.holdoutSampleSize, pooledValidationPoints: allValidationPoints.length },
+        "Calibration refit: holdoutSampleSize === 0 — fit is degenerate (too few validation points); new model stored inactive, previous active model kept",
+      );
+    }
     await db.insert(calibrationModelsTable).values({
       method: liveFit.method,
       mapping: liveMapping,
       validationSampleSize: allValidationPoints.length,
       validationDateRangeStart: minDate !== null ? new Date(minDate) : null,
       validationDateRangeEnd: maxDate !== null ? new Date(maxDate) : null,
-      active: true,
+      active: fitsPassesQualityGate,
       isotonicHoldoutLogLoss: liveFit.isotonicHoldoutLogLoss,
       plattHoldoutLogLoss: liveFit.plattHoldoutLogLoss,
       holdoutSampleSize: liveFit.holdoutSampleSize,
     });
 
     // Phase 6: recompute every tour/surface specialist segment from the fold's freshly-written
-    // validation-segment data, comparing each against this SAME newly-fit general/pooled mapping.
-    await computeAndStoreSpecialistSegments(liveMapping);
+    // validation-reference data, comparing each against this SAME newly-fit general/pooled mapping.
+    // Only run when the fit passes the quality gate — specialist models calibrated against a
+    // degenerate mapping would produce equally broken per-segment overrides.
+    if (fitsPassesQualityGate) {
+      await computeAndStoreSpecialistSegments(liveMapping);
+    } else {
+      logger.warn({ fitSampleSize: liveFit.fitSampleSize }, "Calibration refit: skipping specialist segment recompute because quality gate failed");
+    }
   }
 
   // Task #12: run pattern analysis automatically after every walk-forward (both modes).

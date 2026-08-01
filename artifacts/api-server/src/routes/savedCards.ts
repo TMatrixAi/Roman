@@ -104,6 +104,30 @@ router.post("/saved-cards", requireClerkUser, async (req, res): Promise<void> =>
   }
 });
 
+// ── DELETE /api/saved-cards ────────────────────────────────────────────────────
+// Clear ALL saved cards for the current user. Used by the bulk batch auto-save
+// to replace the previous batch with a fresh set — only the latest run is kept.
+router.delete("/saved-cards", requireClerkUser, async (req, res): Promise<void> => {
+  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
+  if (isAdmin) {
+    res.status(403).json({ error: "Not applicable for admin sessions." });
+    return;
+  }
+
+  const clerkUserId = getAuth(req).userId!;
+
+  try {
+    await db
+      .delete(savedPredictionCardsTable)
+      .where(eq(savedPredictionCardsTable.clerkUserId, clerkUserId));
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "Failed to clear saved prediction cards");
+    res.status(500).json({ error: "Failed to clear saved cards" });
+  }
+});
+
 // ── DELETE /api/saved-cards/:id ───────────────────────────────────────────────
 // Delete a saved card. Scoped to the requesting user — cannot delete another
 // user's saved card even if the id is known.
