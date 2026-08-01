@@ -252,8 +252,8 @@ export default function PredictionResultPage() {
 
       {/* COMPACT SUMMARY HERO */}
       <Card className="border border-primary/20 overflow-hidden relative shadow-xl glass-panel">
-        {/* Top-left: Save to Cards folder — shown for any signed-in user */}
-        {isSignedIn && (
+        {/* Top-left: Save to Cards folder — shown for signed-in users and admin sessions */}
+        {(isSignedIn || isOwnerSession) && (
           <div className="absolute top-3 left-3 z-20">
             <Button
               variant="outline"
