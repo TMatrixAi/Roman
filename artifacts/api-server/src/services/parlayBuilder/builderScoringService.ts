@@ -170,6 +170,15 @@ const STRUCTURALLY_UNAVAILABLE = new Set([
   // injuryRisk removed: now computed via Gemini web research (Tier 5)
 ]);
 
+// Sum of weights for factors that are permanently unavailable for ALL matches (no API or
+// data source exists that could ever populate them). Used to normalise dataCoverage so the
+// permanently-absent 27% doesn't cap every match at 73% and prevent Grade A.
+// utr(0.10) + serveAdvantage(0.06) + returnAdvantage(0.06) + holdBreak(0.05) = 0.27
+const STRUCTURAL_MAX_UNAVAIL_WEIGHT = Array.from(STRUCTURALLY_UNAVAILABLE).reduce(
+  (sum, key) => sum + (DEFAULT_WEIGHTS[key] ?? 0),
+  0,
+);
+
 // ---------------------------------------------------------------------------
 // Math helpers
 // ---------------------------------------------------------------------------
@@ -689,7 +698,18 @@ export function computePlayerStats(
 // ---------------------------------------------------------------------------
 
 function toReliabilityGrade(validationScore: number, coverage: number): "A" | "B" | "C" | "D" | "F" {
-  // Coverage caps the maximum reliability grade (spec: Validation=92, Coverage=35% → NOT grade A)
+  // Coverage caps the maximum reliability grade (spec: Validation=92, Coverage=35% → NOT grade A).
+  //
+  // NOTE: coverage is now normalised against the achievable maximum (i.e. it excludes the
+  // permanently-absent structural factors utr/serveAdvantage/returnAdvantage/holdBreak whose
+  // combined 27% weight can never be populated).  Under the old raw formula every match was
+  // hardcoded at 73%, which capped all grades at B.  Under the new formula a match with no
+  // variable-data gaps reaches 100%.  The 80/65/50/35 band thresholds remain correct:
+  //   ≥ 80 = only structural gaps + at most one minor variable gap → Grade A eligible
+  //   65–79 = some variable data missing (e.g. no market odds AND thin surface history)
+  //   50–64 = notable variable gaps
+  //   35–49 = heavy variable gaps
+  //   < 35  = nearly all variable factors absent
   const coverageCap: "A" | "B" | "C" | "D" | "F" =
     coverage >= 80 ? "A" :
     coverage >= 65 ? "B" :
@@ -1330,9 +1350,17 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     availFactors.reduce((s, f) => s + f.score * (f.weight / totalAvailWeight), 0)
   );
 
-  // Coverage % = proportion of spec weight that has real data
+  // Coverage % normalised against achievable maximum.
+  // Structurally-unavailable factors (utr, serveAdvantage, returnAdvantage, holdBreak) can
+  // never have data regardless of match — their combined 27% weight must not suppress the
+  // coverage ceiling.  dataCoverage = 100 when only structural gaps are missing; genuine
+  // variable-data gaps (no market odds, thin history, etc.) still drag coverage down.
   const unavailWeight = factors.filter(f => f.status === "unavailable").reduce((s, f) => s + f.weight, 0);
-  const dataCoverage = Math.round((1 - unavailWeight) * 100);
+  const variableUnavailWeight = Math.max(0, unavailWeight - STRUCTURAL_MAX_UNAVAIL_WEIGHT);
+  const dataCoverage = clamp(
+    Math.round((1 - variableUnavailWeight / (1 - STRUCTURAL_MAX_UNAVAIL_WEIGHT)) * 100),
+    0, 100,
+  );
 
   // ── 5. Risk Score (independent calculation) ───────────────────────────────
 
@@ -1345,7 +1373,13 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   if (surface && sel.surfaceTotal >= 5)
     risk += Math.round(Math.max(0, (0.4 - sel.surfaceWinRate) / 0.4) * 10);
   if (marketOdds != null && 1 / marketOdds < 0.42) risk += 18;
-  if (selDaysRest != null && selDaysRest <= 1) risk += 10;
+  // Same-day fatigue carries a higher penalty than same-day-previous: playing twice in one
+  // day is meaningfully more risky than having played yesterday.  These are mutually exclusive
+  // branches so the penalties don't stack.
+  if (selDaysRest != null) {
+    if (selDaysRest === 0) risk += 18;       // played today — same-day fatigue
+    else if (selDaysRest <= 1) risk += 10;   // played yesterday
+  }
   if (sel.retirementRate > 0.12) risk += 8;
   risk += Math.round(Math.max(0, (opp.recentWinRate - 0.7) / 0.3) * 8);
   // Data-scarcity penalty: 0 at n≥10, full 15 at n=0 — thin data is penalised
@@ -1851,7 +1885,12 @@ export function __TEST_computeScoring(
   const totalW = availF.reduce((s, f) => s + f.weight, 0);
   const validationScore = Math.round(availF.reduce((s, f) => s + f.score * (f.weight / totalW), 0));
   const unavailW = factors.filter(f => f.status === "unavailable").reduce((s, f) => s + f.weight, 0);
-  const dataCoverage = Math.round((1 - unavailW) * 100);
+  // Normalise against achievable max — mirrors computeBuilderScore's dataCoverage formula.
+  const variableUnavailW = Math.max(0, unavailW - STRUCTURAL_MAX_UNAVAIL_WEIGHT);
+  const dataCoverage = clamp(
+    Math.round((1 - variableUnavailW / (1 - STRUCTURAL_MAX_UNAVAIL_WEIGHT)) * 100),
+    0, 100,
+  );
 
   // Risk Score — Bug B + Bug C fixes applied; flat adders converted to continuous ramps
   let risk = 35;
@@ -1859,7 +1898,10 @@ export function __TEST_computeScoring(
   if (surface && sel.surfaceTotal >= 5)
     risk += Math.round(Math.max(0, (0.4 - sel.surfaceWinRate) / 0.4) * 10);
   if (marketOdds != null && 1 / marketOdds < 0.42) risk += 18;
-  if (selDaysRest != null && selDaysRest <= 1) risk += 10;
+  if (selDaysRest != null) {
+    if (selDaysRest === 0) risk += 18;       // played today — same-day fatigue
+    else if (selDaysRest <= 1) risk += 10;   // played yesterday
+  }
   if (sel.retirementRate > 0.12) risk += 8;
   risk += Math.round(Math.max(0, (opp.recentWinRate - 0.7) / 0.3) * 8);
   risk += Math.round((1 - Math.min(1, sel.total / 10)) * 15);

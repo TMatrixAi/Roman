@@ -558,6 +558,90 @@ function makeFetchResult(recordCount: number, playerId = "provider-player-id"): 
   };
 }
 
+// ─── Coverage normalisation + same-day fatigue tests ─────────────────────────
+
+describe("builderScoringService — coverage normalisation & same-day fatigue (Task recalibration)", () => {
+
+  // ── Coverage ceiling fix ──────────────────────────────────────────────────
+
+  it("only structural factors unavailable → dataCoverage === 100, Grade A eligible", () => {
+    // Structurally-unavailable factors: utr (0.10), serveAdvantage (0.06),
+    // returnAdvantage (0.06), holdBreak (0.05) — 27% combined weight.
+    // A match where those are the ONLY unavailable factors must now report 100% coverage
+    // and be allowed to reach Grade A (was permanently capped at 73% / Grade B before).
+    const selStrong = makeStats({ total: 30, winRate: 0.78, recentWinRate: 0.78, currentRank: 15, surfaceTotal: 12, surfaceWinRate: 0.75 });
+    const oppWeak   = makeStats({ total: 30, winRate: 0.38, recentWinRate: 0.38, currentRank: 180, surfaceTotal: 10, surfaceWinRate: 0.40 });
+
+    const r = __TEST_computeScoring(selStrong, oppWeak, { surface: "Hard", marketOdds: 1.55 });
+
+    assert.strictEqual(r.dataCoverage, 100,
+      `dataCoverage must be 100 when only structural factors are missing (got ${r.dataCoverage})`);
+
+    // Grade A is now reachable — it requires validationScore >= 76 AND coverage >= 80.
+    // With strong stats and full coverage the reliability grade should be at least B (coverage no
+    // longer caps it at B).  Don't assert Grade A outright (validationScore might vary), but
+    // confirm the coverage cap is no longer B.
+    assert.notStrictEqual(r.reliabilityGrade, "B",
+      `reliabilityGrade must not be hardcoded at B when dataCoverage=100 (got ${r.reliabilityGrade})`);
+    assert.notStrictEqual(r.reliabilityGrade, "C",
+      `reliabilityGrade must be at least B when dataCoverage=100 and validationScore is strong (got ${r.reliabilityGrade})`);
+  });
+
+  it("dataCoverage = 100 even without surface/market: limited ≠ unavailable in the test helper", () => {
+    // In __TEST_computeScoring, variable factors that lack data (no surface, no market odds)
+    // get status "limited" — NOT "unavailable". Only the 4 structural factors (utr,
+    // serveAdvantage, returnAdvantage, holdBreak) are ever marked "unavailable" in the helper.
+    // Therefore dataCoverage = 100 is the correct answer regardless of surface/market presence.
+    //
+    // This is a change from the OLD behaviour: before the normalisation fix, dataCoverage was
+    // permanently 73% for every match (the structural 27% dragged coverage down unconditionally).
+    // The new formula correctly returns 100% — the structural absence no longer penalises the
+    // coverage ceiling.
+    //
+    // Coverage below 100% is only observable in production (computeBuilderScore) when the main
+    // computation explicitly marks a variable factor as "unavailable" (distinct from "limited").
+    const selStats = makeStats({ total: 20, winRate: 0.60, recentWinRate: 0.60 });
+    const oppStats = makeStats({ total: 20, winRate: 0.50, recentWinRate: 0.50 });
+
+    const rNoSurface = __TEST_computeScoring(selStats, oppStats, { surface: null, marketOdds: null });
+
+    assert.strictEqual(rNoSurface.dataCoverage, 100,
+      `dataCoverage must be 100 in the test helper (variable-absent factors are "limited" not ` +
+      `"unavailable"; old formula would have hardcoded 73) — got ${rNoSurface.dataCoverage}`);
+  });
+
+  // ── Same-day fatigue risk penalty ─────────────────────────────────────────
+
+  it("same-day-played flag adds a larger risk penalty than identical match without the flag", () => {
+    // Two otherwise identical well-covered matches: one where the selected player last played
+    // today (lastMatchDate = 0 days ago), one where they didn't play at all (lastMatchDate = null).
+    const baseStats  = makeStats({ total: 25, winRate: 0.62, recentWinRate: 0.62, currentRank: 50 });
+    const oppStats   = makeStats({ total: 25, winRate: 0.55, recentWinRate: 0.55, currentRank: 70 });
+
+    // Last match was today (0 days ago) — triggers the same-day fatigue condition.
+    const todayMs = Date.now();
+    const selPlayedToday = { ...baseStats, lastMatchDate: new Date(todayMs) };
+
+    const rNoFatigue   = __TEST_computeScoring(baseStats, oppStats);
+    const rPlayedToday = __TEST_computeScoring(selPlayedToday, oppStats);
+
+    assert.ok(
+      rPlayedToday.riskScore > rNoFatigue.riskScore,
+      `Same-day-played must raise riskScore above the no-fatigue baseline ` +
+      `(played-today=${rPlayedToday.riskScore}, no-fatigue=${rNoFatigue.riskScore})`,
+    );
+
+    // The penalty should be at least 15 points (we added +18; other minor changes
+    // from lastMatchDate present vs null are negligible).
+    const delta = rPlayedToday.riskScore - rNoFatigue.riskScore;
+    assert.ok(
+      delta >= 15,
+      `Same-day-played risk delta must be at least 15 points (got ${delta})`,
+    );
+  });
+
+});
+
 describe("isStaleResult — staleness detection predicate", () => {
   it("empty rows are always stale", () => {
     assert.strictEqual(__TEST_isStaleResult([]), true, "empty row set must be stale");
