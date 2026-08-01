@@ -567,6 +567,22 @@ router.post("/evaluation/calibration-refit", requireAdmin, async (_req, res): Pr
   res.json(result);
 });
 
+/**
+ * Admin-only trigger for an evaluation-only walk-forward: scores all currently unscored
+ * historical matches and writes them into evaluation_predictions WITHOUT touching the
+ * calibration_models or specialist_models tables.
+ *
+ * Use this to grow the evaluation corpus (backtest sample weight) safely at any time.
+ * Unlike POST /evaluation/calibration-refit (evaluationOnly=false), this never refits or
+ * replaces the active calibration model, so it is safe to run while task #78 is open.
+ *
+ * Poll GET /evaluation/walk-forward/status to track progress.
+ */
+router.post("/evaluation/walk-forward/score-unscored", requireAdmin, async (_req, res): Promise<void> => {
+  const result = startWalkForwardJob({ evaluationOnly: true });
+  res.json(result);
+});
+
 router.get("/evaluation/calibration-refit/job-runs", async (req, res): Promise<void> => {
   const parsed = ListCalibrationRefitJobRunsQueryParams.safeParse(req.query);
   if (!parsed.success) {

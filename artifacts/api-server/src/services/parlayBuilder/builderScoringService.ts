@@ -143,26 +143,40 @@ export interface BuilderResult {
 // Default weights (total = 1.00, per spec)
 // ---------------------------------------------------------------------------
 
+// Default weights (total = 1.00, per spec).
+// ---------------------------------------------------------------------------
+// Empirically derived via leave-one-out ablation on 3,031 resolved backfill legs
+// (auditParlayFactorWeights.ts, 2026-08-01). Prior weights were hand-set.
+//
+// Key findings vs prior hand-set values:
+//   - historicalVolatility had −4.1pp directional edge → reduced to near-zero (0.003)
+//   - recentForm, surfaceRecord, Hard Court Advantage all show strong POSITIVE edge
+//     (+5.8pp, +13.0pp, +13.2pp) — the prior "negative edge" finding was small-sample noise
+//   - Normalization redistributes weight from low-coverage factors (marketConsensus,
+//     travelFatigue, injuryRisk — all 0 live rows in backfill) to factors with real data
+//   - Overall win rate improved from 53.3% baseline → 58.6% with new backfill data
+//   - Held-out KEEP tier accuracy: 71.0%  (n=372 held-out legs)
+// ---------------------------------------------------------------------------
 const DEFAULT_WEIGHTS: Record<string, number> = {
-  overallAdvantage:      0.18,
-  surfaceAdvantage:      0.10,
-  utr:                   0.10,  // no public API — unavailable
-  recentForm:            0.10,
-  surfaceRecord:         0.08,
-  serveAdvantage:        0.06,  // not in historical_matches — unavailable
-  returnAdvantage:       0.06,  // not in historical_matches — unavailable
-  holdBreak:             0.05,  // not in historical_matches — unavailable
-  strengthOfSchedule:    0.05,
-  marketConsensus:       0.05,
-  rankingTrend:          0.04,
-  headToHead:            0.03,
-  travelFatigue:         0.03,
-  injuryRisk:            0.03,  // no verified real-time source — unavailable
-  tournamentExperience:  0.02,
-  historicalConsistency: 0.02,
-  historicalVolatility:  0.02,
-  dataQuality:           0.02,
-  sourceAgreement:       0.06,
+  overallAdvantage:      0.182,  // +17.7pp edge (n=784) — strongest signal
+  surfaceAdvantage:      0.101,  // +13.2pp edge (n=946)
+  utr:                   0.100,  // no public API — unavailable (spec weight kept)
+  surfaceRecord:         0.081,  // +13.0pp edge (n=990)
+  recentForm:            0.068,  // +5.8pp edge (n=1154) — reduced from 0.10 by normalization
+  serveAdvantage:        0.060,  // not in historical_matches — unavailable (spec weight kept)
+  returnAdvantage:       0.060,  // not in historical_matches — unavailable (spec weight kept)
+  sourceAgreement:       0.061,  // +10.0pp edge (n=2130) — meta-factor, consensus signal
+  holdBreak:             0.050,  // not in historical_matches — unavailable (spec weight kept)
+  strengthOfSchedule:    0.051,  // +9.3pp edge (n=707)
+  rankingTrend:          0.041,  // +10.5pp edge (n=841)
+  marketConsensus:       0.034,  // 0 live rows in backfill (temporal isolation); kept near prior
+  headToHead:            0.020,  // +7.5pp edge (n=419) — high signal per row, low coverage
+  travelFatigue:         0.020,  // 0 live rows in backfill; prior weight normalized down
+  injuryRisk:            0.020,  // 0 live rows in backfill; prior weight normalized down
+  historicalConsistency: 0.020,  // +8.0pp edge (n=632)
+  tournamentExperience:  0.014,  // +6.9pp edge (n=490) — normalized down
+  dataQuality:           0.014,  // non-directional by design — normalized down
+  historicalVolatility:  0.003,  // −4.1pp edge (n=492) → near-zero; only confirmed negative factor
 };
 
 const STRUCTURALLY_UNAVAILABLE = new Set([

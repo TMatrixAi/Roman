@@ -701,40 +701,50 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
       await new Promise((r) => setTimeout(r, 500))
     }
 
+    // Also collect the IDs of matchups that were already predicted before this run
+    // started — they are skipped by the loop above but must be included in the
+    // auto-save so the Saved Prediction Cards folder always reflects the full batch,
+    // not just the newly-run slice.
+    const alreadySuccessIds = workItems
+      .filter((i) => !needsPredicting(i) && i.predictionId != null)
+      .map((i) => i.predictionId as number)
+
     setIsPredicting(false)
-    return { successIds, failedKeys }
+    return { successIds: [...alreadySuccessIds, ...successIds], failedKeys }
   }
 
-  /** Navigate to the batch results page. Only called when all predictions succeeded. */
+  // ── Auto-save helper ────────────────────────────────────────────────────────
+  // Replaces the user's entire saved-cards list with the current batch IDs so
+  // the saved folder always reflects the latest run. Fire-and-forget — called
+  // before navigation AND on partial success so cards are never silently skipped.
+  const autoSaveBatch = (allIds: number[]) => {
+    if (!isSignedIn || allIds.length === 0) return
+    void (async () => {
+      try {
+        // 1. Clear previous saved batch
+        await fetch(`${BASE}/api/saved-cards`, { method: "DELETE", credentials: "include" })
+        // 2. Save every prediction from this run (already-predicted + newly run)
+        await Promise.all(
+          allIds.map((id) =>
+            fetch(`${BASE}/api/saved-cards`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ predictionId: id }),
+            }),
+          ),
+        )
+      } catch {
+        // best-effort — navigation and results are unaffected
+      }
+    })()
+  }
+
+  /** Navigate to the batch results page. */
   const navigateToResults = (successIds: number[]) => {
     if (successIds.length === 0) return
 
-    // ── Auto-save this batch to Saved Prediction Cards ───────────────────────
-    // Clears the previous batch first so the saved folder always reflects the
-    // latest run — no stale cards from an earlier session. Fire-and-forget:
-    // navigation happens immediately; saves complete before the user can navigate
-    // back and open the saved panel.
-    if (isSignedIn) {
-      void (async () => {
-        try {
-          // 1. Replace previous batch
-          await fetch(`${BASE}/api/saved-cards`, { method: "DELETE", credentials: "include" })
-          // 2. Save every prediction from this run
-          await Promise.all(
-            successIds.map((id) =>
-              fetch(`${BASE}/api/saved-cards`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ predictionId: id }),
-              }),
-            ),
-          )
-        } catch {
-          // best-effort — navigation and results are unaffected
-        }
-      })()
-    }
+    autoSaveBatch(successIds)
 
     try {
       localStorage.setItem(
@@ -754,13 +764,16 @@ export const BulkMatchupPredictor = forwardRef<BulkMatchupPredictorHandle>(funct
    */
   const handlePredictOutcome = (successIds: number[], failedKeys: string[]) => {
     if (failedKeys.length === 0) {
-      // All succeeded — auto-navigate as before
+      // All succeeded — auto-navigate (autoSaveBatch is called inside navigateToResults)
       navigateToResults(successIds)
     } else if (successIds.length === 0) {
       // All failed — stay on page with a clear error
       setBatchError("None of the matchups in this batch could be predicted. Check the error badges below and try again.")
     } else {
-      // Partial success — show an inline summary with action buttons
+      // Partial success — auto-save the succeeded cards even though we stay on the
+      // page (previously these were silently dropped because navigateToResults
+      // was never called in this path).
+      autoSaveBatch(successIds)
       setPredictSummary({ successIds, failedCount: failedKeys.length })
     }
   }
