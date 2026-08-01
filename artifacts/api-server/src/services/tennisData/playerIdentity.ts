@@ -407,6 +407,16 @@ export function invalidatePlayerIdentityCacheForTests(): void {
   cachedIdentityIndex = null;
 }
 
+/**
+ * Test-only escape hatch: clears the module-level transient-failure cache so integration tests
+ * that seed fresh player IDs always start from a cold-cache state. Without this, a prior run that
+ * caused a failure for a given player ID would shield later runs (same ID, within the 2-min TTL)
+ * from the provider call, making timing tests non-deterministic. Never called from production code.
+ */
+export function clearTransientFailureCacheForTests(): void {
+  historicalIdTransientFailureCache.clear();
+}
+
 interface HistoricalPlayerRow {
   id: string;
   name: string;
