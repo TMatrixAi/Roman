@@ -15,6 +15,8 @@ import {
   idProviderBucket,
   isAbbreviatedFirstName,
   runBridgeMigration,
+  clearAffectedEvalPredictions,
+  orchestrateBridgeRefresh,
 } from "./externalCsvBridge";
 import type { DbLike, ResolutionEntry, EnhancedPlayerIdMap } from "./externalCsvBridge";
 
@@ -412,14 +414,18 @@ describe("cross-tour collision safety", () => {
  * Build a mock DbLike whose execute() calls are counted and optionally fail.
  *
  * runBridgeMigration always executes in a fixed order:
- *   call 1 → player1_id UPDATE on historical_matches
- *   call 2 → player2_id UPDATE on historical_matches
- *   call 3 → winner_id  UPDATE on historical_matches
- *   call 4 → player_id  UPDATE on match_feature_snapshots
+ *   call 1 → player1_id UPDATE on historical_matches (RETURNING h.id)
+ *   call 2 → player2_id UPDATE on historical_matches (RETURNING h.id)
+ *   call 3 → winner_id  UPDATE on historical_matches (RETURNING h.id)
+ *   call 4 → player_id  UPDATE on match_feature_snapshots (no RETURNING)
+ *
+ * `rowsPerCall` maps 1-based call index → rows returned (simulates RETURNING).
+ * Calls not listed in rowsPerCall return an empty rows array.
  */
 function makeMockTx(options: {
   throwOnCall?: number;
   rowCount?: number;
+  rowsPerCall?: Record<number, Array<Record<string, unknown>>>;
 }): { tx: DbLike; callCount: () => number } {
   let callIndex = 0;
 
@@ -429,7 +435,8 @@ function makeMockTx(options: {
       if (options.throwOnCall !== undefined && callIndex === options.throwOnCall) {
         throw new Error(`Simulated DB failure on call ${callIndex}`);
       }
-      return { rowCount: options.rowCount ?? 1 };
+      const rows = options.rowsPerCall?.[callIndex] ?? [];
+      return { rowCount: options.rowCount ?? 1, rows };
     },
   };
 
@@ -486,7 +493,7 @@ describe("runBridgeMigration atomicity", () => {
     assert.equal(result.featureRowsUpdated, 2);
   });
 
-  it("returns all-zero counts for empty entries without touching the DB", async () => {
+  it("returns all-zero counts and empty affectedMatchIds for empty entries without touching the DB", async () => {
     const { tx, callCount } = makeMockTx({});
     const result = await runBridgeMigration(tx, []);
     assert.equal(callCount(), 0);
@@ -494,5 +501,321 @@ describe("runBridgeMigration atomicity", () => {
     assert.equal(result.p2Rows, 0);
     assert.equal(result.winRows, 0);
     assert.equal(result.featureRowsUpdated, 0);
+    assert.deepEqual(result.affectedMatchIds, []);
+  });
+});
+
+// ── runBridgeMigration — affectedMatchIds ─────────────────────────────────────
+
+describe("runBridgeMigration — affectedMatchIds", () => {
+  it("collects and deduplicates match IDs returned from all three RETURNING clauses", async () => {
+    // p1 UPDATE touched matches 100 and 200
+    // p2 UPDATE touched matches 200 and 300 (200 is a duplicate)
+    // winner UPDATE touched matches 100, 200, 300 (all duplicates of above)
+    const { tx } = makeMockTx({
+      rowsPerCall: {
+        1: [{ id: 100 }, { id: 200 }],
+        2: [{ id: 200 }, { id: 300 }],
+        3: [{ id: 100 }, { id: 200 }, { id: 300 }],
+        // call 4 (snapshot) returns no rows — not needed
+      },
+    });
+    const result = await runBridgeMigration(tx, testEntries);
+    const sorted = [...result.affectedMatchIds].sort((a, b) => a - b);
+    assert.deepEqual(sorted, [100, 200, 300]);
+  });
+
+  it("returns empty affectedMatchIds when no rows are updated (all slots already resolved)", async () => {
+    const { tx } = makeMockTx({ rowCount: 0 });
+    // No RETURNING rows means nothing was actually updated
+    const result = await runBridgeMigration(tx, testEntries);
+    assert.deepEqual(result.affectedMatchIds, []);
+  });
+
+  it("captures matches where only winner_id was still an ext-xxx ID (partial prior run)", async () => {
+    // p1 and p2 UPDATEs touch nothing (already resolved); winner UPDATE still hits match 999
+    const { tx } = makeMockTx({
+      rowsPerCall: {
+        1: [],          // p1: nothing to update
+        2: [],          // p2: nothing to update
+        3: [{ id: 999 }], // winner: still ext-xxx
+      },
+    });
+    const result = await runBridgeMigration(tx, testEntries);
+    assert.deepEqual(result.affectedMatchIds, [999]);
+  });
+
+  it("ignores non-integer or zero id values in RETURNING rows (defensive)", async () => {
+    const { tx } = makeMockTx({
+      rowsPerCall: {
+        1: [{ id: 100 }, { id: null }, { id: 0 }, { id: "bad" }],
+        2: [],
+        3: [],
+      },
+    });
+    const result = await runBridgeMigration(tx, testEntries);
+    assert.deepEqual(result.affectedMatchIds, [100]); // only valid integer
+  });
+});
+
+// ── clearAffectedEvalPredictions ──────────────────────────────────────────────
+
+describe("clearAffectedEvalPredictions", () => {
+  it("calls execute exactly once and returns the DB rowCount", async () => {
+    let executeCallCount = 0;
+    const mockDb: DbLike = {
+      async execute(_query: unknown) {
+        executeCallCount++;
+        return { rowCount: 7, rows: [] };
+      },
+    };
+    const count = await clearAffectedEvalPredictions(mockDb, [100, 200, 300]);
+    assert.equal(count, 7, "must return the rowCount from the DB result");
+    assert.equal(executeCallCount, 1, "must make exactly one DB call");
+  });
+
+  it("returns 0 and makes no DB call when matchIds is empty", async () => {
+    let called = false;
+    const mockDb: DbLike = {
+      async execute() {
+        called = true;
+        return { rowCount: 99, rows: [] };
+      },
+    };
+    const count = await clearAffectedEvalPredictions(mockDb, []);
+    assert.equal(count, 0);
+    assert.equal(called, false, "should not touch the DB for empty matchIds");
+  });
+
+  it("returns 0 when rowCount is absent from the DB response", async () => {
+    const mockDb: DbLike = {
+      async execute() {
+        return {}; // rowCount omitted — e.g. some pg driver versions
+      },
+    };
+    const count = await clearAffectedEvalPredictions(mockDb, [999]);
+    assert.equal(count, 0);
+  });
+
+  it("calls execute exactly once for a single match ID", async () => {
+    let executeCallCount = 0;
+    const mockDb: DbLike = {
+      async execute(_query: unknown) {
+        executeCallCount++;
+        return { rowCount: 1, rows: [] };
+      },
+    };
+    const count = await clearAffectedEvalPredictions(mockDb, [42]);
+    assert.equal(count, 1);
+    assert.equal(executeCallCount, 1, "should make exactly one DB call even for a single ID");
+  });
+
+  // ── Integration-style regression test ────────────────────────────────────
+  //
+  // Proves the full bridge-triggered refresh sequence:
+  //   1. runBridgeMigration returns affectedMatchIds from RETURNING clauses.
+  //   2. clearAffectedEvalPredictions issues a DELETE for exactly those IDs.
+  //   3. Walk-forward can then re-score them (absence of rows in the cleared
+  //      set proves the stale entries are gone).
+  //
+  // We verify steps 1 and 2 with mock DBs; step 3 is the job's responsibility
+  // and is covered by the walk-forward test suite.
+
+  it("regression: bridge affectedMatchIds flow into clearAffectedEvalPredictions correctly", async () => {
+    // Step 1 — simulate the bridge transaction returning match IDs via RETURNING
+    const { tx } = makeMockTx({
+      rowsPerCall: {
+        1: [{ id: 111 }, { id: 222 }],
+        2: [{ id: 222 }, { id: 333 }],
+        3: [{ id: 111 }],
+      },
+    });
+    const migrationResult = await runBridgeMigration(tx, testEntries);
+    const expectedIds = [111, 222, 333].sort((a, b) => a - b);
+    const actualIds = [...migrationResult.affectedMatchIds].sort((a, b) => a - b);
+    assert.deepEqual(actualIds, expectedIds, "bridge must surface all three unique match IDs");
+
+    // Step 2 — those same IDs are the argument passed to clearAffectedEvalPredictions.
+    // We verify the function makes exactly one DB call and returns the correct count.
+    // (SQL string inspection is not possible for drizzle SQL objects without accessing
+    //  private internals; correctness of the SQL itself is covered by the DB integration.)
+    let clearExecuteCount = 0;
+    const mockClearDb: DbLike = {
+      async execute(_query: unknown) {
+        clearExecuteCount++;
+        return { rowCount: migrationResult.affectedMatchIds.length, rows: [] };
+      },
+    };
+    const cleared = await clearAffectedEvalPredictions(mockClearDb, migrationResult.affectedMatchIds);
+
+    // One DELETE call, returning the count of cleared rows
+    assert.equal(clearExecuteCount, 1, "clearAffectedEvalPredictions must make exactly one DB call");
+    assert.equal(cleared, migrationResult.affectedMatchIds.length,
+      "cleared count must equal the number of affected match IDs");
+
+    // The IDs passed to clearAffectedEvalPredictions must be the exact set from the bridge
+    assert.deepEqual(actualIds, expectedIds,
+      "affectedMatchIds carries all unique match IDs corrected by the bridge");
+  });
+});
+
+// ── orchestrateBridgeRefresh ──────────────────────────────────────────────────
+
+/** Shared minimal DbLike stub for orchestration tests (not called in most paths). */
+const stubDb: DbLike = { async execute() { return { rowCount: 0, rows: [] }; } };
+
+describe("orchestrateBridgeRefresh — concurrent job safety", () => {
+  it("skips clear and start when walk-forward is already running", async () => {
+    let clearCalled = false;
+    let startCalled = false;
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [100, 200],
+      resolved: 2,
+      db: stubDb,
+      isJobRunning: () => true, // job IS running
+      clearPredictions: async () => { clearCalled = true; return 0; },
+      startJob: () => { startCalled = true; return { started: false }; },
+    });
+
+    assert.equal(result.walkForwardStarted, false);
+    assert.equal(result.walkForwardSkipReason, "walk_forward_already_running");
+    assert.equal(clearCalled, false,  "must NOT delete eval rows when job is running");
+    assert.equal(startCalled, false,  "must NOT try to start a second job");
+    assert.equal(result.affectedEvalRowsCleared, 0);
+  });
+
+  it("proceeds normally when job transitions from running to idle by the time we check", async () => {
+    // Simulates the happy-path: idle at check time
+    const startedWithIds: number[][] = [];
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [100, 200],
+      resolved: 2,
+      db: stubDb,
+      isJobRunning: () => false, // idle
+      clearPredictions: async (_db, _ids) => 2,
+      startJob: (ids) => { startedWithIds.push([...ids]); return { started: true }; },
+    });
+
+    assert.equal(result.walkForwardStarted, true);
+    assert.equal(result.affectedEvalRowsCleared, 2);
+    assert.equal(result.walkForwardSkipReason, undefined);
+    assert.deepEqual(startedWithIds[0].sort((a, b) => a - b), [100, 200]);
+  });
+
+  it("surfaces skip reason when another job starts concurrently between clear and startJob", async () => {
+    // Simulates the narrow window: our idle-check passes, deletion completes,
+    // but a concurrent request claims the job slot first.
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [100],
+      resolved: 1,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async (_db, _ids) => 1,
+      startJob: () => ({ started: false, reason: "A walk-forward run is already in progress." }),
+    });
+
+    assert.equal(result.walkForwardStarted, false);
+    assert.equal(result.affectedEvalRowsCleared, 1,
+      "rows are already deleted — the concurrent walk-forward will re-score them");
+    assert.ok(
+      result.walkForwardSkipReason?.includes("already") ||
+      result.walkForwardSkipReason === "A walk-forward run is already in progress.",
+      "skip reason must convey concurrency",
+    );
+  });
+});
+
+describe("orchestrateBridgeRefresh — sub-threshold and edge cases", () => {
+  it("sub-threshold (3 matches << 500): walk-forward is still triggered", async () => {
+    // evaluationOnly:true short-circuits the 500-match minimum; the orchestrator
+    // must pass the matchIds through to startJob regardless of count.
+    const startedWithIds: number[][] = [];
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [1, 2, 3],  // far below any training minimum
+      resolved: 3,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async (_db, _ids) => 3,
+      startJob: (ids) => { startedWithIds.push([...ids]); return { started: true }; },
+    });
+
+    assert.equal(result.walkForwardStarted, true,
+      "must start walk-forward even when count is below the 500-match training minimum");
+    assert.equal(result.affectedEvalRowsCleared, 3);
+    assert.deepEqual(startedWithIds[0].sort((a, b) => a - b), [1, 2, 3],
+      "exact affected match IDs must be passed to startJob for targeted re-score");
+  });
+
+  it("single match (1 corrected): walk-forward is triggered", async () => {
+    let startedWith: number[] = [];
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [999],
+      resolved: 1,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async (_db, _ids) => 1,
+      startJob: (ids) => { startedWith = [...ids]; return { started: true }; },
+    });
+
+    assert.equal(result.walkForwardStarted, true);
+    assert.deepEqual(startedWith, [999]);
+  });
+
+  it("no-op when resolved is 0 (idempotent re-run)", async () => {
+    let clearCalled = false;
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [],
+      resolved: 0,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async () => { clearCalled = true; return 0; },
+      startJob: () => ({ started: false }),
+    });
+
+    assert.equal(result.walkForwardStarted, false);
+    assert.equal(result.affectedEvalRowsCleared, 0);
+    assert.equal(result.walkForwardSkipReason, "no_resolved_matches");
+    assert.equal(clearCalled, false, "must make zero DB calls for an already-bridged corpus");
+  });
+
+  it("aborts refresh cycle when clearPredictions throws — walk-forward not started", async () => {
+    let startCalled = false;
+
+    const result = await orchestrateBridgeRefresh({
+      affectedMatchIds: [999],
+      resolved: 1,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async () => { throw new Error("DB connection lost"); },
+      startJob: () => { startCalled = true; return { started: true }; },
+    });
+
+    assert.equal(result.walkForwardSkipReason, "clear_failed",
+      "must surface clear_failed when the DELETE throws");
+    assert.equal(startCalled, false,
+      "must NOT start walk-forward after clearPredictions failure");
+    assert.equal(result.walkForwardStarted, false);
+    assert.equal(result.affectedEvalRowsCleared, 0);
+  });
+
+  it("clearPredictions receives the exact affectedMatchIds from the bridge", async () => {
+    const received: number[][] = [];
+
+    await orchestrateBridgeRefresh({
+      affectedMatchIds: [111, 222, 333],
+      resolved: 3,
+      db: stubDb,
+      isJobRunning: () => false,
+      clearPredictions: async (_db, ids) => { received.push([...ids]); return ids.length; },
+      startJob: () => ({ started: true }),
+    });
+
+    assert.equal(received.length, 1, "clearPredictions called exactly once");
+    assert.deepEqual(received[0].sort((a, b) => a - b), [111, 222, 333]);
   });
 });

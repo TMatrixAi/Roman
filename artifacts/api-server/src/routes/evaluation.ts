@@ -53,7 +53,13 @@ import { runIncrementalHistoricalBackfill, runHistoricalBackfill, getLatestCover
 import { runSackmannBackfill, SACKMANN_PROVIDER } from "../services/historicalData/sackmannBackfill";
 import { runTennisDataCoUkBackfill, TENNIS_DATA_CO_UK_PROVIDER } from "../services/historicalData/tennisDataCoUkBackfill";
 import { runExternalCsvBackfill, EXT_CSV_PROVIDER } from "../services/historicalData/externalCsvBackfill";
-import { runExternalCsvBridge } from "../services/historicalData/externalCsvBridge";
+import {
+  runExternalCsvBridge,
+  clearAffectedEvalPredictions,
+  orchestrateBridgeRefresh,
+  type DbLike as BridgeDbLike,
+} from "../services/historicalData/externalCsvBridge";
+import { startBridgeRescoreJob, getBridgeRescoreJobStatus } from "../services/evaluation/bridgeRescoreJob";
 import { getTennisDataProvider } from "../services/tennisData";
 import { HISTORICAL_BACKFILL_JOB_NAME } from "../jobs/historicalBackfillJobName";
 import {
@@ -810,6 +816,52 @@ router.post("/evaluation/external-csv-backfill/bridge", requireAdmin, async (_re
 
   runExternalCsvBridge()
     .then(async (result) => {
+      // ── Bridge-specific full refresh ───────────────────────────────────────
+      // Delegate to orchestrateBridgeRefresh which handles:
+      //   • Skipping entirely when no matches were resolved.
+      //   • NOT deleting rows when a job is already running (would orphan rows
+      //     that the in-flight run already excluded from its eligible set).
+      //   • Awaiting clearAffectedEvalPredictions before scheduling the job
+      //     (ensures the rescore job's DB queries see the post-deletion state).
+      //   • Using startBridgeRescoreJob (not walk-forward) so the rescore
+      //     loads the FULL historical context for Elo/h2h/form and scores
+      //     only the affected matches — with no fold minimums or warmup floors.
+      const refresh = await orchestrateBridgeRefresh({
+        affectedMatchIds: result.affectedMatchIds,
+        resolved: result.resolved,
+        db: db as unknown as BridgeDbLike,
+        isJobRunning: () =>
+          getWalkForwardJobStatus().state === "running" ||
+          getBridgeRescoreJobStatus().state === "running",
+        clearPredictions: (dbLike, ids) => clearAffectedEvalPredictions(dbLike, ids),
+        startJob: (ids) => startBridgeRescoreJob(ids),
+      });
+
+      const { affectedEvalRowsCleared, walkForwardStarted, walkForwardSkipReason } = refresh;
+
+      if (walkForwardStarted) {
+        logger.info(
+          { affectedMatchCount: result.affectedMatchIds.length, affectedEvalRowsCleared },
+          "ext-csv-bridge: cleared stale eval rows + triggered targeted walk-forward re-score",
+        );
+      } else if (walkForwardSkipReason === "walk_forward_already_running") {
+        logger.warn(
+          { affectedMatchCount: result.affectedMatchIds.length },
+          "ext-csv-bridge: walk-forward already running — full refresh deferred to avoid orphaned eval rows",
+        );
+      } else if (walkForwardSkipReason === "clear_failed") {
+        logger.error(
+          { affectedMatchCount: result.affectedMatchIds.length },
+          "ext-csv-bridge: failed to clear stale eval predictions — walk-forward skipped",
+        );
+      } else if (walkForwardSkipReason === "no_resolved_matches") {
+        logger.info({ resolved: result.resolved },
+          "ext-csv-bridge: no new resolutions — skipping eval-prediction clear and walk-forward");
+      } else if (walkForwardSkipReason) {
+        logger.warn({ reason: walkForwardSkipReason },
+          "ext-csv-bridge: walk-forward started concurrently — cleared rows will be re-scored by that run");
+      }
+
       await db.insert(jobRunsTable).values({
         jobName,
         startedAt,
@@ -817,13 +869,16 @@ router.post("/evaluation/external-csv-backfill/bridge", requireAdmin, async (_re
         status: "success",
         attempts: 1,
         summary: {
-          extPlayerSlotsFound: result.extPlayerSlotsFound,
-          resolved:            result.resolved,
-          unresolved:          result.unresolved,
-          matchRowsUpdated:    result.matchRowsUpdated,
-          featureRowsUpdated:  result.featureRowsUpdated,
-          atpMatchRate:        result.atpMatchRate,
-          wtaMatchRate:        result.wtaMatchRate,
+          extPlayerSlotsFound:     result.extPlayerSlotsFound,
+          resolved:                result.resolved,
+          unresolved:              result.unresolved,
+          matchRowsUpdated:        result.matchRowsUpdated,
+          featureRowsUpdated:      result.featureRowsUpdated,
+          atpMatchRate:            result.atpMatchRate,
+          wtaMatchRate:            result.wtaMatchRate,
+          affectedEvalRowsCleared,
+          walkForwardStarted,
+          walkForwardSkipReason:   walkForwardSkipReason ?? null,
         },
         errorMessage: null,
       });

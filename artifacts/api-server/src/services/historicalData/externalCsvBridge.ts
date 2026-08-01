@@ -296,6 +296,13 @@ export interface ExtCsvBridgeResult {
   atpMatchRate: number | null;
   /** WTA player match rate 0–100, or null if no WTA rows. */
   wtaMatchRate: number | null;
+  /**
+   * Unique historical_matches.id values (integers) that had at least one
+   * player-ID column corrected by this bridge run.  Used by the route to
+   * delete their stale evaluation_predictions so walk-forward re-scores them
+   * with the corrected identities.
+   */
+  affectedMatchIds: number[];
 }
 
 // ── Resolution entry ──────────────────────────────────────────────────────────
@@ -325,7 +332,114 @@ function pgTextArray(values: string[]): string {
  * needs. Typed narrowly so tests can inject a mock without importing drizzle.
  */
 export interface DbLike {
-  execute(query: unknown): Promise<{ rowCount?: number }>;
+  execute(query: unknown): Promise<{ rowCount?: number; rows?: Array<Record<string, unknown>> }>;
+}
+
+// ── Bridge refresh orchestration ─────────────────────────────────────────────
+
+/**
+ * Result of a bridge-triggered refresh cycle (clear + walk-forward scheduling).
+ */
+export interface BridgeRefreshCycleResult {
+  /** Number of evaluation_predictions rows deleted. */
+  affectedEvalRowsCleared: number;
+  /** Whether a walk-forward job was successfully started. */
+  walkForwardStarted: boolean;
+  /**
+   * Human-readable reason for not starting the job, or undefined when it started.
+   * Possible values: "no_resolved_matches" | "walk_forward_already_running" |
+   *   "clear_failed" | "already_running_at_start" | (job-specific reason string)
+   */
+  walkForwardSkipReason?: string;
+}
+
+/**
+ * Orchestrate the bridge refresh cycle:
+ *   1. If no matches were resolved, return early (no-op).
+ *   2. If a walk-forward job is already running, return early WITHOUT deleting
+ *      rows (the in-flight run pre-built its alreadyScoredIds before our
+ *      bridge completed; deleting now would orphan those rows).
+ *   3. Delete stale historical_test evaluation_predictions for the affected
+ *      matches and await the result (must finish before step 4 is scheduled).
+ *   4. Start walk-forward scoped to the affected matchIds.  evaluationOnly:true
+ *      short-circuits the 500-match training minimum so even 1 corrected match
+ *      is re-scored without triggering a full calibration refit.
+ *   5. If clearPredictions throws, abort and surface the failure.
+ *
+ * All dependencies are injected so this function is unit-testable without an
+ * Express route, a real DB, or a running walk-forward job.
+ */
+export async function orchestrateBridgeRefresh(opts: {
+  affectedMatchIds: number[];
+  resolved: number;
+  db: DbLike;
+  isJobRunning: () => boolean;
+  clearPredictions: (db: DbLike, ids: number[]) => Promise<number>;
+  startJob: (ids: number[]) => { started: boolean; reason?: string };
+}): Promise<BridgeRefreshCycleResult> {
+  if (opts.resolved === 0 || opts.affectedMatchIds.length === 0) {
+    return {
+      affectedEvalRowsCleared: 0,
+      walkForwardStarted: false,
+      walkForwardSkipReason: "no_resolved_matches",
+    };
+  }
+
+  if (opts.isJobRunning()) {
+    return {
+      affectedEvalRowsCleared: 0,
+      walkForwardStarted: false,
+      walkForwardSkipReason: "walk_forward_already_running",
+    };
+  }
+
+  // Safe window: idle → await deletion → synchronously claim job slot.
+  // By the time the event loop next yields, deletion is committed and the
+  // job's alreadyScoredIds query will see the post-deletion DB state.
+  let affectedEvalRowsCleared = 0;
+  try {
+    affectedEvalRowsCleared = await opts.clearPredictions(opts.db, opts.affectedMatchIds);
+  } catch {
+    return {
+      affectedEvalRowsCleared: 0,
+      walkForwardStarted: false,
+      walkForwardSkipReason: "clear_failed",
+    };
+  }
+
+  const wfResult = opts.startJob(opts.affectedMatchIds);
+  return {
+    affectedEvalRowsCleared,
+    walkForwardStarted: wfResult.started,
+    walkForwardSkipReason: wfResult.started
+      ? undefined
+      : wfResult.reason ?? "already_running_at_start",
+  };
+}
+
+/**
+ * Delete stale `historical_test` evaluation_predictions for the given historical
+ * match IDs.  Called after the bridge commits so walk-forward re-scores those
+ * matches with the corrected player identities.
+ *
+ * Accepts a `DbLike` so tests can inject a mock without importing drizzle.
+ *
+ * @returns number of rows deleted.
+ */
+export async function clearAffectedEvalPredictions(
+  dbLike: DbLike,
+  matchIds: number[],
+): Promise<number> {
+  if (matchIds.length === 0) return 0;
+  // matchIds are SERIAL integers — safe to embed directly without quoting.
+  const result = await dbLike.execute(
+    sql.raw(`
+      DELETE FROM evaluation_predictions
+       WHERE historical_match_id = ANY(ARRAY[${matchIds.join(",")}]::int[])
+         AND run_kind = 'historical_test'
+    `),
+  );
+  return (result as { rowCount?: number }).rowCount ?? 0;
 }
 
 /**
@@ -334,18 +448,24 @@ export interface DbLike {
  * All statements run through the same `tx` connection; callers must wrap this
  * in `db.transaction()` so a failure in any statement rolls back the others.
  *
+ * Each of the three historical_matches UPDATEs uses `RETURNING h.id` to
+ * collect the match IDs that were actually changed.  The caller uses those IDs
+ * to clear stale evaluation_predictions so walk-forward re-scores the affected
+ * matches with the corrected player identities.
+ *
  * Exported so tests can inject a mock `tx` and verify atomicity without a real DB.
  */
 export async function runBridgeMigration(
   tx: DbLike,
   entries: ResolutionEntry[],
-): Promise<{ p1Rows: number; p2Rows: number; winRows: number; featureRowsUpdated: number }> {
-  if (entries.length === 0) return { p1Rows: 0, p2Rows: 0, winRows: 0, featureRowsUpdated: 0 };
+): Promise<{ p1Rows: number; p2Rows: number; winRows: number; featureRowsUpdated: number; affectedMatchIds: number[] }> {
+  if (entries.length === 0) return { p1Rows: 0, p2Rows: 0, winRows: 0, featureRowsUpdated: 0, affectedMatchIds: [] };
 
   const extIds  = entries.map(e => e.extId);
   const tours   = entries.map(e => e.tour);
   const realIds = entries.map(e => e.realId);
 
+  /** UPDATE one player-ID column, returning the IDs of all touched match rows. */
   function matchUpdate(column: string): string {
     return `
       UPDATE historical_matches AS h
@@ -358,7 +478,14 @@ export async function runBridgeMigration(
        WHERE h.provider  = 'ext-csv'
          AND h.${column} = m.ext_id
          AND h.tour      = m.tour
+      RETURNING h.id
     `;
+  }
+
+  /** Extract positive integer match IDs from a RETURNING result. */
+  function extractIds(result: unknown): number[] {
+    const rows = (result as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+    return rows.map(r => Number(r["id"])).filter(n => Number.isInteger(n) && n > 0);
   }
 
   // Run sequentially within the transaction — parallel execution inside a single
@@ -366,6 +493,15 @@ export async function runBridgeMigration(
   const p1Result  = await tx.execute(sql.raw(matchUpdate("player1_id")));
   const p2Result  = await tx.execute(sql.raw(matchUpdate("player2_id")));
   const winResult = await tx.execute(sql.raw(matchUpdate("winner_id")));
+
+  // Collect unique match IDs from all three column updates.
+  // (winner_id is always p1 or p2, but a prior partial run may have left only
+  //  winner_id as ext-xxx, so collect from all three to be complete.)
+  const idSet = new Set<number>([
+    ...extractIds(p1Result),
+    ...extractIds(p2Result),
+    ...extractIds(winResult),
+  ]);
 
   // Snapshot update joins through historical_matches to inherit the tour filter.
   const snapshotResult = await tx.execute(sql.raw(`
@@ -388,6 +524,7 @@ export async function runBridgeMigration(
     p2Rows:            (p2Result  as unknown as { rowCount?: number }).rowCount  ?? 0,
     winRows:           (winResult as unknown as { rowCount?: number }).rowCount  ?? 0,
     featureRowsUpdated:(snapshotResult as unknown as { rowCount?: number }).rowCount ?? 0,
+    affectedMatchIds:  Array.from(idSet),
   };
 }
 
@@ -488,20 +625,24 @@ export async function runExternalCsvBridge(): Promise<ExtCsvBridgeResult> {
       resolved: 0, unresolved,
       matchRowsUpdated: 0, featureRowsUpdated: 0,
       atpMatchRate: atpRate, wtaMatchRate: wtaRate,
+      affectedMatchIds: [],
     };
   }
 
   // ── Step 3: Apply all updates atomically ──────────────────────────────────
   // All four statements run in a single transaction. If any fails the entire
   // migration rolls back — no partially-updated rows are ever committed.
-  const { p1Rows, p2Rows, winRows, featureRowsUpdated } = await db.transaction(async (tx) => {
-    return runBridgeMigration(tx as unknown as DbLike, resolutionEntries);
-  });
+  // RETURNING h.id on each match-column UPDATE gives us the IDs of rows that
+  // were actually changed, so the caller can clear their stale eval predictions.
+  const { p1Rows, p2Rows, winRows, featureRowsUpdated, affectedMatchIds } =
+    await db.transaction(async (tx) => {
+      return runBridgeMigration(tx as unknown as DbLike, resolutionEntries);
+    });
 
   const matchRowsUpdated = p1Rows + p2Rows + winRows;
 
   logger.info(
-    { p1Rows, p2Rows, winRows, matchRowsUpdated, featureRowsUpdated },
+    { p1Rows, p2Rows, winRows, matchRowsUpdated, featureRowsUpdated, affectedMatchCount: affectedMatchIds.length },
     "ext-csv-bridge: migration committed",
   );
 
@@ -510,5 +651,6 @@ export async function runExternalCsvBridge(): Promise<ExtCsvBridgeResult> {
     resolved, unresolved,
     matchRowsUpdated, featureRowsUpdated,
     atpMatchRate: atpRate, wtaMatchRate: wtaRate,
+    affectedMatchIds,
   };
 }
