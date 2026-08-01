@@ -28,6 +28,7 @@
 
 import * as fs from "fs";
 import { runHistoricalBackfill } from "./backfill";
+import { runExternalCsvBridge, type ExtCsvBridgeResult } from "./externalCsvBridge";
 import type { BackfillSummary } from "./types";
 import { ProviderUnavailableError } from "../tennisData/types";
 import type {
@@ -405,6 +406,8 @@ export interface ExternalCsvBackfillResult {
   playersMatched:    number;
   playersUnmatched:  number;
   backfill:          BackfillSummary;
+  /** Bridge result: ext-{…} player IDs re-resolved inline after the import. */
+  bridge:            ExtCsvBridgeResult;
 }
 
 /**
@@ -479,7 +482,21 @@ export async function runExternalCsvBackfill(
     matchesInserted:         backfill.matchesInserted,
     matchesSkippedDuplicate: backfill.matchesSkippedDuplicate,
     featureRowsInserted:     backfill.featureRowsInserted,
-  }, "externalCsvBackfill: completed");
+  }, "externalCsvBackfill: historical backfill complete, running inline bridge");
+
+  // Run the ID bridge inline so callers get corrected Elo chains without a
+  // separate manual POST to /evaluation/external-csv-backfill/bridge.
+  // The bridge is idempotent: re-running on already-resolved rows is a no-op.
+  const bridge = await runExternalCsvBridge();
+
+  logger.info({
+    extPlayerSlotsFound: bridge.extPlayerSlotsFound,
+    resolved:            bridge.resolved,
+    unresolved:          bridge.unresolved,
+    matchRowsUpdated:    bridge.matchRowsUpdated,
+    atpMatchRate:        bridge.atpMatchRate,
+    wtaMatchRate:        bridge.wtaMatchRate,
+  }, "externalCsvBackfill: completed (backfill + inline bridge)");
 
   return {
     filesLoaded,
@@ -487,5 +504,6 @@ export async function runExternalCsvBackfill(
     playersMatched:   tally.matched,
     playersUnmatched: tally.unmatched,
     backfill,
+    bridge,
   };
 }

@@ -751,6 +751,15 @@ router.post("/evaluation/external-csv-backfill/run", requireAdmin, async (req, r
           matchesInserted:         result.backfill.matchesInserted,
           featureRowsInserted:     result.backfill.featureRowsInserted,
           matchesSkippedDuplicate: result.backfill.matchesSkippedDuplicate,
+          bridge: {
+            extPlayerSlotsFound: result.bridge.extPlayerSlotsFound,
+            resolved:            result.bridge.resolved,
+            unresolved:          result.bridge.unresolved,
+            matchRowsUpdated:    result.bridge.matchRowsUpdated,
+            featureRowsUpdated:  result.bridge.featureRowsUpdated,
+            atpMatchRate:        result.bridge.atpMatchRate,
+            wtaMatchRate:        result.bridge.wtaMatchRate,
+          },
         },
         errorMessage: null,
       });
