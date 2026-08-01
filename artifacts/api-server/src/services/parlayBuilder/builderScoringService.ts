@@ -43,6 +43,13 @@ export interface BuilderSnapshot {
   tournamentName: string | null;
   marketOdds?: number | null; // decimal odds for the selected player (user-supplied, not engine output)
   /**
+   * When the match is scheduled to start (UTC). Used to detect live/in-play state:
+   * if `scheduledStart` is in the past, the match has already started and live odds
+   * from the market reflect the current score, not a pre-match handicap assessment.
+   * Omitting or null is treated as "commence time unknown — assume pre-match".
+   */
+  scheduledStart?: Date | null;
+  /**
    * Backfill mode: when set, all historical_matches queries are gated to rows
    * with scheduled_start_at < asOfDate so no future data leaks into the score.
    * Layer 5 (live provider fetch) is skipped automatically — we never want API
@@ -137,6 +144,13 @@ export interface BuilderResult {
   factorScores: FactorScore[];
   dataSourceDiagnostics: DataSourceDiagnostics;
   builderVersion: string;
+  /**
+   * "pre-match" — match has not yet started; market odds reflect handicapping evidence.
+   * "live"      — match is in progress (scheduledStart is in the past); market odds were
+   *               frozen at the last known pre-match value or treated as absent (score 50)
+   *               when no pre-match odds were ever captured.
+   */
+  matchStatus: "pre-match" | "live";
 }
 
 // ---------------------------------------------------------------------------
@@ -888,6 +902,16 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     marketOdds: suppliedMarketOdds, asOfDate,
   } = snapshot;
 
+  // Detect live/in-play state. Once a match has started, betting market odds mechanically
+  // reflect the current score rather than pre-match handicapping evidence. Feeding live odds
+  // into marketConsensus, the risk adjustments, and the closeness signal would treat a
+  // score artifact as if it were genuine pre-match disagreement.
+  //
+  // When scheduledStart is unknown (null/undefined) we conservatively assume pre-match so
+  // that the lack of a commence time never silently disables market scoring.
+  const scheduledStart = snapshot.scheduledStart ?? null;
+  const matchIsLive = scheduledStart != null && new Date() > scheduledStart;
+
   // ── 1. Resolve both players' match history with multi-source fallback ────────
   //
   // The identity index + alias expansion + name search ensure that even when
@@ -906,18 +930,26 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   // Resolve both players + kick off Tier 5 web research + live market odds in parallel.
   // Web research and odds fetching are both skipped in backfill mode (asOfDate set).
   // Market odds: selectedPlayerName is "player1" so quote.player1DecimalOdds is theirs directly.
+  //
+  // Live-match guard: when matchIsLive is true, skip the odds fetch entirely. The caller is
+  // expected to supply the last-known pre-match odds via snapshot.marketOdds (frozen value).
+  // If no pre-match odds were ever captured before the match went live, suppliedMarketOdds
+  // will be null, fetchedMarketOdds will be null, and marketOdds falls through to the
+  // existing "No market odds provided" neutral path (score 50) — never a live-score number.
   const [selResolution, oppResolution, webResearch, fetchedMarketOdds] = await Promise.all([
     resolvePlayerMatchRows(selectedPlayerId, selectedPlayerName, index, asOfDate),
     resolvePlayerMatchRows(opponentId, opponentName, index, asOfDate),
     asOfDate == null
       ? researchPlayerMatchup(selectedPlayerName, opponentName).catch(() => null)
       : Promise.resolve(null),
-    suppliedMarketOdds == null
-      ? attemptOddsApi(selectedPlayerName, opponentName, null, asOfDate)
+    // Skip when: (a) backfill mode, (b) user supplied odds, or (c) match has already started.
+    (!matchIsLive && suppliedMarketOdds == null)
+      ? attemptOddsApi(selectedPlayerName, opponentName, scheduledStart, asOfDate)
       : Promise.resolve(null),
   ]);
 
   // Use user-supplied odds when present; fall back to the live fetch result.
+  // For a live match with no prior odds, both are null → neutral path applies.
   const marketOdds = suppliedMarketOdds ?? fetchedMarketOdds;
 
   const selResolvedId = selResolution.resolvedId;
@@ -1087,6 +1119,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       factorScores: [],
       dataSourceDiagnostics,
       builderVersion: BUILDER_VERSION,
+      matchStatus: matchIsLive ? "live" : "pre-match",
     };
   }
 
@@ -1734,6 +1767,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     factorScores: factors,
     dataSourceDiagnostics,
     builderVersion: BUILDER_VERSION,
+    matchStatus: matchIsLive ? "live" : "pre-match",
   };
 }
 
@@ -1775,6 +1809,8 @@ export interface __TEST_ScoringResult {
   parlayGrade: "Elite" | "Strong" | "Moderate" | "Weak" | "Reject";
   /** Non-null only when the consistency guard fired (Elite + data gap → forced to Strong). */
   caughtInconsistency: string | null;
+  /** "pre-match" when scheduledStart is future/absent; "live" when it is in the past. */
+  matchStatus: "pre-match" | "live";
 }
 
 export function __TEST_computeScoring(
@@ -1791,6 +1827,13 @@ export function __TEST_computeScoring(
     h2hMatches?: ReadonlyArray<{ winner_id: string | null }>;
     selectedPlayerStatus?: PlayerDataStatus;
     opponentStatus?: PlayerDataStatus;
+    /**
+     * Match commence time — same semantics as BuilderSnapshot.scheduledStart.
+     * When in the past, matchStatus is "live" in the returned result.
+     * The test function never fetches live odds (opts.marketOdds is used directly),
+     * so this only affects the surfaced matchStatus — not the factor computation.
+     */
+    scheduledStart?: Date | null;
   } = {},
 ): __TEST_ScoringResult {
   const selectedPlayerName = opts.selectedPlayerName ?? "Selected";
@@ -1800,6 +1843,8 @@ export function __TEST_computeScoring(
   const tournamentName     = opts.tournamentName     ?? null;
   const marketOdds         = opts.marketOdds         ?? null;
   const h2hArr             = (opts.h2hMatches ?? []) as { winner_id: string | null }[];
+  const scheduledStart     = opts.scheduledStart     ?? null;
+  const matchIsLive        = scheduledStart != null && new Date() > scheduledStart;
 
   const selRank = sel.currentRank;
   const oppRank = opp.currentRank;
@@ -2061,5 +2106,5 @@ export function __TEST_computeScoring(
     parlayGrade = "Strong";
   }
 
-  return { factors, agreeing, available, agreementRate, validationScore, dataCoverage, riskScore, reliabilityGrade, parlayGrade, caughtInconsistency };
+  return { factors, agreeing, available, agreementRate, validationScore, dataCoverage, riskScore, reliabilityGrade, parlayGrade, caughtInconsistency, matchStatus: matchIsLive ? "live" : "pre-match" };
 }

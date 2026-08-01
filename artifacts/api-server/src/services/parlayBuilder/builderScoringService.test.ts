@@ -700,6 +700,98 @@ describe("isStaleResult — staleness detection predicate", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Live/in-play odds guard — regression tests
+//
+// Verifies that market odds fetched while a match is in progress never enter
+// scoring. The guard lives in computeBuilderScore (real path) and is mirrored
+// by the matchStatus field in __TEST_computeScoring (test path).
+//
+// Three invariants:
+//   1. Pre-match scheduledStart → matchStatus "pre-match", odds scored normally.
+//   2. Live scheduledStart + frozen pre-match odds → identical scores to pre-match call.
+//      (The real path skips the fetch; the test path always uses opts.marketOdds directly.)
+//   3. Live scheduledStart + no prior odds → marketConsensus neutral (score 50, limited).
+// ---------------------------------------------------------------------------
+
+describe("Live/in-play odds guard", () => {
+  it("pre-match scheduledStart → matchStatus is pre-match and odds enter scoring", () => {
+    const sel = makeStats();
+    const opp = makeStats();
+    const futureStart = new Date(Date.now() + 3_600_000); // 1 h from now
+    const r = __TEST_computeScoring(sel, opp, { marketOdds: 1.85, scheduledStart: futureStart });
+
+    assert.strictEqual(r.matchStatus, "pre-match",
+      "matchStatus must be pre-match when scheduledStart is in the future");
+
+    const mc = r.factors.find(f => f.key === "marketConsensus");
+    assert.ok(mc, "marketConsensus factor must be present");
+    // 1.85 decimal → ~54 % implied → score > 50 (supports selected) and status "available"
+    assert.ok(mc.score > 50,
+      `marketConsensus score (${mc.score}) must exceed 50 for 54 % implied probability`);
+    assert.strictEqual(mc.status, "available",
+      "marketConsensus status must be available when valid odds are provided");
+  });
+
+  it("live scheduledStart + frozen pre-match odds → identical scoring to pre-match call", () => {
+    const sel = makeStats();
+    const opp = makeStats();
+    const frozenOdds = 1.85; // captured before the match started
+
+    // Pre-match call: match is 1 h in the future
+    const preLive = __TEST_computeScoring(sel, opp, {
+      marketOdds: frozenOdds,
+      scheduledStart: new Date(Date.now() + 3_600_000),
+    });
+
+    // Post-start call: same frozen odds passed by the caller; commence time is now in the past.
+    // A live feed would supply wildly different odds (e.g. 1.02 mid-blowout) — the frozen
+    // value ensures scoring is unaffected by what the live market currently shows.
+    const postLive = __TEST_computeScoring(sel, opp, {
+      marketOdds: frozenOdds,
+      scheduledStart: new Date(Date.now() - 60_000), // 60 s ago → live
+    });
+
+    assert.strictEqual(postLive.matchStatus, "live",
+      "matchStatus must be live when scheduledStart is in the past");
+
+    // All score outputs must be byte-identical — same inputs, same outputs.
+    assert.strictEqual(postLive.riskScore, preLive.riskScore,
+      "riskScore must be identical when frozen odds are passed for a live match");
+    assert.strictEqual(postLive.validationScore, preLive.validationScore,
+      "validationScore must be identical when frozen odds are passed for a live match");
+    assert.strictEqual(postLive.parlayGrade, preLive.parlayGrade,
+      "parlayGrade must be identical when frozen odds are passed for a live match");
+
+    const mcPre  = preLive.factors.find(f => f.key === "marketConsensus")!;
+    const mcPost = postLive.factors.find(f => f.key === "marketConsensus")!;
+    assert.strictEqual(mcPost.score, mcPre.score,
+      "marketConsensus score must be identical with frozen odds regardless of matchStatus");
+  });
+
+  it("live match with no prior odds → marketConsensus is neutral (score 50, limited)", () => {
+    const sel = makeStats();
+    const opp = makeStats();
+    // marketOdds deliberately null: no pre-match odds were captured before the match started.
+    // The real path skips the live fetch; the test path has nothing to supply.
+    // Expected: marketConsensus falls through to the "No market odds provided" neutral path.
+    const r = __TEST_computeScoring(sel, opp, {
+      marketOdds: null,
+      scheduledStart: new Date(Date.now() - 60_000), // past → live
+    });
+
+    assert.strictEqual(r.matchStatus, "live",
+      "matchStatus must be live when scheduledStart is in the past");
+
+    const mc = r.factors.find(f => f.key === "marketConsensus");
+    assert.ok(mc, "marketConsensus factor must exist even with no odds");
+    assert.strictEqual(mc.score, 50,
+      "marketConsensus score must be exactly 50 (neutral) when no prior odds and match is live");
+    assert.strictEqual(mc.status, "limited",
+      "marketConsensus status must be limited (not available) when no odds are present");
+  });
+});
+
 describe("Layer 4b — applyStalenessSupplementIfNeeded", () => {
   it("stale DB hit with provider returning records → resolvedVia=cache-hit-supplemented, provider rows used", async () => {
     const staleDb = makeStaleDbResult(2, 200);
