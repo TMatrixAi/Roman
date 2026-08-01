@@ -88,9 +88,17 @@ export function csvNameParts(name: string): { surname: string; initial: string |
 
 type PlayerEntry = { id: string; name: string };
 export type EnhancedPlayerIdMap = {
-  /** "surname|initial" → players. Unique entry = unambiguous match. */
+  /**
+   * Keys are "${TOUR}:${surname}|${initial}" (e.g. "ATP:alcaraz|c").
+   * Tour-scoped so an ATP "C. Smith" and a WTA "C. Smith" never occupy the
+   * same bucket and can both be resolved unambiguously.
+   * Unique entry = unambiguous match within that tour.
+   */
   byInitial: Map<string, PlayerEntry[]>;
-  /** surname → players. Used as fallback when initial is absent. */
+  /**
+   * Keys are "${TOUR}:${surname}" (e.g. "ATP:osaka").
+   * Used as fallback when the slot name carries no initial.
+   */
   bySurname: Map<string, PlayerEntry[]>;
 };
 
@@ -101,60 +109,171 @@ function addToMap<K>(map: Map<K, PlayerEntry[]>, key: K, entry: PlayerEntry): vo
 }
 
 /**
+ * Infer a provider bucket from a player ID string.
+ * Exported for testing; used as a tiebreaker when selecting which ID to
+ * keep after a verified-safe collapse.
+ */
+export function idProviderBucket(id: string): string {
+  if (/^\d+$/.test(id)) return "api-tennis";
+  if (id.startsWith("sackmann-")) return "sackmann";
+  if (id.startsWith("tennis-data-co-uk-")) return "tennis-data-co-uk";
+  return "other";
+}
+
+/**
+ * Returns true if the player name's first word is an abbreviated initial
+ * (a single letter, optionally followed by a dot): "C. Alcaraz", "N.".
+ * Returns false when the first word is a full first name: "Carlos", "Novak".
+ */
+export function isAbbreviatedFirstName(name: string): boolean {
+  const firstWord = name.trim().split(/\s+/)[0] ?? "";
+  return /^[A-Za-z]\.?$/.test(firstWord);
+}
+
+/**
+ * Lowercase, remove punctuation except spaces, collapse whitespace.
+ * Used to compare two full names from different providers for identity.
+ */
+function normalizeFullName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Collapse verified cross-provider duplicate entries in `byInitial`.
+ *
+ * The same physical player frequently appears under multiple provider IDs.
+ * The classic example: "C. Alcaraz" (API-Tennis id 2382, abbreviated first
+ * name) and "Carlos Alcaraz" (Sackmann id sackmann-207989, full first name)
+ * both parse to "ATP:alcaraz|c", creating two entries that block resolution.
+ *
+ * **Identity verification rule** — a bucket is collapsed only when there is
+ * unambiguous name-structure evidence that all entries refer to the same person:
+ *
+ *   A. Exactly one entry has a **full first name** (not abbreviated) and every
+ *      other entry has an abbreviated initial.  The abbreviated entries are
+ *      consistent with the full name by construction (same key = same initial),
+ *      so this is a safe merge.
+ *
+ *   B. All entries have **full first names** that normalize to the exact same
+ *      string (e.g. "Carlos Alcaraz" from Sackmann and tennis-data-co-uk).
+ *      Identical full names from independent sources are overwhelmingly the
+ *      same player.
+ *
+ * Buckets that do **not** satisfy A or B are left unchanged:
+ *   - All abbreviated initials → cannot verify identity without a full name.
+ *   - Multiple distinct full names (e.g. "John Smith" vs "James Smith") →
+ *     genuinely different players that happen to share surname and initial.
+ *     Provider diversity is NOT identity proof; such buckets must stay
+ *     ambiguous so the resolver correctly returns null.
+ *
+ * Because keys are already tour-scoped ("ATP:…" vs "WTA:…"), this function
+ * never merges an ATP player into a WTA bucket.
+ *
+ * Exported so tests can construct maps directly and verify the collapse logic
+ * without a live database.
+ */
+export function collapseByInitialDuplicates(byInitial: Map<string, PlayerEntry[]>): void {
+  for (const [key, entries] of byInitial) {
+    if (entries.length <= 1) continue;
+
+    const fullNameEntries = entries.filter(e => !isAbbreviatedFirstName(e.name));
+    const abbrevEntries   = entries.filter(e =>  isAbbreviatedFirstName(e.name));
+
+    // Rule A: exactly one full first name, rest abbreviated.
+    // The abbreviated entries are already constrained to the same initial by
+    // the map key, so they are consistent with the full name.
+    const ruleA = fullNameEntries.length === 1;
+
+    // Rule B: every entry has a full first name AND they all normalize to the
+    // same string (e.g. "Carlos Alcaraz" from two different providers).
+    const ruleB =
+      fullNameEntries.length > 1 &&
+      abbrevEntries.length === 0 &&
+      new Set(fullNameEntries.map(e => normalizeFullName(e.name))).size === 1;
+
+    if (!ruleA && !ruleB) continue;
+
+    // Prefer numeric (API-Tennis) IDs → Sackmann → others.
+    const preferred =
+      entries.find(e => /^\d+$/.test(e.id)) ??
+      entries.find(e => e.id.startsWith("sackmann-")) ??
+      entries[0];
+    byInitial.set(key, [preferred]);
+  }
+}
+
+/**
  * Build the enhanced map from all non-ext-csv historical_matches rows.
- * One DB round-trip.
+ * One DB round-trip; keys are tour-scoped ("ATP:alcaraz|c", "WTA:osaka|n").
  */
 async function buildEnhancedPlayerIdMap(): Promise<EnhancedPlayerIdMap> {
   const byInitial = new Map<string, PlayerEntry[]>();
   const bySurname = new Map<string, PlayerEntry[]>();
 
   const result = await db.execute(sql`
-    SELECT player_id, player_name FROM (
-      SELECT DISTINCT player1_id AS player_id, player1_name AS player_name
+    SELECT player_id, player_name, tour FROM (
+      SELECT DISTINCT player1_id AS player_id, player1_name AS player_name,
+             UPPER(COALESCE(tour, '')) AS tour
         FROM historical_matches
        WHERE player1_name IS NOT NULL AND player1_name != ''
          AND provider != 'ext-csv'
       UNION
-      SELECT DISTINCT player2_id AS player_id, player2_name AS player_name
+      SELECT DISTINCT player2_id AS player_id, player2_name AS player_name,
+             UPPER(COALESCE(tour, '')) AS tour
         FROM historical_matches
        WHERE player2_name IS NOT NULL AND player2_name != ''
          AND provider != 'ext-csv'
     ) sub
   `);
 
-  for (const r of result.rows as Array<{ player_id: string; player_name: string }>) {
+  for (const r of result.rows as Array<{ player_id: string; player_name: string; tour: string }>) {
     if (!r.player_id || !r.player_name) continue;
     const entry: PlayerEntry = { id: r.player_id, name: r.player_name };
     const { surname, initial } = dbNameParts(r.player_name);
     if (!surname) continue;
+    const tourKey = r.tour; // already upper-cased by SQL UPPER()
 
-    addToMap(bySurname, surname, entry);
-    if (initial) addToMap(byInitial, `${surname}|${initial}`, entry);
+    addToMap(bySurname, `${tourKey}:${surname}`, entry);
+    if (initial) addToMap(byInitial, `${tourKey}:${surname}|${initial}`, entry);
   }
+
+  // Collapse cross-provider duplicates now that keys are tour-scoped.
+  // (ATP and WTA buckets are already separated so no cross-tour collapse
+  // is possible.)
+  collapseByInitialDuplicates(byInitial);
 
   return { byInitial, bySurname };
 }
 
 /**
  * Resolve a CSV player (stored name) to the best available real player ID.
- * Returns null if no unambiguous match was found.
+ *
+ * @param storedName - Player name as stored in the ext-csv row (e.g. "Alcaraz C.").
+ * @param map        - Map built by buildEnhancedPlayerIdMap (tour-scoped keys).
+ * @param tour       - Tour of the ext-csv slot ("ATP", "WTA", …).  Used to
+ *                     scope the lookup so an ATP "C. Smith" and a WTA "C. Smith"
+ *                     each resolve to their own correct player.
+ *
+ * Returns null if no unambiguous match was found within that tour.
  */
 export function resolveCsvPlayerToRealId(
   storedName: string,
   map: EnhancedPlayerIdMap,
+  tour: string,
 ): string | null {
   const { surname, initial } = csvNameParts(storedName);
   if (!surname) return null;
+  const t = tour.toUpperCase();
 
   // 1. Try surname + initial (most specific — disambiguates Murray A./Murray J. etc.)
   if (initial) {
-    const candidates = map.byInitial.get(`${surname}|${initial}`);
+    const candidates = map.byInitial.get(`${t}:${surname}|${initial}`);
     if (candidates && candidates.length === 1) return candidates[0].id;
-    // Multiple players share same surname+initial (very rare) → fall through to surname-only
+    // Multiple players share same tour + surname + initial → fall through
   }
 
-  // 2. Surname-only fallback — only when globally unambiguous
-  const surnameCandidates = map.bySurname.get(surname);
+  // 2. Surname-only fallback — only when unambiguous within this tour
+  const surnameCandidates = map.bySurname.get(`${t}:${surname}`);
   if (surnameCandidates && surnameCandidates.length === 1) return surnameCandidates[0].id;
 
   return null;
@@ -334,7 +453,7 @@ export async function runExternalCsvBridge(): Promise<ExtCsvBridgeResult> {
     if (isAtp) atpTotal++;
     else if (isWta) wtaTotal++;
 
-    const realId = resolveCsvPlayerToRealId(slot.slot_name, map);
+    const realId = resolveCsvPlayerToRealId(slot.slot_name, map, slot.tour ?? "");
     if (realId) {
       resolutionEntries.push({ extId: slot.slot_id, tour: slot.tour ?? "", realId });
       if (isAtp) atpResolved++;

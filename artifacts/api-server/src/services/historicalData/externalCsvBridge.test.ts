@@ -8,7 +8,14 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { csvNameParts, resolveCsvPlayerToRealId, runBridgeMigration } from "./externalCsvBridge";
+import {
+  csvNameParts,
+  resolveCsvPlayerToRealId,
+  collapseByInitialDuplicates,
+  idProviderBucket,
+  isAbbreviatedFirstName,
+  runBridgeMigration,
+} from "./externalCsvBridge";
 import type { DbLike, ResolutionEntry, EnhancedPlayerIdMap } from "./externalCsvBridge";
 
 // ── csvNameParts ──────────────────────────────────────────────────────────────
@@ -51,14 +58,211 @@ describe("csvNameParts", () => {
   });
 });
 
+// ── idProviderBucket ──────────────────────────────────────────────────────────
+
+describe("idProviderBucket", () => {
+  it("classifies numeric IDs as api-tennis", () => {
+    assert.equal(idProviderBucket("2382"), "api-tennis");
+    assert.equal(idProviderBucket("100644"), "api-tennis");
+  });
+  it("classifies sackmann- prefix as sackmann", () => {
+    assert.equal(idProviderBucket("sackmann-207989"), "sackmann");
+  });
+  it("classifies tennis-data-co-uk- prefix", () => {
+    assert.equal(idProviderBucket("tennis-data-co-uk-barty_a"), "tennis-data-co-uk");
+  });
+  it("classifies unknown formats as other", () => {
+    assert.equal(idProviderBucket("ext-atp-123"), "other");
+    assert.equal(idProviderBucket("sofascore-999"), "other");
+  });
+});
+
+// ── isAbbreviatedFirstName ────────────────────────────────────────────────────
+
+describe("isAbbreviatedFirstName", () => {
+  it("detects single-letter initial with dot", () => {
+    assert.equal(isAbbreviatedFirstName("C. Alcaraz"), true);
+    assert.equal(isAbbreviatedFirstName("N. Djokovic"), true);
+  });
+  it("detects single-letter initial without dot", () => {
+    assert.equal(isAbbreviatedFirstName("C Alcaraz"), true);
+  });
+  it("returns false for full first names", () => {
+    assert.equal(isAbbreviatedFirstName("Carlos Alcaraz"), false);
+    assert.equal(isAbbreviatedFirstName("Novak Djokovic"), false);
+    assert.equal(isAbbreviatedFirstName("John Smith"), false);
+  });
+  it("returns false for single-word names (whole name is surname)", () => {
+    assert.equal(isAbbreviatedFirstName("Osaka"), false);
+  });
+});
+
+// ── collapseByInitialDuplicates ───────────────────────────────────────────────
+
+describe("collapseByInitialDuplicates", () => {
+  // ── Rule A: exactly one full first name, rest abbreviated ──
+
+  it("Rule A: collapses abbreviated+full-name pair (numeric ID preferred)", () => {
+    // "C. Alcaraz" (API-Tennis abbreviated) + "Carlos Alcaraz" (Sackmann full)
+    // → one full name proves identity; collapse to numeric ID
+    const byInitial = new Map([
+      [
+        "ATP:alcaraz|c",
+        [
+          { id: "2382",            name: "C. Alcaraz" },
+          { id: "sackmann-207989", name: "Carlos Alcaraz" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    const result = byInitial.get("ATP:alcaraz|c")!;
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, "2382"); // numeric preferred over sackmann
+  });
+
+  it("Rule A: collapses to sackmann when no numeric ID present", () => {
+    // "N. Osaka" (API-Tennis abbreviated, initial.surname format)
+    // + "Naomi Osaka" (sackmann full name)
+    // Note: "Osaka N." (last.initial format from tennis-data-co-uk) would be
+    // indexed under a garbage key "wta:n.|o" by dbNameParts, so it never
+    // appears in the "WTA:osaka|n" bucket — only "Initial. Surname" entries do.
+    const byInitial = new Map([
+      [
+        "WTA:osaka|n",
+        [
+          { id: "sackmann-300001", name: "Naomi Osaka" },
+          { id: "tennis-data-co-uk-osaka", name: "N. Osaka" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    const result = byInitial.get("WTA:osaka|n")!;
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, "sackmann-300001");
+  });
+
+  it("Rule A: multiple abbreviated entries (Initial. Surname format) + one full name → collapse", () => {
+    // Two providers have abbreviated names in "Initial. Surname" format;
+    // a third has the full first name — one full name proves identity.
+    const byInitial = new Map([
+      [
+        "ATP:djokovic|n",
+        [
+          { id: "100",             name: "N. Djokovic" },
+          { id: "sackmann-100644", name: "Novak Djokovic" },
+          { id: "99",              name: "N. Djokovic" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:djokovic|n")!.length, 1);
+    assert.equal(byInitial.get("ATP:djokovic|n")![0].id, "100"); // numeric first
+  });
+
+  // ── Rule B: all full names normalizing identically ──
+
+  it("Rule B: same full name from two providers → collapse", () => {
+    // "Carlos Alcaraz" from both Sackmann and tennis-data-co-uk → same person
+    const byInitial = new Map([
+      [
+        "ATP:alcaraz|c",
+        [
+          { id: "sackmann-207989",             name: "Carlos Alcaraz" },
+          { id: "tennis-data-co-uk-alcaraz_c",  name: "Carlos Alcaraz" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:alcaraz|c")!.length, 1);
+  });
+
+  // ── Cases that must NOT collapse ──
+
+  it("NOT collapsed: two distinct full names sharing surname+initial (different people)", () => {
+    // "John Smith" (API-Tennis) and "James Smith" (Sackmann) — both full names,
+    // different normalizations → genuine ambiguity → must NOT collapse
+    const byInitial = new Map([
+      [
+        "ATP:smith|j",
+        [
+          { id: "1111",          name: "John Smith" },
+          { id: "sackmann-9999", name: "James Smith" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:smith|j")!.length, 2); // untouched
+  });
+
+  it("NOT collapsed: all abbreviated initials — identity unverifiable", () => {
+    // Both "J. Smith" entries are abbreviated; could be John or James → don't collapse
+    const byInitial = new Map([
+      [
+        "ATP:smith|j",
+        [
+          { id: "1111", name: "J. Smith" },
+          { id: "2222", name: "J. Smith" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:smith|j")!.length, 2);
+  });
+
+  it("NOT collapsed: mixed full names with different normalizations + abbreviated", () => {
+    // Two full-name entries that differ → unsafe even with an abbreviated entry
+    const byInitial = new Map([
+      [
+        "ATP:smith|j",
+        [
+          { id: "1111",          name: "John Smith" },
+          { id: "sackmann-9999", name: "James Smith" },
+          { id: "2222",          name: "J. Smith" },
+        ],
+      ],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:smith|j")!.length, 3); // untouched
+  });
+
+  it("leaves single-entry buckets unchanged", () => {
+    const byInitial = new Map([
+      ["ATP:djokovic|n", [{ id: "100644", name: "Novak Djokovic" }]],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:djokovic|n")!.length, 1);
+    assert.equal(byInitial.get("ATP:djokovic|n")![0].id, "100644");
+  });
+
+  it("ATP and WTA buckets are independent — no cross-tour collapse", () => {
+    const byInitial = new Map([
+      ["ATP:smith|a", [{ id: "1111",               name: "Alex Smith" }]],
+      ["WTA:smith|a", [{ id: "sackmann-wta-smith",  name: "Amanda Smith" }]],
+    ]);
+    collapseByInitialDuplicates(byInitial);
+    assert.equal(byInitial.get("ATP:smith|a")!.length, 1);
+    assert.equal(byInitial.get("WTA:smith|a")!.length, 1);
+  });
+});
+
 // ── resolveCsvPlayerToRealId ──────────────────────────────────────────────────
 
-/** Replicate dbNameParts logic to build an EnhancedPlayerIdMap from a plain player list. */
-function makeMap(players: Array<{ id: string; name: string }>): EnhancedPlayerIdMap {
+/**
+ * Build an EnhancedPlayerIdMap with tour-scoped keys from a list of
+ * { id, name, tour } triples — same logic as buildEnhancedPlayerIdMap
+ * but synchronous and DB-free for testing.
+ */
+function makeMap(
+  players: Array<{ id: string; name: string; tour: string }>,
+): EnhancedPlayerIdMap {
   const byInitial = new Map<string, Array<{ id: string; name: string }>>();
   const bySurname = new Map<string, Array<{ id: string; name: string }>>();
 
-  function addTo(map: Map<string, Array<{ id: string; name: string }>>, key: string, entry: { id: string; name: string }) {
+  function addTo(
+    map: Map<string, Array<{ id: string; name: string }>>,
+    key: string,
+    entry: { id: string; name: string },
+  ) {
     if (!map.has(key)) map.set(key, []);
     const bucket = map.get(key)!;
     if (!bucket.some(e => e.id === entry.id)) bucket.push(entry);
@@ -68,68 +272,82 @@ function makeMap(players: Array<{ id: string; name: string }>): EnhancedPlayerId
     const words = p.name.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) continue;
     const initial = words[0][0]?.toLowerCase() ?? "";
-    const surname = words.length === 1 ? words[0].toLowerCase() : words.slice(1).join(" ").toLowerCase();
-    addTo(bySurname, surname, p);
-    if (initial) addTo(byInitial, `${surname}|${initial}`, p);
+    const surname =
+      words.length === 1 ? words[0].toLowerCase() : words.slice(1).join(" ").toLowerCase();
+    const t = p.tour.toUpperCase();
+    addTo(bySurname, `${t}:${surname}`, p);
+    if (initial) addTo(byInitial, `${t}:${surname}|${initial}`, p);
   }
 
   return { byInitial, bySurname };
 }
 
 describe("resolveCsvPlayerToRealId", () => {
-  it("resolves by surname+initial (unique match)", () => {
+  it("resolves by surname+initial (unique match within tour)", () => {
     const map = makeMap([
-      { id: "sackmann-100644", name: "Novak Djokovic" },
-      { id: "sackmann-100001", name: "Andre Agassi" },
+      { id: "sackmann-100644", name: "Novak Djokovic", tour: "ATP" },
+      { id: "sackmann-100001", name: "Andre Agassi",   tour: "ATP" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Djokovic N.", map), "sackmann-100644");
+    assert.equal(resolveCsvPlayerToRealId("Djokovic N.", map, "ATP"), "sackmann-100644");
   });
 
   it("disambiguates same surname with different initials", () => {
     const map = makeMap([
-      { id: "sackmann-100200", name: "Andy Murray" },
-      { id: "sackmann-100201", name: "Jamie Murray" },
+      { id: "sackmann-100200", name: "Andy Murray",  tour: "ATP" },
+      { id: "sackmann-100201", name: "Jamie Murray", tour: "ATP" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Murray A.", map), "sackmann-100200");
-    assert.equal(resolveCsvPlayerToRealId("Murray J.", map), "sackmann-100201");
+    assert.equal(resolveCsvPlayerToRealId("Murray A.", map, "ATP"), "sackmann-100200");
+    assert.equal(resolveCsvPlayerToRealId("Murray J.", map, "ATP"), "sackmann-100201");
   });
 
-  it("returns null for ambiguous surname+initial (two players share initials)", () => {
+  it("returns null for ambiguous surname+initial within the same tour", () => {
     const map = makeMap([
-      { id: "sackmann-200001", name: "John Smith" },
-      { id: "sackmann-200002", name: "Jack Smith" },
+      { id: "sackmann-200001", name: "John Smith", tour: "ATP" },
+      { id: "sackmann-200002", name: "Jack Smith", tour: "ATP" },
     ]);
-    // Both are "smith|j" — unresolvable via initial; bySurname also ambiguous
-    assert.equal(resolveCsvPlayerToRealId("Smith J.", map), null);
+    // Both are "ATP:smith|j" — unresolvable
+    assert.equal(resolveCsvPlayerToRealId("Smith J.", map, "ATP"), null);
   });
 
-  it("falls back to surname-only when globally unique", () => {
-    const map = makeMap([{ id: "sackmann-300001", name: "Naomi Osaka" }]);
-    assert.equal(resolveCsvPlayerToRealId("Osaka", map), "sackmann-300001");
+  it("falls back to surname-only when globally unique within tour", () => {
+    const map = makeMap([{ id: "sackmann-300001", name: "Naomi Osaka", tour: "WTA" }]);
+    assert.equal(resolveCsvPlayerToRealId("Osaka", map, "WTA"), "sackmann-300001");
   });
 
   it("returns null when surname not in map at all", () => {
-    const map = makeMap([{ id: "sackmann-100644", name: "Novak Djokovic" }]);
-    assert.equal(resolveCsvPlayerToRealId("Federer R.", map), null);
+    const map = makeMap([{ id: "sackmann-100644", name: "Novak Djokovic", tour: "ATP" }]);
+    assert.equal(resolveCsvPlayerToRealId("Federer R.", map, "ATP"), null);
   });
 
   it("handles compound surnames correctly", () => {
-    const map = makeMap([{ id: "sackmann-100999", name: "Alejandro Davidovich Fokina" }]);
-    assert.equal(resolveCsvPlayerToRealId("Davidovich Fokina A.", map), "sackmann-100999");
+    const map = makeMap([
+      { id: "sackmann-100999", name: "Alejandro Davidovich Fokina", tour: "ATP" },
+    ]);
+    assert.equal(resolveCsvPlayerToRealId("Davidovich Fokina A.", map, "ATP"), "sackmann-100999");
   });
 
   it("prefers surname+initial match over surname-only when surnames are ambiguous", () => {
     const map = makeMap([
-      { id: "sackmann-w1", name: "Serena Williams" },
-      { id: "sackmann-w2", name: "Venus Williams" },
+      { id: "sackmann-w1", name: "Serena Williams", tour: "WTA" },
+      { id: "sackmann-w2", name: "Venus Williams",  tour: "WTA" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Williams S.", map), "sackmann-w1");
-    assert.equal(resolveCsvPlayerToRealId("Williams V.", map), "sackmann-w2");
+    assert.equal(resolveCsvPlayerToRealId("Williams S.", map, "WTA"), "sackmann-w1");
+    assert.equal(resolveCsvPlayerToRealId("Williams V.", map, "WTA"), "sackmann-w2");
   });
 
   it("returns null when empty name provided", () => {
-    const map = makeMap([{ id: "sackmann-100644", name: "Novak Djokovic" }]);
-    assert.equal(resolveCsvPlayerToRealId("", map), null);
+    const map = makeMap([{ id: "sackmann-100644", name: "Novak Djokovic", tour: "ATP" }]);
+    assert.equal(resolveCsvPlayerToRealId("", map, "ATP"), null);
+  });
+
+  it("tour parameter scopes lookup — ATP player not found under WTA tour", () => {
+    const map = makeMap([
+      { id: "2382", name: "C. Alcaraz", tour: "ATP" },
+    ]);
+    // Correct tour → resolves
+    assert.equal(resolveCsvPlayerToRealId("Alcaraz C.", map, "ATP"), "2382");
+    // Wrong tour → not found (no cross-tour bleed)
+    assert.equal(resolveCsvPlayerToRealId("Alcaraz C.", map, "WTA"), null);
   });
 });
 
@@ -138,31 +356,48 @@ describe("resolveCsvPlayerToRealId", () => {
 describe("cross-tour collision safety", () => {
   it("disambiguates players with different surnames in ATP vs WTA context", () => {
     const map = makeMap([
-      { id: "sackmann-atp-lee",  name: "Duck-Hee Lee" },
-      { id: "sackmann-wta-chan", name: "Hao-Ching Chan" },
+      { id: "sackmann-atp-lee",  name: "Duck-Hee Lee",   tour: "ATP" },
+      { id: "sackmann-wta-chan", name: "Hao-Ching Chan",  tour: "WTA" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Lee D.",  map), "sackmann-atp-lee");
-    assert.equal(resolveCsvPlayerToRealId("Chan H.", map), "sackmann-wta-chan");
+    assert.equal(resolveCsvPlayerToRealId("Lee D.",  map, "ATP"), "sackmann-atp-lee");
+    assert.equal(resolveCsvPlayerToRealId("Chan H.", map, "WTA"), "sackmann-wta-chan");
   });
 
-  it("returns null when identical surname+initial exists in both ATP and WTA records", () => {
-    // "Smith A." ambiguous across both tours — bridge correctly refuses to guess
+  it("resolves ATP and WTA players sharing surname+initial independently via tour scoping", () => {
+    // "Smith A." exists in both tours — tour-scoped keys keep them separate so
+    // each resolves correctly to its own player (no cross-tour false merge).
     const map = makeMap([
-      { id: "sackmann-atp-smith", name: "Alex Smith" },
-      { id: "sackmann-wta-smith", name: "Amanda Smith" },
+      { id: "1111",               name: "Alex Smith",   tour: "ATP" },
+      { id: "sackmann-wta-smith", name: "Amanda Smith", tour: "WTA" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Smith A.", map), null);
+    assert.equal(resolveCsvPlayerToRealId("Smith A.", map, "ATP"), "1111");
+    assert.equal(resolveCsvPlayerToRealId("Smith A.", map, "WTA"), "sackmann-wta-smith");
   });
 
-  it("same numeric ext-id in ATP and WTA resolves to different real players by name", () => {
+  it("same numeric ext-id in ATP and WTA resolves to different real players by name + tour", () => {
     // "ext-12345" can appear in ATP rows as "Murray A." and WTA rows as "Minella A."
-    // Resolution is name-based; tour scoping in the UPDATE layer separates the DB writes.
+    // Resolution is name-based; tour scoping separates the lookups.
     const map = makeMap([
-      { id: "sackmann-100200",  name: "Andy Murray" },
-      { id: "sackmann-wta-999", name: "Mandy Minella" },
+      { id: "sackmann-100200",  name: "Andy Murray",    tour: "ATP" },
+      { id: "sackmann-wta-999", name: "Mandy Minella",  tour: "WTA" },
     ]);
-    assert.equal(resolveCsvPlayerToRealId("Murray A.",  map), "sackmann-100200");
-    assert.equal(resolveCsvPlayerToRealId("Minella A.", map), "sackmann-wta-999");
+    assert.equal(resolveCsvPlayerToRealId("Murray A.",  map, "ATP"), "sackmann-100200");
+    assert.equal(resolveCsvPlayerToRealId("Minella A.", map, "WTA"), "sackmann-wta-999");
+  });
+
+  it("cross-provider same-player duplicate resolves after collapseByInitialDuplicates", () => {
+    // Simulates "Carlos Alcaraz" appearing as API-Tennis 2382 and Sackmann sackmann-207989
+    // in the same ATP tour — the collapse merges them and the slot resolves.
+    const map = makeMap([
+      { id: "2382",            name: "C. Alcaraz",     tour: "ATP" },
+      { id: "sackmann-207989", name: "Carlos Alcaraz", tour: "ATP" },
+    ]);
+    // Before collapse: ambiguous (2 ATP:alcaraz|c entries)
+    assert.equal(resolveCsvPlayerToRealId("Alcaraz C.", map, "ATP"), null);
+
+    // After collapse: one entry, resolves
+    collapseByInitialDuplicates(map.byInitial);
+    assert.equal(resolveCsvPlayerToRealId("Alcaraz C.", map, "ATP"), "2382");
   });
 });
 
@@ -181,12 +416,8 @@ describe("cross-tour collision safety", () => {
  *   call 2 → player2_id UPDATE on historical_matches
  *   call 3 → winner_id  UPDATE on historical_matches
  *   call 4 → player_id  UPDATE on match_feature_snapshots
- *
- * We use the call index (1-based) to identify each step rather than parsing
- * drizzle SQL objects, whose internal queryChunks structure is opaque at runtime.
  */
 function makeMockTx(options: {
-  /** Throw on the Nth execute() call (1-indexed). Undefined = never throw. */
   throwOnCall?: number;
   rowCount?: number;
 }): { tx: DbLike; callCount: () => number } {
@@ -214,7 +445,6 @@ describe("runBridgeMigration atomicity", () => {
   it("makes exactly four execute() calls in order (p1, p2, winner, snapshots)", async () => {
     const { tx, callCount } = makeMockTx({});
     await runBridgeMigration(tx, testEntries);
-    // 1=player1_id, 2=player2_id, 3=winner_id, 4=match_feature_snapshots
     assert.equal(callCount(), 4);
   });
 
@@ -233,7 +463,6 @@ describe("runBridgeMigration atomicity", () => {
       () => runBridgeMigration(tx, testEntries),
       (err: Error) => err.message.includes("Simulated DB failure on call 1"),
     );
-    // Only the first call was attempted; calls 2–4 never ran
     assert.equal(callCount(), 1);
   });
 
@@ -243,19 +472,16 @@ describe("runBridgeMigration atomicity", () => {
       () => runBridgeMigration(tx, testEntries),
       (err: Error) => err.message.includes("Simulated DB failure on call 4"),
     );
-    // All four statements were attempted; the fourth threw after three match updates
     assert.equal(callCount(), 4);
   });
 
   it("a retry after simulated rollback succeeds and makes all four calls", async () => {
-    // First attempt: fails on snapshot update (call 4)
     const { tx: failingTx } = makeMockTx({ throwOnCall: 4 });
     await assert.rejects(() => runBridgeMigration(failingTx, testEntries));
 
-    // Second attempt (simulates retry after DB rollback restored original ext-{id} rows)
     const { tx: retryTx, callCount } = makeMockTx({ rowCount: 2 });
     const result = await runBridgeMigration(retryTx, testEntries);
-    assert.equal(callCount(), 4); // all four calls succeeded
+    assert.equal(callCount(), 4);
     assert.equal(result.p1Rows, 2);
     assert.equal(result.featureRowsUpdated, 2);
   });
@@ -263,7 +489,7 @@ describe("runBridgeMigration atomicity", () => {
   it("returns all-zero counts for empty entries without touching the DB", async () => {
     const { tx, callCount } = makeMockTx({});
     const result = await runBridgeMigration(tx, []);
-    assert.equal(callCount(), 0); // no DB calls at all
+    assert.equal(callCount(), 0);
     assert.equal(result.p1Rows, 0);
     assert.equal(result.p2Rows, 0);
     assert.equal(result.winRows, 0);
