@@ -195,8 +195,6 @@ export default function PredictionResultPage() {
         const data = await res.json() as { alreadySaved?: boolean }
         setSaved(true)
         toast({ title: data.alreadySaved ? "Already in your Cards folder" : "✅ Saved to Cards folder" })
-      } else if (res.status === 403) {
-        toast({ title: "Sign in with a user account to save cards", variant: "destructive" })
       } else {
         toast({ title: "Could not save — try again", variant: "destructive" })
       }

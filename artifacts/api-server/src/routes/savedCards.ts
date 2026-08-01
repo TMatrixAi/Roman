@@ -8,18 +8,19 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-// ── GET /api/saved-cards ──────────────────────────────────────────────────────
-// Returns all saved prediction cards for the authenticated Clerk user,
-// joined with the matching predictions row for display data.
-router.get("/saved-cards", requireClerkUser, async (req, res): Promise<void> => {
-  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
-  if (isAdmin) {
-    // Admin sessions have no clerkUserId and therefore no saved cards.
-    res.json({ cards: [] });
-    return;
-  }
+// Resolve the effective user ID for saved-cards operations.
+// Admin sessions use a fixed "__admin__" bucket so they can save/retrieve cards
+// without a Clerk identity.
+function resolveUserId(req: import("express").Request): string {
+  if (isAdminSessionCookieValid(req.signedCookies)) return "__admin__";
+  return getAuth(req).userId!;
+}
 
-  const clerkUserId = getAuth(req).userId!;
+// ── GET /api/saved-cards ──────────────────────────────────────────────────────
+// Returns all saved prediction cards for the authenticated Clerk user (or the
+// shared admin bucket for admin sessions), joined with the predictions row.
+router.get("/saved-cards", requireClerkUser, async (req, res): Promise<void> => {
+  const clerkUserId = resolveUserId(req);
 
   try {
     const rows = await db
@@ -59,13 +60,7 @@ router.get("/saved-cards", requireClerkUser, async (req, res): Promise<void> => 
 // Save a prediction card. Returns { id, alreadySaved } — callers can detect
 // duplicate saves and show appropriate feedback without throwing an error.
 router.post("/saved-cards", requireClerkUser, async (req, res): Promise<void> => {
-  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
-  if (isAdmin) {
-    res.status(403).json({ error: "Sign in with a user account to save prediction cards." });
-    return;
-  }
-
-  const clerkUserId = getAuth(req).userId!;
+  const clerkUserId = resolveUserId(req);
   const predictionId = Number(req.body?.predictionId);
   const note: string | undefined = req.body?.note || undefined;
 
@@ -105,16 +100,10 @@ router.post("/saved-cards", requireClerkUser, async (req, res): Promise<void> =>
 });
 
 // ── DELETE /api/saved-cards ────────────────────────────────────────────────────
-// Clear ALL saved cards for the current user. Used by the bulk batch auto-save
-// to replace the previous batch with a fresh set — only the latest run is kept.
+// Clear ALL saved cards for the current user (or admin bucket). Used by the
+// bulk batch auto-save to replace the previous batch with a fresh set.
 router.delete("/saved-cards", requireClerkUser, async (req, res): Promise<void> => {
-  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
-  if (isAdmin) {
-    res.status(403).json({ error: "Not applicable for admin sessions." });
-    return;
-  }
-
-  const clerkUserId = getAuth(req).userId!;
+  const clerkUserId = resolveUserId(req);
 
   try {
     await db
@@ -129,16 +118,10 @@ router.delete("/saved-cards", requireClerkUser, async (req, res): Promise<void> 
 });
 
 // ── DELETE /api/saved-cards/:id ───────────────────────────────────────────────
-// Delete a saved card. Scoped to the requesting user — cannot delete another
-// user's saved card even if the id is known.
+// Delete a single saved card. Scoped to the requesting user (or admin bucket)
+// so a caller cannot delete another user's saved card even if the id is known.
 router.delete("/saved-cards/:id", requireClerkUser, async (req, res): Promise<void> => {
-  const isAdmin = isAdminSessionCookieValid(req.signedCookies);
-  if (isAdmin) {
-    res.status(403).json({ error: "Not applicable for admin sessions." });
-    return;
-  }
-
-  const clerkUserId = getAuth(req).userId!;
+  const clerkUserId = resolveUserId(req);
   const id = parseInt(req.params.id as string, 10);
 
   if (!Number.isFinite(id)) {
