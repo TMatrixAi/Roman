@@ -480,6 +480,73 @@ describe("fetchPlayerMatchesFromProviders — provider chain", () => {
     assert.ok(!result.diagnostics.sourcesConfigured.includes("rapidapi"));
     assert.ok(result.diagnostics.sourcesConfigured.includes("api-tennis"));
   });
+
+  // ── Sofascore rate-limit branch ───────────────────────────────────────────
+
+  it("records Sofascore rate-limit failure in diagnostics and does not mark it successful", async () => {
+    // Sofascore returns an error string that includes "rate-limit" — this triggers
+    // the specific branch in attemptSofascore that records the failure and bails out.
+    // A regression that makes this branch silently succeed would drop validation evidence
+    // with no explanation.
+    const providers: BuilderProviders = {
+      rapidApi: null,
+      apiTennis: null,
+      sofascore: makeSofascoreStub({
+        player: null,
+        records: [],
+        error: "rate-limit exceeded",
+      }),
+    };
+
+    const result = await fetchPlayerMatchesFromProviders("Test Player", undefined, providers);
+
+    assert.ok(
+      result.diagnostics.sourcesFailed.includes("sofascore"),
+      "sofascore must appear in sourcesFailed on rate-limit error",
+    );
+    assert.ok(
+      !result.diagnostics.sourcesSuccessful.includes("sofascore"),
+      "sofascore must NOT appear in sourcesSuccessful on rate-limit error",
+    );
+    assert.equal(
+      result.diagnostics.outcome,
+      "PLAYER_NOT_FOUND",
+      "outcome must be PLAYER_NOT_FOUND (not DATA_FOUND) when Sofascore rate-limits",
+    );
+  });
+
+  it("NO_MATCH_HISTORY and providerIdsFound populated when Sofascore finds player but returns 0 records", async () => {
+    // Player was identified on Sofascore but has no completed matches stored there.
+    // The outcome must be NO_MATCH_HISTORY (not DATA_FOUND) and the provider ID
+    // must be recorded so callers know the player was actually recognised.
+    const providers: BuilderProviders = {
+      rapidApi: null,
+      apiTennis: null,
+      sofascore: makeSofascoreStub({
+        player: { id: "sf-sparse", name: "Sparse Player", tour: "WTA", countryCode: "US", currentRank: 250 },
+        records: [],
+        error: null,
+      }),
+    };
+
+    const result = await fetchPlayerMatchesFromProviders("Sparse Player", undefined, providers);
+
+    assert.equal(
+      result.diagnostics.outcome,
+      "NO_MATCH_HISTORY",
+      "outcome must be NO_MATCH_HISTORY when Sofascore finds the player but has 0 records",
+    );
+    assert.equal(
+      result.diagnostics.providerIdsFound["sofascore"],
+      "sf-sparse",
+      "providerIdsFound must contain the Sofascore player ID",
+    );
+    assert.ok(
+      !result.diagnostics.sourcesSuccessful.includes("sofascore") ||
+        result.diagnostics.providerIdsFound["sofascore"] !== undefined,
+      "Sofascore player ID must be recorded regardless of records count",
+    );
+  });
 });
 
 // ─── attemptOddsApi tests ─────────────────────────────────────────────────────
