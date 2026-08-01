@@ -32,7 +32,13 @@ import assert from "node:assert/strict";
 
 import {
   __TEST_computeScoring,
+  __TEST_isStaleResult,
+  __TEST_applyStalenessSupplementIfNeeded,
+  __TEST_STALE_MIN_MATCH_COUNT,
+  __TEST_STALE_MAX_MATCH_AGE_DAYS,
   THIN_DATA_RISK_FLOOR,
+  type __TEST_MatchRow,
+  type __TEST_PlayerResolution,
   type PlayerStats,
   type __TEST_ScoringResult,
 } from "./builderScoringService.js";
@@ -465,5 +471,198 @@ describe("builderScoringService — thin-data risk floor invariants", () => {
         `Dominant full-data player scored riskScore=${result.riskScore} — acceptable below-floor score for data_available matchup`,
       );
     }
+  });
+});
+
+// ─── Staleness detection and Layer 4b supplement tests ───────────────────────
+//
+// Section 1: isStaleResult() — pure predicate verifying when a DB result is
+//   considered stale (row count below threshold or most-recent match too old).
+//
+// Section 2: applyStalenessSupplementIfNeeded() — integration path verifying
+//   that the supplement is invoked correctly for stale results, falls back on
+//   provider failure, and is bypassed in backfill mode and for fresh data.
+
+/** Build a typed MatchRow for staleness tests. All required fields are set. */
+function makeRow(daysAgo: number): __TEST_MatchRow {
+  return {
+    player1_id: "p1",
+    player2_id: "p2",
+    winner_id: "p1",
+    player1_rank: null,
+    player2_rank: null,
+    surface: null,
+    tournament_name: null,
+    scheduled_start_at: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
+    retired: null,
+    walkover: null,
+  };
+}
+
+/** Build a stale PlayerResolution (few rows or old rows). */
+function makeStaleDbResult(rowCount = 2, daysAgo = 180): __TEST_PlayerResolution {
+  return {
+    rows: Array.from({ length: rowCount }, () => makeRow(daysAgo)),
+    resolvedId: "db-player-id",
+    resolvedVia: "direct",
+    aliasIds: ["db-player-id"],
+  };
+}
+
+/** Build a fresh PlayerResolution (≥ STALE_MIN_MATCH_COUNT recent rows). */
+function makeFreshDbResult(): __TEST_PlayerResolution {
+  return {
+    rows: Array.from({ length: __TEST_STALE_MIN_MATCH_COUNT + 5 }, (_, i) => makeRow(i * 7)),
+    resolvedId: "db-player-id",
+    resolvedVia: "direct",
+    aliasIds: ["db-player-id"],
+  };
+}
+
+/** Minimal LiveFetchResult for injection into applyStalenessSupplementIfNeeded. */
+import type { LiveFetchResult } from "./builderProviderFetch.js";
+
+function makeFetchResult(recordCount: number, playerId = "provider-player-id"): LiveFetchResult {
+  return {
+    records: Array.from({ length: recordCount }, (_, i) => ({
+      id: `rec-${i}`,
+      opponentId: `opp-${i}`,
+      opponentName: `Opponent ${i}`,
+      result: "W" as const,
+      surface: null,
+      tournamentName: null,
+      tournamentLevel: null,
+      round: null,
+      matchFormat: null,
+      score: null,
+      date: new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000).toISOString(),
+      retired: null,
+      walkover: null,
+      opponentRank: null,
+    })),
+    resolvedPlayerId: recordCount > 0 ? playerId : null,
+    resolvedPlayerName: recordCount > 0 ? "Provider Player" : null,
+    tour: recordCount > 0 ? "ATP" : null,
+    diagnostics: {
+      outcome: recordCount > 0 ? "DATA_FOUND" : "PLAYER_NOT_FOUND",
+      sourcesConfigured: ["api-tennis"],
+      sourcesAttempted: ["api-tennis"],
+      sourcesSuccessful: recordCount > 0 ? ["api-tennis"] : [],
+      sourcesFailed: recordCount > 0 ? [] : ["api-tennis"],
+      playerResolutionMethod: recordCount > 0 ? "full-name" : "none",
+      providerIdsFound: recordCount > 0 ? { "api-tennis": playerId } : {},
+      recordsPerSource: recordCount > 0 ? { "api-tennis": recordCount } : {},
+      failureReasons: recordCount > 0 ? [] : ["Player not found"],
+      sources: [],
+    },
+  };
+}
+
+describe("isStaleResult — staleness detection predicate", () => {
+  it("empty rows are always stale", () => {
+    assert.strictEqual(__TEST_isStaleResult([]), true, "empty row set must be stale");
+  });
+
+  it(`fewer than ${__TEST_STALE_MIN_MATCH_COUNT} rows → stale`, () => {
+    const rows = Array.from({ length: __TEST_STALE_MIN_MATCH_COUNT - 1 }, () => makeRow(5));
+    assert.strictEqual(__TEST_isStaleResult(rows), true,
+      `${rows.length} rows (< STALE_MIN_MATCH_COUNT=${__TEST_STALE_MIN_MATCH_COUNT}) must be stale`);
+  });
+
+  it(`exactly ${__TEST_STALE_MIN_MATCH_COUNT} rows with a recent match → NOT stale`, () => {
+    const rows = Array.from({ length: __TEST_STALE_MIN_MATCH_COUNT }, (_, i) => makeRow(i * 10));
+    assert.strictEqual(__TEST_isStaleResult(rows), false,
+      `${rows.length} rows with most-recent=0d ago must NOT be stale`);
+  });
+
+  it(`most-recent match older than ${__TEST_STALE_MAX_MATCH_AGE_DAYS} days → stale regardless of count`, () => {
+    const staleDays = __TEST_STALE_MAX_MATCH_AGE_DAYS + 1;
+    const rows = Array.from({ length: __TEST_STALE_MIN_MATCH_COUNT }, (_, i) =>
+      makeRow(staleDays + i * 10));
+    assert.strictEqual(__TEST_isStaleResult(rows), true,
+      `${rows.length} rows but most-recent=${staleDays}d ago must be stale`);
+  });
+
+  it("most-recent match exactly at the boundary is still fresh", () => {
+    const rows = Array.from({ length: __TEST_STALE_MIN_MATCH_COUNT }, (_, i) =>
+      makeRow(__TEST_STALE_MAX_MATCH_AGE_DAYS - 1 + i * 10));
+    assert.strictEqual(__TEST_isStaleResult(rows), false,
+      `most-recent 1d inside the ${__TEST_STALE_MAX_MATCH_AGE_DAYS}-day window must NOT be stale`);
+  });
+
+  it("null scheduled_start_at in the most-recent row → stale", () => {
+    const rows: __TEST_MatchRow[] = Array.from(
+      { length: __TEST_STALE_MIN_MATCH_COUNT },
+      () => makeRow(5),
+    );
+    rows[0] = { ...rows[0]!, scheduled_start_at: null };
+    assert.strictEqual(__TEST_isStaleResult(rows), true,
+      "null date on the most-recent row must be treated as stale");
+  });
+});
+
+describe("Layer 4b — applyStalenessSupplementIfNeeded", () => {
+  it("stale DB hit with provider returning records → resolvedVia=cache-hit-supplemented, provider rows used", async () => {
+    const staleDb = makeStaleDbResult(2, 200);
+    const mockFetch = async (_name: string) => makeFetchResult(8, "provider-abc");
+
+    const result = await __TEST_applyStalenessSupplementIfNeeded(staleDb, "T. Player", undefined, mockFetch);
+
+    assert.strictEqual(result.resolvedVia, "cache-hit-supplemented",
+      "resolvedVia must be cache-hit-supplemented when provider returns records");
+    assert.strictEqual(result.resolvedId, "provider-abc",
+      "resolvedId must come from the provider");
+    assert.strictEqual(result.rows.length, 8,
+      "rows must be the 8 fresh provider records, not the 2 stale DB ones");
+    assert.strictEqual(result.liveFetchDiagnostics?.outcome, "CACHE_HIT_SUPPLEMENTED",
+      "liveFetchDiagnostics.outcome must be CACHE_HIT_SUPPLEMENTED");
+    assert.ok(result.aliasIds.includes("provider-abc"),
+      "aliasIds must include the provider ID");
+    assert.ok(result.aliasIds.includes("db-player-id"),
+      "aliasIds must still include the original DB ID for H2H queries");
+  });
+
+  it("stale DB hit with provider returning no records → original DB rows returned unchanged", async () => {
+    const staleDb = makeStaleDbResult(2, 200);
+    const mockFetch = async (_name: string) => makeFetchResult(0);
+
+    const result = await __TEST_applyStalenessSupplementIfNeeded(staleDb, "T. Player", undefined, mockFetch);
+
+    assert.strictEqual(result.resolvedVia, "direct",
+      "resolvedVia must remain unchanged when provider returns no records");
+    assert.strictEqual(result.resolvedId, "db-player-id",
+      "resolvedId must remain the DB ID");
+    assert.strictEqual(result.rows.length, 2,
+      "stale DB rows must be returned unchanged when provider has no data");
+    assert.strictEqual(result.liveFetchDiagnostics, undefined,
+      "liveFetchDiagnostics must not be set when provider returned empty");
+  });
+
+  it("backfill mode (asOfDate set) → provider never called even when DB rows are stale", async () => {
+    const staleDb = makeStaleDbResult(2, 200);
+    let callCount = 0;
+    const mockFetch = async (_name: string) => { callCount++; return makeFetchResult(8); };
+
+    const asOfDate = new Date("2024-01-01");
+    const result = await __TEST_applyStalenessSupplementIfNeeded(staleDb, "T. Player", asOfDate, mockFetch);
+
+    assert.strictEqual(callCount, 0, "provider must NOT be called in backfill mode");
+    assert.strictEqual(result.resolvedVia, "direct",
+      "resolvedVia must stay unchanged in backfill mode");
+    assert.strictEqual(result.rows.length, 2,
+      "stale DB rows must be returned unchanged in backfill mode");
+  });
+
+  it("fresh DB result → provider never called", async () => {
+    const freshDb = makeFreshDbResult();
+    let callCount = 0;
+    const mockFetch = async (_name: string) => { callCount++; return makeFetchResult(8); };
+
+    const result = await __TEST_applyStalenessSupplementIfNeeded(freshDb, "T. Player", undefined, mockFetch);
+
+    assert.strictEqual(callCount, 0, "provider must NOT be called when DB result is fresh");
+    assert.strictEqual(result.resolvedVia, "direct");
+    assert.strictEqual(result.rows.length, __TEST_STALE_MIN_MATCH_COUNT + 5,
+      "fresh rows must be returned unchanged");
   });
 });

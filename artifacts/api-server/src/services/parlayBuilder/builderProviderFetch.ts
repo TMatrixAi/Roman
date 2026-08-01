@@ -52,7 +52,15 @@ export type ResolutionOutcome =
   | "SOURCE_UNAVAILABLE"
   | "PLAYER_NOT_FOUND"
   | "NO_MATCH_HISTORY"
-  | "DATA_UNAVAILABLE";
+  | "DATA_UNAVAILABLE"
+  /**
+   * The player was found in the local DB cache but their records were stale
+   * (most-recent match older than STALE_MAX_MATCH_AGE_DAYS days, or fewer than
+   * STALE_MIN_MATCH_COUNT rows).  The live provider chain was invoked and returned
+   * fresh records, which replaced the stale DB rows for this validation request.
+   * The fresh records are also written back to the DB so the next request hits Layer 1.
+   */
+  | "CACHE_HIT_SUPPLEMENTED";
 
 export interface ProviderSourceDiagnostic {
   source: string;

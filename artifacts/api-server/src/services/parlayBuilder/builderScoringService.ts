@@ -81,13 +81,18 @@ export interface DataSourceDiagnostics {
   /** How the opponent's ID/data was resolved. */
   opponentResolvedVia?: string;
   /**
-   * Provider-level diagnostics for the selected player's live fetch,
-   * populated only when the local DB had no data (all DB layers returned empty).
+   * Provider-level diagnostics for the selected player's live fetch.
+   * Populated in two cases:
+   *   - The local DB had no data (all DB layers returned empty) and Layer 5 was attempted.
+   *   - A DB cache hit was stale (< STALE_MIN_MATCH_COUNT rows OR most-recent match older
+   *     than STALE_MAX_MATCH_AGE_DAYS days) and Layer 4b supplement was attempted.
+   * When outcome is CACHE_HIT_SUPPLEMENTED, the provider returned fresh records that
+   * replaced the stale DB rows for this request.
    */
   selectedPlayerProviderDiag?: LiveFetchDiagnostics;
   /**
-   * Provider-level diagnostics for the opponent's live fetch,
-   * populated only when the local DB had no data.
+   * Provider-level diagnostics for the opponent's live fetch.
+   * Populated in the same two cases as selectedPlayerProviderDiag above.
    */
   opponentProviderDiag?: LiveFetchDiagnostics;
   /**
@@ -289,9 +294,37 @@ function buildHistorySQL(idCount: number, startParam = 1, asOfDateParamIdx?: num
 interface PlayerResolution {
   rows: MatchRow[];
   resolvedId: string;          // canonical ID to use for win/loss computation
-  resolvedVia: "direct" | "identity-index" | "name-index" | "db-name-search" | "provider-fetch" | "none";
+  resolvedVia: "direct" | "identity-index" | "name-index" | "db-name-search" | "provider-fetch" | "cache-hit-supplemented" | "none";
   aliasIds: string[];          // all IDs that belong to this player in our DB
-  liveFetchDiagnostics?: LiveFetchDiagnostics; // populated when Layer 5 was attempted
+  liveFetchDiagnostics?: LiveFetchDiagnostics; // populated when Layer 5 or stale-supplement was attempted
+}
+
+// Exported for unit-test construction — never import in production code.
+export type { MatchRow as __TEST_MatchRow, PlayerResolution as __TEST_PlayerResolution };
+
+// ---------------------------------------------------------------------------
+// Staleness detection — controls when a DB cache hit triggers a live supplement
+// ---------------------------------------------------------------------------
+//
+// A player record in the DB is considered stale when either:
+//   (a) fewer than STALE_MIN_MATCH_COUNT rows are present (thin data — the DB
+//       may only have old ITF matches for a player now competing at WTA/ATP level),
+//   (b) the most-recent match is older than STALE_MAX_MATCH_AGE_DAYS (inactive
+//       period — the DB hasn't seen a recent match and providers likely have more).
+//
+// Staleness is only checked in live mode (asOfDate == null). Backfill scoring
+// intentionally uses the DB snapshot at the time of the match.
+//
+export const STALE_MIN_MATCH_COUNT = 5;
+export const STALE_MAX_MATCH_AGE_DAYS = 90;
+
+function isStaleResult(rows: MatchRow[]): boolean {
+  if (rows.length < STALE_MIN_MATCH_COUNT) return true;
+  // rows are ORDER BY scheduled_start_at DESC — first row is most recent
+  const mostRecent = rows[0]?.scheduled_start_at;
+  if (!mostRecent) return true;
+  const daysSince = (Date.now() - mostRecent.getTime()) / (1000 * 60 * 60 * 24);
+  return daysSince > STALE_MAX_MATCH_AGE_DAYS;
 }
 
 /** Convert provider MatchRecord[] (player-perspective) into MatchRow[] for scoring. */
@@ -310,12 +343,75 @@ function matchRecordsToRows(records: import("../tennisData/types.js").MatchRecor
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Layer 4b: Staleness supplement (extracted for unit-test injection)
+// ---------------------------------------------------------------------------
+//
+// Given a DB cache hit (`dbResult`), decides whether to invoke the live
+// provider chain to refresh stale records, and returns the updated resolution.
+//
+// Rules:
+//  - Skipped in backfill mode (asOfDate != null) — historical scoring uses
+//    the DB snapshot at the time of the match; no live API calls allowed.
+//  - Skipped when the DB result is fresh (isStaleResult returns false).
+//  - When stale: calls fetchFn (defaults to fetchPlayerMatchesFromProviders).
+//    On provider success: returns a new PlayerResolution with provider rows,
+//    resolvedVia="cache-hit-supplemented", and outcome=CACHE_HIT_SUPPLEMENTED
+//    in liveFetchDiagnostics.
+//  - When provider returns empty: returns the original stale dbResult unchanged
+//    (caller's thin-data floor handles the score impact).
+//
+// `fetchFn` is injectable for unit tests; production always uses the default.
+//
+async function applyStalenessSupplementIfNeeded(
+  dbResult: PlayerResolution,
+  playerName: string,
+  asOfDate: Date | undefined,
+  fetchFn: typeof fetchPlayerMatchesFromProviders = fetchPlayerMatchesFromProviders,
+): Promise<PlayerResolution> {
+  // Backfill mode: never call live providers.
+  if (asOfDate != null) return dbResult;
+  // Fresh DB data: no supplement needed.
+  if (!isStaleResult(dbResult.rows)) return dbResult;
+
+  const fetchResult = await fetchFn(playerName);
+  if (fetchResult.records.length > 0 && fetchResult.resolvedPlayerId) {
+    const freshRows = matchRecordsToRows(fetchResult.records, fetchResult.resolvedPlayerId);
+    const supplementedDiag: LiveFetchDiagnostics = {
+      ...fetchResult.diagnostics,
+      outcome: "CACHE_HIT_SUPPLEMENTED",
+    };
+    return {
+      rows: freshRows,
+      resolvedId: fetchResult.resolvedPlayerId,
+      // resolvedVia="cache-hit-supplemented" signals the supplement fired;
+      // aliasIds merges DB and provider IDs so H2H queries cover both namespaces.
+      resolvedVia: "cache-hit-supplemented",
+      aliasIds: [...new Set([...dbResult.aliasIds, fetchResult.resolvedPlayerId])],
+      liveFetchDiagnostics: supplementedDiag,
+    };
+  }
+
+  // Provider returned nothing useful — return the stale DB rows unchanged.
+  // The scoring engine will apply the thin-data risk floor as appropriate.
+  return dbResult;
+}
+
 async function resolvePlayerMatchRows(
   rawId: string,
   playerName: string,
   index: PlayerIdentityIndex,
   asOfDate?: Date,
 ): Promise<PlayerResolution> {
+  // ── Layers 1–4: DB-only resolution ───────────────────────────────────────
+  //
+  // We try four progressively broader DB layers and capture the FIRST successful
+  // result in `dbResult` rather than returning immediately. This lets us run the
+  // staleness supplement check (Layer 4b) as a single post-step after whichever
+  // layer produced rows, without duplicating the supplement logic four times.
+
+  let dbResult: PlayerResolution | null = null;
+
   // ── Layer 1: direct ID ────────────────────────────────────────────────────
   const asOfIdx1 = asOfDate != null ? 2 : undefined;
   const direct = await pool.query<MatchRow>(
@@ -323,117 +419,129 @@ async function resolvePlayerMatchRows(
     asOfDate != null ? [rawId, asOfDate] : [rawId],
   );
   if (direct.rows.length > 0) {
-    return { rows: direct.rows, resolvedId: rawId, resolvedVia: "direct", aliasIds: [rawId] };
+    dbResult = { rows: direct.rows, resolvedId: rawId, resolvedVia: "direct", aliasIds: [rawId] };
   }
 
   // ── Layer 2: identity index — canonical ID + all provider aliases ─────────
-  const canonical2 = canonicalizePlayerId(index, rawId, playerName);
-  const aliases2 = getAliasIds(index, canonical2);
-  const allIds2 = [...new Set([rawId, canonical2, ...aliases2])];
-  // Only bother querying if we actually found aliases beyond the raw ID
-  if (allIds2.length > 1) {
-    const asOfIdx2 = asOfDate != null ? allIds2.length + 1 : undefined;
-    const res2 = await pool.query<MatchRow>(
-      buildHistorySQL(allIds2.length, 1, asOfIdx2),
-      asOfDate != null ? [...allIds2, asOfDate] : allIds2,
-    );
-    if (res2.rows.length > 0) {
-      const aliasSet2 = new Set(allIds2);
-      return {
-        rows: normalizeMatchRowIds(res2.rows, aliasSet2, canonical2),
-        resolvedId: canonical2,
-        resolvedVia: "identity-index",
-        aliasIds: allIds2,
-      };
+  if (!dbResult) {
+    const canonical2 = canonicalizePlayerId(index, rawId, playerName);
+    const aliases2 = getAliasIds(index, canonical2);
+    const allIds2 = [...new Set([rawId, canonical2, ...aliases2])];
+    // Only bother querying if we actually found aliases beyond the raw ID
+    if (allIds2.length > 1) {
+      const asOfIdx2 = asOfDate != null ? allIds2.length + 1 : undefined;
+      const res2 = await pool.query<MatchRow>(
+        buildHistorySQL(allIds2.length, 1, asOfIdx2),
+        asOfDate != null ? [...allIds2, asOfDate] : allIds2,
+      );
+      if (res2.rows.length > 0) {
+        const aliasSet2 = new Set(allIds2);
+        dbResult = {
+          rows: normalizeMatchRowIds(res2.rows, aliasSet2, canonical2),
+          resolvedId: canonical2,
+          resolvedVia: "identity-index",
+          aliasIds: allIds2,
+        };
+      }
     }
   }
 
   // ── Layer 3: name resolution via identity index ───────────────────────────
-  const nameHit = resolvePlayerNameWithAmbiguity(index, playerName);
-  if (nameHit && !nameHit.ambiguous) {
-    const canonical3 = nameHit.id;
-    const aliases3 = getAliasIds(index, canonical3);
-    const allIds3 = [...new Set([canonical3, ...aliases3])];
-    const asOfIdx3 = asOfDate != null ? allIds3.length + 1 : undefined;
-    const res3 = await pool.query<MatchRow>(
-      buildHistorySQL(allIds3.length, 1, asOfIdx3),
-      asOfDate != null ? [...allIds3, asOfDate] : allIds3,
-    );
-    if (res3.rows.length > 0) {
-      const aliasSet3 = new Set(allIds3);
-      return {
-        rows: normalizeMatchRowIds(res3.rows, aliasSet3, canonical3),
-        resolvedId: canonical3,
-        resolvedVia: "name-index",
-        aliasIds: allIds3,
-      };
+  if (!dbResult) {
+    const nameHit = resolvePlayerNameWithAmbiguity(index, playerName);
+    if (nameHit && !nameHit.ambiguous) {
+      const canonical3 = nameHit.id;
+      const aliases3 = getAliasIds(index, canonical3);
+      const allIds3 = [...new Set([canonical3, ...aliases3])];
+      const asOfIdx3 = asOfDate != null ? allIds3.length + 1 : undefined;
+      const res3 = await pool.query<MatchRow>(
+        buildHistorySQL(allIds3.length, 1, asOfIdx3),
+        asOfDate != null ? [...allIds3, asOfDate] : allIds3,
+      );
+      if (res3.rows.length > 0) {
+        const aliasSet3 = new Set(allIds3);
+        dbResult = {
+          rows: normalizeMatchRowIds(res3.rows, aliasSet3, canonical3),
+          resolvedId: canonical3,
+          resolvedVia: "name-index",
+          aliasIds: allIds3,
+        };
+      }
     }
   }
 
   // ── Layer 4: direct DB name search (surname + initial filter) ────────────
   // Handles players present in historical_matches but absent from the index
   // (e.g. players who appear only once — not enough sightings to be indexed).
-  const nameParts = playerName.trim().split(/\s+/);
-  const surname = nameParts[nameParts.length - 1] ?? "";
-  // Derive the first initial: handle "D. Singh" → "D" and "Devvrat Singh" → "D"
-  const firstToken = nameParts[0] ?? "";
-  const firstInitial = firstToken.replace(".", "").charAt(0).toUpperCase();
+  if (!dbResult) {
+    const nameParts = playerName.trim().split(/\s+/);
+    const surname = nameParts[nameParts.length - 1] ?? "";
+    // Derive the first initial: handle "D. Singh" → "D" and "Devvrat Singh" → "D"
+    const firstToken = nameParts[0] ?? "";
+    const firstInitial = firstToken.replace(".", "").charAt(0).toUpperCase();
 
-  if (surname.length >= 3) {
-    interface NameRow { pid: string; pname: string; cnt: string }
-    // In backfill mode gate the name search to the same temporal window.
-    const nameSearchDateCond = asOfDate != null
-      ? `AND scheduled_start_at < $2 AND scheduled_start_at > $2 - INTERVAL '2 years'`
-      : `AND scheduled_start_at > NOW() - INTERVAL '2 years'`;
-    const nameSearchParams: unknown[] = asOfDate != null ? [`%${surname}%`, asOfDate] : [`%${surname}%`];
-    const nameRes = await pool.query<NameRow>(`
-      SELECT pid, pname, COUNT(*) AS cnt FROM (
-        SELECT player1_id AS pid, player1_name AS pname
-        FROM historical_matches
-        WHERE player1_name ILIKE $1
-          ${nameSearchDateCond}
-        UNION ALL
-        SELECT player2_id AS pid, player2_name AS pname
-        FROM historical_matches
-        WHERE player2_name ILIKE $1
-          ${nameSearchDateCond}
-      ) t
-      GROUP BY pid, pname
-      ORDER BY cnt DESC
-      LIMIT 10
-    `, nameSearchParams);
+    if (surname.length >= 3) {
+      interface NameRow { pid: string; pname: string; cnt: string }
+      // In backfill mode gate the name search to the same temporal window.
+      const nameSearchDateCond = asOfDate != null
+        ? `AND scheduled_start_at < $2 AND scheduled_start_at > $2 - INTERVAL '2 years'`
+        : `AND scheduled_start_at > NOW() - INTERVAL '2 years'`;
+      const nameSearchParams: unknown[] = asOfDate != null ? [`%${surname}%`, asOfDate] : [`%${surname}%`];
+      const nameRes = await pool.query<NameRow>(`
+        SELECT pid, pname, COUNT(*) AS cnt FROM (
+          SELECT player1_id AS pid, player1_name AS pname
+          FROM historical_matches
+          WHERE player1_name ILIKE $1
+            ${nameSearchDateCond}
+          UNION ALL
+          SELECT player2_id AS pid, player2_name AS pname
+          FROM historical_matches
+          WHERE player2_name ILIKE $1
+            ${nameSearchDateCond}
+        ) t
+        GROUP BY pid, pname
+        ORDER BY cnt DESC
+        LIMIT 10
+      `, nameSearchParams);
 
-    // Filter by initial match to avoid collisions (e.g. "Singh" returns both
-    // "A. Singh" and "D. Singh" — only keep those whose first char matches)
-    const filtered = nameRes.rows.filter(r => {
-      const storedFirst = (r.pname ?? "").trim().charAt(0).toUpperCase();
-      return storedFirst === firstInitial;
-    });
+      // Filter by initial match to avoid collisions (e.g. "Singh" returns both
+      // "A. Singh" and "D. Singh" — only keep those whose first char matches)
+      const filtered = nameRes.rows.filter(r => {
+        const storedFirst = (r.pname ?? "").trim().charAt(0).toUpperCase();
+        return storedFirst === firstInitial;
+      });
 
-    // Only proceed if exactly one canonical player is found (unambiguous)
-    const filteredCanonicals = [...new Set(
-      filtered.map(r => canonicalizePlayerId(index, r.pid, r.pname))
-    )];
+      // Only proceed if exactly one canonical player is found (unambiguous)
+      const filteredCanonicals = [...new Set(
+        filtered.map(r => canonicalizePlayerId(index, r.pid, r.pname))
+      )];
 
-    if (filteredCanonicals.length === 1) {
-      const canonical4 = filteredCanonicals[0];
-      const aliases4 = getAliasIds(index, canonical4);
-      const allIds4 = [...new Set([canonical4, ...aliases4])];
-      const asOfIdx4 = asOfDate != null ? allIds4.length + 1 : undefined;
-      const res4 = await pool.query<MatchRow>(
-        buildHistorySQL(allIds4.length, 1, asOfIdx4),
-        asOfDate != null ? [...allIds4, asOfDate] : allIds4,
-      );
-      if (res4.rows.length > 0) {
-        const aliasSet4 = new Set(allIds4);
-        return {
-          rows: normalizeMatchRowIds(res4.rows, aliasSet4, canonical4),
-          resolvedId: canonical4,
-          resolvedVia: "db-name-search",
-          aliasIds: allIds4,
-        };
+      if (filteredCanonicals.length === 1) {
+        const canonical4 = filteredCanonicals[0];
+        const aliases4 = getAliasIds(index, canonical4);
+        const allIds4 = [...new Set([canonical4, ...aliases4])];
+        const asOfIdx4 = asOfDate != null ? allIds4.length + 1 : undefined;
+        const res4 = await pool.query<MatchRow>(
+          buildHistorySQL(allIds4.length, 1, asOfIdx4),
+          asOfDate != null ? [...allIds4, asOfDate] : allIds4,
+        );
+        if (res4.rows.length > 0) {
+          const aliasSet4 = new Set(allIds4);
+          dbResult = {
+            rows: normalizeMatchRowIds(res4.rows, aliasSet4, canonical4),
+            resolvedId: canonical4,
+            resolvedVia: "db-name-search",
+            aliasIds: allIds4,
+          };
+        }
       }
     }
+  }
+
+  // ── Layer 4b: staleness supplement ───────────────────────────────────────
+  if (dbResult) {
+    dbResult = await applyStalenessSupplementIfNeeded(dbResult, playerName, asOfDate);
+    return dbResult;
   }
 
   // ── Layer 5: live provider fetch ─────────────────────────────────────────
@@ -1379,13 +1487,25 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     return `No match history found for ${name} across all configured sources`;
   };
 
+  // Helper: human-readable source annotation for thin-data critical flags.
+  const resolvedViaSource = (via: PlayerResolution["resolvedVia"]): string => {
+    if (via === "provider-fetch") return " (live provider)";
+    if (via === "cache-hit-supplemented") return " (stale cache — refreshed from live provider)";
+    return "";
+  };
+
   if (sel.total === 0) {
     criticalFlags.push(notFoundMessage(selectedPlayerName, selResolution.liveFetchDiagnostics));
     dataSourceDiagnostics.dataConfidenceNote =
       "Match history could not be retrieved from any source. Validation scores are unreliable — verify player name and try again.";
   } else if (sel.total < 5) {
-    const source = selResolution.resolvedVia === "provider-fetch" ? " (live provider)" : "";
-    criticalFlags.push(`Very limited match history for ${selectedPlayerName} — ${sel.total} match${sel.total !== 1 ? "es" : ""} found${source}`);
+    criticalFlags.push(`Very limited match history for ${selectedPlayerName} — ${sel.total} match${sel.total !== 1 ? "es" : ""} found${resolvedViaSource(selResolution.resolvedVia)}`);
+  } else if (selResolution.resolvedVia === "cache-hit-supplemented") {
+    // Non-critical info: stale cache was replaced with fresh provider data.
+    dataSourceDiagnostics.dataConfidenceNote =
+      (dataSourceDiagnostics.dataConfidenceNote ?? "") +
+      (dataSourceDiagnostics.dataConfidenceNote ? " " : "") +
+      `${selectedPlayerName}: stale local cache refreshed from live provider (${selResolution.liveFetchDiagnostics?.sourcesSuccessful?.join(", ") ?? "provider"}).`;
   }
 
   if (opp.total === 0) {
@@ -1397,8 +1517,12 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
         "Match history could not be retrieved from any source. Validation scores are unreliable — verify player name and try again.";
     }
   } else if (opp.total < 5) {
-    const source = oppResolution.resolvedVia === "provider-fetch" ? " (live provider)" : "";
-    criticalFlags.push(`Very limited match history for ${opponentName} — ${opp.total} match${opp.total !== 1 ? "es" : ""} found${source}`);
+    criticalFlags.push(`Very limited match history for ${opponentName} — ${opp.total} match${opp.total !== 1 ? "es" : ""} found${resolvedViaSource(oppResolution.resolvedVia)}`);
+  } else if (oppResolution.resolvedVia === "cache-hit-supplemented") {
+    dataSourceDiagnostics.dataConfidenceNote =
+      (dataSourceDiagnostics.dataConfidenceNote ?? "") +
+      (dataSourceDiagnostics.dataConfidenceNote ? " " : "") +
+      `${opponentName}: stale local cache refreshed from live provider (${oppResolution.liveFetchDiagnostics?.sourcesSuccessful?.join(", ") ?? "provider"}).`;
   }
 
   // Log when the thin-data risk floor was applied so it's visible in the admin diagnostics panel.
@@ -1476,6 +1600,19 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     builderVersion: BUILDER_VERSION,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Test-only staleness helper export
+// ---------------------------------------------------------------------------
+//
+// Exposed so the staleness unit tests can exercise `isStaleResult` directly
+// without needing to mock the database pool or provider chain.
+// @internal — never import in production code.
+
+export { isStaleResult as __TEST_isStaleResult };
+export { STALE_MIN_MATCH_COUNT as __TEST_STALE_MIN_MATCH_COUNT };
+export { STALE_MAX_MATCH_AGE_DAYS as __TEST_STALE_MAX_MATCH_AGE_DAYS };
+export { applyStalenessSupplementIfNeeded as __TEST_applyStalenessSupplementIfNeeded };
 
 // ---------------------------------------------------------------------------
 // Test-only pure scoring helper (no DB, no external APIs)
