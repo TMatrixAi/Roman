@@ -23,6 +23,7 @@ import type {
   TournamentLevel,
 } from "./types";
 import { ProviderUnavailableError } from "./types";
+import { inferSurfaceAndLevel } from "./surfaceMap.js";
 import { fetchFromSofascore } from "../parlayBuilder/sofascoreProvider.js";
 import { fetchFromBsdTennis } from "./bsdTennisProvider.js";
 import { getPlayerMatchesFromDb } from "./dbHistoryFallback.js";
@@ -353,6 +354,25 @@ export class CompositeTennisProvider implements TennisDataProvider {
         logger.info({ dateStart, dateStop, count: fixtures.length },
           "compositeProvider: Sofascore tertiary provided fixture list (both primary providers unavailable)");
       }
+    }
+
+    // Surface enrichment: any fixture whose provider left surface=null gets a second attempt
+    // using the static tournament-name lookup table (the same one that powers live predictions).
+    // This covers all GrandSlams, Masters 1000s, and the prominent 500-level events by name.
+    // Fixtures for smaller Challenger/ITF events that still can't be resolved stay null rather
+    // than being guessed — the UI shows "Unknown" and the Predict button falls back safely.
+    let enrichedCount = 0;
+    fixtures = fixtures.map((f) => {
+      if (f.surface !== null || !f.tournamentName) return f;
+      const { surface } = inferSurfaceAndLevel(f.tournamentName);
+      if (surface) {
+        enrichedCount++;
+        return { ...f, surface };
+      }
+      return f;
+    });
+    if (enrichedCount > 0) {
+      logger.info({ enrichedCount }, "compositeProvider: surface-enriched fixtures via tournament-name lookup");
     }
 
     return fixtures;

@@ -111,7 +111,21 @@ function isStaleFixture(fixture: Fixture): boolean {
 }
 
 function formatFixtureTime(fixture: Fixture): string {
-  return formatEasternDateTime(fixture.scheduledStart)
+  if (fixture.scheduledStart) {
+    return formatEasternDateTime(fixture.scheduledStart)
+  }
+  // No confirmed match time — show the tournament date so users know when the match is
+  // scheduled without fabricating a time from the raw tournament-start timestamp.
+  if (fixture.date) {
+    const dateOnly = fixture.date.slice(0, 10) // handles both "2026-08-03" and "2026-08-03T…"
+    const dateLabel = new Date(dateOnly + "T12:00:00Z").toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      month: "short",
+      day: "numeric",
+    })
+    return `${dateLabel} · Time TBD`
+  }
+  return "Time TBD"
 }
 
 /** Level badge colour tiers */
@@ -398,9 +412,14 @@ export const FixturesList = forwardRef<
     const startingSoon: Fixture[] = []
     const laterToday: Fixture[] = []
     const recentlyCompleted: Fixture[] = []
+    // Future fixtures grouped by calendar date (YYYY-MM-DD key, sorted ascending in render)
+    const upcomingByDate = new Map<string, Fixture[]>()
 
     for (const fixture of visibleFixtures) {
       const scheduledMs = fixture.scheduledStart ? new Date(fixture.scheduledStart).getTime() : null
+      // Normalise to "YYYY-MM-DD" regardless of whether the API returned a bare date or full ISO
+      const fixtureDate = (fixture.date ?? "").slice(0, 10)
+
       if (fixture.isLive) {
         liveNow.push(fixture)
         continue
@@ -413,14 +432,17 @@ export const FixturesList = forwardRef<
         startingSoon.push(fixture)
         continue
       }
-      if (fixture.date === today) {
+      if (fixtureDate === today) {
         laterToday.push(fixture)
         continue
       }
-      laterToday.push(fixture)
+      // Future date — group by YYYY-MM-DD so each day gets its own labeled section
+      const bucket = upcomingByDate.get(fixtureDate) ?? []
+      bucket.push(fixture)
+      upcomingByDate.set(fixtureDate, bucket)
     }
 
-    return { liveNow, startingSoon, laterToday, recentlyCompleted }
+    return { liveNow, startingSoon, laterToday, recentlyCompleted, upcomingByDate }
   }, [visibleFixtures])
 
   const diagnostics = useMemo(() => {
@@ -552,6 +574,18 @@ export const FixturesList = forwardRef<
           { title: "Starting Soon", items: groupedFixtures.startingSoon },
           { title: "Later Today", items: groupedFixtures.laterToday },
           { title: "Recently Completed", items: groupedFixtures.recentlyCompleted },
+          // Future dates sorted ascending — each calendar day becomes its own labeled section
+          ...[...groupedFixtures.upcomingByDate.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([dateStr, items]) => ({
+              title: new Date(dateStr + "T12:00:00Z").toLocaleDateString("en-US", {
+                timeZone: "America/New_York",
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              }),
+              items,
+            })),
         ].map((group) => {
           if (group.items.length === 0) return null
           return (
