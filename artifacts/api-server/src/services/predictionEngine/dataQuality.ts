@@ -163,18 +163,23 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
 // live if the ablation shows real accuracy benefit"), the default without a finished, positive
 // result is EXCLUDED, matching how Availability was excluded pending its own proof.
 // matchLoadRecovery stays excluded: a 4,001-match representative-sample leave-one-out ablation
-// (Task #96, 2026-07-14) found removing it changes ~2.9% of individual predictions (83/2,820
-// scored matches flip) but moves OVERALL accuracy by exactly 0.0pp (57.3% both with and without
-// it) -- the flips roughly cancel out. Per-surface/per-tour deltas look inconsistent in sign and
-// sit on small subsamples (e.g. Grass n=35, Junior n=27), so they read as noise, not a real
+// (2026-07-14) found removing it changes ~2.9% of individual predictions (83/2,820 scored matches
+// flip) but moves OVERALL accuracy by exactly 0.0pp (57.3% both with and without it) -- the
+// flips roughly cancel out. Per-surface/per-tour deltas look inconsistent in sign and sit on
+// small subsamples (e.g. Grass n=35, Junior n=27), so they read as noise, not a real
 // surface-specific edge. See docs/audit-matchloadrecovery-live-revalidation.md for the full
 // breakdown; re-run the ablation if the historical corpus grows substantially and this decision
 // should be revisited.
-// marketOdds: excluded pending the Task #21 paper_trade ablation reaching its ≥200 paired-row
-// reliability bar. The 2026-07-31 run produced n=180 paper_trade pairs (just short of the
-// required 200) with directional accuracy/log-loss improvements, but the sample is too small to
-// declare a confirmed net positive. Will be removed from this set once the bar is cleared —
-// see docs/audit-market-consensus-ablation.md and scripts/auditMarketConsensusAblation.ts.
+// marketOdds: excluded pending the live paper-trade Section B ablation reaching n≥500 accuracy-
+// eligible paired rows. As of 2026-08-01 the sample is n=184 (below the 500-row floor). Section B
+// shows Δacc=+1.1pp (directionally positive) but Δlog-loss=+0.0205 (worse) — the log-loss
+// regression is a calibration-vintage mismatch artifact (B-CAL analysis: global knots fit on
+// 2017-2020 data, live rows are 2025-2026), but it has not been fully resolved. Section C
+// (historical, n=5,400): Δacc=+3.0pp, Δlog-loss=−0.0331 — strong corroborating signal but
+// explicitly hindsight-biased (tennis-data.co.uk player1 = actual winner); cannot serve as the
+// primary KEEP gate. Will be removed from this set once Section B reaches n≥500 with
+// Δacc ≥ +0.5pp — see docs/audit-market-consensus-ablation.md and the follow-up tasks for the
+// live re-confirmation and calibration-refit work.
 export const EXCLUDED_FROM_ENSEMBLE = new Set(["availability", "fatigue", "matchLoadRecovery", "marketOdds"]);
 
 /**

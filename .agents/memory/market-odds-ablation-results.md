@@ -1,6 +1,6 @@
 ---
 name: Market Odds Ablation Results
-description: All sections complete. Section C full engine re-run (n=5400) decision=KEEP (+3.0pp, −0.0331 log-loss). Hindsight-biased; Section B (live) still primary criterion.
+description: All sections complete as of 2026-08-01. marketOdds still EXCLUDED — live Section B (n=184) below 500-row KEEP gate. Section C (n=5400) +3.0pp corroborating but hindsight-biased; cannot serve as primary gate.
 ---
 
 ## Authoritative Row Count (2026-08-01 15:26:22 UTC)
@@ -180,7 +180,7 @@ Section B (live paper-trade, n=180) remains the canonical criterion — directio
 | Section | n | Δ accuracy | Δ log-loss | Status | Decision |
 |---|---|---|---|---|---|
 | A (direction, live) | 184 | market right 69.6% on disagree | — | confirms market has value | — |
-| B (engine re-run, live) | 180 paired | +1.1pp | +0.0205 (worse) | too small, directionally positive | inconclusive |
+| B (engine re-run, live) | 184 paired | +1.1pp | +0.0205 (worse) | directionally positive; log-loss = calibration-vintage artifact | inconclusive alone |
 | B-CAL (calibration refit, live) | 184 | PARTIAL ARTIFACT | — | part stale-curve, part real noise | light tuning may help LL |
 | C fast direction (historical) | 5,932 | +3.7pp | −0.0338 (better) | corroborating, hindsight-biased | — |
 | C full engine re-run (historical) | **5,400** | **+3.0pp** | **−0.0331 (better)** | ✓ COMPLETE | **KEEP** |
@@ -190,3 +190,13 @@ market beats the model by +3.7pp; feeding it through the engine retains 81% of t
 Section C full engine re-run meets the KEEP threshold (Δacc ≥ +0.5pp at n ≥ 500). Section B log-loss
 regression is a calibration-vintage mismatch artifact (partially confirmed by B-CAL). No weight-tuning
 needed per current evidence; monitor WTA and clay sub-segments in live paper-trade data.
+
+---
+
+## 🔒 STATUS: Still EXCLUDED as of 2026-08-01
+
+`"marketOdds"` remains in `EXCLUDED_FROM_ENSEMBLE`. Live Section B (n=184) is below the 500-row
+KEEP gate. Section C (+3.0pp, n=5,400) is corroborating but hindsight-biased and cannot serve
+as the primary activation trigger. Module stays excluded until follow-up task #116 (re-run at
+n≥500) confirms Δacc ≥ +0.5pp on unbiased live data. Calibration-refit follow-up tracked in
+task #117.
