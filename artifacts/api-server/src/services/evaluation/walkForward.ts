@@ -58,6 +58,56 @@ function classifyResult(match: { winnerId: string | null; retired: boolean; walk
 }
 
 /**
+ * Minimum eligible historical matches required before a training-mode walk-forward may
+ * replace an already-deployed active calibration model. Exported so callers (tests and the
+ * calibration-refit job) can reference the same constant.
+ */
+export const MIN_ELIGIBLE_FOR_TRAINING = 500;
+
+/** Return type for `checkTrainingModeGuard`. */
+export type TrainingModeGuardResult =
+  | { skip: false; reason: "evaluationOnly" | "scoped" | "aboveFloor" | "bootstrap" }
+  | { skip: true;  reason: "activeModelExists" };
+
+/**
+ * Returns whether a training-mode walk-forward should be skipped for this particular call
+ * without executing the full fold pipeline. Extracted so the guard can be tested directly
+ * (behavioral test) and so the job pre-flight can use the same logic without duplicating it.
+ *
+ * Skip fires only when ALL of the following hold:
+ *   1. evaluationOnly is false (training mode — calibration write is intended)
+ *   2. scopedMatchIds is null (unscoped / real production run, not a test/dev invocation)
+ *   3. eligibleCount < MIN_ELIGIBLE_FOR_TRAINING (too sparse to produce a meaningful fit)
+ *   4. An active calibration model exists in the DB (bootstrap exception: no active model →
+ *      always proceed so a fresh environment can produce its first real model)
+ *
+ * When skip is true, the caller must return `{ foldsRun: 0, skippedNoEligibleMatches: true }`
+ * without writing to calibration_models.
+ */
+export async function checkTrainingModeGuard({
+  evaluationOnly,
+  scopedMatchIds,
+  eligibleCount,
+}: {
+  evaluationOnly: boolean;
+  scopedMatchIds: readonly number[] | null;
+  eligibleCount: number;
+}): Promise<TrainingModeGuardResult> {
+  if (evaluationOnly)             return { skip: false, reason: "evaluationOnly" };
+  if (scopedMatchIds !== null)    return { skip: false, reason: "scoped" };
+  if (eligibleCount >= MIN_ELIGIBLE_FOR_TRAINING) return { skip: false, reason: "aboveFloor" };
+
+  const [activeModel] = await db
+    .select({ id: calibrationModelsTable.id })
+    .from(calibrationModelsTable)
+    .where(eq(calibrationModelsTable.active, true))
+    .limit(1);
+
+  if (activeModel) return { skip: true, reason: "activeModelExists" };
+  return { skip: false, reason: "bootstrap" };
+}
+
+/**
  * Runs a fresh sequence of expanding-window walk-forward folds over the entire leak-proof
  * historical store and persists per-fold results. Each run supersedes prior evaluation_runs /
  * evaluation_predictions rows of runKind='historical_test' (deleted up front) so re-running
@@ -116,6 +166,43 @@ export async function runWalkForwardEvaluation(options: WalkForwardOptions = {})
   if (eligible.length < 20) {
     logger.warn({ count: eligible.length, alreadyScored: alreadyScoredIds.size }, "Not enough new historical matches to run a meaningful walk-forward evaluation");
     return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [], evaluationOnly };
+  }
+
+  // Training-mode guard: when a real active calibration model already exists, require
+  // ≥500 new eligible historical matches before replacing it. The holdoutSampleSize
+  // quality gate below catches a degenerate fit after the fact, but the run still fires,
+  // scores all folds, and writes a noise row to calibration_models (stored inactive).
+  // This guard prevents that wasted work.
+  //
+  // Two intentional exceptions — both skip the guard:
+  //
+  // 1. Bootstrap (no active calibration model yet): always run so a fresh environment
+  //    can produce its first real model. The holdoutSampleSize quality gate is the
+  //    safety net for sparse bootstrap data.
+  //
+  // 2. Scoped runs (scopedMatchIds !== null): these are test/development invocations
+  //    that explicitly bound the corpus to a small seed set. They are never real
+  //    production calibration replacements and must not be blocked by a production floor.
+  //
+  // Why 500: with foldCount=4 and warmupFraction=0.4, eligible=500 yields ≈120 pooled
+  // validation points before accuracy filtering — comfortably above the 101-point
+  // minimum splitForCalibrationHoldout needs to produce a non-empty holdout slice.
+  //
+  // Evaluation-only runs use the frozen calibration without writing anything; they can
+  // still run with as few as 20 eligible matches (the base floor above).
+  const trainingGuard = await checkTrainingModeGuard({ evaluationOnly, scopedMatchIds, eligibleCount: eligible.length });
+  if (trainingGuard.skip) {
+    logger.warn(
+      { eligible: eligible.length, min: MIN_ELIGIBLE_FOR_TRAINING, alreadyScored: alreadyScoredIds.size },
+      "Training-mode walk-forward skipped: not enough new eligible historical matches to replace the active calibration model; existing model kept unchanged",
+    );
+    return { foldsRun: 0, foldIds: [], skippedNoEligibleMatches: true, fallbackRate: 0, warnings: [], evaluationOnly };
+  }
+  if (trainingGuard.reason === "bootstrap") {
+    logger.info(
+      { eligible: eligible.length, min: MIN_ELIGIBLE_FOR_TRAINING },
+      "Training-mode walk-forward: no active calibration model yet — running bootstrap fit (holdoutSampleSize quality gate is the safety net for sparse data)",
+    );
   }
 
   // Task #77: run-scoped fallback tracker, reset here so this run's rate never mixes with a
