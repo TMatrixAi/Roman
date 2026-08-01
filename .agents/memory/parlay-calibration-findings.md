@@ -138,6 +138,48 @@ const DEFAULT_WEIGHTS: Record<string, number> = {
 
 ---
 
+## Edge-Weighted Agreement (August 2026)
+
+Changed `sourceAgreement` computation in `builderScoringService.ts` from raw headcount
+(`agreeing / available`) to edge-weighted vote (`edgeWeightedAgreementRate`).
+
+### What changed
+
+Added `AGREEMENT_EDGE_WEIGHTS` constant (per-factor validated edges from n=9,366 ablation)
+and `edgeWeightedAgreementRate()` helper. Both updated in main scoring path and
+`__TEST_computeScoring`. Detail string now reads "N of M sources agree — X% edge-weighted
+agreement" (raw count kept for transparency; percentage is edge-weighted).
+
+Key weights: overallAdvantage=17.7, surfaceAdvantage=13.2, surfaceRecord=13.0,
+rankingTrend=10.5, strengthOfSchedule=9.3 ... historicalVolatility=**0.0** (excluded).
+Live-only unvalidated factors (marketConsensus, travelFatigue, injuryRisk) get 5.0 default.
+
+### Impact on stored rows (n=11,499)
+
+| Tier | Raw count | Edge-weighted | Δ |
+|---|---|---|---|
+| Overall | 59.8% (n=11,499) | 59.8% (n=11,499) | **+0.0pp** |
+| KEEP | 66.8% (n=4,284) | 66.7% (n=4,345) | **−0.1pp** |
+| BORDERLINE | 55.7% (n=6,851) | 55.7% (n=6,790) | +0.0pp |
+| REMOVE | 55.8% (n=364) | 55.8% (n=364) | +0.0pp |
+
+Tier shifts: 79 rows promoted BORDERLINE→KEEP, 0 demotions. 11,420 unchanged.
+
+**Why minimal movement:** `historicalVolatility` scores ≈50 (neutral) in most rows and
+lands in `supportsSelected=null` anyway — it was already excluded from the opinionated set
+in those rows. The 79 promoted rows had it taking a side against the pick; those upgrades
+have nearly identical win rate to the existing KEEP pool (−0.1pp).
+
+All 31 `builderScoringService.test.ts` scoring invariants still pass.
+
+### Why this is still the right change
+
+Correctness: Agreement no longer lets a confirmed-dead-weight factor outvote a
+high-signal one. Future live predictions with richer factor coverage (where more factors
+land in `supportsSelected !== null`) will benefit more than the backfill rows did.
+
+---
+
 ## Infrastructure Added
 
 - `GET /api/admin/parlay/calibration` — calibration bucket report

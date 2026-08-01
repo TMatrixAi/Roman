@@ -194,6 +194,35 @@ const STRUCTURAL_MAX_UNAVAIL_WEIGHT = Array.from(STRUCTURALLY_UNAVAILABLE).reduc
 );
 
 // ---------------------------------------------------------------------------
+// Per-factor validated predictive edge (pp) used for edge-weighted Agreement.
+// Source: leave-one-out ablation from auditParlayFactorWeights.ts (n=9,366).
+//
+// Each opinionated factor's vote counts in proportion to its real predictive
+// edge rather than as a flat +1. This stops weak or negative-edge factors from
+// outvoting high-signal ones in the Agreement count.
+//
+// - historicalVolatility: 0.0  — confirmed near-zero / negative edge; excluded
+// - live-only factors (never seen in backfill): conservative 5.0pp default
+// - dataQuality, sourceAgreement: omitted — supportsSelected always null or
+//   excluded from decisiveFacters, so they can never appear in opinionated set
+// ---------------------------------------------------------------------------
+const AGREEMENT_EDGE_WEIGHTS: Record<string, number> = {
+  overallAdvantage:      17.7,
+  surfaceAdvantage:      13.2,
+  surfaceRecord:         13.0,
+  rankingTrend:          10.5,
+  strengthOfSchedule:     9.3,
+  historicalConsistency:  8.0,
+  headToHead:             7.5,
+  tournamentExperience:   6.9,
+  recentForm:             5.8,
+  marketConsensus:        5.0,  // live-only in backfill — conservative default
+  travelFatigue:          5.0,  // live-only in backfill — conservative default
+  injuryRisk:             5.0,  // live-only in backfill — conservative default
+  historicalVolatility:   0.0,  // −4.1pp at n=3,031 → −0.7pp at n=9,366 → excluded
+};
+
+// ---------------------------------------------------------------------------
 // Math helpers
 // ---------------------------------------------------------------------------
 
@@ -211,6 +240,25 @@ function stddev(values: number[]): number {
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length;
   return Math.sqrt(variance);
+}
+
+/**
+ * Agreement rate weighted by validated per-factor predictive edge.
+ * Each factor's vote contributes its AGREEMENT_EDGE_WEIGHTS[key] rather than a flat 1.
+ * Factors absent from the map get a conservative 5.0pp fallback (positive but low weight).
+ * Returns 0.5 (neutral) when no opinionated factors are present.
+ */
+function edgeWeightedAgreementRate(opinionatedFactors: FactorScore[]): number {
+  if (opinionatedFactors.length === 0) return 0.5;
+  const FALLBACK_EDGE = 5.0;
+  let agreeWeight = 0;
+  let totalWeight = 0;
+  for (const f of opinionatedFactors) {
+    const w = Math.max(0, AGREEMENT_EDGE_WEIGHTS[f.key] ?? FALLBACK_EDGE);
+    totalWeight += w;
+    if (f.supportsSelected === true) agreeWeight += w;
+  }
+  return totalWeight > 0 ? agreeWeight / totalWeight : 0.5;
 }
 
 // ---------------------------------------------------------------------------
@@ -1343,7 +1391,10 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
   const opinionatedFactors = decisiveFacters.filter(f => f.supportsSelected !== null);
   const agreeing = opinionatedFactors.filter(f => f.supportsSelected === true).length;
   const available = opinionatedFactors.length;
-  const agreementRate = available > 0 ? agreeing / available : 0.5;
+  // Edge-weighted: each factor's vote counts in proportion to its validated predictive edge,
+  // not as a flat +1. Weak/negative-edge factors (e.g. historicalVolatility) can no longer
+  // outvote high-signal ones. Falls back to raw-count (0.5) when no factors are opinionated.
+  const agreementRate = edgeWeightedAgreementRate(opinionatedFactors);
   const agreementScore = Math.round(agreementRate * 100);
   const saFactor: FactorScore = {
     key: "sourceAgreement",
@@ -1352,7 +1403,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
     weight: DEFAULT_WEIGHTS.sourceAgreement,
     status: "available",
     supportsSelected: agreementRate > 0.55 ? true : agreementRate < 0.45 ? false : null,
-    detail: `${agreeing} of ${available} available sources agree with this selection (${agreementScore}% agreement)`,
+    detail: `${agreeing} of ${available} sources agree — ${agreementScore}% edge-weighted agreement`,
   };
   factors.push(saFactor);
 
@@ -1884,14 +1935,14 @@ export function __TEST_computeScoring(
   const opinionatedF = decisiveF.filter(f => f.supportsSelected !== null);
   const agreeing      = opinionatedF.filter(f => f.supportsSelected === true).length;
   const available     = opinionatedF.length;
-  const agreementRate = available > 0 ? agreeing / available : 0.5;
+  const agreementRate = edgeWeightedAgreementRate(opinionatedF);
   factors.push({
     key: "sourceAgreement", label: "Source Agreement",
     score: diffScore(agreementRate, 1 - agreementRate, 100),
     weight: DEFAULT_WEIGHTS.sourceAgreement,
     status: "available",
     supportsSelected: agreementRate > 0.55 ? true : agreementRate < 0.45 ? false : null,
-    detail: `${agreeing} of ${available} available sources agree (${Math.round(agreementRate * 100)}% agreement)`,
+    detail: `${agreeing} of ${available} sources agree — ${Math.round(agreementRate * 100)}% edge-weighted agreement`,
   });
 
   // Validation Score
