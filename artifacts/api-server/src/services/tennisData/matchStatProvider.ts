@@ -20,6 +20,7 @@
  *
  * Host is read at startup from RAPIDAPI_HOST; key is passed at construction.
  */
+import { CircuitBreaker, CircuitOpenError } from "../../lib/circuitBreaker";
 import { logger } from "../../lib/logger";
 import { TtlCache } from "./cache";
 import { normalizeProviderSurface } from "./surfaceMap";
@@ -234,6 +235,15 @@ export class MatchStatProvider implements TennisDataProvider {
   private cache = new TtlCache();
   private lastSuccessfulCallAt: string | null = null;
   private lastError: string | null = null;
+  /**
+   * Circuit breaker for outbound MatchStat/RapidAPI calls.
+   * MatchStat outages tend to last hours; 60 s open duration reduces
+   * probe-timeout waste while still recovering quickly when it comes back.
+   */
+  private breaker = new CircuitBreaker("matchstat", {
+    failureThreshold: 5,
+    openDurationMs: 60_000,
+  });
 
   /**
    * Fast player-by-ID lookup built as a side-effect of the rankings fetch.
@@ -263,64 +273,79 @@ export class MatchStatProvider implements TennisDataProvider {
   }
 
   private async call<T>(path: string): Promise<T> {
-    const url = `${BASE_URL}${path}`;
+    try {
+      return await this.breaker.execute(async () => {
+        const url = `${BASE_URL}${path}`;
 
-    for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
-      try {
-        const response = await fetch(url, {
-          headers: {
-            "x-rapidapi-key": this.apiKey,
-            "x-rapidapi-host": HOST,
-          },
-          signal: AbortSignal.timeout(12_000),
-        });
+        for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+          try {
+            const response = await fetch(url, {
+              headers: {
+                "x-rapidapi-key": this.apiKey,
+                "x-rapidapi-host": HOST,
+              },
+              signal: AbortSignal.timeout(12_000),
+            });
 
-        if (response.status === 429) {
-          const retryAfterSec = Number(response.headers.get("retry-after") ?? "0");
-          const waitMs = retryAfterSec > 0
-            ? retryAfterSec * 1_000
-            : BASE_BACKOFF_MS * Math.pow(2, attempt);
+            if (response.status === 429) {
+              const retryAfterSec = Number(response.headers.get("retry-after") ?? "0");
+              const waitMs = retryAfterSec > 0
+                ? retryAfterSec * 1_000
+                : BASE_BACKOFF_MS * Math.pow(2, attempt);
 
-          if (attempt < MAX_429_RETRIES) {
-            logger.warn({ path, attempt, waitMs }, "RapidAPI 429 — backing off before retry");
-            await sleep(waitMs);
-            continue;
+              if (attempt < MAX_429_RETRIES) {
+                logger.warn({ path, attempt, waitMs }, "RapidAPI 429 — backing off before retry");
+                await sleep(waitMs);
+                continue;
+              }
+              throw new ProviderUnavailableError(
+                `RapidAPI rate limit exceeded after ${MAX_429_RETRIES} retries: ${path}`,
+              );
+            }
+
+            if (!response.ok) {
+              const body = await response.text().catch(() => "");
+              throw new ProviderUnavailableError(
+                `MatchStat API HTTP ${response.status}: ${body.slice(0, 200)}`,
+              );
+            }
+
+            const body = (await response.json()) as Record<string, unknown>;
+            // Some errors come as HTTP 200 with {message: "..."} or {error: "..."}
+            if (typeof body.message === "string") {
+              throw new ProviderUnavailableError(`MatchStat API: ${body.message}`);
+            }
+
+            this.lastSuccessfulCallAt = new Date().toISOString();
+            this.lastError = null;
+            return body as T;
+
+          } catch (err) {
+            if (err instanceof ProviderUnavailableError) {
+              this.lastError = err.message;
+              throw err;
+            }
+            const message = err instanceof Error ? err.message : "Unknown error calling MatchStat";
+            this.lastError = message;
+            logger.error({ err, path }, "MatchStat API call failed");
+            throw new ProviderUnavailableError(message);
           }
-          throw new ProviderUnavailableError(
-            `RapidAPI rate limit exceeded after ${MAX_429_RETRIES} retries: ${path}`,
-          );
         }
 
-        if (!response.ok) {
-          const body = await response.text().catch(() => "");
-          throw new ProviderUnavailableError(
-            `MatchStat API HTTP ${response.status}: ${body.slice(0, 200)}`,
-          );
-        }
-
-        const body = (await response.json()) as Record<string, unknown>;
-        // Some errors come as HTTP 200 with {message: "..."} or {error: "..."}
-        if (typeof body.message === "string") {
-          throw new ProviderUnavailableError(`MatchStat API: ${body.message}`);
-        }
-
-        this.lastSuccessfulCallAt = new Date().toISOString();
-        this.lastError = null;
-        return body as T;
-
-      } catch (err) {
-        if (err instanceof ProviderUnavailableError) {
-          this.lastError = err.message;
-          throw err;
-        }
-        const message = err instanceof Error ? err.message : "Unknown error calling MatchStat";
-        this.lastError = message;
-        logger.error({ err, path }, "MatchStat API call failed");
-        throw new ProviderUnavailableError(message);
+        throw new ProviderUnavailableError(`MatchStat call failed: ${path}`);
+      });
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        // Fast-fail: circuit is OPEN, no HTTP round-trip needed.
+        // Re-throw as ProviderUnavailableError so compositeProvider.withFallback
+        // routes the call to API-Tennis immediately.
+        this.lastError = `circuit breaker OPEN (matchstat)`;
+        throw new ProviderUnavailableError(
+          `MatchStat unavailable — circuit breaker OPEN (matchstat)`,
+        );
       }
+      throw err;
     }
-
-    throw new ProviderUnavailableError(`MatchStat call failed: ${path}`);
   }
 
   // ── Upcoming fixtures (confirmed working) ────────────────────────────────────
