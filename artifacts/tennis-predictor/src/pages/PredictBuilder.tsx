@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useLocation, useSearch } from "wouter"
-import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
+import { useGetPlayer, getGetPlayerQueryKey, useGetPlayerStats, useGetAdminAuthStatus, Surface, MatchFormat, TournamentLevel } from "@workspace/api-client-react"
 import type { PredictionSummary } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -153,6 +153,8 @@ function PlayerCard({
 export default function PredictBuilderPage() {
   const [, setLocation] = useLocation()
   const searchString = useSearch()
+  const { data: adminAuth } = useGetAdminAuthStatus()
+  const isAdmin = adminAuth?.authenticated === true
   const searchParams = new URLSearchParams(searchString)
   
   const p1 = searchParams.get('p1')
@@ -343,7 +345,7 @@ export default function PredictBuilderPage() {
             </button>
           </div>
           <CardContent className="px-4 pb-4 pt-0">
-            <SavedPredictionCards />
+            <SavedPredictionCards isAdmin={isAdmin} />
           </CardContent>
         </Card>
       )}

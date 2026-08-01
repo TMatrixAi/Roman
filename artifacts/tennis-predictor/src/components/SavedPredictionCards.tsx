@@ -3,8 +3,19 @@ import { useLocation } from "wouter"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { Bookmark, ExternalLink, Copy, Trash2, RefreshCw, BookmarkX } from "lucide-react"
+import { Bookmark, ExternalLink, Copy, Trash2, RefreshCw, BookmarkX, Layers } from "lucide-react"
 import { getRecommendationLabel } from "@/lib/recommendationLabels"
+
+const PARLAY_DRAFT_KEY = "parlayDraft.pending.v1"
+
+interface ParlayDraftLeg {
+  player1Name: string
+  player1Id: number | null
+  player2Name: string
+  player2Id: number | null
+  tournamentName: string | undefined
+  surface: string | undefined
+}
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "")
 const api = (path: string) => `${BASE}${path}`
@@ -41,13 +52,29 @@ function formatDate(iso: string): string {
   }
 }
 
-export function SavedPredictionCards() {
+export function SavedPredictionCards({ isAdmin }: { isAdmin?: boolean } = {}) {
   const [, setLocation] = useLocation()
   const { toast } = useToast()
   const [cards, setCards] = useState<SavedCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const handleBuildParlay = () => {
+    if (cards.length === 0) return
+    const legs: ParlayDraftLeg[] = cards.map(card => ({
+      player1Name: card.player1Name,
+      player1Id: null,
+      player2Name: card.player2Name,
+      player2Id: null,
+      tournamentName: card.tournamentName ?? undefined,
+      surface: card.surface,
+    }))
+    try {
+      sessionStorage.setItem(PARLAY_DRAFT_KEY, JSON.stringify(legs))
+    } catch { /* sessionStorage unavailable — page will open empty */ }
+    setLocation("/admin/parlay-builder?draft=1")
+  }
 
   const fetchCards = useCallback(async () => {
     setLoading(true)
@@ -142,12 +169,24 @@ export function SavedPredictionCards() {
         <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
           {cards.length} saved card{cards.length !== 1 ? "s" : ""}
         </p>
-        <button
-          onClick={fetchCards}
-          className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-        >
-          <RefreshCw className="w-3 h-3" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[10px] font-mono gap-1 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:border-amber-400"
+              onClick={handleBuildParlay}
+            >
+              <Layers className="w-3 h-3" /> Build Parlay
+            </Button>
+          )}
+          <button
+            onClick={fetchCards}
+            className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
+        </div>
       </div>
 
       {cards.map(card => (
