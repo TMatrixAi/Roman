@@ -235,18 +235,40 @@ async function getRankingsCache(): Promise<Map<string, number>> {
 }
 
 /**
+ * Returns true when every significant word (>1 char) from `queryNorm` appears as
+ * an **exact whole word** in `candidateNorm`. Used for both the rankings-cache scan
+ * and the search-result filter so a shared surname alone cannot silently alias two
+ * different players (e.g. "carlos rodriguez" must not match "pablo rodriguez").
+ */
+function allQueryWordsMatch(queryNorm: string, candidateNorm: string): boolean {
+  const qWords = queryNorm.split(" ").filter(w => w.length > 1);
+  if (qWords.length === 0) return false;
+  const cWordSet = new Set(candidateNorm.split(" "));
+  return qWords.every(w => cWordSet.has(w));
+}
+
+type BsdResolvedVia = "rankings-cache" | "search-fallback";
+
+/**
  * Attempts a BSD player-search API call for players outside the top-500 rankings cache.
- * BSD exposes GET /tennis/api/v2/players/?search=<term> — tries the player's surname first.
- * Returns the best-matching BSD player ID, or null when the endpoint is unavailable or no
- * confident match is found. Result is stored in the rankings cache to short-circuit future calls.
+ * BSD exposes GET /tennis/api/v2/players/?search=<term> — queries by surname.
+ *
+ * Acceptance criteria (both must be met to avoid wrong-player aliasing):
+ *  - Every significant query word appears as an **exact whole word** in the candidate name.
+ *  - Exactly **one** search result passes this filter (ambiguous results → null).
+ *
+ * On success, caches both the candidate's own normalized name AND the queried normalized
+ * name so the next call for either form hits the fast exact-match path.
+ *
+ * Returns null — never throws — when the endpoint is unavailable, the result is ambiguous,
+ * or no candidate passes the full-name filter.
  */
 async function searchBsdPlayerByName(
-  name: string,
+  normalized: string, // pre-normalized queried name
   cache: Map<string, number>,
 ): Promise<number | null> {
-  const normalized = normalizeName(name);
   const words = normalized.split(" ");
-  // Use the surname (last word) as the search term — gives broadest recall without false matches.
+  // Use the surname (last word) as the search term for maximum recall.
   const surname = words[words.length - 1] ?? "";
   if (surname.length < 3) return null;
 
@@ -254,11 +276,11 @@ async function searchBsdPlayerByName(
   try {
     res = await bsdFetch(`/tennis/api/v2/players/?search=${encodeURIComponent(surname)}`);
   } catch {
-    return null; // network / timeout — non-fatal
+    return null; // network / timeout / AbortError — non-fatal
   }
 
   if (!res.ok) {
-    // 404 or 405 means the endpoint doesn't exist on this BSD plan — don't retry.
+    // 404 or 405 means the endpoint doesn't exist on this BSD plan — non-fatal.
     logger.debug({ surname, status: res.status }, "BSD Tennis player-search endpoint unavailable (non-fatal)");
     return null;
   }
@@ -267,53 +289,76 @@ async function searchBsdPlayerByName(
   try {
     data = (await res.json()) as BsdPaginatedResponse<BsdPlayer>;
   } catch {
-    return null;
+    return null; // malformed JSON — non-fatal
   }
 
   if (!data.results || data.results.length === 0) return null;
 
-  // Pick the candidate whose normalized name best matches the requested name.
-  // Require the surname to be present (prevents wrong-player aliasing).
-  let bestId: number | null = null;
-  let bestScore = 0;
+  // Collect candidates where ALL significant query words appear as exact whole words.
+  // If more than one candidate passes, the result is ambiguous — return null.
+  const strongMatches: Array<{ id: number; cn: string; shortNameNorm: string }> = [];
   for (const player of data.results) {
     const cn = normalizeName(player.name);
-    if (!cn.includes(surname)) continue; // surname must match
-    // Score: count how many words of the queried name appear in the candidate name.
-    const matchedWords = words.filter(w => w.length > 1 && cn.includes(w)).length;
-    if (matchedWords > bestScore) {
-      bestScore = matchedWords;
-      bestId = player.id;
-      // Store in cache so the next call for this player skips the search.
-      cache.set(cn, player.id);
-      if (player.short_name) cache.set(normalizeName(player.short_name), player.id);
+    if (allQueryWordsMatch(normalized, cn)) {
+      strongMatches.push({
+        id: player.id,
+        cn,
+        shortNameNorm: player.short_name ? normalizeName(player.short_name) : "",
+      });
     }
   }
 
-  if (bestId !== null) {
-    logger.debug({ name, surname, bestId, bestScore }, "BSD Tennis: player found via search fallback");
+  if (strongMatches.length !== 1) {
+    if (strongMatches.length > 1) {
+      logger.debug({ normalized, count: strongMatches.length }, "BSD Tennis: ambiguous search result, skipping alias");
+    }
+    return null;
   }
-  return bestId;
+
+  const { id, cn, shortNameNorm } = strongMatches[0]!;
+  // Cache: candidate's own canonical name, any short-name, AND the queried name.
+  // All three now hit the fast exact-match path on future calls.
+  cache.set(cn, id);
+  if (shortNameNorm) cache.set(shortNameNorm, id);
+  cache.set(normalized, id);
+
+  logger.debug({ normalized, surname, bsdId: id }, "BSD Tennis: player found via search fallback");
+  return id;
 }
 
-async function findBsdPlayerIdByName(name: string): Promise<number | null> {
+async function findBsdPlayerIdByName(
+  name: string,
+): Promise<{ id: number; via: BsdResolvedVia } | null> {
   const cache = await getRankingsCache();
   const normalized = normalizeName(name);
 
-  // Exact normalized match (rankings cache hit — fast path)
-  if (cache.has(normalized)) return cache.get(normalized)!;
+  // 1. Exact normalized match — fast path (covers both primary names and previously cached aliases).
+  if (cache.has(normalized)) return { id: cache.get(normalized)!, via: "rankings-cache" };
 
-  // Surname-only fallback within the rankings cache
-  const surname = normalized.split(" ").pop() ?? "";
-  if (surname.length >= 3) {
+  // 2. Full-word rankings-cache scan: every significant query word must appear as an exact whole
+  //    word in the cache entry. Only safe when EXACTLY ONE entry matches (no shared-surname
+  //    aliasing risk). Zero or multiple matches → fall through to the search endpoint.
+  const queryWords = normalized.split(" ").filter(w => w.length > 1);
+  if (queryWords.length >= 2) {
+    const cacheMatches: Array<{ id: number }> = [];
     for (const [cName, id] of cache.entries()) {
-      if (cName.includes(surname)) return id;
+      if (allQueryWordsMatch(normalized, cName)) cacheMatches.push({ id });
     }
+    if (cacheMatches.length === 1) {
+      return { id: cacheMatches[0]!.id, via: "rankings-cache" };
+    }
+    // 0 → no ranked player matches all words; >1 → ambiguous. Fall through to search.
   }
 
-  // Player not in top-500 rankings cache: try the BSD player-search endpoint.
-  // Stores the result in the cache on success so repeat lookups are instant.
-  return searchBsdPlayerByName(name, cache);
+  // 3. Player not in top-500 rankings cache: try the BSD player-search endpoint.
+  //    On success the resolved ID is stored in the cache so repeat lookups are instant.
+  const searchId = await searchBsdPlayerByName(normalized, cache);
+  return searchId !== null ? { id: searchId, via: "search-fallback" } : null;
+}
+
+/** Test-only escape hatch: force the next call to rebuild the rankings cache from scratch. */
+export function resetBsdRankingsCacheForTests(): void {
+  _rankingsCache = null;
 }
 
 // ─── Match history fetch ──────────────────────────────────────────────────────
@@ -346,19 +391,23 @@ async function fetchBsdPlayerMatches(
 /**
  * Fetch completed match history for a player by name from BSD Tennis.
  * Returns empty results (non-throwing) when the key is not configured or the
- * player is not found in the top ATP/WTA rankings.
+ * player is not found via rankings cache or the player-search fallback.
+ *
+ * `resolvedVia` in the return value tells the caller whether the BSD player ID
+ * came from the fast rankings cache or the slower player-search endpoint —
+ * so composite provider logs can distinguish the two paths.
  */
 export async function fetchFromBsdTennis(
   playerName: string,
-): Promise<{ records: MatchRecord[] }> {
+): Promise<{ records: MatchRecord[]; resolvedVia?: BsdResolvedVia }> {
   if (!getKey()) return { records: [] };
 
-  const bsdId = await findBsdPlayerIdByName(playerName);
-  if (!bsdId) {
-    logger.debug({ playerName }, "BSD Tennis: player not found in rankings cache");
+  const resolved = await findBsdPlayerIdByName(playerName);
+  if (!resolved) {
+    logger.debug({ playerName }, "BSD Tennis: player not found in rankings cache or search");
     return { records: [] };
   }
 
-  const records = await fetchBsdPlayerMatches(bsdId, playerName);
-  return { records };
+  const records = await fetchBsdPlayerMatches(resolved.id, playerName);
+  return { records, resolvedVia: resolved.via };
 }

@@ -1,4 +1,5 @@
 - [API-Tennis provider quirks](api-tennis-provider.md) — real API-Tennis responses violate its own docs (numeric keys, null surfaces/levels); design for it, don't trust the docs literally.
+- [RapidAPI fixture match.date null fallback](rapidapi-fixture-date-null.md) — match-level date is null for unscheduled rounds; fall back to tournament.date or all fixtures are silently dropped; also: 3-min TTL exhausted daily quota, fixed to 30 min.
 - [MatchStat/API-Tennis ID collision fix](matchstat-api-tennis-id-collision.md) — MatchStat fixture IDs collide with API-Tennis doubles-team IDs; three-layer fix: skip doubles from getPlayer, prefer abbreviated search candidates, abbreviation-tolerant integrity check.
 - [Orval + zod codegen pitfalls](orval-zod-codegen-pitfalls.md) — zod.coerce.string() silently defeats required-field validation; generated react-query hook option types require queryKey.
 - [Historical backfill cross-run state continuity](historical-backfill-state-continuity.md) — chronological importers with running state (Elo, form) must hydrate from persisted records, not just in-process memory, or later runs silently cold-start.

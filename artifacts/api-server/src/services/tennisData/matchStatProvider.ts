@@ -41,8 +41,12 @@ import { ProviderUnavailableError } from "./types";
 const HOST = process.env.RAPIDAPI_HOST ?? "tennis-api-atp-wta-itf.p.rapidapi.com";
 const BASE_URL = `https://${HOST}`;
 
-// TTLs — all upcoming fixtures change at most every few minutes
-const UPCOMING_TTL_MS = 3 * 60 * 1000;   // 3 minutes
+// TTLs
+// Fixtures: 30 minutes. The RapidAPI plan allows only a few hundred calls/day;
+// 3-minute TTL produced ~480 fixture calls/day (2 tours × 240 refreshes) and
+// exhausted the quota by midday. 30 minutes → ~48 calls/day, well within limits.
+// The Refresh button bypasses the cache for on-demand updates.
+const UPCOMING_TTL_MS = 30 * 60 * 1000;  // 30 minutes
 const RANKINGS_TTL_MS = 60 * 60 * 1000;  // 1 hour
 
 // 429 handling — fail immediately and let the composite provider fall back to
@@ -179,7 +183,11 @@ function mapMatchToFixture(m: RawMatch): Fixture | null {
   const tournamentName = m.tournament?.name ?? "";
   if (/doubles/i.test(tournamentName)) return null;
 
-  const dateStr = m.date ? m.date.slice(0, 10) : null;
+  // Match-level `date` is null in some API responses (e.g. qualifying rounds before scheduling
+  // is confirmed). Fall back to the tournament start date so the fixture is still surfaced.
+  // scheduledStart stays null (timeConfirmed=false) when only the tournament date is available.
+  const rawDate = m.date ?? m.tournament?.date ?? null;
+  const dateStr = rawDate ? rawDate.slice(0, 10) : null;
   if (!dateStr) return null;
 
   const courtStr = m.court ?? m.tournament?.court?.name;
@@ -194,10 +202,14 @@ function mapMatchToFixture(m: RawMatch): Fixture | null {
 
   const id = `${str(m.tournament?.id)}:${str(p1.id)}:${str(p2.id)}`;
 
+  // Use the real match time if available; if only the tournament date is known, mark time as
+  // unconfirmed so the UI shows "Time TBD" rather than a fabricated start time.
+  const scheduledStart = m.date ?? null;
+
   return {
     id,
     date: dateStr,
-    scheduledStart: m.date ?? null,
+    scheduledStart,
     timeConfirmed: !!m.date,
     isLive: false,   // upcoming/matches only returns scheduled (not live)
     tournamentName: m.tournament?.name ?? null,
