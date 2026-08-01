@@ -361,14 +361,35 @@ export function resetBsdRankingsCacheForTests(): void {
   _rankingsCache = null;
 }
 
+/**
+ * Returns a YYYY-MM-DD date string offset by `years` years from today.
+ * Used to build a rolling historical window for the BSD matches query.
+ */
+function isoDateYearsAgo(years: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+
 // ─── Match history fetch ──────────────────────────────────────────────────────
 
+/**
+ * Fetches completed match history for a BSD player.
+ *
+ * BSD API notes (confirmed via schema + live probing):
+ *  - The correct query-param is `player=<id>` (NOT `player_id` which is silently ignored).
+ *  - Without `date_from`/`date_to` the endpoint defaults to the **next 7 days** of scheduled
+ *    matches, so historical data requires an explicit date range.
+ *  - `status=finished` restricts to completed matches only.
+ */
 async function fetchBsdPlayerMatches(
   bsdPlayerId: number,
   playerName: string,
 ): Promise<MatchRecord[]> {
+  const dateFrom = isoDateYearsAgo(3); // 3-year rolling window
+  const dateTo = new Date().toISOString().slice(0, 10);
   const res = await bsdFetch(
-    `/tennis/api/v2/matches/?player_id=${bsdPlayerId}&limit=${MAX_MATCHES_PER_FETCH}`,
+    `/tennis/api/v2/matches/?player=${bsdPlayerId}&status=finished&date_from=${dateFrom}&date_to=${dateTo}&limit=${MAX_MATCHES_PER_FETCH}`,
   );
   if (!res.ok) throw new Error(`BSD matches HTTP ${res.status}`);
   const data = (await res.json()) as BsdPaginatedResponse<BsdMatch>;
@@ -380,7 +401,7 @@ async function fetchBsdPlayerMatches(
   }
 
   logger.debug(
-    { bsdPlayerId, playerName, fetched: data.results.length, mapped: records.length },
+    { bsdPlayerId, playerName, fetched: data.results.length, mapped: records.length, dateFrom, dateTo },
     "BSD Tennis match history fetched",
   );
   return records;
@@ -410,4 +431,112 @@ export async function fetchFromBsdTennis(
 
   const records = await fetchBsdPlayerMatches(resolved.id, playerName);
   return { records, resolvedVia: resolved.via };
+}
+
+export interface BsdSearchProbeResult {
+  keyConfigured: boolean;
+  /** Whether the /tennis/api/v2/players/?search= endpoint exists on this BSD plan */
+  endpointStatus: number | "network-error" | "timeout";
+  endpointReachable: boolean;
+  /** Raw result count returned by BSD before our full-name filter */
+  rawResultCount: number;
+  /** Names of candidates that passed allQueryWordsMatch for the queried name */
+  filteredCandidates: string[];
+  /** BSD player ID resolved for this name, or null */
+  resolvedId: number | null;
+  resolvedVia: BsdResolvedVia | null;
+  /** Normalized queried name as used internally */
+  normalizedName: string;
+  /** Surname used as the search term */
+  surname: string;
+  /** Number of entries currently in the rankings cache */
+  rankingsCacheSize: number;
+  /** Match record count returned when resolvedId is not null */
+  matchRecordCount: number | null;
+}
+
+/**
+ * Diagnostic probe: tests the BSD player-search endpoint for a given player name
+ * and returns structured results without mutating any global state.
+ *
+ * Used by the admin /provider/bsd-probe route to confirm live reachability of
+ * the search-fallback path for sub-500 players.
+ */
+export async function probeBsdPlayerSearch(playerName: string): Promise<BsdSearchProbeResult> {
+  const keyConfigured = !!getKey();
+  const normalizedName = normalizeName(playerName);
+  const words = normalizedName.split(" ");
+  const surname = words[words.length - 1] ?? "";
+
+  // Load the rankings cache (populate if needed) so we can report its size and
+  // confirm this player is NOT already in it (proving the search path fires).
+  let cache: Map<string, number>;
+  try {
+    cache = await getRankingsCache();
+  } catch {
+    cache = new Map();
+  }
+
+  const result: BsdSearchProbeResult = {
+    keyConfigured,
+    endpointStatus: "network-error",
+    endpointReachable: false,
+    rawResultCount: 0,
+    filteredCandidates: [],
+    resolvedId: null,
+    resolvedVia: null,
+    normalizedName,
+    surname,
+    rankingsCacheSize: cache.size,
+    matchRecordCount: null,
+  };
+
+  if (!keyConfigured || surname.length < 3) return result;
+
+  // Step 1: Raw probe of the search endpoint.
+  let res: Response;
+  try {
+    res = await bsdFetch(`/tennis/api/v2/players/?search=${encodeURIComponent(surname)}`);
+    result.endpointStatus = res.status;
+    result.endpointReachable = res.ok;
+  } catch (err) {
+    result.endpointStatus = err instanceof Error && err.name === "AbortError" ? "timeout" : "network-error";
+    return result;
+  }
+
+  if (!res.ok) return result;
+
+  // Step 2: Parse candidates and apply the same filter as searchBsdPlayerByName.
+  let data: BsdPaginatedResponse<BsdPlayer>;
+  try {
+    data = (await res.json()) as BsdPaginatedResponse<BsdPlayer>;
+  } catch {
+    return result;
+  }
+
+  result.rawResultCount = data.results?.length ?? 0;
+
+  for (const player of data.results ?? []) {
+    const cn = normalizeName(player.name);
+    if (allQueryWordsMatch(normalizedName, cn)) {
+      result.filteredCandidates.push(player.name);
+    }
+  }
+
+  // Step 3: Resolve via the real findBsdPlayerIdByName (uses its own cache reads).
+  try {
+    const resolved = await findBsdPlayerIdByName(playerName);
+    if (resolved) {
+      result.resolvedId = resolved.id;
+      result.resolvedVia = resolved.via;
+
+      // Step 4: Fetch match history for the resolved player.
+      const records = await fetchBsdPlayerMatches(resolved.id, playerName);
+      result.matchRecordCount = records.length;
+    }
+  } catch {
+    // Non-fatal — probe result still useful for endpoint reachability.
+  }
+
+  return result;
 }

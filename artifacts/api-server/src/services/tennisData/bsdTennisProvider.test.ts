@@ -247,3 +247,66 @@ test("fetchFromBsdTennis: ambiguous search results (two candidates both pass ful
     restore();
   }
 }));
+
+// ─── Match history URL parameter regression tests ──────────────────────────
+// These guard against the silent bugs discovered during task #53:
+//   1. `player_id=` is silently IGNORED by the BSD API; correct param is `player=`.
+//   2. Without `date_from`/`date_to` BSD defaults to the next 7 days (no history).
+//   3. Without `status=finished` in-progress/scheduled matches are included.
+// Because BSD ignores unknown params without any error, any regression is invisible
+// in production — these tests are the only safety net.
+
+test("fetchBsdPlayerMatches: outgoing URL uses player= (not player_id), status=finished, and a date_from bound", withFakeKey(async () => {
+  const capturedUrls: string[] = [];
+
+  const restore = mockFetch(async (url) => {
+    capturedUrls.push(url);
+    if (url.includes("/rankings/")) {
+      // Put the player in the rankings cache so we go directly to matches fetch.
+      return jsonResponse(paginated([bsdRankingEntry(200, "Mariano Navone")], 1));
+    }
+    if (url.includes("/matches/")) {
+      return jsonResponse(paginated([]));
+    }
+    return jsonResponse({}, 404);
+  });
+
+  try {
+    await fetchFromBsdTennis("Mariano Navone");
+
+    const matchUrl = capturedUrls.find(u => u.includes("/matches/"));
+    assert.ok(matchUrl, "a matches request must be made");
+
+    const parsed = new URL(matchUrl!);
+    const params = parsed.searchParams;
+
+    // 1. Correct player filter param (not the silently-ignored player_id).
+    assert.ok(
+      params.has("player"),
+      `matches URL must contain player= param; got: ${matchUrl}`,
+    );
+    assert.ok(
+      !params.has("player_id"),
+      `matches URL must NOT contain player_id= (silently ignored by BSD); got: ${matchUrl}`,
+    );
+
+    // 2. Date range must be present — without it BSD defaults to the next 7 days.
+    assert.ok(
+      params.has("date_from"),
+      `matches URL must contain date_from= param; got: ${matchUrl}`,
+    );
+    assert.ok(
+      params.has("date_to"),
+      `matches URL must contain date_to= param; got: ${matchUrl}`,
+    );
+
+    // 3. Status filter must restrict to finished matches.
+    assert.equal(
+      params.get("status"),
+      "finished",
+      `matches URL must contain status=finished; got: ${matchUrl}`,
+    );
+  } finally {
+    restore();
+  }
+}));
