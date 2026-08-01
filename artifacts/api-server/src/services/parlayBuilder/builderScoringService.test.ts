@@ -37,6 +37,7 @@ import {
   __TEST_STALE_MIN_MATCH_COUNT,
   __TEST_STALE_MAX_MATCH_AGE_DAYS,
   THIN_DATA_RISK_FLOOR,
+  thinDataRiskFloor,
   type __TEST_MatchRow,
   type __TEST_PlayerResolution,
   type PlayerStats,
@@ -383,9 +384,14 @@ describe("builderScoringService — marketConsensus factor invariants", () => {
 
 // ─── Thin-data risk floor tests ───────────────────────────────────────────────
 //
-// When either player has < 5 matches (insufficient_data or player_not_found),
-// the risk is fundamentally unknown, not low. riskScore must be at least
-// THIN_DATA_RISK_FLOOR regardless of other signals.
+// The thin-data floor is now a smooth ramp (thinDataRiskFloor) keyed on the
+// MINIMUM match count across both players.  Walk-forward data (n=11,499):
+//   n ≤ 2  →  45  (near coin-flip accuracy 54.7% — full floor)
+//   n = 3  →  30  (58.2% acc — partial floor)
+//   n = 4  →  15  (61.5% acc ≈ 5-9 band — light floor)
+//   n ≥ 5  →   0  (no floor)
+//
+// Tests assert riskScore ≥ thinDataRiskFloor(minMatches), not a flat 45.
 
 describe("builderScoringService — thin-data risk floor invariants", () => {
   it("collapsed matchup (sel.total=1, opp.total=1) cannot produce riskScore below THIN_DATA_RISK_FLOOR", () => {
@@ -404,19 +410,24 @@ describe("builderScoringService — thin-data risk floor invariants", () => {
     );
   });
 
-  it("thin selected player (total=3) with strong opponent cannot produce riskScore below floor", () => {
+  it("thin selected player (total=3) with strong opponent cannot produce riskScore below ramp floor", () => {
+    // minMatches = min(3, 25) = 3 → thinDataRiskFloor(3) = 30 (not the full 45).
+    // Walk-forward: n=3 players have 58.2% accuracy — some real signal; partial floor applies.
     const selThin = makeStats({ total: 3, winRate: 0.5, recentWinRate: 0.5 });
     const oppFull = makeStats({ total: 25, winRate: 0.65, recentWinRate: 0.65, currentRank: 30 });
 
     const result = __TEST_computeScoring(selThin, oppFull, { selectedPlayerStatus: "insufficient_data" });
+    const expectedFloor = thinDataRiskFloor(3); // 30
 
     assert.ok(
-      result.riskScore >= THIN_DATA_RISK_FLOOR,
-      `Thin SEL (total=3) must not produce riskScore below THIN_DATA_RISK_FLOOR=${THIN_DATA_RISK_FLOOR} (got ${result.riskScore})`,
+      result.riskScore >= expectedFloor,
+      `Thin SEL (total=3) must not produce riskScore below thinDataRiskFloor(3)=${expectedFloor} (got ${result.riskScore})`,
     );
   });
 
-  it("thin opponent (total=2) cannot produce riskScore below floor", () => {
+  it("thin opponent (total=2) cannot produce riskScore below full floor", () => {
+    // minMatches = min(25, 2) = 2 → thinDataRiskFloor(2) = THIN_DATA_RISK_FLOOR (45).
+    // Walk-forward: n=1-2 band has 54.7% accuracy — near coin-flip; full floor applies.
     const selFull = makeStats({ total: 25, winRate: 0.65, recentWinRate: 0.65, currentRank: 30 });
     const oppThin = makeStats({ total: 2, winRate: 0.5, recentWinRate: 0.5 });
 

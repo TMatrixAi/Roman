@@ -262,11 +262,23 @@ function edgeWeightedAgreementRate(opinionatedFactors: FactorScore[]): number {
 }
 
 // ---------------------------------------------------------------------------
-// Thin-data risk floor — applied whenever any player has < 5 matches.
-// When data is sparse the true risk is unknown, not low.  A closeness score of
-// 25 on two 0.5/0.5 win-rate players built from 3 matches each is absence-of-
-// signal, not evidence of a safe bet.  This floor prevents riskScore from
-// going below THIN_DATA_RISK_FLOOR in that state.
+// Thin-data risk floor — smooth ramp replacing the previous hard cut at < 5.
+//
+// Walk-forward analysis (n=11,499 graded legs, see analyzeClosenessFloors.ts):
+//
+//   min matches across both players │   n   │  acc%  │ interpretation
+//   ─────────────────────────────────┼───────┼────────┼────────────────────────────
+//   0         (player not found)     │    67 │  65.7% │ small-sample artefact; floor=45
+//   1–2       (very thin)            │  3024 │  54.7% │ near coin-flip — full floor=45
+//   3         (thin, boundary)       │   891 │  58.2% │ some signal — partial floor=30
+//   4         (thin, boundary)       │   650 │  61.5% │ ≈ 5–9 accuracy — light floor=15
+//   5–9       (low)                  │  1592 │  59.9% │ no floor (reference band)
+//   10–19     (moderate)             │   815 │  61.8% │ no floor
+//   20+       (good)                 │  4460 │  62.9% │ no floor
+//
+// Finding: 4-match players (61.5%) perform nearly identically to 5-9-match
+// players (59.9%).  The old hard threshold treated them identically to 0-match
+// players, which was too aggressive.  The ramp reflects the real signal gradient.
 // ---------------------------------------------------------------------------
 export const THIN_DATA_RISK_FLOOR = 45;
 
@@ -280,6 +292,28 @@ function closenessRiskFloor(cs: number): number {
   if (cs <= 50) return 0;
   if (cs <= 80) return Math.round(((cs - 50) / 30) * 40);   // 50→0 … 80→40
   return Math.round(40 + ((cs - 80) / 20) * 15);             // 80→40 … 100→55
+}
+
+// ---------------------------------------------------------------------------
+// Thin-data risk floor — smooth ramp from minMatches=0 (full floor) to 5 (no floor).
+//
+// When data is sparse the true risk is unknown, not low.  Two players with
+// 1 match each sharing equal win rates gives a closeness score of ~0 gap —
+// that is absence-of-signal, not evidence of a safe pick.
+//
+// The ramp is keyed on the MINIMUM match count across both players:
+//   n ≤ 2  →  45  (near coin-flip accuracy in walk-forward data; full floor)
+//   n = 3  →  30  (partial floor; 58.2% acc vs 54.7% at n=1-2)
+//   n = 4  →  15  (light floor;  61.5% acc ≈ 5-9 band at 59.9%)
+//   n ≥ 5  →   0  (no floor)
+//
+// Linear formula for n ∈ [3,4]: floor = 45 × (5 − n) / 3
+// ---------------------------------------------------------------------------
+export function thinDataRiskFloor(minMatches: number): number {
+  if (minMatches >= 5) return 0;
+  if (minMatches <= 2) return THIN_DATA_RISK_FLOOR;          // 45 — near coin-flip zone
+  // Linear ramp: (2 → 45) … (5 → 0)
+  return Math.round(THIN_DATA_RISK_FLOOR * (5 - minMatches) / 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -1530,15 +1564,18 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
 
   // ── 5c. Thin-data risk floor ──────────────────────────────────────────────
   //
-  // When either player has < 5 matches (insufficient_data or player_not_found),
-  // the risk is fundamentally unknown — not low.  A matchup with sel.total=3 and
-  // opp.total=3 sharing the same sparse win rate still produces a real closeness
+  // When either player has < 5 matches the risk is fundamentally unknown — not
+  // low.  Two players sharing identical sparse win rates produce a closeness
   // signal of ~0 gap, which the closeness floor translates to ~0 added risk.
   // That is absence-of-signal, not evidence of a safe pick.
-  // THIN_DATA_RISK_FLOOR (45) is applied as a hard floor in those cases so that
-  // "I don't know" never scores as "low risk".
-  const _thinDataFloorFired = (sel.total < 5 || opp.total < 5) && postClosenessRisk < THIN_DATA_RISK_FLOOR;
-  const riskScore = _thinDataFloorFired ? THIN_DATA_RISK_FLOOR : postClosenessRisk;
+  //
+  // The floor is a smooth ramp keyed on the minimum match count across both
+  // players (thinDataRiskFloor above).  See the comment on THIN_DATA_RISK_FLOOR
+  // for the walk-forward data that justifies each level.
+  const _thinDataMinMatches = Math.min(sel.total, opp.total);
+  const _thinDataFloor = thinDataRiskFloor(_thinDataMinMatches);
+  const _thinDataFloorFired = _thinDataFloor > 0 && postClosenessRisk < _thinDataFloor;
+  const riskScore = _thinDataFloorFired ? _thinDataFloor : postClosenessRisk;
 
   // ── 6. Critical flags & data source diagnostics ──────────────────────────────
   //
@@ -1631,7 +1668,7 @@ export async function computeBuilderScore(snapshot: BuilderSnapshot): Promise<Bu
       ...(opp.total < 5 ? [opponentName] : []),
     ].join(" and ");
     criticalFlags.push(
-      `Thin-data risk floor (min ${THIN_DATA_RISK_FLOOR}): riskScore raised from ${postClosenessRisk} — risk is unknown, not low, when data is thin for ${thinPlayers}`,
+      `Thin-data risk floor (min ${_thinDataFloor}): riskScore raised from ${postClosenessRisk} — risk is unknown, not low, when data is thin for ${thinPlayers}`,
     );
   }
 
@@ -1996,15 +2033,15 @@ export function __TEST_computeScoring(
     ? Math.round(closenessSignals.reduce((s, v) => s + v, 0) / closenessSignals.length) : 50;
   const postClosenessRisk = clamp(Math.max(Math.round(risk), closenessRiskFloor(closenessScore)), 0, 100);
 
-  // Thin-data risk floor — mirrors the same guard in computeBuilderScore
+  // Thin-data risk floor — mirrors the same ramp guard in computeBuilderScore
   const selectedPlayerStatus = opts.selectedPlayerStatus
     ?? (sel.total === 0 ? "player_not_found" : sel.total < 5 ? "insufficient_data" : "data_available");
   const opponentStatus = opts.opponentStatus
     ?? (opp.total === 0 ? "player_not_found" : opp.total < 5 ? "insufficient_data" : "data_available");
-  const thinDataFloorFired =
-    (selectedPlayerStatus !== "data_available" || opponentStatus !== "data_available") &&
-    postClosenessRisk < THIN_DATA_RISK_FLOOR;
-  const riskScore = thinDataFloorFired ? THIN_DATA_RISK_FLOOR : postClosenessRisk;
+  const _thinMinMatches = Math.min(sel.total, opp.total);
+  const _thinFloor = thinDataRiskFloor(_thinMinMatches);
+  const thinDataFloorFired = _thinFloor > 0 && postClosenessRisk < _thinFloor;
+  const riskScore = thinDataFloorFired ? _thinFloor : postClosenessRisk;
 
   // Grades
   const reliabilityGrade = toReliabilityGrade(validationScore, dataCoverage);
@@ -2020,7 +2057,7 @@ export function __TEST_computeScoring(
     ].join(" and ");
     caughtInconsistency =
       `Consistency guard: Elite tier forced down to Strong — insufficient data for ${gapPlayers}` +
-      (thinDataFloorFired ? ` (thin-data risk floor ${THIN_DATA_RISK_FLOOR} also applied)` : "");
+      (thinDataFloorFired ? ` (thin-data risk floor ${_thinFloor} also applied)` : "");
     parlayGrade = "Strong";
   }
 
