@@ -446,7 +446,21 @@ interface HistoricalIdValidationCacheRow {
 const HISTORICAL_ID_VALIDATION_TTL_MS = 6 * 60 * 60 * 1000;
 const historicalIdValidationCache = new Map<string, HistoricalIdValidationCacheRow>();
 
+// Short-TTL cache for transient provider failures (circuit open, MatchStat timeout, etc.).
+// Without this, every one of N screenshots in a batch triggers fresh (slow) provider calls for
+// the same player IDs — each call takes ~2.5 s waiting for MatchStat to time out before falling
+// through to the API-Tennis circuit breaker. A 2-min TTL means the same ID is probed at most
+// once per 2 minutes, not once per screenshot.
+const TRANSIENT_FAILURE_TTL_MS = 2 * 60 * 1000;
+const historicalIdTransientFailureCache = new Map<string, number>(); // playerId → timestamp
+
 async function validateHistoricalPlayerId(provider: TennisDataProvider, playerId: string): Promise<PlayerProfile | null | undefined> {
+  // Transient-failure fast path: skip re-querying a provider that just failed for this ID.
+  const failedAt = historicalIdTransientFailureCache.get(playerId);
+  if (failedAt !== undefined && Date.now() - failedAt < TRANSIENT_FAILURE_TTL_MS) {
+    return undefined;
+  }
+
   const cached = historicalIdValidationCache.get(playerId);
   if (cached && Date.now() - cached.checkedAt < HISTORICAL_ID_VALIDATION_TTL_MS) {
     return cached.profile;
@@ -465,6 +479,9 @@ async function validateHistoricalPlayerId(provider: TennisDataProvider, playerId
     return profile ?? undefined;
   } catch (err) {
     logger.warn({ err, playerId }, "Historical ID provider validation failed; keeping historical player fallback for this search");
+    // Cache the transient failure so repeated batch calls (73-screenshot upload) don't each
+    // re-queue the same slow MatchStat timeout for the same player IDs.
+    historicalIdTransientFailureCache.set(playerId, Date.now());
     return undefined;
   }
 }
@@ -981,10 +998,21 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   // i.e. as a genuine last-resort fallback rather than polluting normal searches. See comment
   // below where they are added for the full rationale.
   const abbreviatedTransientFallback: PlayerSummary[] = [];
-  for (const row of historicalById.values()) {
+
+  // ── Parallel validation ───────────────────────────────────────────────────
+  // validateHistoricalPlayerId calls the live provider per-ID. The old serial loop meant
+  // 50 unique IDs × ~2.5 s MatchStat timeout = 125 s before any player resolved when the
+  // provider is down. Parallelising brings this to one round-trip regardless of result count.
+  const historicalEntries = Array.from(historicalById.values());
+  const validations = await Promise.all(
+    historicalEntries.map((row) => validateHistoricalPlayerId(provider, row.id)),
+  );
+
+  for (let hi = 0; hi < historicalEntries.length; hi++) {
+    const row = historicalEntries[hi]!;
+    const validated = validations[hi];
     const historicalNorm = normalizePlayerName(row.name);
     const historicalNameIsWeak = isWeakIdentityNameKey(historicalNorm);
-    const validated = await validateHistoricalPlayerId(provider, row.id);
 
     // Explicitly stale/invalid historical ID: don't present it as a selectable player.
     if (validated === null) continue;
@@ -1086,8 +1114,28 @@ export async function searchKnownPlayers(provider: TennisDataProvider, query: st
   // never appear in the live standings feed. The fallback is gated on the whole set being empty
   // so it never introduces ambiguity when both "Maiko Uchijima" and "Moyuka Uchijima" already
   // resolved correctly via standings — those cases skip this block entirely.
+  //
+  // Extended condition: also activate when the base pool is non-empty but contains NO entry
+  // whose surname matches the query surname. This handles the case where the LIKE query found
+  // a DIFFERENT player with a partially-overlapping name (e.g. searching "Anastasia Potapova"
+  // hits "Vera Potapova" as a non-abbreviated row, which fills filteredHistorical and blocks the
+  // abbreviated "A. Potapova" entry from ever making it into the candidate pool). When the base
+  // pool's surnames don't overlap the query, it's noise from the LIKE match — we should still
+  // surface the abbreviated fallback so the real player has a chance to be found.
   const baseResultsEmpty = filteredLiveResults.length === 0 && filteredHistorical.length === 0;
-  const fallbackEntries = baseResultsEmpty
+
+  // Derive the query surname (last whitespace-token of at least 3 chars) for the surname check.
+  const querySurnameForFallback = lowerQuery.trim().split(/\s+/).filter(Boolean).pop() ?? "";
+  const baseHasSurnameMatch =
+    querySurnameForFallback.length < 3 ||
+    [...filteredLiveResults, ...filteredHistorical].some((p) => {
+      const candidateWords = normalizePlayerName(p.name).split(/\s+/).filter(Boolean);
+      const candidateSurname = candidateWords[candidateWords.length - 1] ?? "";
+      return candidateSurname === querySurnameForFallback;
+    });
+
+  const shouldUseFallback = baseResultsEmpty || !baseHasSurnameMatch;
+  const fallbackEntries = shouldUseFallback
     ? abbreviatedTransientFallback.filter((p) => !isShadowedByLive(p.name))
     : [];
 

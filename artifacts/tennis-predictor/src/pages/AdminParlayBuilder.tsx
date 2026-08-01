@@ -9,7 +9,7 @@ import {
   Layers, ImagePlus, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
   ChevronDown, ChevronUp, Trash2, RotateCcw, Search, Play, FlaskConical,
   Shield, ShieldAlert, ShieldOff, TrendingUp, Activity, BarChart2, ArrowLeftRight,
-  Wifi, WifiOff, Server, Database, Bookmark, BookmarkCheck, History, X, UserX,
+  Wifi, WifiOff, Server, Database, Bookmark, BookmarkCheck, History, X, UserX, Trophy,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -1600,6 +1600,10 @@ export default function AdminParlayBuilder() {
   const sessionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRestoredRef = useRef(false)
 
+  // Stores the predicted winner per leg key from the most recent analysis run,
+  // so Best of Best can flip all legs to the engine's preferred pick without re-running predictions.
+  const legSignalsRef = useRef<Record<string, { predictedWinnerSide: "1" | "2" } | null>>({})
+
   // ── Bulk predictor draft handoff ───────────────────────────────────────────
   // When navigated to with ?draft=1, read match data from sessionStorage and
   // preload as idle legs. Nothing is auto-triggered — the user controls every
@@ -1910,6 +1914,12 @@ export default function AdminParlayBuilder() {
         }
       }))
 
+      // Persist signals so Best of Best can flip all legs to the predicted winner
+      // even after the user has manually toggled some legs post-analysis.
+      legSignalsRef.current = Object.fromEntries(
+        Object.entries(legSignals).map(([k, v]) => [k, v ? { predictedWinnerSide: v.predictedWinnerSide } : null])
+      )
+
       // Update selectedSide in state to reflect the auto-picked predicted winner
       // (skip if we were called with overrideLegs — those already have the right side)
       if (!overrideLegs) {
@@ -2027,6 +2037,35 @@ export default function AdminParlayBuilder() {
     toast({
       title: `Switched ${borderlineKeySet.size} BORDERLINE leg${borderlineKeySet.size === 1 ? "" : "s"}`,
       description: "Re-running analysis with the opposing players selected.",
+    })
+  }
+
+  // ── Best of Best ────────────────────────────────────────────────────────────
+  // Scans every leg and flips it to the player with the higher win probability
+  // (the engine's predicted winner from the last analysis), then re-runs the
+  // full validation. Saves the user from manually toggling each leg individually.
+  const bestOfBest = () => {
+    if (!result || resultLegKeys.length === 0) return
+    const signals = legSignalsRef.current
+    let flippedCount = 0
+
+    const optimized = legs.map(l => {
+      const sig = signals[l.key]
+      if (!sig) return l
+      const ideal = sig.predictedWinnerSide
+      if (l.selectedSide === ideal) return l          // already on the better player
+      flippedCount++
+      return { ...l, selectedSide: ideal }
+    })
+
+    setLegs(optimized)
+    analyzeParlay(optimized)
+
+    toast({
+      title: flippedCount > 0
+        ? `Best of Best: flipped ${flippedCount} leg${flippedCount === 1 ? "" : "s"} to the stronger player`
+        : "Best of Best: all legs are already on the stronger player",
+      description: flippedCount > 0 ? "Re-running analysis with optimised picks." : undefined,
     })
   }
 
@@ -2251,6 +2290,16 @@ export default function AdminParlayBuilder() {
                           Switch {borderlineCount} Borderline
                         </button>
                       )}
+                      {/* Best of Best — flips every leg to the engine's predicted winner and re-runs */}
+                      <button
+                        onClick={bestOfBest}
+                        disabled={evaluating || !result}
+                        title="Flip every leg to the stronger player (engine's predicted winner) and re-run analysis"
+                        className="text-[9px] font-mono px-2 py-0.5 rounded border transition-colors border-primary/50 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary active:bg-primary/30 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                      >
+                        <Trophy className="w-2.5 h-2.5" />
+                        Best of Best
+                      </button>
                     </div>
                   </CardContent>
                 </Card>
