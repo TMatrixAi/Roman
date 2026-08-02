@@ -93,7 +93,9 @@ export const EXCLUDED_FROM_DATA_QUALITY = new Set(["headToHead", "fatigue", "ava
  * the real signal and are now the dominant vote); Fatigue and Head-to-Head were statistically
  * neutral (kept as legitimate minor tie-breakers, not zeroed, in case future data proves them
  * useful in specific segments); Availability is fully excluded from voting (see
- * `EXCLUDED_FROM_ENSEMBLE` below) because removing it measurably IMPROVED accuracy.
+ * `EXCLUDED_FROM_ENSEMBLE` below) because removing it measurably IMPROVED accuracy. Historical
+ * Volatility was also confirmed as net-harmful in the ablation and is retired from the active
+ * ensemble by setting its prior weight to 0.
  */
 export const ENSEMBLE_WEIGHT_PRIOR = {
   surfaceElo: 1.5,
@@ -101,6 +103,7 @@ export const ENSEMBLE_WEIGHT_PRIOR = {
   recentForm: 1.3,
   fatigue: 0.4,
   headToHead: 0.4,
+  historicalVolatility: 0,
   /**
    * Applies only if/when `EXCLUDED_FROM_ENSEMBLE` below no longer contains "availability" --
    * see the 2026-07-13 walk-forward re-validation note in `EXCLUDED_FROM_ENSEMBLE`'s comment for

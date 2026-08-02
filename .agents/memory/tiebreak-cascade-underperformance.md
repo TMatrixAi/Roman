@@ -21,3 +21,16 @@ just the main ensemble path) needs its own accuracy validation, separate from th
 overall accuracy numbers -- a good overall accuracy can hide a subset mechanism that's actively
 harmful. See Task #163 for the tracked fix; the full breakdown and reproduction query are in
 `artifacts/api-server/docs/audit-task162-full-prediction-accuracy-audit.md`, §2.
+
+## Current fix state
+
+The active implementation in `predictionEngine/tieBreakers.ts` already follows the intended
+Task #162 remediation: when the raw ensemble sits within the `TIE_BAND` of 50, the function
+returns `applied: true` with an honest close-match note, but it preserves the raw probability
+and sets `direction: 0` / `decidingStep: null` so no directional pick is forced. The cascade is
+kept as diagnostic output only; it no longer nudges the final winner in the low-confidence
+regime that was shown to underperform a coin flip.
+
+Verified locally with:
+- `pnpm exec tsx --test src/services/predictionEngine/tieBreakers.test.ts src/services/predictionEngine/recommendation.test.ts`
+- Result: 48 tests passed, 0 failed.
